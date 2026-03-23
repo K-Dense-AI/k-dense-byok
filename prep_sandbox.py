@@ -13,7 +13,19 @@ name = "kady-sandbox"
 version = "0.1.0"
 description = "Packages installed by Kady expert agents"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "dask>=2026.3.0",
+    "docling>=2.81.0",
+    "markitdown[all]>=0.1.5",
+    "matplotlib>=3.10.8",
+    "modal>=1.3.5",
+    "numpy>=2.4.3",
+    "openrouter>=0.7.11",
+    "polars>=1.39.3",
+    "pyopenms>=3.5.0",
+    "scipy>=1.17.1",
+    "transformers>=4.57.6",
+]
 """
 
 os.makedirs(SANDBOX_DIR, exist_ok=True)
