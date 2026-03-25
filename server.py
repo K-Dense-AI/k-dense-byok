@@ -96,7 +96,7 @@ def sandbox_tree():
         for entry in entries:
             if entry.name.startswith("."):
                 continue
-            if entry.name == "GEMINI.md":
+            if entry.name in ("GEMINI.md", "uv.lock"):
                 continue
             rel = str(entry.relative_to(SANDBOX_ROOT))
             if entry.is_dir():
