@@ -25,7 +25,7 @@ It's built for scientists, analysts, and curious people who want a powerful AI w
 
 | What | Why | Where to get it |
 |------|-----|-----------------|
-| A computer running **macOS or Linux** | The app runs locally on your machine | Windows works too — just use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) |
+| A computer running **macOS, Linux, or Windows** | The app runs locally on your machine | On **native Windows**, enable compatibility mode (see [Running on Windows](#running-on-windows-native)) or use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and follow the Linux steps |
 | An **OpenRouter API key** | This is how the AI models are accessed | [openrouter.ai](https://openrouter.ai/) — sign up and create a key |
 | A **Parallel API key** *(optional)* | Lets Kady search the web | [parallel.ai](https://parallel.ai/) |
 | **Modal** credentials *(optional)* | Only needed if you want remote compute for heavy jobs | [modal.com](https://modal.com/) |
@@ -61,6 +61,9 @@ GEMINI_API_KEY=sk-litellm-local
 # The default AI model Kady uses (you can change this in the app later)
 DEFAULT_AGENT_MODEL=openrouter/google/gemini-3.1-pro-preview
 
+# Native Windows only — set to 1 before first start (see "Running on Windows" in the README)
+# KADY_WINDOWS_COMPAT=1
+
 # Remote compute — only fill in if you have a Modal account (optional)
 MODAL_TOKEN_ID=
 MODAL_TOKEN_SECRET=
@@ -81,6 +84,25 @@ Once everything is running, your browser will open to **[http://localhost:3000](
 
 To stop everything, press **Ctrl+C** in the terminal.
 
+### Running on Windows (native)
+
+If you are on **Windows without WSL**, opt in to the Windows compatibility layer so the Gemini CLI delegate tool and the local event loop behave reliably:
+
+1. **Configure `kady_agent/.env` first.** Add a line `KADY_WINDOWS_COMPAT=1` (or `true`). This enables the supported code paths for subprocess execution on Windows and disables the Docling MCP server, which is often unstable under Windows stdio. Leave this unset on macOS and Linux.
+
+2. **Start the stack using the Windows launcher.** From the project root, either double-click **`start.bat`** or open PowerShell and run:
+
+   ```powershell
+   cd path\to\k-dense-byok
+   .\start.ps1
+   ```
+
+   The batch file invokes the same PowerShell script with an appropriate execution policy. The launcher loads your `kady_agent/.env`, installs dependencies if needed, then starts LiteLLM, the backend, and the frontend.
+
+3. **Use the app as usual** at [http://localhost:3000](http://localhost:3000). If you change `KADY_WINDOWS_COMPAT` after a prior run, restart all services so the new value is picked up.
+
+If you prefer a Linux-like environment on the same machine, you can instead use **WSL** and follow **Step 3** with `./start.sh`; in that case you do **not** need `KADY_WINDOWS_COMPAT`.
+
 ## How it works (the short version)
 
 The app runs three services on your computer:
@@ -97,7 +119,8 @@ When you send a message, Kady reads it, decides whether to answer directly or de
 
 ```
 k-dense-byok/
-├── start.sh              ← The one script that starts everything
+├── start.sh              ← Starts everything (macOS / Linux / WSL)
+├── start.bat / start.ps1 ← Windows launcher (use with KADY_WINDOWS_COMPAT=1 on native Windows)
 ├── server.py             ← Backend server
 ├── kady_agent/           ← Kady's brain: instructions, tools, and config
 │   ├── .env              ← Your API keys go here
