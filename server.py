@@ -20,6 +20,8 @@ app = get_fast_api_app(
 
 SANDBOX_ROOT = Path("sandbox").resolve()
 
+_ZIP_EXCLUDED_NAMES = {"GEMINI.md", "uv.lock"}
+
 
 def _safe_path(rel: str) -> Path:
     target = (SANDBOX_ROOT / rel).resolve()
@@ -96,7 +98,7 @@ def sandbox_tree():
         for entry in entries:
             if entry.name.startswith("."):
                 continue
-            if entry.name in ("GEMINI.md", "uv.lock"):
+            if entry.name in _ZIP_EXCLUDED_NAMES:
                 continue
             rel = str(entry.relative_to(SANDBOX_ROOT))
             if entry.is_dir():
@@ -194,9 +196,10 @@ def sandbox_download_dir(path: str = Query(...)):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path in sorted(target.rglob("*")):
+            rel_parts = file_path.relative_to(target).parts
             if file_path.is_file() and not any(
-                p.startswith(".") for p in file_path.relative_to(target).parts
-            ):
+                p.startswith(".") for p in rel_parts
+            ) and file_path.name not in _ZIP_EXCLUDED_NAMES:
                 zf.write(file_path, file_path.relative_to(target))
     buf.seek(0)
 
@@ -251,9 +254,10 @@ def sandbox_download_all():
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path in sorted(SANDBOX_ROOT.rglob("*")):
+            rel_parts = file_path.relative_to(SANDBOX_ROOT).parts
             if file_path.is_file() and not any(
-                p.startswith(".") for p in file_path.relative_to(SANDBOX_ROOT).parts
-            ):
+                p.startswith(".") for p in rel_parts
+            ) and file_path.name not in _ZIP_EXCLUDED_NAMES:
                 zf.write(file_path, file_path.relative_to(SANDBOX_ROOT))
     buf.seek(0)
 
