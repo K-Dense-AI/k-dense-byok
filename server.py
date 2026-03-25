@@ -1,15 +1,27 @@
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# So KADY_WINDOWS_COMPAT (and similar) in kady_agent/.env apply before loop policy.
+load_dotenv(Path(__file__).resolve().parent / "kady_agent" / ".env")
+
+import asyncio
 import io
 import mimetypes
 import os
 import re
 import shutil
 import zipfile
-from pathlib import Path
 
 import yaml
 from fastapi import HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from google.adk.cli.fast_api import get_fast_api_app
+
+from kady_agent.win_compat import enabled as kady_windows_compat_enabled
+
+if kady_windows_compat_enabled():
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 app = get_fast_api_app(
     agents_dir=".",

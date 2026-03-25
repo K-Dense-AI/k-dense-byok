@@ -1,9 +1,14 @@
 import asyncio
 import json
 import os
+import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+from ..win_compat import enabled as windows_compat_enabled
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -15,6 +20,22 @@ _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTI
 _CLI_OPENROUTER_HEADERS = (
     "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
 )
+
+
+def _resolve_gemini_executable() -> str:
+    """Resolve gemini.cmd on Windows when KADY_WINDOWS_COMPAT is enabled."""
+    override = (os.getenv("GEMINI_CLI_PATH") or "").strip()
+    if override:
+        return override
+    exe = shutil.which("gemini")
+    if not exe and sys.platform == "win32":
+        exe = shutil.which("gemini.cmd")
+    if not exe:
+        raise RuntimeError(
+            "Gemini CLI not found on PATH. Install: npm install -g @google/gemini-cli "
+            "(or set GEMINI_CLI_PATH to the full path of gemini / gemini.cmd)."
+        )
+    return exe
 
 
 def _parse_stream_json(raw: str) -> dict:
@@ -98,14 +119,50 @@ async def delegate_task(
 
     sandbox_venv = cwd / ".venv"
     if sandbox_venv.is_dir():
-        venv_bin = str(sandbox_venv / "bin")
-        env["VIRTUAL_ENV"] = str(sandbox_venv)
-        path_parts = env.get("PATH", "").split(os.pathsep)
-        old_venv = os.environ.get("VIRTUAL_ENV")
-        if old_venv:
-            old_bin = os.path.join(old_venv, "bin")
-            path_parts = [p for p in path_parts if p != old_bin]
-        env["PATH"] = os.pathsep.join([venv_bin] + path_parts)
+        venv_scripts = (
+            sandbox_venv / "Scripts" if sys.platform == "win32" else sandbox_venv / "bin"
+        )
+        if venv_scripts.is_dir():
+            venv_bin = str(venv_scripts)
+            env["VIRTUAL_ENV"] = str(sandbox_venv)
+            path_parts = env.get("PATH", "").split(os.pathsep)
+            old_venv = os.environ.get("VIRTUAL_ENV")
+            if old_venv:
+                old_scripts = (
+                    os.path.join(old_venv, "Scripts")
+                    if sys.platform == "win32"
+                    else os.path.join(old_venv, "bin")
+                )
+                path_parts = [p for p in path_parts if p != old_scripts]
+            env["PATH"] = os.pathsep.join([venv_bin] + path_parts)
+
+    if windows_compat_enabled():
+        gemini_exe = _resolve_gemini_executable()
+        cmd = [
+            gemini_exe,
+            "-p",
+            prompt,
+            "--yolo",
+            "--output-format",
+            "stream-json",
+        ]
+
+        def _run_gemini() -> subprocess.CompletedProcess[bytes]:
+            return subprocess.run(
+                cmd,
+                cwd=str(cwd),
+                env=env,
+                capture_output=True,
+            )
+
+        completed = await asyncio.to_thread(_run_gemini)
+        stdout_bytes = completed.stdout or b""
+        stderr_bytes = completed.stderr or b""
+        if completed.returncode != 0:
+            raise RuntimeError(
+                stderr_bytes.decode(errors="replace").strip() or "gemini command failed"
+            )
+        return _parse_stream_json(stdout_bytes.decode(errors="replace"))
 
     proc = await asyncio.create_subprocess_exec(
         "gemini",
