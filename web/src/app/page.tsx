@@ -30,6 +30,7 @@ import { ComputeSelector, buildComputeContext, type ModalInstance } from "@/comp
 import { ModelSelector, DEFAULT_MODEL, type Model } from "@/components/model-selector";
 import { SkillsSelector, buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { ProvenancePanel } from "@/components/provenance-panel";
+import { WorkflowsPanel } from "@/components/workflows-panel";
 import { useAgent, type ActivityItem } from "@/lib/use-agent";
 import { useConfig } from "@/lib/use-config";
 import { useSkills } from "@/lib/use-skills";
@@ -53,6 +54,8 @@ import {
   PaperclipIcon,
   ChevronDownIcon,
   ScrollTextIcon,
+  MessageSquareTextIcon,
+  WorkflowIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -649,6 +652,34 @@ export default function ChatPage() {
   // Selected expert skills
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
 
+  // Chat vs Workflows tab
+  const [activeTab, setActiveTab] = useState<"chat" | "workflows">("chat");
+
+  const handleWorkflowLaunch = useCallback(
+    async (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[]) => {
+      setSelectedModel(model);
+      setSelectedCompute(compute);
+      setActiveTab("chat");
+      const computeCtx = buildComputeContext(compute);
+      const skillsCtx = suggestedSkills.length > 0
+        ? `\n\nMake sure to instruct the delegated expert to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
+        : "";
+      const fullPrompt = prompt + computeCtx + skillsCtx;
+      const msgId = await send(fullPrompt, model.id);
+      if (msgId) {
+        turnMetaRef.current.set(msgId, {
+          model: model.label,
+          databases: [],
+          compute: compute?.label ?? null,
+          skills: suggestedSkills,
+          filesAttached: [...attachedFiles],
+          timestamp: Date.now(),
+        });
+      }
+    },
+    [send, attachedFiles]
+  );
+
   const handleSubmit = useCallback(
     async ({ text }: { text: string }) => {
       const msgId = await send(text, selectedModel.id);
@@ -771,95 +802,139 @@ export default function ChatPage() {
         {/* Drag handle: preview ↔ chat */}
         {panelOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
 
-        {/* Right: chat — fills all space when sandbox is hidden */}
+        {/* Right: chat / workflows — fills all space when sandbox is hidden */}
         <div className={`flex flex-col border-l overflow-hidden ${panelOpen ? "shrink-0" : "flex-1"}`} style={{ width: panelOpen ? chatWidth : undefined }}>
 
-          <Conversation className="flex-1">
-            <ConversationContent className="mx-auto w-full max-w-full px-4">
-              {messages.length === 0 ? (
-                <ConversationEmptyState
-                  title="What can I help you with?"
-                  description="I can research topics, write code, analyze data, and delegate tasks to specialized agents."
-                />
-              ) : (
-                messages.map((message) => (
-                  <Message from={message.role} key={message.id}>
-                    <MessageContent>
-                      {message.role === "assistant" && (
-                        <AssistantActivity
-                          items={message.activities ?? []}
-                          isStreaming={
-                            isStreaming && message.id === activeAssistantId
-                          }
-                        />
-                      )}
-                      {message.role === "assistant" &&
-                      !message.content &&
-                      !(message.activities && message.activities.length > 0) &&
-                      isStreaming ? (
-                        <Shimmer className="text-sm" duration={1.5}>
-                          Thinking...
-                        </Shimmer>
-                      ) : (
-                        <MessageResponse>{message.content}</MessageResponse>
-                      )}
-                      {message.role === "assistant" && message.modelVersion && (
-                        <span className="text-xs text-muted-foreground mt-1">
-                          {message.modelVersion}
-                        </span>
-                      )}
-                    </MessageContent>
-                    {message.role === "assistant" && message.content && (
-                      <MessageToolbar>
-                        <MessageActions>
-                          <MessageAction
-                            tooltip="Copy"
-                            onClick={() =>
-                              handleCopy(message.id, message.content)
-                            }
-                          >
-                            {copiedId === message.id ? (
-                              <CheckIcon className="size-4" />
-                            ) : (
-                              <CopyIcon className="size-4" />
-                            )}
-                          </MessageAction>
-                        </MessageActions>
-                      </MessageToolbar>
-                    )}
-                  </Message>
-                ))
+          {/* Tab bar */}
+          <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
+            <button
+              onClick={() => setActiveTab("chat")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                activeTab === "chat"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
               )}
-            </ConversationContent>
-            <ConversationScrollButton />
-          </Conversation>
-
-          <div className="px-4 pb-6 pt-2">
-            <PromptInputProvider>
-              <ChatInput
-                allFiles={allFiles}
-                attachedFiles={attachedFiles}
-                onAddFile={addAttachedFile}
-                onRemoveFile={removeAttachedFile}
-                onClearFiles={clearAttachedFiles}
-                onSubmit={handleSubmit}
-                isStreaming={isStreaming}
-                agentStatus={status}
-                onStop={stop}
-                selectedDbs={selectedDbs}
-                onDbsChange={setSelectedDbs}
-                selectedCompute={selectedCompute}
-                onComputeChange={setSelectedCompute}
-                selectedModel={selectedModel}
-                onModelChange={setSelectedModel}
-                onUploadFiles={sandbox.uploadFiles}
-                modalConfigured={config.modalConfigured}
-                allSkills={allSkills}
-                selectedSkills={selectedSkills}
-                onSkillsChange={setSelectedSkills}
-              />
-            </PromptInputProvider>
+            >
+              <MessageSquareTextIcon className="size-3.5" />
+              Chat
+              {messages.length > 0 && (
+                <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
+                  {messages.filter(m => m.role === "user").length}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab("workflows")}
+              className={cn(
+                "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                activeTab === "workflows"
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+              )}
+            >
+              <WorkflowIcon className="size-3.5" />
+              Workflows
+            </button>
           </div>
+
+          {/* Tab content */}
+          {activeTab === "chat" ? (
+            <>
+              <Conversation className="flex-1">
+                <ConversationContent className="mx-auto w-full max-w-full px-4">
+                  {messages.length === 0 ? (
+                    <ConversationEmptyState
+                      title="What can I help you with?"
+                      description="I can research topics, write code, analyze data, and delegate tasks to specialized agents."
+                    />
+                  ) : (
+                    messages.map((message) => (
+                      <Message from={message.role} key={message.id}>
+                        <MessageContent>
+                          {message.role === "assistant" && (
+                            <AssistantActivity
+                              items={message.activities ?? []}
+                              isStreaming={
+                                isStreaming && message.id === activeAssistantId
+                              }
+                            />
+                          )}
+                          {message.role === "assistant" &&
+                          !message.content &&
+                          !(message.activities && message.activities.length > 0) &&
+                          isStreaming ? (
+                            <Shimmer className="text-sm" duration={1.5}>
+                              Thinking...
+                            </Shimmer>
+                          ) : (
+                            <MessageResponse>{message.content}</MessageResponse>
+                          )}
+                          {message.role === "assistant" && message.modelVersion && (
+                            <span className="text-xs text-muted-foreground mt-1">
+                              {message.modelVersion}
+                            </span>
+                          )}
+                        </MessageContent>
+                        {message.role === "assistant" && message.content && (
+                          <MessageToolbar>
+                            <MessageActions>
+                              <MessageAction
+                                tooltip="Copy"
+                                onClick={() =>
+                                  handleCopy(message.id, message.content)
+                                }
+                              >
+                                {copiedId === message.id ? (
+                                  <CheckIcon className="size-4" />
+                                ) : (
+                                  <CopyIcon className="size-4" />
+                                )}
+                              </MessageAction>
+                            </MessageActions>
+                          </MessageToolbar>
+                        )}
+                      </Message>
+                    ))
+                  )}
+                </ConversationContent>
+                <ConversationScrollButton />
+              </Conversation>
+
+              <div className="px-4 pb-6 pt-2">
+                <PromptInputProvider>
+                  <ChatInput
+                    allFiles={allFiles}
+                    attachedFiles={attachedFiles}
+                    onAddFile={addAttachedFile}
+                    onRemoveFile={removeAttachedFile}
+                    onClearFiles={clearAttachedFiles}
+                    onSubmit={handleSubmit}
+                    isStreaming={isStreaming}
+                    agentStatus={status}
+                    onStop={stop}
+                    selectedDbs={selectedDbs}
+                    onDbsChange={setSelectedDbs}
+                    selectedCompute={selectedCompute}
+                    onComputeChange={setSelectedCompute}
+                    selectedModel={selectedModel}
+                    onModelChange={setSelectedModel}
+                    onUploadFiles={sandbox.uploadFiles}
+                    modalConfigured={config.modalConfigured}
+                    allSkills={allSkills}
+                    selectedSkills={selectedSkills}
+                    onSkillsChange={setSelectedSkills}
+                  />
+                </PromptInputProvider>
+              </div>
+            </>
+          ) : (
+            <WorkflowsPanel
+              onLaunch={handleWorkflowLaunch}
+              onUploadFiles={sandbox.uploadFiles}
+              modalConfigured={config.modalConfigured}
+            />
+          )}
         </div>
 
       </div>

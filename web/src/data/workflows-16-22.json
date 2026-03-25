@@ -1,0 +1,1074 @@
+  {
+    "id": "species-distribution-model",
+    "name": "Species Distribution Modeling",
+    "description": "Model and predict the geographic distribution of a species based on environmental variables",
+    "category": "ecology",
+    "icon": "Globe",
+    "prompt": "Build a species distribution model for {species}. (1) Gather occurrence records from biodiversity databases, (2) Obtain environmental predictor layers (climate, land cover, elevation), (3) Clean and thin occurrence points to reduce spatial bias, (4) Fit an ensemble of SDM algorithms (MaxEnt, random forest, GLM), (5) Evaluate model performance with AUC, TSS, and cross-validation, (6) Project current and future habitat suitability maps, (7) Identify key environmental drivers. Visualize predicted distribution on a map.",
+    "suggestedSkills": ["scikit-learn", "geopandas", "matplotlib", "datacommons-client"],
+    "placeholders": [
+      { "key": "species", "label": "Species name (Latin or common)", "required": true }
+    ]
+  },
+  {
+    "id": "biodiversity-assessment",
+    "name": "Biodiversity Assessment",
+    "description": "Quantify species diversity, richness, and community composition across sites",
+    "category": "ecology",
+    "icon": "Leaf",
+    "prompt": "Conduct a biodiversity assessment using the uploaded species observation data. (1) Calculate alpha diversity indices (Shannon, Simpson, species richness) per site, (2) Compute beta diversity and turnover between sites, (3) Perform rarefaction and species accumulation curves, (4) Run ordination analyses (NMDS, PCA) to visualize community structure, (5) Test for differences between groups or gradients with PERMANOVA, (6) Identify indicator species for each group. Present results with publication-quality figures.",
+    "suggestedSkills": ["scikit-bio", "matplotlib", "statistical-analysis", "seaborn"],
+    "placeholders": []
+  },
+  {
+    "id": "population-dynamics",
+    "name": "Population Dynamics Modeling",
+    "description": "Simulate and analyze population growth, decline, and interactions over time",
+    "category": "ecology",
+    "icon": "TrendingUp",
+    "prompt": "Model the population dynamics of {species_or_system}. (1) Define the population model type (logistic growth, Lotka-Volterra, age-structured, metapopulation), (2) Parameterize the model from literature or uploaded data, (3) Simulate trajectories under baseline conditions, (4) Perform sensitivity analysis on key parameters (growth rate, carrying capacity, mortality), (5) Explore scenarios such as habitat loss, harvesting, or climate change, (6) Visualize population projections with uncertainty bounds. Discuss management implications.",
+    "suggestedSkills": ["sympy", "matplotlib", "statsmodels", "statistical-analysis"],
+    "placeholders": [
+      { "key": "species_or_system", "label": "Species or ecological system", "required": true }
+    ]
+  },
+  {
+    "id": "climate-data-analysis",
+    "name": "Climate Data Analysis",
+    "description": "Analyze temperature, precipitation, and climate trends from observational or model data",
+    "category": "ecology",
+    "icon": "Thermometer",
+    "prompt": "Analyze climate data for {region_or_dataset}. (1) Load and preprocess climate variables (temperature, precipitation, humidity), (2) Compute summary statistics and climatological normals, (3) Detect trends and breakpoints using Mann-Kendall tests and change-point analysis, (4) Analyze seasonal patterns and anomalies, (5) Compare against historical baselines or model projections, (6) Create time series plots, heatmaps, and spatial maps of climate trends. Summarize key findings regarding climate change signals.",
+    "suggestedSkills": ["statsmodels", "matplotlib", "polars", "dask"],
+    "placeholders": [
+      { "key": "region_or_dataset", "label": "Region name or climate dataset", "required": true }
+    ]
+  },
+  {
+    "id": "remote-sensing-analysis",
+    "name": "Remote Sensing Analysis",
+    "description": "Process satellite imagery to extract land cover, vegetation, or change information",
+    "category": "ecology",
+    "icon": "Satellite",
+    "prompt": "Perform remote sensing analysis on satellite data for {area_of_interest}. (1) Acquire and preprocess satellite imagery (atmospheric correction, cloud masking), (2) Calculate spectral indices (NDVI, EVI, NDWI), (3) Perform land cover classification using supervised or unsupervised methods, (4) Conduct change detection between time periods, (5) Validate classification accuracy with ground truth data, (6) Generate land cover maps and temporal change statistics. Interpret ecological implications of observed changes.",
+    "suggestedSkills": ["scikit-learn", "matplotlib", "geopandas", "dask"],
+    "placeholders": [
+      { "key": "area_of_interest", "label": "Geographic area or coordinates", "required": true }
+    ]
+  },
+  {
+    "id": "phylogeography",
+    "name": "Phylogeographic Analysis",
+    "description": "Integrate phylogenetic and geographic data to study spatial genetic patterns",
+    "category": "ecology",
+    "icon": "GitBranch",
+    "prompt": "Conduct a phylogeographic analysis for {taxon}. (1) Compile genetic sequence data with geographic coordinates, (2) Reconstruct a phylogenetic tree from aligned sequences, (3) Map genetic lineages onto geography, (4) Estimate divergence times using molecular clock methods, (5) Test for phylogeographic structure (e.g., AMOVA, Mantel test), (6) Infer historical migration routes or refugia, (7) Visualize haplotype networks overlaid on maps. Discuss biogeographic history and conservation implications.",
+    "suggestedSkills": ["phylogenetics", "biopython", "etetoolkit", "geopandas"],
+    "placeholders": [
+      { "key": "taxon", "label": "Taxon or species group", "required": true }
+    ]
+  },
+  {
+    "id": "ecological-network-analysis",
+    "name": "Ecological Network Analysis",
+    "description": "Analyze food webs, mutualistic networks, or species interaction networks",
+    "category": "ecology",
+    "icon": "Network",
+    "prompt": "Analyze the ecological interaction network from the uploaded data. (1) Construct the interaction matrix (food web, pollination, parasitism), (2) Calculate network-level metrics (connectance, nestedness, modularity), (3) Identify keystone species and network hubs, (4) Assess network robustness to species removal, (5) Detect modules or compartments within the network, (6) Visualize the network with node size proportional to degree or centrality. Discuss implications for ecosystem stability and conservation.",
+    "suggestedSkills": ["networkx", "matplotlib", "scientific-visualization", "polars"],
+    "placeholders": []
+  },
+  {
+    "id": "conservation-prioritization",
+    "name": "Conservation Prioritization",
+    "description": "Identify priority areas or species for conservation action using systematic methods",
+    "category": "ecology",
+    "icon": "Shield",
+    "prompt": "Perform a conservation prioritization analysis for {region_or_taxa}. (1) Compile species occurrence and threat data, (2) Define conservation features and targets, (3) Map threat layers (habitat loss, climate vulnerability, human pressure), (4) Run spatial prioritization using complementarity-based methods, (5) Assess gap analysis against existing protected areas, (6) Rank candidate areas by irreplaceability and vulnerability, (7) Produce priority maps with sensitivity analyses. Provide actionable recommendations for conservation planning.",
+    "suggestedSkills": ["geopandas", "scikit-learn", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "region_or_taxa", "label": "Region or taxonomic group", "required": true }
+    ]
+  },
+  {
+    "id": "water-quality-analysis",
+    "name": "Water Quality Analysis",
+    "description": "Assess water quality parameters and compliance with environmental standards",
+    "category": "ecology",
+    "icon": "Droplet",
+    "prompt": "Analyze water quality data from the uploaded dataset. (1) Summarize physicochemical parameters (pH, dissolved oxygen, turbidity, nutrients, metals), (2) Calculate water quality indices (WQI), (3) Assess compliance against regulatory standards (EPA, WHO), (4) Detect spatial or temporal trends and seasonal patterns, (5) Identify pollution sources using multivariate analysis (PCA, cluster analysis), (6) Visualize parameter distributions and exceedance maps. Provide an overall water quality assessment with management recommendations.",
+    "suggestedSkills": ["polars", "matplotlib", "statistical-analysis", "seaborn"],
+    "placeholders": []
+  },
+  {
+    "id": "carbon-footprint-analysis",
+    "name": "Carbon Footprint Analysis",
+    "description": "Quantify greenhouse gas emissions and identify reduction opportunities",
+    "category": "ecology",
+    "icon": "Cloud",
+    "prompt": "Calculate and analyze the carbon footprint for {entity_or_process}. (1) Define system boundaries and scope (Scope 1, 2, 3), (2) Collect activity data (energy use, transport, materials, waste), (3) Apply emission factors from standard databases, (4) Calculate total CO2-equivalent emissions by category, (5) Compare against benchmarks or sector averages, (6) Identify emission hotspots and reduction opportunities, (7) Model scenarios for emission reduction targets. Produce a carbon footprint summary report with visualizations.",
+    "suggestedSkills": ["polars", "matplotlib", "plotly", "datacommons-client"],
+    "placeholders": [
+      { "key": "entity_or_process", "label": "Organization, product, or process", "required": true }
+    ]
+  },
+  {
+    "id": "environmental-impact",
+    "name": "Environmental Impact Assessment",
+    "description": "Evaluate the environmental consequences of a proposed project or activity",
+    "category": "ecology",
+    "icon": "Mountain",
+    "prompt": "Conduct an environmental impact assessment for {project}. (1) Describe the project and its location, (2) Identify potentially affected environmental components (air, water, soil, biodiversity, noise), (3) Assess baseline environmental conditions from available data, (4) Predict impact magnitude, duration, and reversibility for each component, (5) Propose mitigation measures for significant impacts, (6) Evaluate cumulative and indirect effects, (7) Summarize findings in an impact matrix with a risk ranking. Provide a structured EIA report.",
+    "suggestedSkills": ["scientific-writing", "polars", "matplotlib", "literature-review"],
+    "placeholders": [
+      { "key": "project", "label": "Project or activity description", "required": true }
+    ]
+  },
+  {
+    "id": "habitat-suitability",
+    "name": "Habitat Suitability Analysis",
+    "description": "Map and evaluate habitat quality for a target species using environmental layers",
+    "category": "ecology",
+    "icon": "TreePine",
+    "prompt": "Assess habitat suitability for {species} in {region}. (1) Define key habitat requirements from literature (vegetation type, elevation range, temperature, proximity to water), (2) Obtain and process relevant environmental raster layers, (3) Develop a habitat suitability index by weighting and combining layers, (4) Validate the model against known occurrence records, (5) Produce a suitability map with classified categories (high, medium, low), (6) Quantify the area of suitable habitat and fragmentation. Discuss conservation implications and habitat connectivity.",
+    "suggestedSkills": ["geopandas", "scikit-learn", "matplotlib", "literature-review"],
+    "placeholders": [
+      { "key": "species", "label": "Target species", "required": true },
+      { "key": "region", "label": "Geographic region", "required": true }
+    ]
+  },
+  {
+    "id": "microbial-ecology",
+    "name": "Microbial Ecology Analysis",
+    "description": "Analyze microbiome composition and diversity from amplicon or metagenomic data",
+    "category": "ecology",
+    "icon": "Microscope",
+    "prompt": "Analyze the microbial community data from the uploaded dataset. (1) Process and quality-filter sequence data (16S/ITS amplicon or shotgun metagenomics), (2) Assign taxonomy using reference databases, (3) Calculate alpha diversity metrics (Shannon, Chao1, Faith's PD) per sample, (4) Compare community composition with beta diversity (UniFrac, Bray-Curtis) and ordination, (5) Identify differentially abundant taxa between groups, (6) Predict functional profiles if applicable, (7) Generate taxonomic bar plots, diversity boxplots, and heatmaps. Interpret ecological patterns.",
+    "suggestedSkills": ["scikit-bio", "biopython", "matplotlib", "statistical-analysis"],
+    "placeholders": []
+  },
+  {
+    "id": "invasive-species-risk",
+    "name": "Invasive Species Risk Assessment",
+    "description": "Evaluate the introduction risk, spread potential, and impact of invasive species",
+    "category": "ecology",
+    "icon": "Sprout",
+    "prompt": "Assess the invasion risk for {species} in {target_region}. (1) Review species biology, native range, and invasion history from literature, (2) Identify introduction pathways and propagule pressure, (3) Model climate suitability in the target region by comparing native and invaded range climates, (4) Evaluate establishment potential based on life history traits, (5) Assess potential ecological and economic impacts, (6) Score overall risk using a standardized framework (e.g., EICAT, AS-ISK), (7) Propose management and early detection strategies. Produce a structured risk assessment report.",
+    "suggestedSkills": ["literature-review", "geopandas", "scikit-learn", "matplotlib"],
+    "placeholders": [
+      { "key": "species", "label": "Invasive species name", "required": true },
+      { "key": "target_region", "label": "Region at risk", "required": true }
+    ]
+  },
+  {
+    "id": "stock-market-analysis",
+    "name": "Stock Market Analysis",
+    "description": "Analyze stock price trends, technical indicators, and trading patterns",
+    "category": "finance",
+    "icon": "TrendingUp",
+    "prompt": "Perform a comprehensive stock market analysis for {ticker_or_sector}. (1) Retrieve historical price and volume data, (2) Calculate technical indicators (moving averages, RSI, MACD, Bollinger Bands), (3) Identify trend patterns and support/resistance levels, (4) Analyze trading volume and volatility patterns, (5) Compare performance against benchmark indices, (6) Perform correlation analysis with sector peers, (7) Generate an interactive chart with overlaid indicators. Summarize the technical outlook with key observations.",
+    "suggestedSkills": ["alpha-vantage", "plotly", "polars", "statistical-analysis"],
+    "placeholders": [
+      { "key": "ticker_or_sector", "label": "Stock ticker or sector name", "required": true }
+    ]
+  },
+  {
+    "id": "portfolio-optimization",
+    "name": "Portfolio Optimization",
+    "description": "Construct an optimal investment portfolio using modern portfolio theory",
+    "category": "finance",
+    "icon": "PieChart",
+    "prompt": "Optimize an investment portfolio from the assets: {assets}. (1) Retrieve historical return data for each asset, (2) Compute the covariance matrix and expected returns, (3) Generate the efficient frontier using mean-variance optimization, (4) Identify the minimum-variance and maximum Sharpe ratio portfolios, (5) Apply constraints if specified (max allocation, sector limits), (6) Perform Monte Carlo simulation for risk assessment, (7) Visualize the efficient frontier, optimal allocation pie chart, and risk-return scatter. Report optimal weights and expected performance metrics.",
+    "suggestedSkills": ["alpha-vantage", "plotly", "statistical-analysis", "polars"],
+    "placeholders": [
+      { "key": "assets", "label": "List of asset tickers (comma-separated)", "required": true }
+    ]
+  },
+  {
+    "id": "risk-assessment-finance",
+    "name": "Financial Risk Assessment",
+    "description": "Quantify portfolio risk using Value-at-Risk, stress testing, and scenario analysis",
+    "category": "finance",
+    "icon": "Shield",
+    "prompt": "Conduct a financial risk assessment for {portfolio_or_asset}. (1) Retrieve historical return data, (2) Calculate Value-at-Risk (VaR) using parametric, historical, and Monte Carlo methods, (3) Compute Conditional VaR (CVaR / Expected Shortfall), (4) Perform stress testing under historical crisis scenarios (2008, COVID), (5) Analyze drawdown history and recovery times, (6) Decompose risk by factor (market, sector, currency), (7) Visualize the return distribution, VaR thresholds, and stress test results. Provide risk mitigation recommendations.",
+    "suggestedSkills": ["alpha-vantage", "statsmodels", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "portfolio_or_asset", "label": "Portfolio description or ticker", "required": true }
+    ]
+  },
+  {
+    "id": "economic-indicator-analysis",
+    "name": "Economic Indicator Analysis",
+    "description": "Track and analyze key macroeconomic indicators and their trends",
+    "category": "finance",
+    "icon": "BarChart3",
+    "prompt": "Analyze economic indicators for {country_or_region}. (1) Retrieve key indicators (GDP growth, inflation, unemployment, interest rates, trade balance) from economic databases, (2) Plot time series trends over the past 10-20 years, (3) Calculate year-over-year and quarter-over-quarter changes, (4) Identify economic cycles and turning points, (5) Compare with peer countries or historical averages, (6) Analyze correlations between indicators, (7) Produce a macroeconomic dashboard with key charts. Summarize the current economic outlook.",
+    "suggestedSkills": ["fred-economic-data", "plotly", "polars", "datacommons-client"],
+    "placeholders": [
+      { "key": "country_or_region", "label": "Country or economic region", "required": true }
+    ]
+  },
+  {
+    "id": "financial-statement-analysis",
+    "name": "Financial Statement Analysis",
+    "description": "Analyze income statements, balance sheets, and cash flow for company valuation",
+    "category": "finance",
+    "icon": "FileText",
+    "prompt": "Analyze the financial statements of {company}. (1) Retrieve or parse income statement, balance sheet, and cash flow data, (2) Calculate profitability ratios (gross margin, operating margin, ROE, ROA), (3) Compute liquidity and solvency ratios (current ratio, debt-to-equity, interest coverage), (4) Analyze revenue growth and margin trends over 5+ years, (5) Perform DuPont decomposition, (6) Compare ratios against industry peers, (7) Build a simple DCF valuation model. Present findings with annotated charts and a financial health summary.",
+    "suggestedSkills": ["edgartools", "polars", "plotly", "statistical-analysis"],
+    "placeholders": [
+      { "key": "company", "label": "Company name or ticker", "required": true }
+    ]
+  },
+  {
+    "id": "hedge-fund-analysis",
+    "name": "Hedge Fund Analysis",
+    "description": "Analyze hedge fund performance, strategies, and holdings from SEC filings",
+    "category": "finance",
+    "icon": "Eye",
+    "prompt": "Analyze the hedge fund: {fund_name}. (1) Retrieve 13F filings and reported holdings, (2) Track portfolio composition changes over recent quarters, (3) Identify top holdings, new positions, and exits, (4) Analyze sector and industry allocation, (5) Estimate portfolio concentration (Herfindahl index), (6) Compare performance against benchmarks when available, (7) Identify investment style and thematic patterns. Produce a comprehensive fund analysis report with holdings tables and allocation charts.",
+    "suggestedSkills": ["hedgefundmonitor", "edgartools", "plotly", "polars"],
+    "placeholders": [
+      { "key": "fund_name", "label": "Hedge fund or manager name", "required": true }
+    ]
+  },
+  {
+    "id": "cryptocurrency-analysis",
+    "name": "Cryptocurrency Analysis",
+    "description": "Analyze crypto asset prices, on-chain metrics, and market dynamics",
+    "category": "finance",
+    "icon": "Hexagon",
+    "prompt": "Analyze the cryptocurrency {crypto_asset}. (1) Retrieve historical price and market cap data, (2) Calculate volatility, drawdowns, and Sharpe ratio, (3) Compute technical indicators (moving averages, RSI, on-balance volume), (4) Analyze correlation with Bitcoin, Ethereum, and traditional assets, (5) Review on-chain metrics if available (active addresses, transaction volume, hash rate), (6) Assess market dominance and trading volume trends, (7) Visualize price action with interactive candlestick charts and indicators. Provide a market assessment.",
+    "suggestedSkills": ["alpha-vantage", "plotly", "polars", "statsmodels"],
+    "placeholders": [
+      { "key": "crypto_asset", "label": "Cryptocurrency name or symbol", "required": true }
+    ]
+  },
+  {
+    "id": "time-series-forecasting-finance",
+    "name": "Financial Time Series Forecasting",
+    "description": "Forecast financial metrics using ARIMA, GARCH, and machine learning models",
+    "category": "finance",
+    "icon": "LineChart",
+    "prompt": "Forecast the time series for {financial_metric}. (1) Load and visualize the historical data, (2) Test for stationarity (ADF, KPSS tests) and apply differencing if needed, (3) Fit classical models (ARIMA, SARIMA, GARCH for volatility), (4) Fit machine learning models (XGBoost, LSTM) for comparison, (5) Evaluate forecasts using backtesting with MAE, RMSE, and directional accuracy, (6) Generate multi-step ahead forecasts with prediction intervals, (7) Visualize forecasts overlaid on historical data. Compare model performance and recommend the best approach.",
+    "suggestedSkills": ["timesfm-forecasting", "statsmodels", "plotly", "polars"],
+    "placeholders": [
+      { "key": "financial_metric", "label": "Metric to forecast (e.g., stock price, revenue)", "required": true }
+    ]
+  },
+  {
+    "id": "credit-risk-model",
+    "name": "Credit Risk Modeling",
+    "description": "Build credit scoring models to predict default probability",
+    "category": "finance",
+    "icon": "Scale",
+    "prompt": "Build a credit risk model using the uploaded loan or credit data. (1) Explore and clean the dataset, handling missing values and outliers, (2) Engineer features (debt-to-income, utilization rate, payment history), (3) Perform weight of evidence (WoE) and information value (IV) analysis, (4) Split data and train a logistic regression scorecard model, (5) Compare with gradient boosting and random forest models, (6) Evaluate with AUC-ROC, KS statistic, and Gini coefficient, (7) Calibrate predicted probabilities and set risk grade cutoffs. Produce a model performance report with score distribution charts.",
+    "suggestedSkills": ["scikit-learn", "polars", "shap", "matplotlib"],
+    "placeholders": []
+  },
+  {
+    "id": "market-sentiment-analysis",
+    "name": "Market Sentiment Analysis",
+    "description": "Gauge market sentiment from news, social media, and analyst reports",
+    "category": "finance",
+    "icon": "MessageCircle",
+    "prompt": "Analyze market sentiment for {topic_or_ticker}. (1) Collect recent news articles, social media posts, and analyst commentary, (2) Apply NLP sentiment classification (positive, negative, neutral), (3) Track sentiment trends over time, (4) Correlate sentiment shifts with price movements, (5) Identify key themes and narratives driving sentiment, (6) Compute a composite sentiment index, (7) Visualize sentiment time series alongside price data. Assess whether current sentiment is a leading or lagging indicator.",
+    "suggestedSkills": ["transformers", "plotly", "polars", "parallel-web"],
+    "placeholders": [
+      { "key": "topic_or_ticker", "label": "Topic, company, or ticker symbol", "required": true }
+    ]
+  },
+  {
+    "id": "econometric-modeling",
+    "name": "Econometric Modeling",
+    "description": "Build and estimate regression models for economic relationships",
+    "category": "finance",
+    "icon": "Sigma",
+    "prompt": "Build an econometric model to analyze the relationship: {hypothesis}. (1) Define the dependent and independent variables, (2) Collect data from economic databases, (3) Test assumptions (normality, multicollinearity, heteroscedasticity, autocorrelation), (4) Estimate OLS, panel data, or IV/2SLS models as appropriate, (5) Perform robustness checks with alternative specifications, (6) Interpret coefficients with economic significance, (7) Visualize residual diagnostics and partial regression plots. Present results in a publication-ready regression table.",
+    "suggestedSkills": ["statsmodels", "fred-economic-data", "polars", "matplotlib"],
+    "placeholders": [
+      { "key": "hypothesis", "label": "Economic relationship or hypothesis to test", "required": true }
+    ]
+  },
+  {
+    "id": "fiscal-policy-analysis",
+    "name": "Fiscal Policy Analysis",
+    "description": "Evaluate government spending, taxation, and debt sustainability",
+    "category": "finance",
+    "icon": "DollarSign",
+    "prompt": "Analyze the fiscal policy of {country}. (1) Retrieve government revenue, expenditure, deficit, and debt data, (2) Decompose spending by category (health, defense, education, social), (3) Analyze tax revenue composition and effective rates, (4) Compute debt-to-GDP ratio and sustainability metrics, (5) Model fiscal multiplier effects of spending changes, (6) Compare with peer countries and IMF benchmarks, (7) Project debt trajectories under different scenarios. Present a fiscal overview dashboard with key policy implications.",
+    "suggestedSkills": ["usfiscaldata", "fred-economic-data", "plotly", "polars"],
+    "placeholders": [
+      { "key": "country", "label": "Country name", "required": true }
+    ]
+  },
+  {
+    "id": "trade-flow-analysis",
+    "name": "Trade Flow Analysis",
+    "description": "Map and analyze international trade patterns, balances, and dependencies",
+    "category": "finance",
+    "icon": "Route",
+    "prompt": "Analyze trade flows for {country_or_commodity}. (1) Retrieve bilateral trade data (imports, exports by partner and product), (2) Calculate trade balance and revealed comparative advantage (RCA) indices, (3) Identify top trading partners and product concentrations, (4) Analyze trade trends and structural shifts over time, (5) Map trade flows with Sankey or chord diagrams, (6) Assess trade diversification and vulnerability indices, (7) Model the impact of tariff scenarios on trade patterns. Produce a trade analysis report with visualizations.",
+    "suggestedSkills": ["datacommons-client", "plotly", "polars", "networkx"],
+    "placeholders": [
+      { "key": "country_or_commodity", "label": "Country or commodity of interest", "required": true }
+    ]
+  },
+  {
+    "id": "real-estate-analysis",
+    "name": "Real Estate Market Analysis",
+    "description": "Analyze property market trends, valuations, and investment returns",
+    "category": "finance",
+    "icon": "Layers",
+    "prompt": "Analyze the real estate market for {market_or_property_type}. (1) Gather property price data, rental yields, and transaction volumes, (2) Calculate price-to-rent ratios and cap rates, (3) Analyze price trends and growth rates by area, (4) Compare affordability metrics (price-to-income, mortgage burden), (5) Assess supply-demand dynamics (inventory, construction starts, vacancy), (6) Model expected returns (appreciation + rental income - costs), (7) Visualize market heat maps and trend charts. Provide an investment outlook with risk factors.",
+    "suggestedSkills": ["fred-economic-data", "plotly", "polars", "statistical-analysis"],
+    "placeholders": [
+      { "key": "market_or_property_type", "label": "Market location or property type", "required": true }
+    ]
+  },
+  {
+    "id": "startup-valuation",
+    "name": "Startup Valuation",
+    "description": "Estimate startup valuation using multiple methods and comparable analysis",
+    "category": "finance",
+    "icon": "Rocket",
+    "prompt": "Estimate the valuation of {startup_name} based on the provided financial data. (1) Review the business model, revenue streams, and growth metrics, (2) Apply the DCF method with projected cash flows and appropriate discount rate, (3) Perform comparable company analysis with relevant public comps and multiples (EV/Revenue, EV/EBITDA), (4) Apply the venture capital method based on expected exit, (5) Consider the scorecard and risk-factor summation methods for early-stage, (6) Synthesize a valuation range from all methods, (7) Perform sensitivity analysis on key assumptions. Present a valuation summary with a football field chart.",
+    "suggestedSkills": ["polars", "plotly", "statistical-analysis", "edgartools"],
+    "placeholders": [
+      { "key": "startup_name", "label": "Startup name or description", "required": true }
+    ]
+  },
+  {
+    "id": "esg-analysis",
+    "name": "ESG Analysis",
+    "description": "Evaluate environmental, social, and governance performance of companies",
+    "category": "finance",
+    "icon": "Leaf",
+    "prompt": "Conduct an ESG analysis for {company}. (1) Gather ESG data from sustainability reports and public databases, (2) Score environmental factors (carbon emissions, energy use, waste), (3) Assess social factors (labor practices, diversity, community impact), (4) Evaluate governance factors (board composition, executive compensation, transparency), (5) Compare ESG scores against industry peers, (6) Analyze the correlation between ESG performance and financial returns, (7) Identify material ESG risks and improvement opportunities. Produce an ESG scorecard with radar chart and peer comparison.",
+    "suggestedSkills": ["polars", "plotly", "parallel-web", "edgartools"],
+    "placeholders": [
+      { "key": "company", "label": "Company name or ticker", "required": true }
+    ]
+  },
+  {
+    "id": "survey-analysis",
+    "name": "Survey Data Analysis",
+    "description": "Clean, code, and analyze survey responses with statistical rigor",
+    "category": "social",
+    "icon": "ListChecks",
+    "prompt": "Analyze the uploaded survey data. (1) Clean and recode variables (handle missing data, reverse-score items, create composite scales), (2) Assess scale reliability (Cronbach's alpha), (3) Generate descriptive statistics and frequency distributions for all items, (4) Cross-tabulate key variables and test for independence (chi-square), (5) Run inferential tests (t-tests, ANOVA, regression) to test hypotheses, (6) Perform factor analysis if scale validation is needed, (7) Visualize key findings with bar charts, Likert plots, and correlation matrices. Present a results summary with statistical tables.",
+    "suggestedSkills": ["polars", "statsmodels", "matplotlib", "seaborn"],
+    "placeholders": []
+  },
+  {
+    "id": "text-mining-social",
+    "name": "Text Mining for Social Research",
+    "description": "Extract themes, topics, and patterns from textual social data",
+    "category": "social",
+    "icon": "Search",
+    "prompt": "Perform text mining on the uploaded corpus of {text_source}. (1) Preprocess text (tokenize, remove stopwords, lemmatize), (2) Generate word frequency distributions and word clouds, (3) Run topic modeling (LDA, NMF) to identify latent themes, (4) Perform named entity recognition to extract people, organizations, and locations, (5) Analyze sentiment distribution across the corpus, (6) Track topic or sentiment trends over time if temporal data exists, (7) Visualize topic distributions, top terms per topic, and inter-topic distances. Interpret themes in social context.",
+    "suggestedSkills": ["transformers", "scikit-learn", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "text_source", "label": "Type of text data (e.g., interviews, tweets, news)", "required": true }
+    ]
+  },
+  {
+    "id": "demographic-analysis",
+    "name": "Demographic Analysis",
+    "description": "Analyze population structure, trends, and projections from census data",
+    "category": "social",
+    "icon": "Users",
+    "prompt": "Conduct a demographic analysis for {region}. (1) Retrieve population data by age, sex, ethnicity, and geography, (2) Construct population pyramids for current and historical years, (3) Calculate demographic indicators (dependency ratio, median age, fertility rate, life expectancy), (4) Analyze urbanization and migration trends, (5) Project population growth using cohort-component methods, (6) Compare demographic profiles with national or regional benchmarks, (7) Produce demographic dashboards with pyramids, trend lines, and thematic maps. Discuss policy implications.",
+    "suggestedSkills": ["datacommons-client", "plotly", "polars", "geopandas"],
+    "placeholders": [
+      { "key": "region", "label": "Country, state, or region", "required": true }
+    ]
+  },
+  {
+    "id": "network-analysis-social",
+    "name": "Social Network Analysis",
+    "description": "Map and analyze relationships, influence, and community structure in social networks",
+    "category": "social",
+    "icon": "Network",
+    "prompt": "Perform a social network analysis on the uploaded relational data. (1) Construct the network graph from edge and node data, (2) Calculate node-level centrality metrics (degree, betweenness, closeness, eigenvector), (3) Identify key influencers and brokers in the network, (4) Detect communities using modularity-based algorithms (Louvain, Girvan-Newman), (5) Analyze network density, reciprocity, and transitivity, (6) Examine homophily patterns by node attributes, (7) Visualize the network with community coloring and centrality-based node sizing. Discuss the structural implications.",
+    "suggestedSkills": ["networkx", "matplotlib", "polars", "scientific-visualization"],
+    "placeholders": []
+  },
+  {
+    "id": "sentiment-analysis-social",
+    "name": "Social Media Sentiment Analysis",
+    "description": "Measure public sentiment and opinion trends from social media data",
+    "category": "social",
+    "icon": "MessageCircle",
+    "prompt": "Analyze social media sentiment around {topic}. (1) Collect or load social media posts related to the topic, (2) Clean and preprocess text data, (3) Apply sentiment classification using transformer-based NLP models, (4) Break down sentiment by platform, time period, and demographic if available, (5) Identify viral posts and sentiment-shifting events, (6) Extract most frequent themes and hashtags by sentiment category, (7) Visualize sentiment trends over time, word clouds by sentiment, and geographic distribution if geotagged. Summarize public opinion dynamics.",
+    "suggestedSkills": ["transformers", "plotly", "polars", "parallel-web"],
+    "placeholders": [
+      { "key": "topic", "label": "Topic, event, or hashtag", "required": true }
+    ]
+  },
+  {
+    "id": "policy-evaluation",
+    "name": "Policy Impact Evaluation",
+    "description": "Estimate the causal effect of a policy intervention using quasi-experimental methods",
+    "category": "social",
+    "icon": "Target",
+    "prompt": "Evaluate the impact of {policy} on {outcome}. (1) Define the treatment and control groups, (2) Describe the identification strategy (difference-in-differences, regression discontinuity, instrumental variables, synthetic control), (3) Collect pre- and post-intervention data, (4) Test parallel trends or other identifying assumptions, (5) Estimate the causal effect with appropriate standard errors, (6) Perform robustness checks (placebo tests, alternative bandwidths, covariates), (7) Visualize pre/post trends and treatment effects. Interpret the policy effectiveness and limitations of the design.",
+    "suggestedSkills": ["statsmodels", "polars", "matplotlib", "statistical-analysis"],
+    "placeholders": [
+      { "key": "policy", "label": "Policy or intervention name", "required": true },
+      { "key": "outcome", "label": "Outcome variable of interest", "required": true }
+    ]
+  },
+  {
+    "id": "education-outcomes",
+    "name": "Education Outcomes Analysis",
+    "description": "Analyze student performance, achievement gaps, and educational program effectiveness",
+    "category": "social",
+    "icon": "GraduationCap",
+    "prompt": "Analyze education outcomes using the uploaded data. (1) Summarize student performance distributions by demographic groups, (2) Calculate achievement gaps across race, gender, socioeconomic status, (3) Perform multilevel modeling to account for school and classroom clustering, (4) Identify predictors of academic success using regression analysis, (5) Evaluate program or intervention effectiveness if applicable, (6) Analyze grade progression and dropout patterns, (7) Visualize performance distributions, gap trends, and predictor importance. Provide evidence-based policy recommendations.",
+    "suggestedSkills": ["statsmodels", "polars", "seaborn", "scikit-learn"],
+    "placeholders": []
+  },
+  {
+    "id": "public-opinion-analysis",
+    "name": "Public Opinion Polling Analysis",
+    "description": "Analyze and model public opinion poll data with appropriate weighting",
+    "category": "social",
+    "icon": "Megaphone",
+    "prompt": "Analyze public opinion polling data on {topic}. (1) Load and inspect poll data including sample demographics and methodology, (2) Apply survey weights to produce representative estimates, (3) Calculate margins of error and confidence intervals, (4) Break down opinion by demographics (age, party, education, region), (5) Track opinion trends over time with smoothed trend lines, (6) Perform cross-tabulation and logistic regression to identify opinion predictors, (7) Visualize poll results with error bars, demographic breakdowns, and trend charts. Assess the reliability and representativeness of the findings.",
+    "suggestedSkills": ["statsmodels", "plotly", "polars", "statistical-analysis"],
+    "placeholders": [
+      { "key": "topic", "label": "Policy issue or opinion topic", "required": true }
+    ]
+  },
+  {
+    "id": "migration-analysis",
+    "name": "Migration Flow Analysis",
+    "description": "Analyze human migration patterns, drivers, and demographic impacts",
+    "category": "social",
+    "icon": "Route",
+    "prompt": "Analyze migration patterns for {region_or_corridor}. (1) Retrieve migration stock and flow data from official sources, (2) Map origin-destination flows with Sankey or flow diagrams, (3) Analyze push and pull factors using regression models, (4) Examine demographic characteristics of migrant populations, (5) Assess economic impacts on origin and destination regions, (6) Track temporal trends and identify policy-driven shifts, (7) Visualize migration corridors on maps and produce trend charts. Discuss implications for policy and receiving communities.",
+    "suggestedSkills": ["datacommons-client", "geopandas", "plotly", "polars"],
+    "placeholders": [
+      { "key": "region_or_corridor", "label": "Country, region, or migration corridor", "required": true }
+    ]
+  },
+  {
+    "id": "inequality-measurement",
+    "name": "Inequality Measurement",
+    "description": "Quantify income, wealth, or opportunity inequality using standard indices",
+    "category": "social",
+    "icon": "Scale",
+    "prompt": "Measure and analyze inequality in {dimension} for {population}. (1) Load income, wealth, or outcome distribution data, (2) Calculate Gini coefficient and Lorenz curve, (3) Compute percentile ratios (P90/P10, P50/P10) and income shares (top 1%, 10%), (4) Apply Theil index and decompose by subgroups, (5) Track inequality trends over time and across regions, (6) Analyze correlates of inequality (education, employment, demographics), (7) Visualize Lorenz curves, Gini trends, and inequality decompositions. Discuss structural drivers and policy implications.",
+    "suggestedSkills": ["polars", "statsmodels", "matplotlib", "datacommons-client"],
+    "placeholders": [
+      { "key": "dimension", "label": "Inequality dimension (income, wealth, health, education)", "required": true },
+      { "key": "population", "label": "Population or region", "required": true }
+    ]
+  },
+  {
+    "id": "behavioral-experiment",
+    "name": "Behavioral Experiment Analysis",
+    "description": "Analyze data from behavioral and psychological experiments with proper controls",
+    "category": "social",
+    "icon": "Brain",
+    "prompt": "Analyze the behavioral experiment data from the uploaded dataset. (1) Verify the experimental design (between/within subjects, factorial structure), (2) Check randomization balance across conditions, (3) Clean data and apply exclusion criteria (attention checks, outliers), (4) Compute descriptive statistics by condition, (5) Run the appropriate inferential tests (t-test, ANOVA, mixed-effects models) with effect sizes, (6) Test for order effects, demand characteristics, or confounds, (7) Visualize condition differences with violin plots, interaction plots, and effect size forest plots. Report results following APA standards.",
+    "suggestedSkills": ["statsmodels", "polars", "seaborn", "statistical-analysis"],
+    "placeholders": []
+  },
+  {
+    "id": "content-analysis-social",
+    "name": "Content Analysis",
+    "description": "Systematically code and analyze media or communication content",
+    "category": "social",
+    "icon": "Newspaper",
+    "prompt": "Perform a content analysis on {media_corpus}. (1) Define the research question and coding categories, (2) Develop a coding scheme with clear operational definitions, (3) Apply automated coding using NLP classification where appropriate, (4) Validate automated coding against manual samples (inter-rater reliability), (5) Calculate code frequencies, co-occurrences, and trends, (6) Perform chi-square or log-linear analysis on content categories, (7) Visualize content distributions, framing patterns, and temporal trends. Interpret findings in relation to the research question.",
+    "suggestedSkills": ["transformers", "polars", "matplotlib", "statistical-analysis"],
+    "placeholders": [
+      { "key": "media_corpus", "label": "Type of media content (news articles, speeches, etc.)", "required": true }
+    ]
+  },
+  {
+    "id": "differential-equations",
+    "name": "Differential Equations Solver",
+    "description": "Solve and visualize ordinary and partial differential equations analytically or numerically",
+    "category": "math",
+    "icon": "Sigma",
+    "prompt": "Solve the differential equation system: {equation}. (1) Classify the equation type (ODE/PDE, order, linearity, boundary/initial conditions), (2) Attempt an analytical solution using SymPy (separation of variables, integrating factors, Laplace transform), (3) If no closed-form exists, solve numerically using appropriate methods (Runge-Kutta, finite difference, finite element), (4) Analyze solution behavior (stability, equilibria, phase portrait for systems), (5) Visualize solution curves, phase planes, or surface plots, (6) Perform parameter sensitivity analysis if applicable. Explain the solution methodology and physical interpretation.",
+    "suggestedSkills": ["sympy", "matplotlib", "statistical-analysis", "scientific-visualization"],
+    "placeholders": [
+      { "key": "equation", "label": "Differential equation(s) and conditions", "required": true }
+    ]
+  },
+  {
+    "id": "optimization-problem",
+    "name": "Optimization Problem Solver",
+    "description": "Formulate and solve constrained and unconstrained optimization problems",
+    "category": "math",
+    "icon": "Target",
+    "prompt": "Solve the optimization problem: {problem_description}. (1) Formulate the objective function and decision variables, (2) Define constraints (equality, inequality, bounds), (3) Classify the problem type (linear, quadratic, convex, nonlinear, mixed-integer), (4) Select and apply the appropriate solver (simplex, interior point, evolutionary, NSGA-II for multi-objective), (5) Verify optimality conditions (KKT for nonlinear), (6) Perform sensitivity analysis on constraint parameters, (7) Visualize the feasible region, objective landscape, and optimal solution. Report the optimal values with Lagrange multipliers if applicable.",
+    "suggestedSkills": ["pymoo", "sympy", "matplotlib", "statistical-analysis"],
+    "placeholders": [
+      { "key": "problem_description", "label": "Optimization problem statement", "required": true }
+    ]
+  },
+  {
+    "id": "bayesian-inference",
+    "name": "Bayesian Inference",
+    "description": "Perform Bayesian statistical modeling with prior specification and posterior analysis",
+    "category": "math",
+    "icon": "CircleDot",
+    "prompt": "Perform Bayesian inference for the model: {model_description}. (1) Specify the likelihood function based on the data-generating process, (2) Choose and justify informative or weakly informative priors, (3) Implement the model in a probabilistic programming framework, (4) Run MCMC sampling (NUTS, HMC) with sufficient chains and warmup, (5) Diagnose convergence (R-hat, ESS, trace plots, divergences), (6) Summarize posterior distributions (means, credible intervals, HDI), (7) Perform posterior predictive checks and model comparison (WAIC, LOO). Visualize posteriors, trace plots, and predictive fits.",
+    "suggestedSkills": ["pymc", "matplotlib", "polars", "statistical-analysis"],
+    "placeholders": [
+      { "key": "model_description", "label": "Model structure and data description", "required": true }
+    ]
+  },
+  {
+    "id": "monte-carlo-simulation",
+    "name": "Monte Carlo Simulation",
+    "description": "Estimate quantities through random sampling and probabilistic simulation",
+    "category": "math",
+    "icon": "Sparkles",
+    "prompt": "Design and run a Monte Carlo simulation for {scenario}. (1) Define the system model and uncertain input parameters, (2) Specify probability distributions for each input (normal, uniform, triangular, etc.), (3) Generate random samples using appropriate techniques (LHS, Sobol sequences for variance reduction), (4) Run the simulation with sufficient iterations for convergence, (5) Analyze output distributions (mean, variance, percentiles, confidence intervals), (6) Perform global sensitivity analysis (Sobol indices, correlation ratios), (7) Visualize input-output relationships, histograms, and convergence plots. Report the key probabilistic estimates.",
+    "suggestedSkills": ["statsmodels", "matplotlib", "polars", "statistical-analysis"],
+    "placeholders": [
+      { "key": "scenario", "label": "System or scenario to simulate", "required": true }
+    ]
+  },
+  {
+    "id": "graph-theory-analysis",
+    "name": "Graph Theory Analysis",
+    "description": "Analyze graph properties, shortest paths, flows, and structural patterns",
+    "category": "math",
+    "icon": "Network",
+    "prompt": "Analyze the graph defined by {graph_description}. (1) Construct the graph from the provided adjacency data or definition, (2) Compute basic properties (order, size, density, diameter, radius), (3) Calculate centrality measures for all nodes (degree, betweenness, closeness, PageRank), (4) Find shortest paths, minimum spanning trees, or maximum flows as relevant, (5) Detect communities and cliques, (6) Analyze graph spectra (eigenvalues of adjacency/Laplacian matrix), (7) Visualize the graph with force-directed layout and annotated properties. Discuss structural implications and notable patterns.",
+    "suggestedSkills": ["networkx", "matplotlib", "sympy", "scientific-visualization"],
+    "placeholders": [
+      { "key": "graph_description", "label": "Graph definition (edges, adjacency matrix, or description)", "required": true }
+    ]
+  },
+  {
+    "id": "symbolic-computation",
+    "name": "Symbolic Computation",
+    "description": "Perform exact algebraic manipulation, simplification, and proof verification",
+    "category": "math",
+    "icon": "Calculator",
+    "prompt": "Perform symbolic computation for: {expression_or_problem}. (1) Parse and represent the mathematical expressions symbolically, (2) Simplify, expand, or factor as requested, (3) Compute derivatives, integrals, limits, or series expansions, (4) Solve algebraic or transcendental equations exactly, (5) Verify identities or prove relationships step-by-step, (6) Apply relevant theorems or transformations (Laplace, Fourier, Z-transform), (7) Present results in clean mathematical notation with LaTeX rendering. Show intermediate steps for pedagogical clarity.",
+    "suggestedSkills": ["sympy", "matplotlib", "latex-posters", "scientific-writing"],
+    "placeholders": [
+      { "key": "expression_or_problem", "label": "Mathematical expression or problem", "required": true }
+    ]
+  },
+  {
+    "id": "numerical-methods",
+    "name": "Numerical Methods Implementation",
+    "description": "Implement and compare numerical algorithms for mathematical problems",
+    "category": "math",
+    "icon": "Cpu",
+    "prompt": "Implement numerical methods to solve: {problem}. (1) Formulate the problem mathematically and identify the numerical challenge, (2) Implement multiple relevant algorithms (e.g., Newton-Raphson, bisection, Gauss elimination, quadrature), (3) Analyze convergence rates and order of accuracy for each method, (4) Compare computational cost and stability, (5) Test with known analytical solutions to verify correctness, (6) Investigate sensitivity to initial conditions and parameter choices, (7) Produce convergence plots and error analysis tables. Recommend the most suitable method with justification.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "sympy", "polars"],
+    "placeholders": [
+      { "key": "problem", "label": "Numerical problem to solve", "required": true }
+    ]
+  },
+  {
+    "id": "stochastic-modeling",
+    "name": "Stochastic Process Modeling",
+    "description": "Model random processes including Markov chains, queues, and Brownian motion",
+    "category": "math",
+    "icon": "Waves",
+    "prompt": "Model the stochastic process for {system}. (1) Identify the appropriate stochastic model (Markov chain, Poisson process, Brownian motion, birth-death process), (2) Define states, transition rates, and parameters, (3) Derive stationary distributions and ergodic properties analytically, (4) Simulate sample paths using appropriate algorithms, (5) Estimate first passage times and absorption probabilities, (6) Validate simulations against analytical results, (7) Visualize sample paths, stationary distributions, and transition diagrams. Discuss the practical implications of the model behavior.",
+    "suggestedSkills": ["simpy", "matplotlib", "sympy", "statistical-analysis"],
+    "placeholders": [
+      { "key": "system", "label": "System or process to model", "required": true }
+    ]
+  },
+  {
+    "id": "game-theory-analysis",
+    "name": "Game Theory Analysis",
+    "description": "Model strategic interactions and find equilibria in game-theoretic settings",
+    "category": "math",
+    "icon": "Crosshair",
+    "prompt": "Analyze the strategic game: {game_description}. (1) Define players, strategies, and payoff functions, (2) Construct the payoff matrix or game tree, (3) Find Nash equilibria (pure and mixed strategies), (4) Identify dominant and dominated strategies, (5) Analyze sequential games with backward induction and subgame perfection, (6) Explore cooperative solutions (Shapley value, core) if applicable, (7) Simulate repeated game dynamics and evolutionary stability. Visualize best response correspondences and equilibrium outcomes. Discuss strategic insights.",
+    "suggestedSkills": ["sympy", "matplotlib", "networkx", "statistical-analysis"],
+    "placeholders": [
+      { "key": "game_description", "label": "Game setup (players, strategies, payoffs)", "required": true }
+    ]
+  },
+  {
+    "id": "topology-analysis",
+    "name": "Topological Data Analysis",
+    "description": "Apply persistent homology and TDA methods to reveal data shape and structure",
+    "category": "math",
+    "icon": "Hexagon",
+    "prompt": "Perform topological data analysis on the uploaded dataset. (1) Construct point cloud from the data or define a simplicial complex, (2) Compute persistent homology across filtration scales, (3) Generate persistence diagrams and barcodes, (4) Identify significant topological features (connected components, loops, voids), (5) Compute persistence landscapes or images for statistical comparison, (6) Compare topological signatures across groups or conditions, (7) Visualize persistence diagrams, Betti curves, and data projections colored by topological features. Interpret the geometric and topological structure of the data.",
+    "suggestedSkills": ["scikit-learn", "matplotlib", "umap-learn", "statistical-analysis"],
+    "placeholders": []
+  },
+  {
+    "id": "fourier-analysis",
+    "name": "Fourier Analysis",
+    "description": "Decompose signals into frequency components using Fourier and spectral methods",
+    "category": "math",
+    "icon": "Activity",
+    "prompt": "Perform Fourier analysis on {signal_or_data}. (1) Load and preprocess the time-domain signal, (2) Apply windowing functions to reduce spectral leakage, (3) Compute the FFT and power spectral density, (4) Identify dominant frequencies, harmonics, and bandwidth, (5) Apply filtering in the frequency domain (low-pass, band-pass, notch), (6) Reconstruct the filtered signal in the time domain, (7) Compute spectrograms for non-stationary signals (STFT, wavelet). Visualize the time series, frequency spectrum, and spectrogram. Discuss the frequency content interpretation.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "polars", "scientific-visualization"],
+    "placeholders": [
+      { "key": "signal_or_data", "label": "Signal description or data source", "required": true }
+    ]
+  },
+  {
+    "id": "dynamical-systems",
+    "name": "Dynamical Systems Analysis",
+    "description": "Analyze fixed points, bifurcations, chaos, and attractors in dynamical systems",
+    "category": "math",
+    "icon": "RefreshCw",
+    "prompt": "Analyze the dynamical system: {system_equations}. (1) Define the system of equations and parameter space, (2) Find fixed points and classify their stability (eigenvalue analysis, Jacobian), (3) Generate phase portraits and vector fields, (4) Detect bifurcations by varying key parameters (saddle-node, Hopf, period-doubling), (5) Compute Lyapunov exponents to quantify chaos, (6) Identify attractors, limit cycles, and basins of attraction, (7) Produce bifurcation diagrams, Poincar\u00e9 sections, and 3D phase space plots. Discuss the qualitative dynamics and transitions.",
+    "suggestedSkills": ["sympy", "matplotlib", "statistical-analysis", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system_equations", "label": "System equations and parameters", "required": true }
+    ]
+  },
+  {
+    "id": "classification-model",
+    "name": "Classification Model Pipeline",
+    "description": "Build an end-to-end classification pipeline with evaluation and interpretation",
+    "category": "ml",
+    "icon": "Filter",
+    "prompt": "Build a classification model for {task_description} using the uploaded dataset. (1) Perform EDA with class distribution, feature statistics, and correlation analysis, (2) Preprocess data (encode categoricals, scale numerics, handle missing values), (3) Split data with stratification and define cross-validation strategy, (4) Train multiple classifiers (logistic regression, random forest, gradient boosting, SVM), (5) Evaluate with accuracy, precision, recall, F1, AUC-ROC, and confusion matrices, (6) Perform hyperparameter tuning on the top model, (7) Interpret the final model with SHAP values and feature importance. Present a comprehensive model report.",
+    "suggestedSkills": ["scikit-learn", "shap", "polars", "matplotlib"],
+    "placeholders": [
+      { "key": "task_description", "label": "Classification task description", "required": true }
+    ]
+  },
+  {
+    "id": "nlp-text-analysis",
+    "name": "NLP Text Analysis Pipeline",
+    "description": "Process and analyze text data with transformer-based NLP models",
+    "category": "ml",
+    "icon": "FileText",
+    "prompt": "Build an NLP pipeline to analyze {text_data}. (1) Load and preprocess text (cleaning, tokenization, encoding), (2) Perform exploratory text analysis (length distributions, vocabulary, n-grams), (3) Apply text embeddings using pre-trained transformer models, (4) Implement the target NLP task (classification, NER, summarization, or similarity), (5) Fine-tune a pre-trained model if labeled data is available, (6) Evaluate with task-appropriate metrics (F1, BLEU, ROUGE, perplexity), (7) Visualize embedding spaces with dimensionality reduction and attention patterns. Report performance and error analysis.",
+    "suggestedSkills": ["transformers", "scikit-learn", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "text_data", "label": "Text data description and NLP task", "required": true }
+    ]
+  },
+  {
+    "id": "image-classification",
+    "name": "Image Classification",
+    "description": "Train and evaluate deep learning models for image classification tasks",
+    "category": "ml",
+    "icon": "Eye",
+    "prompt": "Build an image classification model for {dataset_description}. (1) Load and explore the image dataset with class distribution analysis, (2) Apply data augmentation (random crops, flips, color jitter, mixup), (3) Set up a pre-trained backbone (ResNet, EfficientNet, ViT) with transfer learning, (4) Configure training (optimizer, learning rate schedule, loss function), (5) Train with early stopping and checkpoint saving, (6) Evaluate with accuracy, per-class precision/recall, and confusion matrix, (7) Visualize GradCAM attention maps, misclassified examples, and training curves. Report the best model configuration and performance.",
+    "suggestedSkills": ["pytorch-lightning", "transformers", "matplotlib", "scikit-learn"],
+    "placeholders": [
+      { "key": "dataset_description", "label": "Image dataset and class description", "required": true }
+    ]
+  },
+  {
+    "id": "anomaly-detection",
+    "name": "Anomaly Detection",
+    "description": "Identify outliers and anomalies in data using statistical and ML methods",
+    "category": "ml",
+    "icon": "Zap",
+    "prompt": "Build an anomaly detection system for {data_description}. (1) Explore the data to understand normal patterns and distributions, (2) Apply statistical methods (Z-score, IQR, Grubbs test) for baseline detection, (3) Implement unsupervised ML methods (Isolation Forest, Local Outlier Factor, DBSCAN), (4) Try autoencoder-based detection for high-dimensional data, (5) If labels exist, evaluate with precision, recall, and F1 at various thresholds, (6) Analyze detected anomalies for common patterns and root causes, (7) Visualize anomaly scores, decision boundaries, and flagged points on the original feature space. Recommend the production-ready approach.",
+    "suggestedSkills": ["scikit-learn", "polars", "matplotlib", "shap"],
+    "placeholders": [
+      { "key": "data_description", "label": "Data type and anomaly context", "required": true }
+    ]
+  },
+  {
+    "id": "recommendation-system",
+    "name": "Recommendation System",
+    "description": "Build collaborative or content-based recommendation engines",
+    "category": "ml",
+    "icon": "Star",
+    "prompt": "Build a recommendation system for {domain}. (1) Explore the user-item interaction data (ratings, clicks, purchases), (2) Analyze sparsity, popularity distribution, and cold-start prevalence, (3) Implement collaborative filtering (user-based, item-based, matrix factorization), (4) Build a content-based recommender using item features, (5) Create a hybrid model combining both approaches, (6) Evaluate with ranking metrics (NDCG, MAP, Hit Rate, coverage, diversity), (7) Implement A/B testing framework for online evaluation. Visualize recommendation diversity, coverage, and performance comparisons.",
+    "suggestedSkills": ["scikit-learn", "polars", "matplotlib", "torch-geometric"],
+    "placeholders": [
+      { "key": "domain", "label": "Recommendation domain (movies, products, articles)", "required": true }
+    ]
+  },
+  {
+    "id": "feature-engineering",
+    "name": "Feature Engineering Pipeline",
+    "description": "Transform raw data into predictive features with automated and domain-guided methods",
+    "category": "ml",
+    "icon": "Wrench",
+    "prompt": "Perform feature engineering on the uploaded dataset for {prediction_task}. (1) Audit raw features for quality (missing values, cardinality, distributions), (2) Generate numerical transforms (log, polynomial, binning, interaction terms), (3) Encode categorical variables (target encoding, WoE, embeddings), (4) Extract temporal features (day of week, lags, rolling statistics) if time data exists, (5) Apply dimensionality reduction (PCA, UMAP) and feature selection (mutual information, recursive elimination, Boruta), (6) Evaluate feature importance with a baseline model, (7) Produce a feature engineering report comparing before/after model performance. Output a reusable feature pipeline.",
+    "suggestedSkills": ["polars", "scikit-learn", "shap", "umap-learn"],
+    "placeholders": [
+      { "key": "prediction_task", "label": "Prediction task description", "required": true }
+    ]
+  },
+  {
+    "id": "hyperparameter-tuning",
+    "name": "Hyperparameter Tuning",
+    "description": "Systematically optimize model hyperparameters with Bayesian or grid search",
+    "category": "ml",
+    "icon": "Cog",
+    "prompt": "Perform hyperparameter tuning for {model_and_task}. (1) Define the model architecture and hyperparameter search space, (2) Set up the evaluation metric and cross-validation strategy, (3) Run Bayesian optimization (Optuna or similar) with sufficient trials, (4) Compare against random search and grid search baselines, (5) Analyze hyperparameter importance and interaction effects, (6) Visualize optimization history, parameter importance, and parallel coordinate plots, (7) Retrain the best configuration on full training data and evaluate on holdout. Report the optimal hyperparameters and performance improvement over defaults.",
+    "suggestedSkills": ["scikit-learn", "matplotlib", "polars", "plotly"],
+    "placeholders": [
+      { "key": "model_and_task", "label": "Model type and learning task", "required": true }
+    ]
+  },
+  {
+    "id": "model-interpretability",
+    "name": "Model Interpretability Analysis",
+    "description": "Explain model predictions using SHAP, LIME, and other interpretability tools",
+    "category": "ml",
+    "icon": "Scan",
+    "prompt": "Analyze the interpretability of {model_description}. (1) Compute global feature importance using permutation importance, (2) Generate SHAP values for all features (TreeSHAP, KernelSHAP as appropriate), (3) Create SHAP summary plots, dependence plots, and force plots, (4) Apply LIME for individual prediction explanations, (5) Analyze feature interactions with SHAP interaction values, (6) Check for fairness across protected groups using partial dependence, (7) Produce a model card documenting intended use, limitations, and bias assessment. Present a comprehensive interpretability report for stakeholders.",
+    "suggestedSkills": ["shap", "scikit-learn", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "model_description", "label": "Trained model and dataset description", "required": true }
+    ]
+  },
+  {
+    "id": "transfer-learning",
+    "name": "Transfer Learning Pipeline",
+    "description": "Adapt pre-trained models to new tasks with fine-tuning strategies",
+    "category": "ml",
+    "icon": "RefreshCw",
+    "prompt": "Implement transfer learning for {target_task}. (1) Select an appropriate pre-trained model based on the domain (vision, NLP, tabular), (2) Analyze domain similarity between source and target tasks, (3) Design the fine-tuning strategy (feature extraction vs. full fine-tuning vs. gradual unfreezing), (4) Configure appropriate learning rates (discriminative LR, warmup schedules), (5) Apply regularization (dropout, weight decay, data augmentation), (6) Train and monitor with early stopping, (7) Compare transfer learning vs. training from scratch. Visualize learning curves, layer-wise adaptation, and performance gains. Report the optimal transfer strategy.",
+    "suggestedSkills": ["transformers", "pytorch-lightning", "matplotlib", "scikit-learn"],
+    "placeholders": [
+      { "key": "target_task", "label": "Target task and available data description", "required": true }
+    ]
+  },
+  {
+    "id": "graph-neural-network",
+    "name": "Graph Neural Network",
+    "description": "Build GNN models for node, edge, or graph-level prediction tasks",
+    "category": "ml",
+    "icon": "Network",
+    "prompt": "Build a graph neural network for {graph_task}. (1) Load and construct the graph dataset (nodes, edges, features, labels), (2) Explore graph statistics (degree distribution, clustering, diameter), (3) Implement GNN architectures (GCN, GAT, GraphSAGE, GIN), (4) Design the training pipeline with appropriate splits (transductive or inductive), (5) Train with optimized hyperparameters and evaluate node/edge/graph-level metrics, (6) Analyze learned representations with embedding visualization (t-SNE, UMAP), (7) Perform attention weight or message-passing analysis for interpretability. Compare architectures and report the best model.",
+    "suggestedSkills": ["torch-geometric", "matplotlib", "umap-learn", "scikit-learn"],
+    "placeholders": [
+      { "key": "graph_task", "label": "Graph learning task description", "required": true }
+    ]
+  },
+  {
+    "id": "generative-model",
+    "name": "Generative Model Training",
+    "description": "Train generative models (VAE, GAN, diffusion) for data synthesis",
+    "category": "ml",
+    "icon": "Sparkles",
+    "prompt": "Train a generative model for {data_type}. (1) Explore and preprocess the training data, (2) Select the generative framework (VAE, GAN, diffusion model, normalizing flow), (3) Design and implement the model architecture, (4) Configure training with appropriate loss functions and stabilization techniques, (5) Monitor training with generation quality metrics (FID, IS, reconstruction loss), (6) Generate samples and perform interpolation in latent space, (7) Evaluate sample quality, diversity, and mode coverage. Visualize generated samples, latent space structure, and training progression. Discuss quality-diversity tradeoffs.",
+    "suggestedSkills": ["pytorch-lightning", "matplotlib", "transformers", "scikit-learn"],
+    "placeholders": [
+      { "key": "data_type", "label": "Data type to generate (images, molecules, text)", "required": true }
+    ]
+  },
+  {
+    "id": "reinforcement-learning",
+    "name": "Reinforcement Learning",
+    "description": "Train RL agents for sequential decision-making tasks",
+    "category": "ml",
+    "icon": "Rocket",
+    "prompt": "Build a reinforcement learning agent for {environment}. (1) Define or set up the environment (state space, action space, rewards), (2) Implement the appropriate RL algorithm (DQN, PPO, SAC, A2C) based on the action space type, (3) Design the neural network architecture for the policy and value functions, (4) Configure reward shaping and exploration strategies, (5) Train the agent with sufficient episodes and monitor learning curves, (6) Evaluate the trained policy with average return and success rate, (7) Visualize training curves, episode rewards, and agent behavior. Compare algorithm performance and analyze learned strategies.",
+    "suggestedSkills": ["stable-baselines3", "pufferlib", "matplotlib", "pytorch-lightning"],
+    "placeholders": [
+      { "key": "environment", "label": "RL environment or task description", "required": true }
+    ]
+  },
+  {
+    "id": "federated-learning-design",
+    "name": "Federated Learning Design",
+    "description": "Design privacy-preserving distributed learning systems across decentralized data",
+    "category": "ml",
+    "icon": "Shield",
+    "prompt": "Design a federated learning system for {use_case}. (1) Define the data distribution across clients (IID vs. non-IID partitioning), (2) Select the aggregation strategy (FedAvg, FedProx, FedBN), (3) Implement the client-server training loop with communication rounds, (4) Apply differential privacy mechanisms (noise injection, gradient clipping), (5) Simulate with varying numbers of clients, participation rates, and data heterogeneity, (6) Evaluate convergence speed and final model quality vs. centralized training, (7) Analyze communication costs and privacy-utility tradeoffs. Produce a system design document with simulation results.",
+    "suggestedSkills": ["pytorch-lightning", "scikit-learn", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "use_case", "label": "Federated learning use case and data description", "required": true }
+    ]
+  },
+  {
+    "id": "model-comparison",
+    "name": "Model Comparison Study",
+    "description": "Rigorously compare multiple ML models with proper statistical testing",
+    "category": "ml",
+    "icon": "Scale",
+    "prompt": "Conduct a rigorous model comparison for {task}. (1) Define the candidate models to compare, (2) Set up a fair evaluation protocol (same splits, preprocessing, compute budget), (3) Run repeated k-fold cross-validation for all models, (4) Compute multiple evaluation metrics (accuracy, F1, AUC, calibration), (5) Perform statistical significance tests (paired t-test, Wilcoxon, Friedman with Nemenyi post-hoc), (6) Analyze computational cost (training time, inference time, memory), (7) Visualize results with critical difference diagrams, box plots, and radar charts. Produce a recommendation with confidence levels.",
+    "suggestedSkills": ["scikit-learn", "polars", "matplotlib", "statistical-analysis"],
+    "placeholders": [
+      { "key": "task", "label": "ML task and dataset description", "required": true }
+    ]
+  },
+  {
+    "id": "dataset-bias-audit",
+    "name": "Dataset Bias Audit",
+    "description": "Audit datasets for representation bias, label bias, and fairness concerns",
+    "category": "ml",
+    "icon": "Fingerprint",
+    "prompt": "Audit the uploaded dataset for bias and fairness. (1) Profile the dataset demographics and protected attribute distributions, (2) Measure representation gaps against population baselines, (3) Detect label bias by comparing label rates across protected groups, (4) Analyze feature distributions conditioned on protected attributes, (5) Train a baseline model and compute fairness metrics (demographic parity, equalized odds, calibration), (6) Identify intersectional biases across multiple attributes, (7) Recommend mitigation strategies (resampling, reweighting, adversarial debiasing). Produce a bias audit report with disparity visualizations and actionable recommendations.",
+    "suggestedSkills": ["polars", "scikit-learn", "matplotlib", "shap"],
+    "placeholders": []
+  },
+  {
+    "id": "cfd-simulation",
+    "name": "CFD Simulation",
+    "description": "Set up and run computational fluid dynamics simulations",
+    "category": "engineering",
+    "icon": "Wind",
+    "prompt": "Set up a CFD simulation for {flow_problem}. (1) Define the geometry and computational domain, (2) Generate or import the mesh with appropriate refinement near boundaries, (3) Select the turbulence model (RANS: k-epsilon, k-omega SST; or LES), (4) Define boundary conditions (inlet velocity, outlet pressure, wall conditions), (5) Configure the solver (SIMPLE, PISO) and discretization schemes, (6) Run the simulation and monitor convergence of residuals, (7) Post-process results: velocity fields, pressure contours, streamlines, drag/lift coefficients. Visualize flow patterns and validate against analytical or experimental data.",
+    "suggestedSkills": ["fluidsim", "matplotlib", "scientific-visualization", "polars"],
+    "placeholders": [
+      { "key": "flow_problem", "label": "Flow geometry and conditions", "required": true }
+    ]
+  },
+  {
+    "id": "finite-element-analysis",
+    "name": "Finite Element Analysis",
+    "description": "Solve structural and mechanical problems using finite element methods",
+    "category": "engineering",
+    "icon": "Layers",
+    "prompt": "Perform a finite element analysis for {structural_problem}. (1) Define the geometry, material properties (Young's modulus, Poisson's ratio, density), (2) Generate the mesh with appropriate element types and refinement, (3) Apply boundary conditions (fixed supports, rollers, symmetry), (4) Define loading conditions (forces, pressures, thermal loads), (5) Solve the system of equations for displacement, (6) Compute stress, strain, and von Mises stress distributions, (7) Check convergence with mesh refinement study. Visualize deformed shape, stress contours, and displacement fields. Assess structural adequacy against failure criteria.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "sympy", "scientific-visualization"],
+    "placeholders": [
+      { "key": "structural_problem", "label": "Structure geometry and loading description", "required": true }
+    ]
+  },
+  {
+    "id": "signal-processing",
+    "name": "Signal Processing Pipeline",
+    "description": "Filter, transform, and analyze digital signals from sensors or instruments",
+    "category": "engineering",
+    "icon": "Activity",
+    "prompt": "Process and analyze the signal data from {signal_source}. (1) Load and visualize the raw time-domain signal, (2) Compute the frequency spectrum (FFT, periodogram, Welch's method), (3) Design and apply digital filters (FIR/IIR: Butterworth, Chebyshev, notch), (4) Perform time-frequency analysis (STFT, continuous wavelet transform), (5) Extract signal features (RMS, peak-to-peak, crest factor, SNR), (6) Detect events or anomalies in the signal, (7) Visualize filtered signals, spectrograms, and feature trends. Summarize the signal characteristics and any detected anomalies.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "polars", "scientific-visualization"],
+    "placeholders": [
+      { "key": "signal_source", "label": "Signal type and source (vibration, EEG, audio)", "required": true }
+    ]
+  },
+  {
+    "id": "control-system-design",
+    "name": "Control System Design",
+    "description": "Design and analyze feedback control systems with stability and performance analysis",
+    "category": "engineering",
+    "icon": "Gauge",
+    "prompt": "Design a control system for {plant_description}. (1) Model the plant dynamics (transfer function or state-space representation), (2) Analyze open-loop response and stability (poles, zeros, step response), (3) Design a controller (PID, lead-lag, state feedback, LQR), (4) Analyze closed-loop stability (root locus, Bode plot, Nyquist criterion), (5) Evaluate performance metrics (rise time, overshoot, settling time, steady-state error), (6) Simulate the response to step, ramp, and disturbance inputs, (7) Perform robustness analysis (gain/phase margins, sensitivity functions). Visualize Bode plots, root locus, and time-domain responses. Recommend final controller parameters.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "sympy", "scientific-visualization"],
+    "placeholders": [
+      { "key": "plant_description", "label": "Plant model or system description", "required": true }
+    ]
+  },
+  {
+    "id": "circuit-simulation",
+    "name": "Circuit Simulation",
+    "description": "Simulate and analyze electronic circuits with transient and frequency analysis",
+    "category": "engineering",
+    "icon": "Cpu",
+    "prompt": "Simulate the electronic circuit: {circuit_description}. (1) Define the circuit topology (components, connections, values), (2) Set up the circuit equations using nodal or mesh analysis, (3) Perform DC operating point analysis, (4) Run AC frequency sweep and plot Bode magnitude and phase, (5) Simulate transient response to input signals, (6) Analyze key performance metrics (gain, bandwidth, impedance, power dissipation), (7) Perform sensitivity analysis on component tolerances. Visualize circuit response plots (Bode, step response, output waveforms). Compare with analytical calculations.",
+    "suggestedSkills": ["statistical-analysis", "sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "circuit_description", "label": "Circuit topology and component values", "required": true }
+    ]
+  },
+  {
+    "id": "structural-analysis-eng",
+    "name": "Structural Analysis",
+    "description": "Analyze trusses, beams, and frames for forces, moments, and deflections",
+    "category": "engineering",
+    "icon": "Box",
+    "prompt": "Perform structural analysis for {structure}. (1) Define the structural geometry (nodes, elements, connectivity), (2) Specify material and cross-section properties, (3) Apply support conditions and external loads, (4) Assemble the global stiffness matrix using the direct stiffness method, (5) Solve for nodal displacements and reaction forces, (6) Compute internal forces (axial, shear, moment) for each element, (7) Draw shear force and bending moment diagrams. Check deflections against serviceability limits and stresses against allowable values. Identify critical members.",
+    "suggestedSkills": ["sympy", "matplotlib", "statistical-analysis", "scientific-visualization"],
+    "placeholders": [
+      { "key": "structure", "label": "Structure type and loading (beam, truss, frame)", "required": true }
+    ]
+  },
+  {
+    "id": "heat-transfer-analysis",
+    "name": "Heat Transfer Analysis",
+    "description": "Model conduction, convection, and radiation heat transfer problems",
+    "category": "engineering",
+    "icon": "Flame",
+    "prompt": "Analyze heat transfer for {thermal_problem}. (1) Define the geometry, material thermal properties, and boundary conditions, (2) Identify dominant heat transfer modes (conduction, convection, radiation), (3) For conduction: solve the heat equation analytically or with finite differences, (4) Calculate convection coefficients using appropriate correlations (Nusselt number), (5) Include radiation exchange if high-temperature surfaces are present, (6) Compute temperature distributions, heat fluxes, and thermal resistance, (7) Visualize temperature fields, heat flux vectors, and transient cooling/heating curves. Validate against analytical solutions and discuss thermal management recommendations.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "sympy", "scientific-visualization"],
+    "placeholders": [
+      { "key": "thermal_problem", "label": "Thermal system and boundary conditions", "required": true }
+    ]
+  },
+  {
+    "id": "vibration-analysis",
+    "name": "Vibration Analysis",
+    "description": "Analyze mechanical vibrations, natural frequencies, and mode shapes",
+    "category": "engineering",
+    "icon": "Waves",
+    "prompt": "Perform vibration analysis for {mechanical_system}. (1) Model the system (single/multi-DOF, continuous beam/plate), (2) Derive or assemble mass, stiffness, and damping matrices, (3) Compute natural frequencies and mode shapes (eigenvalue problem), (4) Analyze forced vibration response (frequency response function, transmissibility), (5) Identify resonance conditions and critical speeds, (6) Simulate time-domain response to impulse, harmonic, and random excitation, (7) Visualize mode shapes, FRFs, Campbell diagrams, and vibration spectra. Recommend vibration mitigation strategies (damping, isolation, tuned absorber).",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "sympy", "scientific-visualization"],
+    "placeholders": [
+      { "key": "mechanical_system", "label": "Mechanical system description", "required": true }
+    ]
+  },
+  {
+    "id": "process-simulation",
+    "name": "Process Simulation",
+    "description": "Simulate and optimize chemical or manufacturing processes",
+    "category": "engineering",
+    "icon": "FlaskConical",
+    "prompt": "Simulate the process: {process_description}. (1) Define the process flowsheet (unit operations, streams, recycles), (2) Specify thermodynamic models and property databases, (3) Set up material and energy balances for each unit, (4) Solve the steady-state simulation with appropriate convergence criteria, (5) Perform sensitivity analysis on key operating parameters, (6) Optimize for yield, energy efficiency, or cost using objective functions, (7) Generate a process flow diagram with annotated stream tables. Report key performance indicators and recommend optimal operating conditions.",
+    "suggestedSkills": ["simpy", "statistical-analysis", "matplotlib", "polars"],
+    "placeholders": [
+      { "key": "process_description", "label": "Process type and operating conditions", "required": true }
+    ]
+  },
+  {
+    "id": "reliability-analysis",
+    "name": "Reliability Analysis",
+    "description": "Assess system reliability, failure rates, and maintainability using statistical methods",
+    "category": "engineering",
+    "icon": "ClipboardCheck",
+    "prompt": "Perform a reliability analysis for {system}. (1) Define the system architecture and component reliability data, (2) Construct reliability block diagrams (series, parallel, k-of-n), (3) Fit lifetime distributions (Weibull, exponential, lognormal) to failure data, (4) Calculate system reliability, MTTF, and availability, (5) Perform failure modes and effects analysis (FMEA) with risk priority numbers, (6) Model maintenance strategies (preventive, corrective, condition-based) impact on availability, (7) Visualize reliability functions, bathtub curves, and Pareto charts of failure modes. Recommend reliability improvement priorities.",
+    "suggestedSkills": ["statistical-analysis", "polars", "matplotlib", "scikit-survival"],
+    "placeholders": [
+      { "key": "system", "label": "System or component to analyze", "required": true }
+    ]
+  },
+  {
+    "id": "sensor-data-analysis",
+    "name": "Sensor Data Analysis",
+    "description": "Process and analyze IoT and sensor data streams for patterns and anomalies",
+    "category": "engineering",
+    "icon": "Thermometer",
+    "prompt": "Analyze sensor data from {sensor_system}. (1) Load and clean time-series sensor data (handle gaps, noise, outliers), (2) Resample and align multi-sensor data to a common time base, (3) Compute descriptive statistics and drift analysis per sensor, (4) Apply signal processing (filtering, smoothing, decomposition), (5) Detect anomalies and change points using statistical and ML methods, (6) Analyze cross-sensor correlations and lag relationships, (7) Build a predictive maintenance or condition monitoring model if failure labels exist. Visualize multi-sensor dashboards with anomaly highlights. Report operational insights.",
+    "suggestedSkills": ["polars", "scikit-learn", "matplotlib", "statsmodels"],
+    "placeholders": [
+      { "key": "sensor_system", "label": "Sensor system or equipment description", "required": true }
+    ]
+  },
+  {
+    "id": "robot-path-planning",
+    "name": "Robot Path Planning",
+    "description": "Plan and optimize robot trajectories through obstacle environments",
+    "category": "engineering",
+    "icon": "Route",
+    "prompt": "Design a path planning solution for {robot_scenario}. (1) Define the robot configuration space and kinematic constraints, (2) Model the environment with obstacles (static and dynamic), (3) Implement path planning algorithms (A*, RRT, RRT*, PRM), (4) Optimize the path for length, smoothness, or energy efficiency, (5) Add dynamic obstacle avoidance if applicable, (6) Simulate robot motion along the planned trajectory, (7) Visualize the configuration space, planned path, obstacle avoidance, and velocity profiles. Compare algorithm performance (computation time, path quality, success rate).",
+    "suggestedSkills": ["networkx", "matplotlib", "statistical-analysis", "scientific-visualization"],
+    "placeholders": [
+      { "key": "robot_scenario", "label": "Robot type and environment description", "required": true }
+    ]
+  },
+  {
+    "id": "stellar-classification",
+    "name": "Stellar Classification",
+    "description": "Classify stars by spectral type, luminosity class, and evolutionary stage",
+    "category": "astro",
+    "icon": "Star",
+    "prompt": "Classify stars from the uploaded photometric or spectroscopic data. (1) Load and preprocess stellar observations (magnitudes, colors, spectra), (2) Place stars on the Hertzsprung-Russell diagram (color-magnitude diagram), (3) Compute effective temperature, luminosity, and surface gravity from observables, (4) Classify spectral types using spectral line features or photometric colors, (5) Identify evolutionary stages (main sequence, giant, supergiant, white dwarf), (6) Compare with stellar evolutionary tracks and isochrones, (7) Visualize the HR diagram, spectral type distribution, and mass-luminosity relations. Report the classification results with confidence estimates.",
+    "suggestedSkills": ["astropy", "matplotlib", "scikit-learn", "polars"],
+    "placeholders": []
+  },
+  {
+    "id": "exoplanet-detection",
+    "name": "Exoplanet Detection",
+    "description": "Detect and characterize exoplanets from transit or radial velocity data",
+    "category": "astro",
+    "icon": "CircleDot",
+    "prompt": "Search for exoplanet signals in the uploaded {data_type} data. (1) Load and preprocess the time series (detrend stellar variability, remove outliers), (2) Apply detection algorithms (BLS for transits, Lomb-Scargle periodogram for RV), (3) Identify significant periodic signals above noise threshold, (4) Fit a transit or Keplerian orbit model to extract planetary parameters, (5) Estimate planet radius/mass, orbital period, semi-major axis, and eccentricity, (6) Assess false positive probability and signal reliability, (7) Visualize phase-folded light curves or RV curves with best-fit models. Report detected planet candidates with parameter uncertainties.",
+    "suggestedSkills": ["astropy", "matplotlib", "statistical-analysis", "statsmodels"],
+    "placeholders": [
+      { "key": "data_type", "label": "Data type (transit photometry or radial velocity)", "required": true }
+    ]
+  },
+  {
+    "id": "spectral-analysis-astro",
+    "name": "Astronomical Spectral Analysis",
+    "description": "Analyze astronomical spectra for redshift, composition, and physical conditions",
+    "category": "astro",
+    "icon": "Scan",
+    "prompt": "Analyze the astronomical spectrum from the uploaded data. (1) Load and calibrate the spectrum (wavelength and flux calibration), (2) Identify spectral lines (emission and absorption) and match to known transitions, (3) Measure redshift from line positions and determine recessional velocity, (4) Compute equivalent widths and line ratios for diagnostics, (5) Determine physical conditions (temperature, density, metallicity) from line ratios, (6) Fit continuum and spectral energy distribution models, (7) Visualize the full spectrum with line identifications, zoom panels on key features, and diagnostic diagrams. Report physical parameters with error estimates.",
+    "suggestedSkills": ["astropy", "matplotlib", "statistical-analysis", "scientific-visualization"],
+    "placeholders": []
+  },
+  {
+    "id": "galaxy-morphology",
+    "name": "Galaxy Morphology Classification",
+    "description": "Classify galaxy types and analyze morphological features from imaging data",
+    "category": "astro",
+    "icon": "Sparkles",
+    "prompt": "Classify and analyze galaxy morphologies from the uploaded imaging data. (1) Load and preprocess galaxy images (sky subtraction, PSF estimation), (2) Measure photometric parameters (magnitude, effective radius, S\u00e9rsic index), (3) Fit 2D light profiles (S\u00e9rsic, exponential disk, bulge+disk decomposition), (4) Classify morphological type (elliptical, spiral, irregular, merger) using parametric and non-parametric methods (CAS, Gini-M20), (5) Train or apply a CNN classifier for automated morphology, (6) Analyze the morphology-density or morphology-mass relation, (7) Visualize image galleries, surface brightness profiles, and morphological parameter distributions. Report classification statistics.",
+    "suggestedSkills": ["astropy", "scikit-learn", "matplotlib", "pytorch-lightning"],
+    "placeholders": []
+  },
+  {
+    "id": "cosmic-ray-analysis",
+    "name": "Cosmic Ray Analysis",
+    "description": "Detect and analyze cosmic ray events in detector data",
+    "category": "astro",
+    "icon": "Zap",
+    "prompt": "Analyze cosmic ray events from the uploaded detector data. (1) Load and preprocess detector readouts (noise subtraction, pedestal correction), (2) Apply hit-finding and clustering algorithms to identify events, (3) Reconstruct particle tracks and shower profiles, (4) Measure energy deposits and estimate primary energies, (5) Compute arrival direction distributions and search for anisotropy, (6) Fit the energy spectrum with power-law or broken power-law models, (7) Visualize event displays, energy spectra, sky maps, and arrival time distributions. Compare observed rates and spectra with theoretical expectations.",
+    "suggestedSkills": ["astropy", "statistical-analysis", "matplotlib", "scikit-learn"],
+    "placeholders": []
+  },
+  {
+    "id": "orbital-mechanics",
+    "name": "Orbital Mechanics Calculation",
+    "description": "Compute orbits, transfers, and encounter trajectories for celestial bodies",
+    "category": "astro",
+    "icon": "Satellite",
+    "prompt": "Perform orbital mechanics calculations for {mission_or_body}. (1) Define the initial orbital elements (semi-major axis, eccentricity, inclination, RAAN, argument of periapsis, true anomaly), (2) Propagate the orbit using Keplerian or perturbed equations of motion, (3) Calculate orbital parameters (period, velocity, energy, angular momentum), (4) Design transfer orbits (Hohmann, bi-elliptic, low-thrust spirals) if mission planning, (5) Compute delta-v budgets and time of flight, (6) Account for perturbations (J2 oblateness, atmospheric drag, third body), (7) Visualize orbits in 3D, ground tracks, and porkchop plots for launch windows. Report key mission parameters.",
+    "suggestedSkills": ["astropy", "matplotlib", "statistical-analysis", "sympy"],
+    "placeholders": [
+      { "key": "mission_or_body", "label": "Celestial body or mission description", "required": true }
+    ]
+  },
+  {
+    "id": "light-curve-analysis",
+    "name": "Light Curve Analysis",
+    "description": "Analyze time-variable brightness of stars, supernovae, or other transients",
+    "category": "astro",
+    "icon": "LineChart",
+    "prompt": "Analyze the light curve from the uploaded photometric data. (1) Load and clean the time series (remove bad data, correct for extinction), (2) Compute period estimates using Lomb-Scargle periodogram and phase dispersion minimization, (3) Phase-fold the light curve at the best period, (4) Fit light curve models appropriate to the variable type (eclipsing binary, Cepheid, RR Lyrae, supernova template), (5) Extract physical parameters (amplitude, period change rate, color evolution), (6) Search for secondary periods or quasi-periodic oscillations, (7) Visualize raw and phase-folded light curves, periodograms, and O-C diagrams. Classify the variable type and discuss its astrophysical context.",
+    "suggestedSkills": ["astropy", "matplotlib", "statistical-analysis", "statsmodels"],
+    "placeholders": []
+  },
+  {
+    "id": "radio-astronomy-analysis",
+    "name": "Radio Astronomy Data Analysis",
+    "description": "Process and analyze radio telescope observations and interferometric data",
+    "category": "astro",
+    "icon": "Waves",
+    "prompt": "Analyze radio astronomy data from {telescope_or_survey}. (1) Load and inspect the raw visibility or spectral data, (2) Perform calibration (bandpass, phase, flux calibration), (3) Flag and remove radio frequency interference (RFI), (4) Image the data using synthesis imaging techniques (CLEAN, multi-scale CLEAN), (5) Measure source properties (flux density, spectral index, morphology), (6) Construct radio spectral energy distributions, (7) Cross-match with multiwavelength catalogs for source identification. Visualize radio maps, spectra, and uv-coverage plots. Discuss the astrophysical interpretation of detected sources.",
+    "suggestedSkills": ["astropy", "matplotlib", "statistical-analysis", "scientific-visualization"],
+    "placeholders": [
+      { "key": "telescope_or_survey", "label": "Telescope name or survey", "required": true }
+    ]
+  },
+  {
+    "id": "gravitational-lensing",
+    "name": "Gravitational Lensing Analysis",
+    "description": "Model and analyze gravitational lensing effects for mass distribution inference",
+    "category": "astro",
+    "icon": "Eye",
+    "prompt": "Analyze gravitational lensing in the uploaded data. (1) Identify lensed features (arcs, multiple images, Einstein rings), (2) Measure image positions, magnifications, and time delays if available, (3) Model the lens mass distribution (SIS, SIE, NFW profiles), (4) Reconstruct the source plane geometry, (5) Estimate the enclosed mass and mass-to-light ratio, (6) For weak lensing: measure galaxy shapes, compute shear maps, and derive mass maps, (7) Visualize the lens geometry, critical curves, caustics, and convergence maps. Discuss cosmological or astrophysical implications of the mass distribution.",
+    "suggestedSkills": ["astropy", "statistical-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": []
+  },
+  {
+    "id": "dark-matter-constraints",
+    "name": "Dark Matter Constraints Analysis",
+    "description": "Derive constraints on dark matter properties from observational or experimental data",
+    "category": "astro",
+    "icon": "Gem",
+    "prompt": "Derive dark matter constraints from {data_source}. (1) Define the dark matter model and parameter space (WIMP mass, cross-section, halo profile), (2) Process the observational or experimental data (rotation curves, direct detection, gamma-ray flux), (3) Compute expected signals for a grid of dark matter parameters, (4) Perform statistical analysis (profile likelihood, Bayesian posterior, upper limits), (5) Compare with existing constraints from other experiments, (6) Assess systematic uncertainties (astrophysical backgrounds, halo model dependence), (7) Visualize exclusion contours, posterior distributions, and comparison with literature constraints. Discuss the implications for dark matter candidates.",
+    "suggestedSkills": ["astropy", "pymc", "matplotlib", "statistical-analysis"],
+    "placeholders": [
+      { "key": "data_source", "label": "Data source or experiment type", "required": true }
+    ]
+  },
+  {
+    "id": "solar-activity-analysis",
+    "name": "Solar Activity Analysis",
+    "description": "Analyze sunspot cycles, solar flares, and space weather data",
+    "category": "astro",
+    "icon": "Flame",
+    "prompt": "Analyze solar activity data for {time_period_or_phenomenon}. (1) Retrieve solar activity records (sunspot numbers, solar flare catalogs, solar wind parameters), (2) Characterize the solar cycle (period, amplitude, asymmetry), (3) Analyze flare frequency-intensity distributions (power law fits), (4) Correlate solar activity with geomagnetic indices (Kp, Dst), (5) Perform time series decomposition and spectral analysis for periodicities, (6) Model solar cycle prediction using harmonic or dynamo-based methods, (7) Visualize butterfly diagrams, superposed epoch analysis, and activity-geomagnetic coupling. Discuss space weather implications and forecast outlook.",
+    "suggestedSkills": ["astropy", "statsmodels", "matplotlib", "statistical-analysis"],
+    "placeholders": [
+      { "key": "time_period_or_phenomenon", "label": "Time period or solar phenomenon", "required": true }
+    ]
+  }

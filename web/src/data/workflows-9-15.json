@@ -1,0 +1,1286 @@
+  {
+    "id": "scrnaseq-clustering",
+    "name": "scRNA-seq Clustering",
+    "description": "Cluster single-cell RNA-seq data and identify distinct cell populations",
+    "category": "cellbio",
+    "icon": "CircleDot",
+    "prompt": "Analyze the uploaded single-cell RNA-seq dataset and perform clustering to identify cell populations. Steps: (1) Load the data into an AnnData object and perform quality control — filter cells by gene count, mitochondrial fraction, and doublet scores. (2) Normalize and log-transform expression values. (3) Identify highly variable genes and run PCA for dimensionality reduction. (4) Compute a neighborhood graph and apply Leiden or Louvain clustering at resolution {resolution}. (5) Generate UMAP embeddings and visualize clusters. (6) Identify marker genes for each cluster using ranked gene group tests. (7) Export cluster assignments and marker gene tables. Organism: {organism}.",
+    "suggestedSkills": ["scanpy", "anndata", "scientific-visualization"],
+    "placeholders": [
+      { "key": "resolution", "label": "Clustering resolution (e.g., 0.5, 1.0)", "required": false },
+      { "key": "organism", "label": "Organism (e.g., human, mouse)", "required": true }
+    ]
+  },
+  {
+    "id": "cell-type-annotation",
+    "name": "Cell Type Annotation",
+    "description": "Annotate cell clusters with canonical cell type labels using marker genes and references",
+    "category": "cellbio",
+    "icon": "Fingerprint",
+    "prompt": "Annotate cell types in the uploaded single-cell dataset. Steps: (1) Load the clustered AnnData object and review existing cluster markers. (2) Query the CellxGene Census or a reference atlas for {tissue} tissue. (3) Perform automated label transfer using reference-based annotation. (4) Validate annotations by checking canonical marker gene expression (dot plots and violin plots). (5) Resolve ambiguous clusters by subclustering or manual curation. (6) Generate a final annotated UMAP with cell type labels. (7) Export a summary table of cell types, cell counts, and top markers per type.",
+    "suggestedSkills": ["scanpy", "cellxgene-census", "scvi-tools", "scientific-visualization"],
+    "placeholders": [
+      { "key": "tissue", "label": "Tissue type (e.g., PBMC, lung, brain)", "required": true }
+    ]
+  },
+  {
+    "id": "trajectory-analysis",
+    "name": "Trajectory / Pseudotime Analysis",
+    "description": "Infer developmental trajectories and pseudotime ordering from single-cell data",
+    "category": "cellbio",
+    "icon": "Route",
+    "prompt": "Perform trajectory analysis on the uploaded single-cell dataset. Steps: (1) Load the annotated AnnData object and verify RNA velocity layers (spliced/unspliced) if available. (2) Compute RNA velocity vectors using scVelo or fit a diffusion pseudotime model. (3) Identify the root cell or starting population: {root_population}. (4) Order cells along pseudotime and visualize the trajectory on UMAP. (5) Identify genes that change dynamically along pseudotime (driver genes). (6) Plot gene expression heatmaps ordered by pseudotime. (7) Report key transition states and branching points.",
+    "suggestedSkills": ["scvelo", "scanpy", "anndata", "scientific-visualization"],
+    "placeholders": [
+      { "key": "root_population", "label": "Root / starting cell population", "required": true }
+    ]
+  },
+  {
+    "id": "flow-cytometry-analysis",
+    "name": "Flow Cytometry Analysis",
+    "description": "Gate, cluster, and quantify cell populations from flow cytometry FCS files",
+    "category": "cellbio",
+    "icon": "Droplet",
+    "prompt": "Analyze the uploaded flow cytometry data (FCS files). Steps: (1) Parse FCS files and extract compensated fluorescence values. (2) Apply standard preprocessing — compensation matrix correction and biexponential or arcsinh transformation. (3) Perform quality gating to remove debris, doublets, and dead cells. (4) Identify cell populations using either manual sequential gating for {markers} or automated clustering (FlowSOM / Leiden). (5) Quantify population frequencies across samples. (6) Generate publication-quality dot plots, histograms, and summary bar charts. (7) Export population statistics as a CSV.",
+    "suggestedSkills": ["flowio", "scientific-visualization", "matplotlib"],
+    "placeholders": [
+      { "key": "markers", "label": "Key markers to gate on (e.g., CD3, CD4, CD8)", "required": true }
+    ]
+  },
+  {
+    "id": "cell-cell-communication",
+    "name": "Cell-Cell Communication",
+    "description": "Infer ligand-receptor interactions between cell types from single-cell data",
+    "category": "cellbio",
+    "icon": "Network",
+    "prompt": "Infer cell-cell communication networks from the uploaded single-cell dataset. Steps: (1) Load the annotated AnnData object with cell type labels. (2) Run ligand-receptor interaction analysis using a database of known LR pairs (CellPhoneDB, CellChat, or LIANA). (3) Score interactions between all cell type pairs and filter by statistical significance (p < {pvalue_threshold}). (4) Visualize the communication network as a chord diagram and heatmap. (5) Identify the top signaling pathways driving communication between {cell_types}. (6) Generate dot plots of significant LR pairs. (7) Export a ranked table of interactions.",
+    "suggestedSkills": ["scanpy", "anndata", "scientific-visualization", "plotly"],
+    "placeholders": [
+      { "key": "cell_types", "label": "Cell types of interest (e.g., T cells and macrophages)", "required": false },
+      { "key": "pvalue_threshold", "label": "P-value threshold (default 0.05)", "required": false }
+    ]
+  },
+  {
+    "id": "gene-regulatory-inference",
+    "name": "Gene Regulatory Network Inference",
+    "description": "Reconstruct transcription factor regulatory networks from expression data",
+    "category": "cellbio",
+    "icon": "GitBranch",
+    "prompt": "Infer gene regulatory networks from the uploaded single-cell or bulk expression data. Steps: (1) Load the expression matrix and preprocess (filter lowly expressed genes, normalize). (2) Run GRN inference using GRNBoost2 or SCENIC to identify TF-target relationships. (3) Prune the network using TF motif enrichment data. (4) Identify key regulons (TF modules) and score regulon activity per cell. (5) Visualize the top regulatory modules on the UMAP. (6) Build a network graph of the top {n_regulons} regulons showing TF-target connections. (7) Export the regulon-gene assignments and activity matrix.",
+    "suggestedSkills": ["arboreto", "scanpy", "networkx", "scientific-visualization"],
+    "placeholders": [
+      { "key": "n_regulons", "label": "Number of top regulons to visualize (e.g., 20)", "required": false }
+    ]
+  },
+  {
+    "id": "spatial-cell-analysis",
+    "name": "Spatial Transcriptomics Analysis",
+    "description": "Analyze spatially resolved gene expression data with tissue context",
+    "category": "cellbio",
+    "icon": "Scan",
+    "prompt": "Analyze the uploaded spatial transcriptomics dataset. Steps: (1) Load the spatial data (Visium, MERFISH, or Slide-seq format) into an AnnData object with spatial coordinates. (2) Perform quality control filtering spots by gene counts and mitochondrial fraction. (3) Normalize and identify spatially variable genes. (4) Cluster spots and overlay clusters on the tissue image. (5) Annotate spatial domains using known {tissue} tissue markers. (6) Identify spatially co-expressed gene modules. (7) Visualize expression of key genes ({genes}) on the tissue section. (8) Export spatial cluster maps and gene expression overlays.",
+    "suggestedSkills": ["scanpy", "anndata", "scientific-visualization", "matplotlib"],
+    "placeholders": [
+      { "key": "tissue", "label": "Tissue type", "required": true },
+      { "key": "genes", "label": "Genes of interest to visualize", "required": false }
+    ]
+  },
+  {
+    "id": "multi-omics-integration",
+    "name": "Multi-Omics Integration",
+    "description": "Integrate scRNA-seq with ATAC-seq, CITE-seq, or other modalities",
+    "category": "cellbio",
+    "icon": "Layers",
+    "prompt": "Integrate multiple single-cell omics modalities from the uploaded datasets. Steps: (1) Load each modality (e.g., scRNA-seq and {second_modality}) into separate AnnData objects. (2) Preprocess each modality independently with modality-appropriate pipelines. (3) Align cells across modalities using a joint embedding method (scVI multi-modal, Seurat WNN, or MOFA+). (4) Generate a joint UMAP showing integrated cell clusters. (5) Identify features that are concordant or discordant across modalities. (6) Perform modality-specific downstream analysis (e.g., peak-gene linkage for ATAC, protein-RNA correlation for CITE-seq). (7) Export the integrated object and summary metrics.",
+    "suggestedSkills": ["scvi-tools", "scanpy", "anndata", "scientific-visualization"],
+    "placeholders": [
+      { "key": "second_modality", "label": "Second modality (e.g., ATAC-seq, CITE-seq, spatial)", "required": true }
+    ]
+  },
+  {
+    "id": "cell-cycle-analysis",
+    "name": "Cell Cycle Analysis",
+    "description": "Score cell cycle phases and regress out proliferation effects",
+    "category": "cellbio",
+    "icon": "RefreshCw",
+    "prompt": "Perform cell cycle analysis on the uploaded single-cell dataset. Steps: (1) Load the AnnData object and normalize the expression data. (2) Score each cell for S-phase and G2M-phase using canonical cell cycle gene sets for {organism}. (3) Assign cell cycle phases (G1, S, G2M) to each cell. (4) Visualize cell cycle distribution across clusters with UMAP coloring and bar charts. (5) Assess whether cell cycle is a major source of variation in the data using PCA. (6) Optionally regress out cell cycle effects if confounding and re-cluster. (7) Export cell cycle scores and phase assignments.",
+    "suggestedSkills": ["scanpy", "anndata", "scientific-visualization"],
+    "placeholders": [
+      { "key": "organism", "label": "Organism (human or mouse)", "required": true }
+    ]
+  },
+  {
+    "id": "lineage-tracing",
+    "name": "Lineage Tracing Analysis",
+    "description": "Reconstruct cell lineage trees from barcode or CRISPR-based tracing data",
+    "category": "cellbio",
+    "icon": "TreePine",
+    "prompt": "Analyze lineage tracing data from the uploaded dataset. Steps: (1) Load the single-cell expression data along with lineage barcode or CRISPR scar information. (2) Filter cells with valid barcodes and assess barcode diversity and complexity. (3) Reconstruct a lineage tree using neighbor-joining or maximum parsimony on barcode distances. (4) Map cell type annotations onto the lineage tree. (5) Quantify fate bias — determine if progenitor clones preferentially give rise to specific cell types. (6) Visualize the lineage tree annotated with cell type and clone size. (7) Compute clonal expansion metrics and export the lineage tree and fate probability tables.",
+    "suggestedSkills": ["scanpy", "anndata", "etetoolkit", "scientific-visualization"],
+    "placeholders": []
+  },
+  {
+    "id": "perturbation-analysis",
+    "name": "Perturbation / CRISPR Screen Analysis",
+    "description": "Analyze single-cell CRISPR screen (Perturb-seq) data to identify gene function",
+    "category": "cellbio",
+    "icon": "Scissors",
+    "prompt": "Analyze the uploaded single-cell CRISPR screen (Perturb-seq) data. Steps: (1) Load the expression matrix and guide RNA assignment table. (2) Filter cells with confident guide assignments and remove low-quality cells. (3) Assign perturbation identities and aggregate cells by perturbation. (4) Compute differential expression between each perturbation and non-targeting controls. (5) Identify the top hits — perturbations with the strongest transcriptional effects. (6) Cluster perturbations by their expression signatures to find functional modules. (7) Visualize perturbation effects on UMAP and generate heatmaps of top {n_perturbations} perturbation signatures.",
+    "suggestedSkills": ["scanpy", "anndata", "scientific-visualization", "scvi-tools"],
+    "placeholders": [
+      { "key": "n_perturbations", "label": "Number of top perturbations to highlight (e.g., 20)", "required": false }
+    ]
+  },
+  {
+    "id": "immune-cell-profiling",
+    "name": "Immune Cell Profiling",
+    "description": "Deep phenotyping of immune cell populations from single-cell or flow data",
+    "category": "cellbio",
+    "icon": "Shield",
+    "prompt": "Perform detailed immune cell profiling from the uploaded dataset ({data_type}). Steps: (1) Load and preprocess the data with immune-specific QC thresholds. (2) Identify major immune lineages (T, B, NK, myeloid, DC) using canonical markers. (3) Subcluster each lineage to resolve fine-grained subtypes (e.g., Th1, Th2, Th17, Treg within CD4 T cells). (4) Quantify cell type frequencies and compare across {conditions}. (5) Score cells for activation, exhaustion, and cytotoxicity gene signatures. (6) Visualize results with annotated UMAPs, dot plots, and stacked bar charts. (7) Export a comprehensive immune profile report with cell counts and phenotype scores.",
+    "suggestedSkills": ["scanpy", "cellxgene-census", "scientific-visualization", "flowio"],
+    "placeholders": [
+      { "key": "data_type", "label": "Data type (scRNA-seq, CITE-seq, or flow cytometry)", "required": true },
+      { "key": "conditions", "label": "Conditions to compare (e.g., healthy vs disease)", "required": false }
+    ]
+  },
+  {
+    "id": "molecular-property-prediction",
+    "name": "Molecular Property Prediction",
+    "description": "Predict physicochemical or biological properties of molecules using ML models",
+    "category": "chemistry",
+    "icon": "Sparkles",
+    "prompt": "Predict molecular properties for the uploaded set of molecules. Steps: (1) Parse the input molecules from SMILES, SDF, or CSV format using RDKit. (2) Compute molecular descriptors and fingerprints (Morgan, MACCS, or RDKit fingerprints). (3) Train or apply a pre-trained model to predict {property}. (4) If training: split data 80/20, train Random Forest and gradient boosting models, evaluate with R² and RMSE via cross-validation. (5) Visualize predicted vs actual values as a scatter plot. (6) Analyze which structural features drive the property using SHAP or feature importance. (7) Export predictions and model performance metrics.",
+    "suggestedSkills": ["rdkit", "deepchem", "scikit-learn", "molfeat"],
+    "placeholders": [
+      { "key": "property", "label": "Property to predict (e.g., logP, melting point, IC50)", "required": true }
+    ]
+  },
+  {
+    "id": "reaction-prediction",
+    "name": "Chemical Reaction Prediction",
+    "description": "Predict products of a chemical reaction given reactants and conditions",
+    "category": "chemistry",
+    "icon": "Zap",
+    "prompt": "Predict the products of the given chemical reaction. Steps: (1) Parse the reactant SMILES: {reactants}. (2) Identify the reaction type and applicable reaction templates. (3) Apply a forward reaction prediction model to generate candidate products. (4) Rank products by likelihood and chemical feasibility. (5) Validate products by checking valence, atom balance, and stereochemistry. (6) Visualize the reaction scheme with 2D depictions of reactants, reagents, and products. (7) Report reaction conditions if known and suggest alternative pathways. Reaction conditions: {conditions}.",
+    "suggestedSkills": ["rdkit", "datamol", "deepchem"],
+    "placeholders": [
+      { "key": "reactants", "label": "Reactant SMILES (dot-separated for multiple)", "required": true },
+      { "key": "conditions", "label": "Reaction conditions (reagents, solvent, temperature)", "required": false }
+    ]
+  },
+  {
+    "id": "retrosynthesis-planning",
+    "name": "Retrosynthesis Planning",
+    "description": "Plan a synthetic route to a target molecule by working backward from product",
+    "category": "chemistry",
+    "icon": "Route",
+    "prompt": "Plan a retrosynthetic route to the target molecule: {target_smiles}. Steps: (1) Parse and display the target molecule structure. (2) Identify strategic disconnections and applicable retrosynthetic transforms. (3) Generate a retrosynthetic tree with at least {n_steps} levels of disconnection. (4) Score each route by step count, yield estimates, and starting material availability. (5) Check starting material commercial availability in ZINC or PubChem databases. (6) Recommend the top 3 synthetic routes ranked by feasibility. (7) Visualize the best route as a reaction scheme diagram. Consider constraints: {constraints}.",
+    "suggestedSkills": ["rdkit", "datamol", "zinc-database", "pubchem-database"],
+    "placeholders": [
+      { "key": "target_smiles", "label": "Target molecule SMILES", "required": true },
+      { "key": "n_steps", "label": "Maximum synthesis steps (default 5)", "required": false },
+      { "key": "constraints", "label": "Constraints (e.g., avoid toxic reagents, green chemistry)", "required": false }
+    ]
+  },
+  {
+    "id": "conformer-generation",
+    "name": "Conformer Generation & Analysis",
+    "description": "Generate and analyze 3D conformers of a molecule for energy and geometry studies",
+    "category": "chemistry",
+    "icon": "Box",
+    "prompt": "Generate and analyze 3D conformers for the molecule: {smiles}. Steps: (1) Parse the SMILES and generate an initial 3D structure with RDKit. (2) Run conformer generation using ETKDG or a similar method to produce {n_conformers} conformers. (3) Optimize each conformer with a force field (MMFF94 or UFF). (4) Rank conformers by energy and remove duplicates based on RMSD threshold. (5) Analyze the conformational landscape — identify low-energy conformers and key torsion angles. (6) Visualize the 3D structures and energy distribution. (7) Export conformer coordinates as SDF and a summary table of energies and geometric properties.",
+    "suggestedSkills": ["rdkit", "datamol", "rowan"],
+    "placeholders": [
+      { "key": "smiles", "label": "Molecule SMILES", "required": true },
+      { "key": "n_conformers", "label": "Number of conformers to generate (default 50)", "required": false }
+    ]
+  },
+  {
+    "id": "qsar-modeling",
+    "name": "QSAR Modeling",
+    "description": "Build quantitative structure-activity relationship models from bioactivity data",
+    "category": "chemistry",
+    "icon": "TrendingUp",
+    "prompt": "Build a QSAR model from the uploaded bioactivity dataset. Steps: (1) Load the dataset containing molecular structures and bioactivity values ({activity_endpoint}). (2) Curate the structures — standardize, remove salts, handle duplicates. (3) Compute molecular descriptors and fingerprints using multiple descriptor sets. (4) Split data into training (80%) and test (20%) sets with scaffold-based splitting. (5) Train multiple models (Random Forest, XGBoost, neural network) and optimize hyperparameters. (6) Evaluate models using appropriate metrics (R²/RMSE for regression, AUC/accuracy for classification). (7) Analyze the applicability domain. (8) Identify key structural features driving activity via SHAP analysis. (9) Export the best model and predictions.",
+    "suggestedSkills": ["rdkit", "molfeat", "deepchem", "scikit-learn", "shap"],
+    "placeholders": [
+      { "key": "activity_endpoint", "label": "Activity endpoint (e.g., IC50, Ki, EC50)", "required": true }
+    ]
+  },
+  {
+    "id": "molecular-fingerprints",
+    "name": "Molecular Fingerprint Analysis",
+    "description": "Compare and cluster molecules using structural fingerprints and similarity metrics",
+    "category": "chemistry",
+    "icon": "Fingerprint",
+    "prompt": "Perform molecular fingerprint analysis on the uploaded compound library. Steps: (1) Parse all molecules from the input file. (2) Compute multiple fingerprint types: Morgan (ECFP4), MACCS keys, and RDKit topological fingerprints. (3) Calculate pairwise Tanimoto similarity matrices. (4) Cluster compounds using Butina clustering or hierarchical clustering at similarity threshold {threshold}. (5) Visualize the chemical space using t-SNE or UMAP dimensionality reduction on fingerprints. (6) Identify structural outliers and representative molecules for each cluster. (7) Export similarity matrices, cluster assignments, and chemical space plots.",
+    "suggestedSkills": ["rdkit", "molfeat", "datamol", "umap-learn"],
+    "placeholders": [
+      { "key": "threshold", "label": "Similarity threshold for clustering (default 0.4)", "required": false }
+    ]
+  },
+  {
+    "id": "chemical-space-exploration",
+    "name": "Chemical Space Exploration",
+    "description": "Map and visualize the chemical diversity of a compound library",
+    "category": "chemistry",
+    "icon": "Globe",
+    "prompt": "Explore and visualize the chemical space of the uploaded compound library. Steps: (1) Load and standardize all molecules. (2) Compute a diverse set of physicochemical descriptors (MW, logP, HBD, HBA, TPSA, rotatable bonds, Fsp3). (3) Generate molecular fingerprints and reduce dimensionality using UMAP or t-SNE. (4) Color the chemical space map by {property} to reveal structure-property trends. (5) Assess drug-likeness using Lipinski's Rule of Five and other filters (Veber, PAINS). (6) Identify underexplored regions of chemical space. (7) Compare the library against reference sets (e.g., approved drugs, natural products) if provided. (8) Export interactive plots and property distributions.",
+    "suggestedSkills": ["rdkit", "datamol", "molfeat", "umap-learn", "plotly"],
+    "placeholders": [
+      { "key": "property", "label": "Property to color by (e.g., activity, source, logP)", "required": false }
+    ]
+  },
+  {
+    "id": "spectral-analysis-nmr",
+    "name": "NMR Spectral Analysis",
+    "description": "Process and interpret NMR spectra for structure elucidation",
+    "category": "chemistry",
+    "icon": "Waves",
+    "prompt": "Analyze the uploaded NMR spectral data. Steps: (1) Load the NMR spectrum (1H, 13C, or 2D) from the provided file. (2) Apply baseline correction and phase adjustment. (3) Perform peak picking and integrate key signals. (4) Assign peaks to structural fragments based on chemical shift tables and multiplicity patterns. (5) If a candidate structure is provided ({candidate_smiles}), predict its NMR spectrum and compare with experimental data. (6) Identify any unassigned peaks or inconsistencies. (7) Generate an annotated spectrum figure with peak labels and a chemical shift assignment table.",
+    "suggestedSkills": ["rdkit", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "candidate_smiles", "label": "Candidate structure SMILES (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "spectral-analysis-ms",
+    "name": "Mass Spectrometry Analysis",
+    "description": "Process MS or MS/MS data for compound identification and quantification",
+    "category": "chemistry",
+    "icon": "BarChart3",
+    "prompt": "Analyze the uploaded mass spectrometry data. Steps: (1) Load the MS data (mzML, mzXML, or raw format) and inspect metadata. (2) Perform peak detection and deisotoping. (3) Match experimental spectra against spectral libraries for compound identification using cosine similarity scoring. (4) For MS/MS data, annotate fragment ions and propose fragmentation pathways. (5) If quantitative analysis is needed, extract ion chromatograms for {target_compounds} and compute peak areas. (6) Generate annotated mass spectra plots and a hit table with identification confidence scores. (7) Export results as a structured report.",
+    "suggestedSkills": ["matchms", "pyopenms", "scientific-visualization"],
+    "placeholders": [
+      { "key": "target_compounds", "label": "Target compounds for quantification (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "thermodynamics-calculation",
+    "name": "Thermodynamics Calculation",
+    "description": "Calculate thermodynamic properties and equilibrium constants for chemical systems",
+    "category": "chemistry",
+    "icon": "Thermometer",
+    "prompt": "Perform thermodynamic calculations for the chemical system: {system}. Steps: (1) Define the chemical species and reaction(s) involved. (2) Look up or compute standard thermodynamic properties (ΔH°, ΔS°, ΔG°) from databases or first principles. (3) Calculate equilibrium constants (K) at the specified temperature(s): {temperature}. (4) Generate van't Hoff plots showing K vs temperature dependence. (5) Assess spontaneity and favorability under the given conditions. (6) If a reaction pathway is involved, construct a free energy diagram. (7) Export all calculated values and plots.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "Chemical system or reaction", "required": true },
+      { "key": "temperature", "label": "Temperature(s) in K (e.g., 298, 273-373)", "required": false }
+    ]
+  },
+  {
+    "id": "pka-prediction",
+    "name": "pKa Prediction",
+    "description": "Predict acid-base dissociation constants and identify ionizable groups",
+    "category": "chemistry",
+    "icon": "Gauge",
+    "prompt": "Predict pKa values for the molecule: {smiles}. Steps: (1) Parse the molecular structure and identify all ionizable functional groups (carboxylic acids, amines, phenols, etc.). (2) Predict pKa for each ionizable site using empirical or ML-based methods. (3) Determine the dominant protonation state at physiological pH (7.4) and at {target_ph} if specified. (4) Generate a microspecies distribution diagram showing fractional populations vs pH. (5) Visualize the molecule with pKa values annotated at each ionizable site. (6) Compare predicted values against experimental data if available. (7) Export predictions and the speciation plot.",
+    "suggestedSkills": ["rdkit", "datamol", "medchem", "matplotlib"],
+    "placeholders": [
+      { "key": "smiles", "label": "Molecule SMILES", "required": true },
+      { "key": "target_ph", "label": "Target pH for speciation (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "solubility-prediction",
+    "name": "Solubility Prediction",
+    "description": "Predict aqueous solubility and identify structural factors affecting it",
+    "category": "chemistry",
+    "icon": "Droplet",
+    "prompt": "Predict aqueous solubility for the uploaded molecules. Steps: (1) Parse molecules from the input (SMILES list or SDF). (2) Compute descriptors known to correlate with solubility (logP, TPSA, MW, HBD/HBA, aromatic ring count, Fsp3). (3) Apply a trained solubility prediction model (ESOL, General Solubility Equation, or ML-based). (4) Flag compounds with predicted poor solubility (logS < -4). (5) Analyze structural features contributing to insolubility for flagged compounds. (6) Suggest structural modifications to improve solubility where possible. (7) Generate a solubility distribution plot and export predictions as a table.",
+    "suggestedSkills": ["rdkit", "deepchem", "medchem", "datamol"],
+    "placeholders": []
+  },
+  {
+    "id": "reaction-optimization",
+    "name": "Reaction Optimization",
+    "description": "Design experiments and analyze data to optimize chemical reaction conditions",
+    "category": "chemistry",
+    "icon": "Target",
+    "prompt": "Optimize reaction conditions for: {reaction}. Steps: (1) Define the reaction parameters to optimize: {parameters}. (2) If starting from scratch, design an initial Design of Experiments (DoE) using a space-filling or factorial design. (3) If data is uploaded, analyze the existing results to build a response surface model. (4) Identify the most important factors and their interactions using statistical analysis (ANOVA). (5) Predict optimal conditions using the model and suggest the next set of experiments. (6) Visualize the response surface and parameter effects as contour plots. (7) Report predicted optimal conditions with confidence intervals.",
+    "suggestedSkills": ["scikit-learn", "statsmodels", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "reaction", "label": "Reaction description", "required": true },
+      { "key": "parameters", "label": "Parameters to optimize (e.g., temperature, solvent, catalyst loading)", "required": true }
+    ]
+  },
+  {
+    "id": "polymer-design",
+    "name": "Polymer Design & Analysis",
+    "description": "Analyze polymer properties or design polymers with target characteristics",
+    "category": "chemistry",
+    "icon": "Layers",
+    "prompt": "Design or analyze polymers with target properties. Steps: (1) Define the target application and desired properties: {target_properties}. (2) If monomers are provided, compute repeat unit properties and predict polymer characteristics (Tg, Tm, density, mechanical properties). (3) If designing de novo, search chemical space for monomer candidates with favorable predicted polymer properties. (4) Model the polymer chain using appropriate representations (BigSMILES or repeat unit SMILES). (5) Predict key material properties using structure-property relationships or ML models. (6) Compare candidate designs against existing commercial polymers. (7) Export a ranked list of polymer candidates with predicted properties.",
+    "suggestedSkills": ["rdkit", "deepchem", "datamol", "scikit-learn"],
+    "placeholders": [
+      { "key": "target_properties", "label": "Target properties (e.g., Tg > 150°C, biodegradable, transparent)", "required": true }
+    ]
+  },
+  {
+    "id": "catalyst-design",
+    "name": "Catalyst Design",
+    "description": "Screen and evaluate catalysts for a target reaction computationally",
+    "category": "chemistry",
+    "icon": "Cog",
+    "prompt": "Design or evaluate catalysts for the reaction: {reaction}. Steps: (1) Define the target reaction and desired selectivity/activity criteria. (2) Survey known catalysts for this reaction class from literature and databases. (3) Compute electronic and steric descriptors for candidate catalysts (buried volume, Tolman cone angle, NBO charges, etc.). (4) Build a structure-activity model relating catalyst descriptors to performance. (5) Screen virtual catalyst libraries to identify promising candidates. (6) Rank candidates by predicted turnover, selectivity, and stability. (7) Suggest the top {n_candidates} catalyst designs with rationale and property predictions.",
+    "suggestedSkills": ["rdkit", "rowan", "scikit-learn", "scientific-visualization"],
+    "placeholders": [
+      { "key": "reaction", "label": "Target reaction", "required": true },
+      { "key": "n_candidates", "label": "Number of top candidates (default 5)", "required": false }
+    ]
+  },
+  {
+    "id": "chemical-safety-assessment",
+    "name": "Chemical Safety Assessment",
+    "description": "Evaluate toxicity, hazards, and safety data for chemical compounds",
+    "category": "chemistry",
+    "icon": "Shield",
+    "prompt": "Perform a safety assessment for the chemicals: {chemicals}. Steps: (1) Retrieve Safety Data Sheets (SDS) and hazard classifications from PubChem and regulatory databases. (2) Identify GHS hazard pictograms, signal words, and H/P statements. (3) Predict toxicity endpoints (LD50, LC50, mutagenicity, carcinogenicity) using QSAR models. (4) Assess environmental hazards (biodegradability, bioaccumulation, aquatic toxicity). (5) Check regulatory status (REACH, TSCA, restricted substances lists). (6) Recommend safe handling procedures, PPE, and waste disposal methods. (7) Generate a structured safety report.",
+    "suggestedSkills": ["rdkit", "pubchem-database", "medchem"],
+    "placeholders": [
+      { "key": "chemicals", "label": "Chemical names or SMILES (comma-separated)", "required": true }
+    ]
+  },
+  {
+    "id": "metabolite-identification",
+    "name": "Metabolite Identification",
+    "description": "Identify metabolites from mass spectrometry data using spectral matching and databases",
+    "category": "chemistry",
+    "icon": "Search",
+    "prompt": "Identify metabolites from the uploaded mass spectrometry dataset. Steps: (1) Load the LC-MS or GC-MS data and extract features (m/z, retention time, intensity). (2) Match features against metabolite databases: HMDB, KEGG, PubChem using accurate mass and adduct rules. (3) For MS/MS data, perform spectral matching against reference libraries using cosine similarity. (4) Score identifications by confidence level (Level 1-4 per MSI guidelines). (5) Map identified metabolites to metabolic pathways. (6) Perform differential analysis between {conditions} if multiple samples are present. (7) Generate a metabolite identification table and pathway enrichment results.",
+    "suggestedSkills": ["matchms", "pyopenms", "hmdb-database", "kegg-database"],
+    "placeholders": [
+      { "key": "conditions", "label": "Experimental conditions to compare (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "synthetic-accessibility",
+    "name": "Synthetic Accessibility Scoring",
+    "description": "Evaluate how easily a molecule can be synthesized in the lab",
+    "category": "chemistry",
+    "icon": "Wrench",
+    "prompt": "Evaluate synthetic accessibility for the uploaded molecules. Steps: (1) Parse all molecules and compute the SA Score (Ertl) — a 1-10 scale of synthetic difficulty. (2) Calculate additional complexity metrics (Bertz complexity, number of stereocenters, ring complexity). (3) Identify problematic structural motifs that make synthesis challenging. (4) Check if close analogs are commercially available in ZINC or vendor catalogs. (5) For high-difficulty molecules (SA > 6), suggest simplified analogs that retain the key pharmacophore. (6) Rank molecules by ease of synthesis. (7) Export a table with SA scores, complexity metrics, and availability flags.",
+    "suggestedSkills": ["rdkit", "datamol", "zinc-database", "medchem"],
+    "placeholders": []
+  },
+  {
+    "id": "target-identification",
+    "name": "Drug Target Identification",
+    "description": "Identify and validate biological targets for a disease indication",
+    "category": "drugdiscovery",
+    "icon": "Crosshair",
+    "prompt": "Identify potential drug targets for {disease}. Steps: (1) Mine the literature and Open Targets database for genes/proteins associated with {disease}. (2) Retrieve genetic evidence (GWAS hits, rare variants, CRISPR screens) supporting target involvement. (3) Analyze target expression in relevant tissues using GTEx data. (4) Assess target druggability — protein family, binding pockets, existing ligands in ChEMBL. (5) Evaluate safety risk by checking knockout phenotypes and tissue expression breadth. (6) Score and rank targets by a composite of genetic evidence, druggability, and safety. (7) Export a prioritized target list with evidence summaries.",
+    "suggestedSkills": ["opentargets-database", "gtex-database", "chembl-database", "gene-database"],
+    "placeholders": [
+      { "key": "disease", "label": "Disease or indication", "required": true }
+    ]
+  },
+  {
+    "id": "virtual-screening",
+    "name": "Virtual Screening",
+    "description": "Screen a compound library against a target to find potential hits",
+    "category": "drugdiscovery",
+    "icon": "Filter",
+    "prompt": "Perform virtual screening of a compound library against {target}. Steps: (1) Retrieve or prepare the target protein structure (PDB ID: {pdb_id} or from AlphaFold). (2) Prepare the compound library — standardize structures, generate 3D conformers, apply drug-likeness filters. (3) Define the binding site on the target. (4) Run docking-based virtual screening using appropriate scoring functions. (5) Rank compounds by binding score and apply consensus scoring if multiple methods are used. (6) Filter hits by drug-likeness, novelty, and predicted ADMET properties. (7) Visualize the top 10 hits with their binding poses. (8) Export a ranked hit list with scores, SMILES, and predicted binding modes.",
+    "suggestedSkills": ["diffdock", "rdkit", "chembl-database", "pdb-database"],
+    "placeholders": [
+      { "key": "target", "label": "Target protein name", "required": true },
+      { "key": "pdb_id", "label": "PDB ID (if known)", "required": false }
+    ]
+  },
+  {
+    "id": "admet-prediction",
+    "name": "ADMET Prediction",
+    "description": "Predict absorption, distribution, metabolism, excretion, and toxicity profiles",
+    "category": "drugdiscovery",
+    "icon": "Activity",
+    "prompt": "Predict ADMET properties for the uploaded compounds. Steps: (1) Parse and standardize all molecular structures. (2) Predict Absorption: Caco-2 permeability, oral bioavailability, P-gp substrate. (3) Predict Distribution: plasma protein binding, volume of distribution, blood-brain barrier penetration. (4) Predict Metabolism: CYP450 inhibition (1A2, 2C9, 2C19, 2D6, 3A4), metabolic stability. (5) Predict Excretion: clearance, half-life. (6) Predict Toxicity: hERG inhibition, AMES mutagenicity, hepatotoxicity, skin sensitization. (7) Generate a traffic-light summary (green/yellow/red) for each property. (8) Flag compounds with critical liabilities and export the full ADMET profile table.",
+    "suggestedSkills": ["pytdc", "rdkit", "deepchem", "medchem"],
+    "placeholders": []
+  },
+  {
+    "id": "lead-optimization",
+    "name": "Lead Optimization",
+    "description": "Optimize a hit compound for potency, selectivity, and drug-like properties",
+    "category": "drugdiscovery",
+    "icon": "Sparkles",
+    "prompt": "Optimize the lead compound: {lead_smiles}. Steps: (1) Profile the current lead — compute all drug-likeness properties, predict ADMET, and identify liabilities. (2) Define the optimization objective: improve {optimization_goal} while maintaining potency. (3) Decompose the molecule into a core scaffold and R-groups for SAR analysis. (4) Generate analogs by systematic R-group enumeration and bioisosteric replacements. (5) Score analogs for predicted activity, improved ADMET, and synthetic accessibility. (6) Apply multi-parameter optimization (MPO) to rank analogs. (7) Select the top 10 candidates and provide detailed rationale for each modification. (8) Export the optimized analog set with property profiles.",
+    "suggestedSkills": ["rdkit", "medchem", "datamol", "deepchem"],
+    "placeholders": [
+      { "key": "lead_smiles", "label": "Lead compound SMILES", "required": true },
+      { "key": "optimization_goal", "label": "Optimization goal (e.g., solubility, metabolic stability, selectivity)", "required": true }
+    ]
+  },
+  {
+    "id": "drug-repurposing",
+    "name": "Drug Repurposing Screen",
+    "description": "Identify existing approved drugs that may work for a new indication",
+    "category": "drugdiscovery",
+    "icon": "RefreshCw",
+    "prompt": "Screen for drug repurposing candidates for {disease}. Steps: (1) Compile disease-associated targets and pathways from Open Targets and KEGG. (2) Query DrugBank and ChEMBL for approved drugs and clinical candidates that modulate these targets. (3) Perform network-based analysis — build a drug-target-disease network and identify drugs with multi-target coverage. (4) Score candidates by: number of relevant targets hit, clinical safety profile, existing evidence for the indication. (5) Cross-reference with ClinicalTrials.gov for any ongoing repurposing trials. (6) Rank the top {n_candidates} repurposing candidates. (7) Export a report with drug names, mechanisms, evidence, and feasibility assessment.",
+    "suggestedSkills": ["drugbank-database", "opentargets-database", "clinicaltrials-database", "kegg-database"],
+    "placeholders": [
+      { "key": "disease", "label": "Target disease or indication", "required": true },
+      { "key": "n_candidates", "label": "Number of top candidates (default 20)", "required": false }
+    ]
+  },
+  {
+    "id": "pharmacokinetics-modeling",
+    "name": "Pharmacokinetics Modeling",
+    "description": "Build PK models to predict drug concentration-time profiles",
+    "category": "drugdiscovery",
+    "icon": "LineChart",
+    "prompt": "Build a pharmacokinetic model for {drug}. Steps: (1) Load the uploaded PK data (concentration-time measurements). (2) Perform non-compartmental analysis (NCA) to estimate Cmax, Tmax, AUC, half-life, and clearance. (3) Fit compartmental models (1- and 2-compartment) to the data using nonlinear least squares. (4) Select the best model based on AIC/BIC and residual plots. (5) Simulate concentration-time profiles for different dosing regimens: {regimens}. (6) Estimate steady-state concentrations and accumulation ratios. (7) Generate PK parameter summary table and concentration-time plots. (8) Export the model and simulation results.",
+    "suggestedSkills": ["statsmodels", "matplotlib", "scientific-visualization", "scikit-learn"],
+    "placeholders": [
+      { "key": "drug", "label": "Drug name or compound ID", "required": true },
+      { "key": "regimens", "label": "Dosing regimens to simulate (e.g., 100mg BID, 200mg QD)", "required": false }
+    ]
+  },
+  {
+    "id": "dose-response-analysis",
+    "name": "Dose-Response Analysis",
+    "description": "Fit dose-response curves and determine IC50/EC50 values",
+    "category": "drugdiscovery",
+    "icon": "TrendingUp",
+    "prompt": "Analyze dose-response data for the uploaded assay results. Steps: (1) Load the dose-response data (concentration vs response). (2) Perform quality control — identify and flag outliers, check for plate effects. (3) Fit a 4-parameter logistic (Hill) model to each compound: Response = Bottom + (Top - Bottom) / (1 + (IC50/[C])^n). (4) Estimate IC50 (or EC50), Hill coefficient, and confidence intervals. (5) Generate dose-response curves with data points and fitted curves for all compounds. (6) Compare potencies across compounds using a forest plot of IC50 values. (7) Flag compounds with poor curve fits (R² < 0.8) or incomplete curves. (8) Export IC50 values, curve parameters, and quality metrics.",
+    "suggestedSkills": ["statsmodels", "matplotlib", "scientific-visualization"],
+    "placeholders": []
+  },
+  {
+    "id": "drug-interaction-prediction",
+    "name": "Drug-Drug Interaction Prediction",
+    "description": "Predict potential pharmacokinetic and pharmacodynamic drug interactions",
+    "category": "drugdiscovery",
+    "icon": "Hexagon",
+    "prompt": "Predict drug-drug interactions for the combination: {drug_list}. Steps: (1) Retrieve metabolic profiles for each drug — CYP enzymes involved in metabolism and inhibition/induction data. (2) Identify potential PK interactions: CYP inhibition/induction leading to altered exposure. (3) Check for transporter-mediated interactions (P-gp, OATP, BCRP). (4) Assess PD interactions — shared or opposing mechanisms, additive/synergistic toxicity. (5) Cross-reference with known interaction databases (DrugBank, FDA labeling). (6) Classify interactions by severity (major, moderate, minor). (7) Generate an interaction matrix and clinical recommendations. (8) Export the interaction report.",
+    "suggestedSkills": ["drugbank-database", "fda-database", "rdkit"],
+    "placeholders": [
+      { "key": "drug_list", "label": "Drug names (comma-separated)", "required": true }
+    ]
+  },
+  {
+    "id": "clinical-trial-design",
+    "name": "Clinical Trial Design",
+    "description": "Design clinical trial protocols with statistical power and endpoint selection",
+    "category": "drugdiscovery",
+    "icon": "ClipboardCheck",
+    "prompt": "Design a clinical trial protocol for {drug} in {indication}. Steps: (1) Define the primary objective and study hypothesis. (2) Select primary and secondary endpoints based on regulatory precedent and clinical relevance. (3) Determine the trial phase ({phase}) and overall design (parallel, crossover, adaptive). (4) Perform sample size calculation based on expected effect size, variability, significance level (α=0.05), and power ({power}%). (5) Define inclusion/exclusion criteria, randomization strategy, and blinding. (6) Plan the statistical analysis — primary analysis method, multiplicity adjustment, interim analyses. (7) Create a study timeline with key milestones. (8) Export the protocol synopsis.",
+    "suggestedSkills": ["clinical-decision-support", "statsmodels", "statistical-analysis"],
+    "placeholders": [
+      { "key": "drug", "label": "Drug or intervention", "required": true },
+      { "key": "indication", "label": "Disease indication", "required": true },
+      { "key": "phase", "label": "Trial phase (I, II, III)", "required": false },
+      { "key": "power", "label": "Statistical power % (default 80)", "required": false }
+    ]
+  },
+  {
+    "id": "biomarker-discovery",
+    "name": "Biomarker Discovery",
+    "description": "Identify and validate molecular biomarkers from omics data",
+    "category": "drugdiscovery",
+    "icon": "Microscope",
+    "prompt": "Discover candidate biomarkers from the uploaded omics dataset. Steps: (1) Load the data (gene expression, proteomics, or metabolomics) and clinical metadata. (2) Preprocess: normalize, batch-correct, and filter low-quality features. (3) Perform differential analysis between {groups} to identify significantly altered features. (4) Apply feature selection methods (LASSO, Random Forest importance, elastic net) to identify a minimal biomarker panel. (5) Build a classification model using the selected biomarkers and evaluate via cross-validated AUC. (6) Visualize biomarker performance with ROC curves, box plots, and heatmaps. (7) Validate biomarker biological relevance through pathway analysis. (8) Export the biomarker panel with performance metrics.",
+    "suggestedSkills": ["scikit-learn", "pydeseq2", "shap", "scientific-visualization"],
+    "placeholders": [
+      { "key": "groups", "label": "Groups to compare (e.g., responders vs non-responders)", "required": true }
+    ]
+  },
+  {
+    "id": "toxicity-prediction",
+    "name": "Toxicity Prediction",
+    "description": "Predict multiple toxicity endpoints for compounds using QSAR models",
+    "category": "drugdiscovery",
+    "icon": "FlaskConical",
+    "prompt": "Predict toxicity profiles for the uploaded compounds. Steps: (1) Parse and standardize all molecular structures. (2) Compute toxicity-relevant descriptors and structural alerts (Brenk, PAINS, reactive metabolite flags). (3) Predict key toxicity endpoints: AMES mutagenicity, hERG channel inhibition, hepatotoxicity, acute oral toxicity (LD50), skin sensitization, carcinogenicity. (4) Check for known toxicophores and structural alerts. (5) Compare against the ToxCast/Tox21 dataset for any existing experimental data. (6) Generate a toxicity risk profile with traffic-light scoring for each endpoint. (7) Recommend structural modifications to mitigate identified risks. (8) Export the full toxicity assessment report.",
+    "suggestedSkills": ["pytdc", "rdkit", "deepchem", "medchem"],
+    "placeholders": []
+  },
+  {
+    "id": "formulation-optimization",
+    "name": "Formulation Optimization",
+    "description": "Optimize drug formulation parameters using design of experiments and modeling",
+    "category": "drugdiscovery",
+    "icon": "TestTubes",
+    "prompt": "Optimize the formulation for {drug}. Steps: (1) Define formulation objectives: target {dosage_form} with desired release profile and stability. (2) Identify critical formulation parameters (excipient ratios, particle size, coating thickness, etc.). (3) Design experiments using DoE methodology (response surface or mixture design). (4) If data is uploaded, analyze results and build predictive models for critical quality attributes (dissolution, stability, content uniformity). (5) Identify optimal formulation space using desirability functions. (6) Predict shelf-life stability under ICH conditions. (7) Recommend the optimal formulation with target ranges for each parameter. (8) Export the DoE analysis and formulation recommendation.",
+    "suggestedSkills": ["scikit-learn", "statsmodels", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "drug", "label": "Drug compound", "required": true },
+      { "key": "dosage_form", "label": "Dosage form (e.g., tablet, capsule, injectable)", "required": true }
+    ]
+  },
+  {
+    "id": "pharmacogenomics-analysis",
+    "name": "Pharmacogenomics Analysis",
+    "description": "Analyze genetic variants affecting drug response and metabolism",
+    "category": "drugdiscovery",
+    "icon": "Dna",
+    "prompt": "Perform pharmacogenomics analysis for {drug}. Steps: (1) Retrieve known pharmacogenomic associations from ClinPGx and PharmGKB databases for {drug}. (2) Identify relevant gene variants (CYP2D6, CYP2C19, CYP3A4, HLA alleles, transporters). (3) Classify variant phenotypes (poor, intermediate, normal, ultra-rapid metabolizer). (4) Map clinical actionability — dosing guidelines from CPIC and DPWG. (5) If patient genotype data is uploaded, determine individual metabolizer status and provide personalized dosing recommendations. (6) Visualize the pharmacogene landscape for this drug. (7) Export a structured PGx report with clinical recommendations.",
+    "suggestedSkills": ["clinpgx-database", "clinvar-database", "gene-database"],
+    "placeholders": [
+      { "key": "drug", "label": "Drug name", "required": true }
+    ]
+  },
+  {
+    "id": "side-effect-prediction",
+    "name": "Side Effect Prediction",
+    "description": "Predict potential adverse drug reactions based on molecular structure and target profile",
+    "category": "drugdiscovery",
+    "icon": "HeartPulse",
+    "prompt": "Predict potential side effects for the compound: {smiles}. Steps: (1) Parse the molecular structure and compute structural fingerprints. (2) Query similarity-based models: find structurally similar drugs in DrugBank and their known side effects. (3) Predict off-target binding using target prediction tools across the druggable proteome. (4) Map predicted off-targets to known adverse event associations. (5) Score predicted side effects by: structural similarity evidence, off-target evidence, and frequency in similar drug classes. (6) Classify risks as common, occasional, or rare. (7) Highlight any serious safety signals (cardiac, hepatic, neurological). (8) Export a ranked side effect prediction report.",
+    "suggestedSkills": ["rdkit", "drugbank-database", "opentargets-database"],
+    "placeholders": [
+      { "key": "smiles", "label": "Compound SMILES", "required": true }
+    ]
+  },
+  {
+    "id": "drug-target-network",
+    "name": "Drug-Target Interaction Network",
+    "description": "Build and analyze drug-target networks for polypharmacology insights",
+    "category": "drugdiscovery",
+    "icon": "Network",
+    "prompt": "Construct and analyze a drug-target interaction network for {focus}. Steps: (1) Retrieve drug-target interactions from ChEMBL, DrugBank, and BindingDB for the drugs/targets of interest. (2) Build a bipartite drug-target network using networkx. (3) Compute network metrics: degree distribution, betweenness centrality, clustering coefficient. (4) Identify hub targets (hit by many drugs) and promiscuous drugs (hitting many targets). (5) Detect network communities/modules representing pharmacological classes. (6) Overlay disease associations to find opportunities for drug repurposing. (7) Visualize the network with nodes colored by type and sized by connectivity. (8) Export the network graph and centrality metrics table.",
+    "suggestedSkills": ["networkx", "chembl-database", "drugbank-database", "bindingdb-database"],
+    "placeholders": [
+      { "key": "focus", "label": "Focus area (e.g., kinase inhibitors, GPCR drugs, or specific disease)", "required": true }
+    ]
+  },
+  {
+    "id": "competitive-landscape-pharma",
+    "name": "Pharma Competitive Landscape",
+    "description": "Map the competitive landscape of drugs in development for a therapeutic area",
+    "category": "drugdiscovery",
+    "icon": "Eye",
+    "prompt": "Map the pharmaceutical competitive landscape for {therapeutic_area}. Steps: (1) Search ClinicalTrials.gov for all active trials in {therapeutic_area}. (2) Compile a pipeline database: drug name, sponsor, mechanism of action, phase, status, primary endpoints. (3) Retrieve approved drugs from FDA database for this indication. (4) Categorize pipeline compounds by mechanism of action and target. (5) Create a pipeline visualization: bubble chart by phase and MoA with company labels. (6) Identify gaps in the pipeline — underserved mechanisms or patient populations. (7) Summarize recent regulatory actions (approvals, rejections, fast-track designations). (8) Export the competitive landscape report and pipeline database.",
+    "suggestedSkills": ["clinicaltrials-database", "fda-database", "opentargets-database"],
+    "placeholders": [
+      { "key": "therapeutic_area", "label": "Therapeutic area (e.g., NASH, Alzheimer's, immuno-oncology)", "required": true }
+    ]
+  },
+  {
+    "id": "quantum-circuit-design",
+    "name": "Quantum Circuit Design",
+    "description": "Design and simulate quantum circuits for a specified algorithm or task",
+    "category": "physics",
+    "icon": "Cpu",
+    "prompt": "Design a quantum circuit for: {algorithm}. Steps: (1) Define the problem and the quantum algorithm to implement (e.g., Grover's, VQE, QAOA, Shor's). (2) Construct the quantum circuit with appropriate gates and qubit count ({n_qubits} qubits). (3) Optimize the circuit depth by decomposing multi-qubit gates and applying gate cancellation. (4) Simulate the circuit using a statevector simulator and verify correctness. (5) Analyze the output state — plot probability distributions and expectation values. (6) Estimate resource requirements: gate count, circuit depth, T-gate count. (7) Visualize the circuit diagram and simulation results. (8) Export the circuit in OpenQASM format.",
+    "suggestedSkills": ["qiskit", "cirq", "pennylane"],
+    "placeholders": [
+      { "key": "algorithm", "label": "Algorithm or task to implement", "required": true },
+      { "key": "n_qubits", "label": "Number of qubits", "required": false }
+    ]
+  },
+  {
+    "id": "quantum-simulation",
+    "name": "Quantum System Simulation",
+    "description": "Simulate quantum mechanical systems: spin chains, bosonic modes, or open systems",
+    "category": "physics",
+    "icon": "Atom",
+    "prompt": "Simulate the quantum system: {system}. Steps: (1) Define the Hamiltonian and system parameters (coupling constants, external fields, system size). (2) Construct the Hamiltonian matrix or operator representation in QuTiP or Qiskit. (3) For closed systems: compute energy eigenvalues and eigenstates, simulate time evolution under the Hamiltonian for duration {time_duration}. (4) For open systems: define Lindblad operators and solve the master equation. (5) Calculate observables of interest (magnetization, correlation functions, entanglement entropy). (6) Visualize energy spectra, time dynamics, and Bloch sphere representations. (7) Investigate phase transitions by sweeping a parameter. (8) Export simulation data and plots.",
+    "suggestedSkills": ["qutip", "qiskit", "matplotlib", "sympy"],
+    "placeholders": [
+      { "key": "system", "label": "Quantum system (e.g., Ising chain, harmonic oscillator, Jaynes-Cummings)", "required": true },
+      { "key": "time_duration", "label": "Simulation time duration (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "quantum-ml-model",
+    "name": "Quantum Machine Learning",
+    "description": "Build hybrid quantum-classical ML models for classification or regression",
+    "category": "physics",
+    "icon": "Brain",
+    "prompt": "Build a quantum machine learning model for: {task}. Steps: (1) Load and preprocess the dataset — feature scaling and dimensionality reduction to fit {n_qubits} qubits. (2) Design a variational quantum circuit (ansatz) as a parameterized feature map and classifier. (3) Implement the hybrid quantum-classical training loop with a classical optimizer (COBYLA or Adam). (4) Train the model and monitor the loss function convergence. (5) Evaluate performance with cross-validation (accuracy, F1, or RMSE). (6) Compare against a classical baseline model of equivalent complexity. (7) Analyze which features and circuit parameters are most important. (8) Export the trained model parameters and performance comparison.",
+    "suggestedSkills": ["pennylane", "qiskit", "scikit-learn"],
+    "placeholders": [
+      { "key": "task", "label": "ML task description", "required": true },
+      { "key": "n_qubits", "label": "Number of qubits (default 4)", "required": false }
+    ]
+  },
+  {
+    "id": "classical-mechanics-sim",
+    "name": "Classical Mechanics Simulation",
+    "description": "Simulate classical mechanical systems: pendulums, orbits, rigid bodies",
+    "category": "physics",
+    "icon": "CircleDot",
+    "prompt": "Simulate the classical mechanical system: {system}. Steps: (1) Define the system: masses, initial positions, velocities, and forces. (2) Write the equations of motion (Newtonian or Lagrangian formulation). (3) Solve the ODEs numerically using an appropriate integrator (RK45 or symplectic for conservative systems). (4) Simulate for duration {duration} with appropriate time step. (5) Compute conserved quantities (energy, momentum, angular momentum) and verify conservation. (6) Visualize trajectories, phase space portraits, and energy vs time. (7) Perform parameter sensitivity analysis if requested. (8) Generate animations or trajectory plots. (9) Export simulation data and figures.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "Mechanical system (e.g., double pendulum, three-body, spring-mass)", "required": true },
+      { "key": "duration", "label": "Simulation duration in seconds", "required": false }
+    ]
+  },
+  {
+    "id": "electromagnetic-simulation",
+    "name": "Electromagnetic Simulation",
+    "description": "Simulate electric and magnetic fields, wave propagation, and circuits",
+    "category": "physics",
+    "icon": "Zap",
+    "prompt": "Simulate the electromagnetic system: {system}. Steps: (1) Define the geometry, boundary conditions, and source configuration. (2) Set up Maxwell's equations or the relevant approximation (electrostatics, magnetostatics, or full wave). (3) Discretize the domain using FDTD, FEM, or analytical methods as appropriate. (4) Solve for the fields: E, B, and/or the potential. (5) Compute derived quantities: Poynting vector, energy density, impedance, radiation pattern. (6) Visualize field distributions as 2D vector plots and heatmaps. (7) Validate against analytical solutions where available. (8) Export field data and visualization plots.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "EM system (e.g., dipole antenna, waveguide, capacitor, coil)", "required": true }
+    ]
+  },
+  {
+    "id": "statistical-mechanics",
+    "name": "Statistical Mechanics Simulation",
+    "description": "Monte Carlo and molecular dynamics simulations of statistical mechanical systems",
+    "category": "physics",
+    "icon": "Flame",
+    "prompt": "Perform a statistical mechanics simulation of: {system}. Steps: (1) Define the model Hamiltonian and system parameters (temperature: {temperature}, system size: {system_size}). (2) Implement the appropriate simulation method (Metropolis Monte Carlo, molecular dynamics, or Wang-Landau). (3) Equilibrate the system and collect samples. (4) Compute thermodynamic observables: energy, specific heat, magnetization, susceptibility, entropy. (5) Perform a temperature sweep to map the phase diagram and identify phase transitions. (6) Calculate correlation functions and order parameters. (7) Analyze finite-size scaling if studying critical phenomena. (8) Export thermodynamic data and phase diagrams.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "System (e.g., 2D Ising model, Lennard-Jones fluid, XY model)", "required": true },
+      { "key": "temperature", "label": "Temperature or temperature range", "required": false },
+      { "key": "system_size", "label": "System size (e.g., 32x32 lattice)", "required": false }
+    ]
+  },
+  {
+    "id": "quantum-state-tomography",
+    "name": "Quantum State Tomography",
+    "description": "Reconstruct a quantum state from measurement data",
+    "category": "physics",
+    "icon": "Scan",
+    "prompt": "Perform quantum state tomography from the uploaded measurement data. Steps: (1) Load the measurement outcomes from Pauli basis measurements (X, Y, Z) on {n_qubits} qubits. (2) Construct the measurement operators and organize count data. (3) Reconstruct the density matrix using maximum likelihood estimation (MLE) or linear inversion. (4) Ensure physicality of the reconstructed state (trace 1, positive semidefinite). (5) Compute fidelity with the target state if provided: {target_state}. (6) Calculate state properties: purity, von Neumann entropy, concurrence (for 2 qubits). (7) Visualize the density matrix as a Hinton diagram and Bloch sphere. (8) Export the reconstructed density matrix and quality metrics.",
+    "suggestedSkills": ["qiskit", "qutip", "matplotlib"],
+    "placeholders": [
+      { "key": "n_qubits", "label": "Number of qubits", "required": true },
+      { "key": "target_state", "label": "Target state for fidelity comparison (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "particle-physics-analysis",
+    "name": "Particle Physics Data Analysis",
+    "description": "Analyze collision data to identify particles and measure cross-sections",
+    "category": "physics",
+    "icon": "Atom",
+    "prompt": "Analyze the uploaded particle physics dataset. Steps: (1) Load the event data (ROOT format or CSV with kinematic variables). (2) Apply event selection cuts for the signal process: {signal_process}. (3) Reconstruct invariant mass distributions and identify resonance peaks. (4) Estimate backgrounds using data-driven methods (sideband subtraction or MC templates). (5) Perform signal extraction using a fit to the invariant mass spectrum (signal + background model). (6) Calculate signal significance (S/√B) and statistical significance. (7) Measure the cross-section or branching ratio if luminosity data is available. (8) Generate publication-quality plots: invariant mass, angular distributions, and cut-flow tables.",
+    "suggestedSkills": ["matplotlib", "statsmodels", "scientific-visualization"],
+    "placeholders": [
+      { "key": "signal_process", "label": "Signal process (e.g., H→γγ, Z→μμ, top pair production)", "required": true }
+    ]
+  },
+  {
+    "id": "condensed-matter-bands",
+    "name": "Band Structure Calculation",
+    "description": "Compute and visualize electronic band structures and density of states",
+    "category": "physics",
+    "icon": "Layers",
+    "prompt": "Calculate the electronic band structure for: {material}. Steps: (1) Define the crystal structure — lattice vectors, basis atoms, and space group. (2) Set up the DFT calculation parameters (exchange-correlation functional, k-point grid, energy cutoff). (3) Perform a self-consistent field (SCF) calculation to obtain the ground-state charge density. (4) Compute the band structure along high-symmetry k-paths in the Brillouin zone. (5) Calculate the density of states (DOS) and projected DOS (PDOS). (6) Determine the band gap (direct/indirect) and effective masses. (7) Visualize the band structure with orbital character coloring and the DOS. (8) Export band energies, DOS data, and publication-quality figures.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Material (e.g., Si, GaAs, MoS2, graphene)", "required": true }
+    ]
+  },
+  {
+    "id": "optics-simulation",
+    "name": "Optics Simulation",
+    "description": "Simulate optical systems: ray tracing, diffraction, and interference patterns",
+    "category": "physics",
+    "icon": "Eye",
+    "prompt": "Simulate the optical system: {system}. Steps: (1) Define the optical elements: lenses, mirrors, apertures, gratings, and their positions. (2) For ray optics: trace rays through the system using the paraxial or exact ray transfer matrices. (3) For wave optics: compute the wavefront propagation using Fresnel or Fraunhofer diffraction integrals. (4) Calculate key optical properties: focal length, magnification, resolution, aberrations, MTF. (5) Generate intensity distributions at the image plane or detector. (6) Simulate interference patterns if multiple coherent sources are involved. (7) Visualize ray diagrams, point spread functions, and intensity plots. (8) Export optical parameters and simulation data.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "Optical system (e.g., telescope, microscope, interferometer, fiber coupler)", "required": true }
+    ]
+  },
+  {
+    "id": "thermodynamic-modeling",
+    "name": "Thermodynamic System Modeling",
+    "description": "Model thermodynamic cycles, engines, and heat transfer systems",
+    "category": "physics",
+    "icon": "Thermometer",
+    "prompt": "Model the thermodynamic system: {system}. Steps: (1) Define the working fluid, state variables, and cycle type (Carnot, Rankine, Brayton, Otto, or custom). (2) Calculate state properties (T, P, V, S, H) at each point in the cycle using equations of state. (3) Compute work done, heat transferred, and entropy changes for each process. (4) Calculate overall cycle efficiency, coefficient of performance, or other relevant metrics. (5) Plot the cycle on T-S, P-V, and H-S diagrams. (6) Perform a parametric study: how does efficiency vary with {parameter}? (7) Compare against the ideal Carnot efficiency. (8) Export all thermodynamic data and diagrams.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "Thermodynamic system or cycle", "required": true },
+      { "key": "parameter", "label": "Parameter to vary (e.g., compression ratio, boiler temperature)", "required": false }
+    ]
+  },
+  {
+    "id": "nuclear-decay-analysis",
+    "name": "Nuclear Decay Analysis",
+    "description": "Model radioactive decay chains and compute activities over time",
+    "category": "physics",
+    "icon": "Atom",
+    "prompt": "Analyze the nuclear decay chain for: {isotope}. Steps: (1) Retrieve decay data (half-lives, decay modes, branching ratios) for {isotope} and all daughter isotopes. (2) Set up the Bateman equations for the complete decay chain. (3) Solve the coupled differential equations numerically for an initial activity of {initial_activity}. (4) Compute the activity of each isotope in the chain as a function of time. (5) Determine secular, transient, or no-equilibrium conditions. (6) Calculate specific activity, decay energy, and radiation types emitted. (7) Plot activity vs time for all chain members. (8) Export decay chain data, activities, and equilibrium timescales.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "isotope", "label": "Parent isotope (e.g., U-238, Cs-137, Tc-99m)", "required": true },
+      { "key": "initial_activity", "label": "Initial activity in Bq (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "gravitational-wave-analysis",
+    "name": "Gravitational Wave Analysis",
+    "description": "Analyze gravitational wave signals: filtering, parameter estimation, and sky localization",
+    "category": "physics",
+    "icon": "Waves",
+    "prompt": "Analyze the gravitational wave data from the uploaded strain timeseries. Steps: (1) Load the strain data and characterize the noise (PSD estimation). (2) Apply bandpass filtering and whitening to the data. (3) Search for signals using matched filtering with {template_type} waveform templates. (4) Identify candidate events above SNR threshold. (5) For detected events: estimate source parameters (masses, spin, distance, inclination) using Bayesian inference or grid search. (6) Generate time-frequency spectrograms and visualize the waveform. (7) Compare the best-fit template with the data. (8) Export event parameters, SNR timeseries, and spectrogram plots.",
+    "suggestedSkills": ["astropy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "template_type", "label": "Template type (e.g., BBH, BNS, NSBH)", "required": false }
+    ]
+  },
+  {
+    "id": "plasma-physics-sim",
+    "name": "Plasma Physics Simulation",
+    "description": "Simulate plasma dynamics: particle-in-cell, MHD, and transport phenomena",
+    "category": "physics",
+    "icon": "Wind",
+    "prompt": "Simulate the plasma system: {system}. Steps: (1) Define the plasma parameters: species (electrons, ions), densities ({density}), temperatures, and magnetic field configuration. (2) Choose the simulation approach (particle-in-cell, MHD, gyrokinetic, or fluid) based on the problem scale. (3) Set up the simulation domain, boundary conditions, and initial conditions. (4) Evolve the system for the specified duration, resolving relevant timescales (plasma frequency, cyclotron frequency). (5) Compute key diagnostics: plasma frequency, Debye length, beta, drift velocities. (6) Analyze instabilities, wave modes, or transport coefficients. (7) Visualize phase space, field distributions, and density profiles. (8) Export simulation diagnostics and time evolution data.",
+    "suggestedSkills": ["fluidsim", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "Plasma system (e.g., tokamak edge, laser-plasma, space plasma)", "required": true },
+      { "key": "density", "label": "Plasma density in cm⁻³ (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "quantum-error-correction",
+    "name": "Quantum Error Correction",
+    "description": "Implement and analyze quantum error correcting codes on simulated noisy circuits",
+    "category": "physics",
+    "icon": "Shield",
+    "prompt": "Implement and analyze quantum error correction for: {code_type}. Steps: (1) Define the quantum error correcting code ({code_type}) — code parameters [[n, k, d]] and stabilizer generators. (2) Implement the encoding circuit for logical qubits. (3) Simulate syndrome measurement circuits. (4) Apply a noise model: {noise_model} with error rate {error_rate}. (5) Implement a decoding strategy (minimum-weight perfect matching or lookup table). (6) Measure the logical error rate through Monte Carlo sampling over many error instances. (7) Plot logical error rate vs physical error rate and identify the error correction threshold. (8) Compare with the theoretical threshold. (9) Export the code parameters, circuits, and threshold analysis.",
+    "suggestedSkills": ["qiskit", "cirq", "matplotlib"],
+    "placeholders": [
+      { "key": "code_type", "label": "Error correcting code (e.g., surface code, Steane code, repetition code)", "required": true },
+      { "key": "noise_model", "label": "Noise model (e.g., depolarizing, bit-flip, amplitude damping)", "required": false },
+      { "key": "error_rate", "label": "Physical error rate (default 0.01)", "required": false }
+    ]
+  },
+  {
+    "id": "crystal-structure-prediction",
+    "name": "Crystal Structure Prediction",
+    "description": "Predict stable crystal structures for a given chemical composition",
+    "category": "materials",
+    "icon": "Gem",
+    "prompt": "Predict crystal structures for the composition: {composition}. Steps: (1) Parse the chemical composition and determine the expected oxidation states. (2) Query the Materials Project and ICSD databases for known structures with this or similar compositions. (3) Generate candidate structures using prototype-based approaches and substitution strategies. (4) Relax candidate structures using DFT or universal ML potentials to find local minima. (5) Rank structures by formation energy and compute the convex hull. (6) Assess thermodynamic stability (energy above hull) and dynamic stability (phonon calculations if feasible). (7) Visualize the most stable predicted structures. (8) Export crystal structures in CIF format and stability rankings.",
+    "suggestedSkills": ["pymatgen", "rowan", "scientific-visualization"],
+    "placeholders": [
+      { "key": "composition", "label": "Chemical composition (e.g., Li2FePO4, BaTiO3)", "required": true }
+    ]
+  },
+  {
+    "id": "band-structure-calculation",
+    "name": "Electronic Band Structure",
+    "description": "Compute electronic band structure and density of states for crystalline materials",
+    "category": "materials",
+    "icon": "Layers",
+    "prompt": "Calculate the electronic band structure for: {material}. Steps: (1) Retrieve or construct the crystal structure (from CIF file, Materials Project, or manual input). (2) Validate the structure using pymatgen — check symmetry, space group, and atom positions. (3) Set up DFT calculation parameters: exchange-correlation functional ({functional}), k-point density, and energy cutoff. (4) Run SCF calculation followed by band structure along high-symmetry k-path. (5) Compute total and projected density of states. (6) Determine band gap magnitude and type (direct/indirect). (7) Analyze orbital contributions to bands near the Fermi level. (8) Generate publication-quality band structure and DOS plots. (9) Export eigenvalues and DOS data.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Material name or formula", "required": true },
+      { "key": "functional", "label": "XC functional (e.g., PBE, HSE06)", "required": false }
+    ]
+  },
+  {
+    "id": "phase-diagram-analysis",
+    "name": "Phase Diagram Analysis",
+    "description": "Compute and analyze binary or ternary phase diagrams from thermodynamic data",
+    "category": "materials",
+    "icon": "Hexagon",
+    "prompt": "Analyze the phase diagram for the system: {system}. Steps: (1) Retrieve formation energies for all known compounds in the {system} system from the Materials Project or uploaded data. (2) Construct the convex hull of stable phases. (3) Identify stable compounds, their compositions, and formation energies. (4) Determine the decomposition products and energies for metastable phases. (5) For binary systems: plot the formation energy convex hull and temperature-composition phase diagram. For ternary: generate a ternary phase diagram. (6) Compute the equilibrium reaction pathway between two compositions if specified. (7) Identify phase boundaries and invariant points. (8) Export the phase diagram, stable phases table, and decomposition data.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "system", "label": "Chemical system (e.g., Li-Fe-P-O, Cu-Zn, Al-Ni-Co)", "required": true }
+    ]
+  },
+  {
+    "id": "mechanical-property-prediction",
+    "name": "Mechanical Property Prediction",
+    "description": "Predict elastic moduli, hardness, and strength from crystal structure",
+    "category": "materials",
+    "icon": "Mountain",
+    "prompt": "Predict mechanical properties for: {material}. Steps: (1) Load or retrieve the crystal structure. (2) Compute the elastic tensor using DFT or ML interatomic potentials. (3) Derive the bulk modulus (K), shear modulus (G), Young's modulus (E), and Poisson's ratio from the elastic tensor using Voigt-Reuss-Hill averaging. (4) Estimate Vickers hardness using semi-empirical models (Chen, Tian). (5) Analyze the anisotropy of elastic properties using the universal anisotropy index. (6) Visualize the directional dependence of Young's modulus as a 3D surface plot. (7) Compare against experimental values if available. (8) Export the elastic tensor and derived mechanical properties.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Material name, formula, or structure file", "required": true }
+    ]
+  },
+  {
+    "id": "materials-screening",
+    "name": "High-Throughput Materials Screening",
+    "description": "Screen materials databases for candidates matching target property criteria",
+    "category": "materials",
+    "icon": "Filter",
+    "prompt": "Screen for materials matching the target criteria: {criteria}. Steps: (1) Define the screening criteria: {criteria} (e.g., band gap 1.5-2.0 eV, stability < 50 meV/atom above hull, specific space group). (2) Query the Materials Project database for all compounds matching the composition space. (3) Apply property filters progressively, tracking how many candidates survive each filter. (4) Rank surviving candidates by a composite score of desired properties. (5) For the top candidates, retrieve detailed properties and verify data quality. (6) Cross-reference with literature for experimental validation data. (7) Visualize the screening funnel and property distributions. (8) Export the ranked candidate list with all computed properties.",
+    "suggestedSkills": ["pymatgen", "scikit-learn", "plotly", "scientific-visualization"],
+    "placeholders": [
+      { "key": "criteria", "label": "Target property criteria (e.g., band gap 1.5-2.0 eV, stable, non-toxic)", "required": true }
+    ]
+  },
+  {
+    "id": "defect-analysis",
+    "name": "Crystal Defect Analysis",
+    "description": "Model point defects, vacancies, and their impact on material properties",
+    "category": "materials",
+    "icon": "CircleDot",
+    "prompt": "Analyze defects in: {material}. Steps: (1) Load the pristine crystal structure and identify relevant defect types: {defect_type} (vacancy, substitution, interstitial). (2) Generate defect supercells at multiple charge states. (3) Compute defect formation energies as a function of Fermi level and chemical potentials. (4) Determine charge transition levels (ionization levels) within the band gap. (5) Calculate defect concentrations at the operating temperature: {temperature}. (6) Assess the impact on electronic properties — whether defects create deep or shallow levels. (7) Plot the defect formation energy diagram vs Fermi level. (8) Export defect energies, transition levels, and concentration estimates.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Host material", "required": true },
+      { "key": "defect_type", "label": "Defect type(s) to study", "required": true },
+      { "key": "temperature", "label": "Temperature in K (default 300)", "required": false }
+    ]
+  },
+  {
+    "id": "surface-energy-calculation",
+    "name": "Surface Energy Calculation",
+    "description": "Compute surface energies and Wulff equilibrium crystal shapes",
+    "category": "materials",
+    "icon": "Hexagon",
+    "prompt": "Calculate surface energies for: {material}. Steps: (1) Load the bulk crystal structure and identify low-index surface facets: {surfaces} (e.g., (100), (110), (111)). (2) Generate surface slab models with appropriate thickness and vacuum. (3) Test slab convergence with respect to number of layers. (4) Compute surface energies for each facet using γ = (E_slab - n·E_bulk) / (2A). (5) Identify the most stable surface terminations for polar surfaces. (6) Construct the Wulff shape showing the equilibrium crystal morphology. (7) Analyze surface reconstructions or relaxation effects. (8) Export surface energies, slab structures, and the Wulff shape visualization.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Material", "required": true },
+      { "key": "surfaces", "label": "Surface facets to study (e.g., 100, 110, 111)", "required": false }
+    ]
+  },
+  {
+    "id": "alloy-design",
+    "name": "Alloy Design & Optimization",
+    "description": "Design alloy compositions optimized for target mechanical or thermal properties",
+    "category": "materials",
+    "icon": "Scale",
+    "prompt": "Design an alloy optimized for: {target_properties}. Steps: (1) Define the alloy system (base elements: {elements}) and target properties. (2) Retrieve phase diagram data and known alloy properties from databases. (3) Compute the mixing enthalpy and entropy for candidate compositions using CALPHAD-type models or ML predictions. (4) Screen compositions for single-phase stability or desired multi-phase microstructure. (5) Predict mechanical properties (yield strength, hardness, ductility) using composition-property models. (6) Apply multi-objective optimization to find the Pareto-optimal compositions. (7) Visualize the composition-property landscape. (8) Recommend the top {n_candidates} alloy compositions with property predictions.",
+    "suggestedSkills": ["pymatgen", "scikit-learn", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "elements", "label": "Base elements (e.g., Fe-Cr-Ni, Ti-Al-V)", "required": true },
+      { "key": "target_properties", "label": "Target properties (e.g., high strength, corrosion resistant)", "required": true },
+      { "key": "n_candidates", "label": "Number of top candidates (default 5)", "required": false }
+    ]
+  },
+  {
+    "id": "polymer-property-prediction",
+    "name": "Polymer Property Prediction",
+    "description": "Predict thermal, mechanical, and optical properties of polymers from repeat unit structure",
+    "category": "materials",
+    "icon": "Layers",
+    "prompt": "Predict properties for the polymer with repeat unit: {monomer_smiles}. Steps: (1) Parse the monomer/repeat unit SMILES and validate the polymer structure. (2) Compute group contribution estimates for: glass transition temperature (Tg), melting temperature (Tm), density, refractive index, and solubility parameter. (3) Apply ML-based property prediction models for additional properties if available. (4) Estimate mechanical properties: Young's modulus, tensile strength, elongation at break. (5) Predict thermal stability (decomposition temperature) and thermal conductivity. (6) Compare predicted properties against known polymers with similar structures. (7) Visualize the property profile as a radar chart. (8) Export all predicted properties with confidence estimates.",
+    "suggestedSkills": ["rdkit", "deepchem", "scikit-learn", "matplotlib"],
+    "placeholders": [
+      { "key": "monomer_smiles", "label": "Monomer/repeat unit SMILES", "required": true }
+    ]
+  },
+  {
+    "id": "battery-material-analysis",
+    "name": "Battery Material Analysis",
+    "description": "Evaluate electrode and electrolyte materials for battery performance",
+    "category": "materials",
+    "icon": "Zap",
+    "prompt": "Analyze battery material performance for: {material} as a {component}. Steps: (1) Retrieve the crystal structure and basic properties. (2) For cathodes: compute the average intercalation voltage, theoretical capacity, and volume change upon (de)lithiation. (3) For anodes: estimate the lithiation potential and capacity. (4) For electrolytes: compute the electrochemical stability window and ionic conductivity if data is available. (5) Assess structural stability during cycling — phase transformations, Jahn-Teller distortion, oxygen release risk. (6) Compare against benchmark materials (LFP, NMC, graphite, etc.). (7) Identify potential failure modes. (8) Export a battery performance summary with computed metrics and comparisons.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Material name or formula", "required": true },
+      { "key": "component", "label": "Battery component (cathode, anode, electrolyte)", "required": true }
+    ]
+  },
+  {
+    "id": "thermal-conductivity-modeling",
+    "name": "Thermal Conductivity Modeling",
+    "description": "Model heat transport and thermal conductivity in materials",
+    "category": "materials",
+    "icon": "Thermometer",
+    "prompt": "Model thermal conductivity for: {material}. Steps: (1) Retrieve or compute the crystal structure and phonon properties. (2) Compute the phonon dispersion and density of states. (3) Estimate lattice thermal conductivity using the Debye-Callaway model or Slack's equation. (4) If available, compute third-order force constants for Boltzmann transport equation (BTE) solution. (5) Analyze the contributions of different phonon modes and scattering mechanisms (Umklapp, boundary, point defect). (6) Predict the temperature dependence of thermal conductivity from {temp_min} to {temp_max} K. (7) Compare predictions with experimental data if available. (8) Export thermal conductivity values and phonon analysis data.",
+    "suggestedSkills": ["pymatgen", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "material", "label": "Material name or formula", "required": true },
+      { "key": "temp_min", "label": "Minimum temperature in K (default 100)", "required": false },
+      { "key": "temp_max", "label": "Maximum temperature in K (default 1000)", "required": false }
+    ]
+  },
+  {
+    "id": "materials-literature-review",
+    "name": "Materials Science Literature Review",
+    "description": "Comprehensive review of recent advances in a materials research area",
+    "category": "materials",
+    "icon": "BookOpen",
+    "prompt": "Conduct a literature review on: {topic} in materials science. Steps: (1) Search for recent publications (last {years} years) on {topic} in major materials science journals and arXiv. (2) Categorize papers by sub-topic, methodology (experimental, computational, theoretical), and material system. (3) Summarize the key findings and advances in each sub-topic. (4) Identify the leading research groups and their contributions. (5) Map the evolution of the field — how methods and understanding have progressed. (6) Highlight open questions and promising future directions. (7) Note any controversies or conflicting results. (8) Export a structured review document with categorized bibliography.",
+    "suggestedSkills": ["literature-review", "research-lookup", "scientific-writing"],
+    "placeholders": [
+      { "key": "topic", "label": "Research topic", "required": true },
+      { "key": "years", "label": "Years to look back (default 5)", "required": false }
+    ]
+  },
+  {
+    "id": "clinical-trial-analysis",
+    "name": "Clinical Trial Data Analysis",
+    "description": "Analyze clinical trial datasets: demographics, endpoints, and treatment effects",
+    "category": "clinical",
+    "icon": "ClipboardCheck",
+    "prompt": "Analyze the uploaded clinical trial dataset. Steps: (1) Summarize the trial demographics — patient counts, age, sex, baseline characteristics by treatment arm. (2) Check for baseline imbalances between groups. (3) Analyze the primary endpoint: {primary_endpoint} using the pre-specified statistical method. (4) Analyze secondary endpoints and compute effect sizes with confidence intervals. (5) Perform subgroup analyses for key variables (age, sex, disease severity). (6) Generate a CONSORT-style flow diagram of patient disposition. (7) Create forest plots for subgroup analyses and tables for primary results. (8) Assess consistency of results across sensitivity analyses. (9) Export a formatted results report suitable for a clinical study report.",
+    "suggestedSkills": ["statistical-analysis", "scikit-survival", "matplotlib", "clinical-reports"],
+    "placeholders": [
+      { "key": "primary_endpoint", "label": "Primary endpoint (e.g., overall survival, HbA1c reduction)", "required": true }
+    ]
+  },
+  {
+    "id": "survival-analysis-clinical",
+    "name": "Survival Analysis",
+    "description": "Kaplan-Meier curves, Cox regression, and hazard ratio estimation",
+    "category": "clinical",
+    "icon": "Activity",
+    "prompt": "Perform survival analysis on the uploaded clinical dataset. Steps: (1) Define the time-to-event variable and censoring indicator. (2) Generate Kaplan-Meier survival curves for each group: {groups}. (3) Test differences between groups using the log-rank test. (4) Fit a Cox proportional hazards model with covariates: {covariates}. (5) Check the proportional hazards assumption using Schoenfeld residuals. (6) Report hazard ratios with 95% confidence intervals and p-values. (7) Compute median survival times and landmark survival estimates. (8) Generate publication-quality KM curves with risk tables and forest plots. (9) Export all survival statistics and model output.",
+    "suggestedSkills": ["scikit-survival", "statistical-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "groups", "label": "Groups to compare (e.g., treatment vs placebo)", "required": true },
+      { "key": "covariates", "label": "Covariates for Cox model (e.g., age, stage, biomarker)", "required": false }
+    ]
+  },
+  {
+    "id": "epidemiological-study",
+    "name": "Epidemiological Study Analysis",
+    "description": "Analyze disease incidence, prevalence, risk factors, and outbreak patterns",
+    "category": "clinical",
+    "icon": "Globe",
+    "prompt": "Analyze the uploaded epidemiological dataset for {disease}. Steps: (1) Calculate disease incidence and prevalence rates with confidence intervals. (2) Compute crude and age-standardized rates. (3) Identify risk factors using logistic regression — compute odds ratios for: {risk_factors}. (4) Adjust for confounders using multivariable models. (5) Generate epidemiological curves (epidemic curves for outbreaks, trend lines for surveillance). (6) Map geographic distribution if location data is available. (7) Perform stratified analyses by key demographic variables. (8) Export a structured epidemiological report with tables and figures.",
+    "suggestedSkills": ["statistical-analysis", "statsmodels", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "disease", "label": "Disease or condition", "required": true },
+      { "key": "risk_factors", "label": "Risk factors to investigate", "required": false }
+    ]
+  },
+  {
+    "id": "medical-image-analysis",
+    "name": "Medical Image Analysis",
+    "description": "Process and analyze medical images: DICOM, pathology slides, or radiographs",
+    "category": "clinical",
+    "icon": "Scan",
+    "prompt": "Analyze the uploaded medical images ({image_type}). Steps: (1) Load the images — parse DICOM headers for metadata if applicable. (2) Apply preprocessing: windowing/leveling, normalization, and orientation correction. (3) Perform image segmentation to identify regions of interest: {roi}. (4) Quantify measurements: area, volume, intensity statistics, texture features. (5) If classification is needed, apply a pre-trained model or extract radiomics features for ML classification. (6) Compare with normal reference ranges when available. (7) Generate annotated images highlighting findings. (8) Export measurements, annotated images, and a structured report.",
+    "suggestedSkills": ["pydicom", "scikit-learn", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "image_type", "label": "Image type (CT, MRI, X-ray, pathology slide)", "required": true },
+      { "key": "roi", "label": "Region of interest to segment (e.g., tumor, organ, lesion)", "required": false }
+    ]
+  },
+  {
+    "id": "electronic-health-records",
+    "name": "EHR Data Analysis",
+    "description": "Extract insights from electronic health records: patient trajectories and outcomes",
+    "category": "clinical",
+    "icon": "Database",
+    "prompt": "Analyze the uploaded electronic health records dataset. Steps: (1) Parse the EHR data — identify patient demographics, diagnoses (ICD codes), procedures (CPT), medications, labs, and notes. (2) Clean and harmonize coding systems. (3) Define the patient cohort based on: {cohort_criteria}. (4) Compute descriptive statistics: patient demographics, comorbidity burden (Charlson/Elixhauser scores), medication patterns. (5) Build patient timelines showing disease progression and treatment sequences. (6) Analyze the outcome of interest: {outcome}. (7) Identify predictive factors for the outcome using regression or ML models. (8) Ensure HIPAA-compliant handling — flag any re-identification risks. (9) Export cohort characteristics and analysis results.",
+    "suggestedSkills": ["pyhealth", "polars", "statistical-analysis", "scikit-learn"],
+    "placeholders": [
+      { "key": "cohort_criteria", "label": "Cohort selection criteria (e.g., diabetes patients, age > 65)", "required": true },
+      { "key": "outcome", "label": "Outcome of interest (e.g., readmission, mortality, drug response)", "required": true }
+    ]
+  },
+  {
+    "id": "diagnostic-accuracy",
+    "name": "Diagnostic Accuracy Study",
+    "description": "Evaluate sensitivity, specificity, ROC curves, and predictive values of diagnostic tests",
+    "category": "clinical",
+    "icon": "Target",
+    "prompt": "Evaluate diagnostic accuracy from the uploaded dataset. Steps: (1) Define the index test and reference standard (gold standard). (2) Construct 2x2 contingency tables at the given cutoff or at {cutoff}. (3) Calculate sensitivity, specificity, PPV, NPV, and likelihood ratios with 95% confidence intervals. (4) Generate the ROC curve and compute AUC. (5) Determine the optimal cutoff using Youden's index or clinical priority (maximize sensitivity or specificity). (6) Perform subgroup analyses if relevant covariates are available. (7) Create ROC plots, calibration plots, and summary tables. (8) Assess inter-rater reliability if multiple readers are involved. (9) Export a STARD-compliant diagnostic accuracy report.",
+    "suggestedSkills": ["scikit-learn", "statistical-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "cutoff", "label": "Test cutoff value (optional — will compute optimal if blank)", "required": false }
+    ]
+  },
+  {
+    "id": "treatment-comparison",
+    "name": "Treatment Comparison",
+    "description": "Head-to-head comparison of treatments using propensity score matching or RCT data",
+    "category": "clinical",
+    "icon": "Scale",
+    "prompt": "Compare treatment outcomes between {treatment_a} and {treatment_b}. Steps: (1) Load the dataset and characterize baseline patient differences between groups. (2) For observational data: perform propensity score estimation using logistic regression, apply matching or inverse probability weighting to balance confounders. (3) Verify covariate balance after adjustment (standardized mean differences < 0.1). (4) Analyze the primary outcome: {outcome} using the appropriate model (logistic, Cox, or linear). (5) Compute the treatment effect (OR, HR, or mean difference) with 95% CI. (6) Perform sensitivity analyses for unmeasured confounding (E-value). (7) Generate balance plots, forest plots, and outcome curves. (8) Export the comparative effectiveness report.",
+    "suggestedSkills": ["statistical-analysis", "statsmodels", "scikit-learn", "scientific-visualization"],
+    "placeholders": [
+      { "key": "treatment_a", "label": "Treatment A", "required": true },
+      { "key": "treatment_b", "label": "Treatment B", "required": true },
+      { "key": "outcome", "label": "Primary outcome", "required": true }
+    ]
+  },
+  {
+    "id": "risk-prediction-model",
+    "name": "Clinical Risk Prediction Model",
+    "description": "Build and validate a risk prediction model for clinical outcomes",
+    "category": "clinical",
+    "icon": "Gauge",
+    "prompt": "Build a clinical risk prediction model for: {outcome}. Steps: (1) Load the clinical dataset and define the outcome variable. (2) Select candidate predictors based on clinical relevance and data availability: {predictors}. (3) Handle missing data using multiple imputation. (4) Split into development (70%) and validation (30%) cohorts. (5) Build models: logistic regression, LASSO, and gradient boosting. (6) Evaluate discrimination (AUC, C-statistic), calibration (calibration plot, Hosmer-Lemeshow), and net benefit (decision curve analysis). (7) Create a nomogram or simple risk score from the best model. (8) Perform internal validation with bootstrap optimism correction. (9) Export the model, performance metrics, and a clinical risk calculator.",
+    "suggestedSkills": ["scikit-learn", "statsmodels", "shap", "matplotlib"],
+    "placeholders": [
+      { "key": "outcome", "label": "Outcome to predict (e.g., 30-day mortality, readmission)", "required": true },
+      { "key": "predictors", "label": "Candidate predictor variables", "required": false }
+    ]
+  },
+  {
+    "id": "adverse-event-analysis",
+    "name": "Adverse Event Analysis",
+    "description": "Analyze adverse event data from clinical trials or pharmacovigilance databases",
+    "category": "clinical",
+    "icon": "HeartPulse",
+    "prompt": "Analyze adverse events from the uploaded safety dataset. Steps: (1) Tabulate all adverse events by System Organ Class (SOC) and Preferred Term (PT). (2) Calculate AE incidence rates by treatment arm. (3) Identify AEs with significant between-group differences using Fisher's exact test. (4) Compute relative risk and risk difference for key AEs. (5) Perform disproportionality analysis (PRR, ROR, EBGM) if spontaneous reporting data is provided. (6) Create exposure-adjusted incidence rates. (7) Generate AE summary tables, forest plots, and time-to-event plots for key safety signals. (8) Classify AEs by severity and relationship to treatment. (9) Export a formatted safety summary report.",
+    "suggestedSkills": ["statistical-analysis", "statsmodels", "matplotlib", "clinical-reports"],
+    "placeholders": []
+  },
+  {
+    "id": "cost-effectiveness-analysis",
+    "name": "Cost-Effectiveness Analysis",
+    "description": "Model cost-effectiveness of health interventions using decision-analytic methods",
+    "category": "clinical",
+    "icon": "DollarSign",
+    "prompt": "Perform a cost-effectiveness analysis comparing {intervention} vs {comparator}. Steps: (1) Define the perspective (payer, societal), time horizon ({time_horizon}), and discount rate. (2) Build a decision-analytic model (decision tree or Markov model) with relevant health states. (3) Populate the model with transition probabilities, costs, and utility values from the literature or uploaded data. (4) Compute the incremental cost-effectiveness ratio (ICER) — incremental cost per QALY gained. (5) Perform one-way sensitivity analyses on key parameters. (6) Run a probabilistic sensitivity analysis (PSA) with 10,000 Monte Carlo simulations. (7) Generate cost-effectiveness acceptability curves and tornado diagrams. (8) Report whether the intervention is cost-effective at a WTP threshold of {wtp}/QALY. (9) Export the CEA report.",
+    "suggestedSkills": ["statsmodels", "matplotlib", "scientific-visualization", "pymc"],
+    "placeholders": [
+      { "key": "intervention", "label": "Intervention", "required": true },
+      { "key": "comparator", "label": "Comparator", "required": true },
+      { "key": "time_horizon", "label": "Time horizon (e.g., lifetime, 5 years)", "required": false },
+      { "key": "wtp", "label": "Willingness-to-pay threshold (default $100,000)", "required": false }
+    ]
+  },
+  {
+    "id": "patient-cohort-study",
+    "name": "Patient Cohort Study",
+    "description": "Define, characterize, and follow a patient cohort for outcomes research",
+    "category": "clinical",
+    "icon": "Users",
+    "prompt": "Conduct a cohort study analysis from the uploaded dataset. Steps: (1) Define the cohort: inclusion criteria ({inclusion}) and exclusion criteria ({exclusion}). (2) Create a cohort flow diagram showing screening, enrollment, and follow-up. (3) Characterize baseline demographics and clinical features (Table 1). (4) Compute person-time at risk and incidence rates for the outcome. (5) Perform time-to-event analysis using Kaplan-Meier and Cox regression. (6) Adjust for confounders identified a priori. (7) Assess loss to follow-up and perform attrition analysis. (8) Report results following STROBE guidelines. (9) Export Table 1, survival curves, and the adjusted outcomes table.",
+    "suggestedSkills": ["scikit-survival", "statistical-analysis", "matplotlib", "clinical-reports"],
+    "placeholders": [
+      { "key": "inclusion", "label": "Inclusion criteria", "required": true },
+      { "key": "exclusion", "label": "Exclusion criteria", "required": false }
+    ]
+  },
+  {
+    "id": "longitudinal-study",
+    "name": "Longitudinal Data Analysis",
+    "description": "Analyze repeated measures and longitudinal patient data over time",
+    "category": "clinical",
+    "icon": "LineChart",
+    "prompt": "Analyze the uploaded longitudinal dataset. Steps: (1) Summarize the data structure: number of subjects, time points, and measurement frequency. (2) Visualize individual trajectories (spaghetti plots) and group-level trends for: {outcome_variable}. (3) Handle missing data: assess the missing data mechanism (MCAR, MAR, MNAR) and apply appropriate methods. (4) Fit a mixed-effects model (random intercept and slope) to model within-subject and between-subject variability. (5) Test for group differences in trajectories: {groups}. (6) Compute marginal means and plot model-predicted trajectories by group. (7) Check model assumptions: residual normality, random effect distributions. (8) Perform sensitivity analyses with alternative covariance structures. (9) Export model results, trajectory plots, and marginal means.",
+    "suggestedSkills": ["statsmodels", "statistical-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "outcome_variable", "label": "Outcome variable measured over time", "required": true },
+      { "key": "groups", "label": "Groups to compare (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "case-control-analysis",
+    "name": "Case-Control Study Analysis",
+    "description": "Analyze case-control data with odds ratios, matching, and confounder adjustment",
+    "category": "clinical",
+    "icon": "GitBranch",
+    "prompt": "Analyze the uploaded case-control dataset. Steps: (1) Describe the case and control populations — verify matching criteria if applicable. (2) Compare exposure distributions between cases and controls. (3) Compute crude odds ratios for each exposure: {exposures}. (4) For matched studies, use conditional logistic regression; for unmatched, use unconditional logistic regression. (5) Adjust for confounders and compute adjusted odds ratios with 95% CI. (6) Test for effect modification (interaction) with key variables. (7) Perform sensitivity analyses for potential selection bias and misclassification. (8) Generate forest plots of ORs and summary tables. (9) Export results following STROBE case-control reporting guidelines.",
+    "suggestedSkills": ["statsmodels", "statistical-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "exposures", "label": "Exposure variables to analyze", "required": true }
+    ]
+  },
+  {
+    "id": "systematic-review-clinical",
+    "name": "Systematic Review & Meta-Analysis",
+    "description": "Conduct a systematic review with meta-analysis of clinical evidence",
+    "category": "clinical",
+    "icon": "BookOpen",
+    "prompt": "Conduct a systematic review and meta-analysis on: {question}. Steps: (1) Formulate the PICO question (Population, Intervention, Comparison, Outcome). (2) Search PubMed and other databases using a comprehensive search strategy. (3) Screen titles/abstracts and apply inclusion/exclusion criteria. (4) Extract data from included studies: sample sizes, effect estimates, variability measures. (5) Assess risk of bias using appropriate tools (Cochrane RoB 2, Newcastle-Ottawa). (6) Pool effect estimates using random-effects meta-analysis (DerSimonian-Laird). (7) Assess heterogeneity (I², Q-test, prediction interval). (8) Generate forest plots, funnel plots, and risk of bias summary. (9) Assess publication bias using Egger's test. (10) Export the PRISMA-compliant report.",
+    "suggestedSkills": ["statistical-analysis", "literature-review", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "question", "label": "Clinical research question (PICO format preferred)", "required": true }
+    ]
+  },
+  {
+    "id": "clinical-guideline-summary",
+    "name": "Clinical Guideline Summary",
+    "description": "Synthesize and compare clinical practice guidelines on a topic",
+    "category": "clinical",
+    "icon": "ListChecks",
+    "prompt": "Summarize clinical practice guidelines for: {condition}. Steps: (1) Search for current clinical guidelines from major bodies (AHA, ACS, NICE, WHO, etc.) on {condition}. (2) Extract key recommendations from each guideline: screening, diagnosis, treatment algorithms, monitoring. (3) Grade the strength of each recommendation and underlying evidence quality. (4) Create a comparative table showing where guidelines agree and disagree. (5) Highlight any recently updated recommendations or emerging evidence not yet incorporated. (6) Summarize the treatment algorithm as a decision flowchart. (7) Note guideline gaps or areas of clinical uncertainty. (8) Export the guideline summary and comparison table.",
+    "suggestedSkills": ["clinical-decision-support", "literature-review", "writing"],
+    "placeholders": [
+      { "key": "condition", "label": "Clinical condition (e.g., type 2 diabetes, hypertension, NSCLC)", "required": true }
+    ]
+  },
+  {
+    "id": "quality-improvement",
+    "name": "Quality Improvement Analysis",
+    "description": "Analyze healthcare quality metrics and design improvement interventions",
+    "category": "clinical",
+    "icon": "TrendingUp",
+    "prompt": "Analyze healthcare quality data for: {metric}. Steps: (1) Load the quality metric data over time and define the baseline and intervention periods. (2) Create run charts and control charts (SPC charts) to detect special vs common cause variation. (3) Calculate process capability indices. (4) Test for statistically significant shifts in the metric using appropriate methods. (5) If root cause analysis is needed, construct a fishbone (Ishikawa) diagram of contributing factors. (6) Perform Pareto analysis to identify the vital few contributing factors. (7) If an intervention was implemented, use interrupted time series analysis to estimate its effect. (8) Recommend PDSA cycle improvements based on findings. (9) Export the QI report with SPC charts and analysis results.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "metric", "label": "Quality metric (e.g., readmission rate, infection rate, wait time)", "required": true }
+    ]
+  },
+  {
+    "id": "health-equity-analysis",
+    "name": "Health Equity Analysis",
+    "description": "Analyze health disparities across demographic and socioeconomic groups",
+    "category": "clinical",
+    "icon": "Scale",
+    "prompt": "Analyze health equity in the uploaded dataset for: {outcome}. Steps: (1) Define the health outcome and the equity stratification variables: {strata} (race/ethnicity, income, education, geography, insurance). (2) Compute outcome rates or means within each stratum. (3) Calculate absolute and relative disparity measures (rate differences, rate ratios, concentration index). (4) Decompose disparities using Blinder-Oaxaca or similar decomposition methods to quantify explained vs unexplained gaps. (5) Test for statistically significant disparities after adjusting for confounders. (6) Visualize disparities with equity-focused plots (slope index of inequality, concentration curves). (7) Compare against national benchmarks or Healthy People objectives. (8) Recommend targeted interventions to reduce identified disparities. (9) Export the equity analysis report.",
+    "suggestedSkills": ["statistical-analysis", "statsmodels", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "outcome", "label": "Health outcome", "required": true },
+      { "key": "strata", "label": "Equity stratification variables", "required": true }
+    ]
+  },
+  {
+    "id": "population-health-assessment",
+    "name": "Population Health Assessment",
+    "description": "Assess community health status using demographic, environmental, and health data",
+    "category": "clinical",
+    "icon": "Users",
+    "prompt": "Conduct a population health assessment for: {population}. Steps: (1) Compile demographic data: age distribution, racial/ethnic composition, socioeconomic indicators. (2) Gather health outcome data: leading causes of morbidity and mortality, life expectancy, infant mortality. (3) Assess health determinants: access to care, environmental exposures, behavioral risk factors. (4) Calculate age-adjusted rates and compare against state/national benchmarks. (5) Identify the top health priorities using a composite ranking. (6) Map geographic variation in health outcomes if spatial data is available. (7) Identify vulnerable subpopulations with the greatest need. (8) Recommend evidence-based public health interventions for the top priorities. (9) Export a community health assessment report with data tables and maps.",
+    "suggestedSkills": ["statistical-analysis", "matplotlib", "plotly", "scientific-visualization"],
+    "placeholders": [
+      { "key": "population", "label": "Population or community (e.g., county name, patient panel)", "required": true }
+    ]
+  },
+  {
+    "id": "eeg-analysis",
+    "name": "EEG Analysis",
+    "description": "Process and analyze electroencephalography data: spectral analysis, ERPs, and connectivity",
+    "category": "neuro",
+    "icon": "Activity",
+    "prompt": "Analyze the uploaded EEG dataset. Steps: (1) Load the EEG data and inspect channel layout, sampling rate, and recording duration. (2) Preprocess: bandpass filter ({low_freq}-{high_freq} Hz), notch filter for line noise, re-reference to average. (3) Detect and remove artifacts: eye blinks, muscle artifacts using ICA decomposition. (4) Perform spectral analysis: compute power spectral density per channel and topographic maps for standard frequency bands (delta, theta, alpha, beta, gamma). (5) If event-related: epoch the data and compute ERPs with grand-average waveforms. (6) Compute functional connectivity (coherence, phase-locking value) between regions. (7) Generate topographic maps and time-frequency decompositions. (8) Export cleaned data, spectral results, and ERP waveforms.",
+    "suggestedSkills": ["neurokit2", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "low_freq", "label": "Low filter frequency in Hz (default 0.5)", "required": false },
+      { "key": "high_freq", "label": "High filter frequency in Hz (default 100)", "required": false }
+    ]
+  },
+  {
+    "id": "fmri-analysis",
+    "name": "fMRI Analysis",
+    "description": "Process functional MRI data: GLM analysis, activation maps, and connectivity",
+    "category": "neuro",
+    "icon": "Brain",
+    "prompt": "Analyze the uploaded fMRI dataset. Steps: (1) Load the NIfTI files and inspect acquisition parameters (TR, voxel size, number of volumes). (2) Preprocess: motion correction, slice-timing correction, spatial normalization to MNI space, and smoothing ({fwhm} mm FWHM). (3) Build a GLM with the task design: {task_design}. (4) Estimate the model and compute contrast maps for conditions of interest. (5) Apply statistical thresholding (p < {threshold}, cluster-corrected) and generate activation maps. (6) Extract signal from ROIs for region-of-interest analysis. (7) If resting-state: compute seed-based or ICA-based functional connectivity. (8) Overlay activation maps on anatomical templates. (9) Export statistical maps, ROI timecourses, and connectivity matrices.",
+    "suggestedSkills": ["neurokit2", "scikit-learn", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "task_design", "label": "Task design (e.g., block design faces vs houses, event-related)", "required": true },
+      { "key": "fwhm", "label": "Smoothing kernel FWHM in mm (default 6)", "required": false },
+      { "key": "threshold", "label": "Statistical threshold (default 0.001)", "required": false }
+    ]
+  },
+  {
+    "id": "spike-sorting",
+    "name": "Spike Sorting",
+    "description": "Sort extracellular neural recordings into individual neuron clusters",
+    "category": "neuro",
+    "icon": "Crosshair",
+    "prompt": "Perform spike sorting on the uploaded extracellular recording data. Steps: (1) Load the raw electrophysiology data and inspect channel count, sampling rate, and duration. (2) Apply bandpass filtering (300-3000 Hz) and common average referencing. (3) Detect spikes using an amplitude threshold ({threshold} × median absolute deviation). (4) Extract spike waveform features using PCA or wavelet decomposition. (5) Cluster spike waveforms using automated methods (KiloSort-style template matching or Gaussian mixture models). (6) Evaluate cluster quality: ISI violations, isolation distance, L-ratio, silhouette score. (7) Merge over-split clusters and remove noise clusters. (8) Generate unit summary plots: mean waveforms, ISI histograms, autocorrelograms. (9) Export spike times and cluster assignments for each sorted unit.",
+    "suggestedSkills": ["neuropixels-analysis", "scikit-learn", "matplotlib"],
+    "placeholders": [
+      { "key": "threshold", "label": "Detection threshold in MAD units (default 5)", "required": false }
+    ]
+  },
+  {
+    "id": "neural-decoding",
+    "name": "Neural Decoding",
+    "description": "Decode behavioral variables or stimuli from neural population activity",
+    "category": "neuro",
+    "icon": "Cpu",
+    "prompt": "Build a neural decoder from the uploaded neural data. Steps: (1) Load the neural data (spike trains or calcium traces) and the behavioral variable to decode: {decode_target}. (2) Align neural data to behavioral events and bin spike counts at {bin_size} ms resolution. (3) Split data into training (80%) and test (20%) sets, preserving temporal structure. (4) Train decoders: Naive Bayes, linear discriminant analysis, SVM, and/or recurrent neural network. (5) Evaluate decoding accuracy using cross-validation and confusion matrices. (6) Identify the most informative neurons using weight analysis or feature importance. (7) Analyze how decoding accuracy changes with neuron count and time bin size. (8) Visualize decoded vs actual trajectories and confusion matrices. (9) Export decoder performance and informative neuron rankings.",
+    "suggestedSkills": ["scikit-learn", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "decode_target", "label": "Variable to decode (e.g., movement direction, stimulus identity, position)", "required": true },
+      { "key": "bin_size", "label": "Time bin size in ms (default 50)", "required": false }
+    ]
+  },
+  {
+    "id": "connectivity-analysis",
+    "name": "Brain Connectivity Analysis",
+    "description": "Map structural and functional connectivity networks in the brain",
+    "category": "neuro",
+    "icon": "Network",
+    "prompt": "Analyze brain connectivity from the uploaded neuroimaging data. Steps: (1) Load the data and define brain regions/parcellation ({atlas}). (2) For functional connectivity: compute the correlation (or partial correlation) matrix between all ROI pairs. (3) For structural connectivity: extract streamline counts between regions from tractography. (4) Threshold the connectivity matrix to create a binary network. (5) Compute graph-theoretic metrics: degree, clustering coefficient, betweenness centrality, modularity, small-world index, global efficiency. (6) Identify hub regions and network modules (communities). (7) Compare connectivity between groups ({groups}) using network-based statistics. (8) Visualize the connectome as a circle plot and 3D brain network. (9) Export the connectivity matrix, network metrics, and hub list.",
+    "suggestedSkills": ["networkx", "neurokit2", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "atlas", "label": "Brain atlas/parcellation (e.g., AAL, Desikan-Killiany, Schaefer-400)", "required": false },
+      { "key": "groups", "label": "Groups to compare (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "behavioral-analysis",
+    "name": "Behavioral Data Analysis",
+    "description": "Analyze behavioral tasks: reaction times, accuracy, learning curves, and strategy",
+    "category": "neuro",
+    "icon": "Timer",
+    "prompt": "Analyze the uploaded behavioral dataset from: {task}. Steps: (1) Load the trial-by-trial behavioral data (reaction times, accuracy, choices). (2) Compute summary statistics per condition: mean RT, accuracy, and variability. (3) Clean reaction times: remove anticipatory responses (<100 ms) and timeouts. (4) Analyze accuracy as a function of condition using logistic mixed-effects models. (5) Analyze reaction times using linear mixed-effects models accounting for subject-level variability. (6) Model learning curves or adaptation effects over trials. (7) If applicable, fit computational models (drift diffusion, reinforcement learning) to the choice data. (8) Visualize psychometric functions, RT distributions, and learning curves. (9) Export statistical results and model parameters.",
+    "suggestedSkills": ["statsmodels", "neurokit2", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "task", "label": "Behavioral task name (e.g., Stroop, n-back, probabilistic learning)", "required": true }
+    ]
+  },
+  {
+    "id": "calcium-imaging-analysis",
+    "name": "Calcium Imaging Analysis",
+    "description": "Process and analyze two-photon or one-photon calcium imaging data",
+    "category": "neuro",
+    "icon": "Star",
+    "prompt": "Analyze the uploaded calcium imaging dataset. Steps: (1) Load the imaging data (TIFF stack or extracted traces). (2) If raw images: perform motion correction to stabilize the field of view. (3) Detect ROIs (neurons) using constrained non-negative matrix factorization (CNMF) or suite2p-style cell detection. (4) Extract fluorescence traces (ΔF/F₀) for each detected cell. (5) Deconvolve calcium traces to estimate spike times. (6) Compute tuning properties: align neural responses to {stimulus_or_behavior} and calculate selectivity metrics. (7) Identify ensemble activity patterns and correlated neuron groups. (8) Visualize spatial maps of tuning properties, population activity heatmaps, and example traces. (9) Export extracted traces, spike times, and tuning metrics.",
+    "suggestedSkills": ["matplotlib", "scikit-learn", "scientific-visualization"],
+    "placeholders": [
+      { "key": "stimulus_or_behavior", "label": "Stimulus or behavior to relate neural activity to", "required": true }
+    ]
+  },
+  {
+    "id": "neuropixels-processing",
+    "name": "Neuropixels Data Processing",
+    "description": "Process high-density Neuropixels recordings: spike sorting and unit analysis",
+    "category": "neuro",
+    "icon": "Microscope",
+    "prompt": "Process the uploaded Neuropixels recording. Steps: (1) Load the raw Neuropixels data (AP and LFP bands) and inspect the probe geometry. (2) Apply preprocessing: common median referencing, bandpass filtering, and bad channel detection. (3) Run spike sorting to isolate single units. (4) Curate sorted units: merge over-split clusters, remove noise, label multi-unit activity. (5) Map unit positions on the probe to brain regions using the insertion coordinates and {atlas}. (6) Compute basic unit properties: firing rate, waveform shape, burst index, ISI statistics. (7) Analyze LFP: compute spectrograms and current source density (CSD) profiles. (8) Visualize the drift map, unit quality metrics, and brain region assignments. (9) Export the sorted spike data and unit metadata.",
+    "suggestedSkills": ["neuropixels-analysis", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "atlas", "label": "Brain atlas for region mapping (e.g., Allen CCF)", "required": false }
+    ]
+  },
+  {
+    "id": "brain-atlas-mapping",
+    "name": "Brain Atlas Mapping",
+    "description": "Register neural data to brain atlases and visualize anatomical context",
+    "category": "neuro",
+    "icon": "Scan",
+    "prompt": "Map the uploaded neural data to a brain atlas. Steps: (1) Load the data and determine the recording modality (imaging, electrophysiology, tracing). (2) Select the reference atlas: {atlas} (e.g., Allen Mouse CCF, MNI152 human). (3) Register the data to atlas coordinates using landmarks, fiducials, or automated registration. (4) Assign brain regions to each data point (electrodes, neurons, voxels, or injection sites). (5) Compute the regional distribution of the signal of interest. (6) Generate atlas-overlay visualizations showing data mapped onto anatomical sections. (7) Create a 3D rendering of recorded locations within the brain. (8) Summarize the regional distribution in a table. (9) Export registered coordinates and atlas-annotated data.",
+    "suggestedSkills": ["matplotlib", "scientific-visualization", "plotly"],
+    "placeholders": [
+      { "key": "atlas", "label": "Brain atlas (e.g., Allen CCF, MNI152, Paxinos-Watson)", "required": true }
+    ]
+  },
+  {
+    "id": "computational-neuron-model",
+    "name": "Computational Neuron Model",
+    "description": "Build and simulate biophysical or integrate-and-fire neuron models",
+    "category": "neuro",
+    "icon": "Atom",
+    "prompt": "Build and simulate a computational neuron model. Model type: {model_type}. Steps: (1) Define the neuron model parameters: membrane capacitance, conductances, reversal potentials, and morphology if applicable. (2) Implement the model equations (Hodgkin-Huxley, Izhikevich, AdEx, or LIF as specified). (3) Simulate the neuron's response to: {input_protocol} (e.g., step current, ramp, synaptic input, noise). (4) Record membrane potential, firing rate, and any tracked currents. (5) Compute the F-I curve (firing rate vs injected current). (6) Analyze spike shape, adaptation, and bursting properties. (7) Perform parameter sensitivity analysis on key biophysical parameters. (8) Visualize voltage traces, phase plots, and the F-I curve. (9) Export model parameters and simulation data.",
+    "suggestedSkills": ["sympy", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "model_type", "label": "Model type (e.g., Hodgkin-Huxley, Izhikevich, LIF, AdEx)", "required": true },
+      { "key": "input_protocol", "label": "Input stimulation protocol", "required": false }
+    ]
+  },
+  {
+    "id": "psychophysics-analysis",
+    "name": "Psychophysics Analysis",
+    "description": "Analyze psychophysical data: thresholds, psychometric functions, and signal detection",
+    "category": "neuro",
+    "icon": "Eye",
+    "prompt": "Analyze the uploaded psychophysics dataset from: {experiment}. Steps: (1) Load the trial-by-trial data with stimulus levels and responses. (2) Fit a psychometric function (logistic, Weibull, or cumulative Gaussian) to the data. (3) Estimate the detection/discrimination threshold at {criterion}% correct. (4) Compute confidence intervals for the threshold using bootstrap. (5) If signal detection theory applies, compute d' (sensitivity) and criterion (c) for each condition. (6) Generate ROC curves if rating data is available. (7) Compare thresholds or sensitivity across conditions ({conditions}) using appropriate statistical tests. (8) Visualize psychometric functions and SDT metrics. (9) Export thresholds, psychometric function parameters, and SDT metrics.",
+    "suggestedSkills": ["statsmodels", "matplotlib", "scientific-visualization"],
+    "placeholders": [
+      { "key": "experiment", "label": "Experiment type (e.g., contrast detection, orientation discrimination)", "required": true },
+      { "key": "criterion", "label": "Threshold criterion (default 75%)", "required": false },
+      { "key": "conditions", "label": "Conditions to compare (optional)", "required": false }
+    ]
+  },
+  {
+    "id": "neural-network-comparison",
+    "name": "Neural Network vs Brain Comparison",
+    "description": "Compare artificial neural network representations with neural recordings",
+    "category": "neuro",
+    "icon": "Binary",
+    "prompt": "Compare artificial neural network representations with brain data. Steps: (1) Load the neural data (fMRI, electrophysiology, or behavioral) and the ANN model: {model_name}. (2) Present the same stimuli ({stimuli}) to both the ANN and extract layer activations. (3) Compute representational dissimilarity matrices (RDMs) for each ANN layer and each brain region/timepoint. (4) Compare ANN and brain RDMs using representational similarity analysis (RSA) — Spearman correlation or Kendall's tau. (5) Determine which ANN layer best predicts each brain region. (6) Fit encoding models: predict neural responses from ANN features using ridge regression. (7) Evaluate encoding model accuracy with cross-validated R². (8) Visualize the layer-region correspondence and encoding model performance. (9) Export RSA matrices and encoding model results.",
+    "suggestedSkills": ["scikit-learn", "matplotlib", "scientific-visualization", "transformers"],
+    "placeholders": [
+      { "key": "model_name", "label": "ANN model (e.g., ResNet-50, CLIP, GPT-2)", "required": true },
+      { "key": "stimuli", "label": "Stimulus set description", "required": true }
+    ]
+  }

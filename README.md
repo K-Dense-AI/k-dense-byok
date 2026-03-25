@@ -17,9 +17,10 @@ It's built for scientists, analysts, and curious people who want a powerful AI w
 - **Work with your files** — Upload files, create new ones, and preview them right in the app. Everything stays in a local sandbox folder on your machine. Can handle almost any file type.
 - **Access 250+ scientific databases and 500k+ Python packages** — Kady's experts come pre-loaded with specialized scientific skills from [K-Dense](https://github.com/K-Dense-AI), covering everything from genomics to materials science.
 - **Choose your AI model** — Pick from 40+ models (OpenAI, Anthropic, Google, xAI, Qwen, and more) through a simple dropdown in the app. You're not stuck with one.
+- **326 ready-to-use workflows** — Browse a built-in library of workflow templates spanning 22 disciplines — from genomics and drug discovery to finance and astrophysics. Pick a workflow, fill in the variables, select a model, and launch. Each workflow comes with curated skill suggestions so the agent knows exactly which tools to reach for. Workflows that need uploaded data are clearly marked, and you can upload files directly from the launch dialog.
+- **Run heavy computations remotely** — Optionally connect [Modal](https://modal.com/) to run demanding workloads on powerful cloud hardware instead of your laptop.
 
 > **Note:** The model you select in the dropdown only applies to Kady (the main agent). Expert execution and coding tasks use the Gemini CLI, which always runs through a Gemini model on [OpenRouter](https://openrouter.ai/) regardless of your dropdown selection.
-- **Run heavy computations remotely** — Optionally connect [Modal](https://modal.com/) to run demanding workloads on powerful cloud hardware instead of your laptop.
 
 ## What you'll need before starting
 
@@ -133,6 +134,50 @@ k-dense-byok/
 ## Why "BYOK"?
 
 BYOK stands for **Bring Your Own Keys**. Instead of paying a subscription to a single AI company, you plug in API keys from whatever providers you prefer. You stay in control of which models you use, how much you spend, and where your data goes.
+
+## Contributing workflows
+
+The workflow library lives in a single JSON file at `web/src/data/workflows.json`. Adding or improving a workflow is one of the easiest ways to contribute to the project.
+
+### Workflow structure
+
+Each workflow is a JSON object with these fields:
+
+```json
+{
+  "id": "unique-kebab-case-id",
+  "name": "Human-Readable Name",
+  "description": "One-sentence summary shown on the card",
+  "category": "genomics",
+  "icon": "Dna",
+  "prompt": "Detailed instructions with {placeholder} syntax for user variables",
+  "suggestedSkills": ["scanpy", "scientific-visualization"],
+  "placeholders": [
+    { "key": "placeholder", "label": "What to ask the user", "required": true }
+  ],
+  "requiresFiles": true
+}
+```
+
+Set `requiresFiles` to `true` when the workflow needs user-uploaded data (datasets, manuscripts, images, etc.). These workflows display a "Files" badge on the card and show an upload button in the launch dialog so users can add files to the sandbox before running.
+
+### How to add a workflow
+
+1. Open `web/src/data/workflows.json`.
+2. Add your workflow object anywhere in the array (it will be grouped by `category` automatically).
+3. Pick a `category` from the existing 22 disciplines (`paper`, `visual`, `data`, `literature`, `grants`, `scicomm`, `genomics`, `proteomics`, `cellbio`, `chemistry`, `drugdiscovery`, `physics`, `materials`, `clinical`, `neuro`, `ecology`, `finance`, `social`, `math`, `ml`, `engineering`, `astro`) or propose a new one.
+4. Choose an `icon` name from [Lucide Icons](https://lucide.dev/icons/) (PascalCase, no "Icon" suffix — e.g. `FlaskConical`, `Brain`, `Dna`). If the icon isn't already imported in `workflows-panel.tsx`, add it there too.
+5. List `suggestedSkills` from the [K-Dense scientific skills](https://github.com/K-Dense-AI/claude-scientific-skills) — these are passed to the agent so it knows which tools to load. Only use skill IDs that exist in the repo.
+6. Use `{placeholder}` syntax in the prompt for any variable the user should fill in, and add a matching entry in `placeholders`.
+
+### Tips for high-quality workflows
+
+- Write prompts with **numbered steps** so the agent follows a clear procedure.
+- Include 2–5 `suggestedSkills` — enough to be helpful, not so many that they dilute focus.
+- Mark placeholders as `"required": true` only when the workflow genuinely can't run without them.
+- Keep descriptions under ~120 characters so they display well on the card.
+
+Submit your addition as a pull request. We review and merge workflow contributions quickly.
 
 ## Features in the works
 
