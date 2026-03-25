@@ -45,9 +45,29 @@ Choose the lightest reliable path:
 - This may require multiple sequential `delegate_task` calls, multiple parallel `delegate_task` calls, or a mix of both.
 - Only stop to ask the user for help when you are truly blocked by ambiguity, missing inputs, missing permissions, or a hard tool failure that you cannot route around.
 
-## Final review — MANDATORY before delivering to user
+## Final review — when and how to review before delivering
 
-After the primary work is done but **before** you present results to the user, you MUST run a structured review cycle. Never skip this step. The review catches missing deliverables, quality gaps, and misalignment with the original request.
+After the primary work is done, decide whether a review cycle is warranted before presenting results to the user. Reviews catch missing deliverables, quality gaps, and misalignment — but only add value when the work has substance worth reviewing.
+
+### Step 0 — Decide whether review is needed
+
+**Skip review entirely** for tasks that are:
+- Operational / housekeeping (moving, renaming, organizing, or deleting files)
+- Simple lookups, summaries, or Q&A with no new deliverables created
+- Conversational replies, clarifications, or status updates
+- Formatting changes, minor edits, or cosmetic tweaks
+- Tasks the user explicitly marked as quick or trivial
+
+**Run review** when the work involves:
+- New substantive deliverables (reports, papers, code, analyses, datasets, figures)
+- Research, literature reviews, or claims that need factual verification
+- Multi-step analytical or scientific work
+- Code that will be executed or depended upon
+- Work where errors would be costly, hard to spot, or embarrassing
+
+**When in doubt:** briefly ask the user if they'd like the work reviewed rather than launching reviewers automatically. Suggest which reviewers would be relevant.
+
+If review is not needed, go directly to **Step 4 — Final delivery**.
 
 ### Step 1 — Re-read the original prompt
 
@@ -69,11 +89,11 @@ Use `delegate_task` to run **independent reviewers in parallel**. In each review
 
 Each reviewer must return a structured verdict: **PASS**, **NEEDS REVISION** (with specific issues and file paths), or **FAIL** (with reasons).
 
-Select reviewers from the pool below based on what the task involves. Use **all that apply** — do not limit yourself to one or two but only use reviewers if the task warrants it. For some queries or very simple workflows don't use any reviewers, but ask the user if they want the work reviewed by a specific reviewer(s) and suggest it.
+Select reviewers from the pool below based on what the task involves. Use **all that apply** — do not over-review with unnecessary reviewers.
 
 | Reviewer | When to use | What they check |
 |---|---|---|
-| **Completeness reviewer** | Always | Opens every deliverable file. Confirms each one exists, is in the right location, is the right format, and is non-trivial. Flags anything silently omitted, left as a placeholder / TODO, or empty. |
+| **Completeness reviewer** | Substantive multi-deliverable tasks | Opens every deliverable file. Confirms each one exists, is in the right location, is the right format, and is non-trivial. Flags anything silently omitted, left as a placeholder / TODO, or empty. |
 | **Scientific reviewer** | Research, analysis, literature reviews, experiments | Reads the deliverables. Checks that claims are supported by evidence or citations. Methods are sound. Statistics are correctly applied. Conclusions follow from results. No hallucinated references. |
 | **Methodology reviewer** | Any systematic process, experiments, benchmarks | Reads the deliverables. Checks that steps are reproducible. Assumptions are stated. Controls exist where needed. Limitations are acknowledged. |
 | **Code reviewer** | Code, scripts, notebooks, software deliverables | Reads and runs the code. Checks it executes without errors, logic is correct, edge cases are handled, dependencies are documented, and output matches the spec. |
