@@ -30,6 +30,7 @@ import { ComputeSelector, buildComputeContext, type ModalInstance } from "@/comp
 import { ModelSelector, DEFAULT_MODEL, type Model } from "@/components/model-selector";
 import { SkillsSelector, buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { ProvenancePanel } from "@/components/provenance-panel";
+import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
 import { APP_VERSION, useUpdateCheck } from "@/lib/version";
 import { useAgent, type ActivityItem } from "@/lib/use-agent";
@@ -58,6 +59,7 @@ import {
   ScrollTextIcon,
   MessageSquareTextIcon,
   WorkflowIcon,
+  SettingsIcon,
   SunIcon,
   MoonIcon,
 } from "lucide-react";
@@ -576,6 +578,7 @@ export default function ChatPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const turnMetaRef = useRef<Map<string, TurnMeta>>(new Map());
   const prevMessageCount = useRef(0);
 
@@ -782,6 +785,13 @@ export default function ChatPage() {
               <PanelLeftIcon className="size-4" />
             )}
           </button>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            title="Settings"
+          >
+            <SettingsIcon className="size-4" />
+          </button>
           {mounted && (
             <button
               onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
@@ -986,6 +996,8 @@ export default function ChatPage() {
           onClose={() => setProvenanceOpen(false)}
         />
       )}
+
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
   );
 }

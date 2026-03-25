@@ -1,4 +1,6 @@
+import asyncio
 import io
+import json
 import mimetypes
 import os
 import re
@@ -10,6 +12,12 @@ import yaml
 from fastapi import Body, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from google.adk.cli.fast_api import get_fast_api_app
+
+from kady_agent.gemini_settings import (
+    load_custom_mcps,
+    save_custom_mcps,
+    write_merged_settings,
+)
 
 app = get_fast_api_app(
     agents_dir=".",
@@ -43,6 +51,27 @@ async def config():
     return {
         "modal_configured": bool(modal_id and modal_secret),
     }
+
+
+@app.get("/settings/mcps")
+def get_custom_mcps():
+    """Return the user's custom MCP server definitions."""
+    return load_custom_mcps()
+
+
+@app.put("/settings/mcps")
+async def put_custom_mcps(request: Request):
+    """Save custom MCP servers and rebuild the merged Gemini CLI settings."""
+    try:
+        data = await request.json()
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="Expected a JSON object")
+    save_custom_mcps(data)
+    settings_dir = SANDBOX_ROOT / ".gemini"
+    write_merged_settings(settings_dir)
+    return {"ok": True}
 
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
@@ -310,3 +339,74 @@ def sandbox_download_all():
         media_type="application/zip",
         headers={"Content-Disposition": 'attachment; filename="sandbox.zip"'},
     )
+
+
+_LATEX_ERROR_RE = re.compile(r"^! (.+)", re.MULTILINE)
+_VALID_ENGINES = {"pdflatex", "xelatex", "lualatex"}
+
+
+@app.post("/sandbox/compile-latex")
+async def sandbox_compile_latex(request: Request):
+    """Compile a .tex file to PDF using latexmk or a raw engine."""
+    body = await request.json()
+    rel_path = body.get("path", "")
+    engine = body.get("engine", "pdflatex")
+
+    if engine not in _VALID_ENGINES:
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
+
+    target = _safe_path(rel_path)
+    if not target.is_file() or target.suffix not in (".tex", ".latex"):
+        raise HTTPException(status_code=400, detail="Not a .tex file")
+
+    work_dir = target.parent
+    pdf_name = target.stem + ".pdf"
+    pdf_path = work_dir / pdf_name
+
+    has_latexmk = shutil.which("latexmk") is not None
+
+    if has_latexmk:
+        cmd = [
+            "latexmk",
+            f"-{engine}",
+            "-interaction=nonstopmode",
+            "-cd",
+            "-file-line-error",
+            str(target),
+        ]
+    else:
+        cmd = [engine, "-interaction=nonstopmode", "-file-line-error", target.name]
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(work_dir),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=60)
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "pdf_path": None,
+            "log": "Compilation timed out after 60 seconds.",
+            "errors": ["Timeout"],
+        }
+    except FileNotFoundError:
+        return {
+            "success": False,
+            "pdf_path": None,
+            "log": f"LaTeX compiler not found. Install TeX Live or set PATH to include {engine}.",
+            "errors": [f"{engine} not found on system"],
+        }
+
+    log_text = stdout.decode("utf-8", errors="replace")
+    errors = _LATEX_ERROR_RE.findall(log_text)
+    success = proc.returncode == 0 and pdf_path.is_file()
+
+    return {
+        "success": success,
+        "pdf_path": str(pdf_path.relative_to(SANDBOX_ROOT)) if pdf_path.is_file() else None,
+        "log": log_text[-8000:] if len(log_text) > 8000 else log_text,
+        "errors": errors,
+    }

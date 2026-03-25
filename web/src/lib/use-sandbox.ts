@@ -20,6 +20,7 @@ export type FileCategory =
   | "notebook"
   | "fasta"
   | "biotable"
+  | "latex"
   | "text";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
