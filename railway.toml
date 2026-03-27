@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+numReplicas = 1
+sleepApplication = false
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+# Railway exposes $PORT to the container; our start_railway.sh passes it to Next.js
+# healthcheckPath = "/health"  # uncomment if you add a Next.js /health route

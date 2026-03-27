@@ -13,8 +13,15 @@
     HTTP-Referer: "https://www.k-dense.ai"
     X-Title: "Kady-Expert"
 
+.venice_shared: &venice_shared
+  api_base: https://api.venice.ai/api/v1
+  api_key: os.environ/VENICE_API_KEY
+  custom_llm_provider: openai
+  timeout: 600
+  stream_timeout: 600
+
 model_list:
-  # ── Gemini models ──
+  # ── Gemini models (via OpenRouter, used by Gemini CLI experts) ──
   - model_name: gemini-3.1-pro-preview
     litellm_params:
       <<: *openrouter_shared
@@ -27,6 +34,48 @@ model_list:
     litellm_params:
       <<: *openrouter_shared
       model: google/gemini-3.1-flash-lite-preview
+
+  # ── Venice AI models (privacy-first, uncensored options) ──
+  - model_name: venice/llama-3.3-70b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/llama-3.3-70b
+  - model_name: venice/mistral-31-24b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/mistral-31-24b
+  - model_name: venice/deepseek-r1
+    litellm_params:
+      <<: *venice_shared
+      model: openai/deepseek-ai/DeepSeek-R1
+  - model_name: venice/qwen3-235b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/qwen3-235b-a22b-instruct-2507
+  - model_name: venice/qwen3-4b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/qwen3-4b
+  - model_name: venice/llama-3.2-3b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/llama-3.2-3b
+  - model_name: venice/venice-uncensored
+    litellm_params:
+      <<: *venice_shared
+      model: openai/venice-uncensored
+  - model_name: venice/qwen3-coder-480b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/qwen3-coder-480b-a35b-instruct
+  - model_name: venice/gemma-3-27b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/google-gemma-3-27b-it
+  - model_name: venice/llama-3.1-405b
+    litellm_params:
+      <<: *venice_shared
+      model: openai/hermes-3-llama-3.1-405b
 
 router_settings:
   # Retry failed routing attempts (helps flaky upstream / transient errors)
@@ -42,6 +91,13 @@ router_settings:
     "gemini-2.5-flash": "gemini-3.1-pro-preview"
     "gemini-2.5-flash-lite": "gemini-3-flash-preview"
     "gemini-3-pro-preview": "gemini-3.1-pro-preview"
+    # Venice model aliases for ADK customtools suffix
+    "venice/llama-3.3-70b-customtools": "venice/llama-3.3-70b"
+    "venice/mistral-31-24b-customtools": "venice/mistral-31-24b"
+    "venice/deepseek-r1-customtools": "venice/deepseek-r1"
+    "venice/qwen3-235b-customtools": "venice/qwen3-235b"
+    "venice/venice-uncensored-customtools": "venice/venice-uncensored"
+    "venice/qwen3-coder-480b-customtools": "venice/qwen3-coder-480b"
 
 general_settings:
   master_key: sk-litellm-local

@@ -36,6 +36,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
+  Venice:    "text-purple-600 dark:text-purple-400",
 };
 
 function TierDot({ tier }: { tier: string }) {

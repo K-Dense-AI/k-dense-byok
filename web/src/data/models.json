@@ -376,5 +376,135 @@
     },
     "modality": "text->text",
     "description": "MiniMax-M2.5 is a SOTA large language model designed for real-world productivity. Trained in a diverse range of complex real-world digital working environments, M2.5 builds upon the coding expertise of M2.1 to extend into general office work, reaching fluency in generating and operating Word, Excel, and Powerpoint files, context switching between diverse software environments, and working across different agent and human teams. Scoring 80.2% on SWE-Bench Verified, 51.3% on Multi-SWE-Bench, and 76.3% on BrowseComp, M2.5 is also more token efficient than previous generations, having been trained to optimize its actions and output through planning."
+  },
+  {
+    "id": "venice/deepseek-r1",
+    "label": "DeepSeek R1 (Venice)",
+    "provider": "Venice",
+    "tier": "high",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 3.0,
+      "completion": 9.0
+    },
+    "modality": "text->text",
+    "description": "DeepSeek R1 hosted on Venice AI's privacy-preserving infrastructure. Venice does not log or train on your conversations. Supports extended chain-of-thought reasoning for complex analytical, mathematical, and coding tasks. Ideal when you need powerful reasoning with full data privacy."
+  },
+  {
+    "id": "venice/qwen3-235b",
+    "label": "Qwen3 235B (Venice)",
+    "provider": "Venice",
+    "tier": "high",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 2.0,
+      "completion": 6.0
+    },
+    "modality": "text->text",
+    "description": "Qwen3 235B MoE instruction-tuned model hosted on Venice AI. A top-tier open-weight model with strong multilingual reasoning, coding, and instruction-following capabilities. Served with Venice's privacy-first, no-logging inference."
+  },
+  {
+    "id": "venice/qwen3-coder-480b",
+    "label": "Qwen3 Coder 480B (Venice)",
+    "provider": "Venice",
+    "tier": "high",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 2.5,
+      "completion": 7.5
+    },
+    "modality": "text->text",
+    "description": "Qwen3 Coder 480B is a massive MoE coding model hosted on Venice AI. Optimized for long-horizon agentic coding tasks, complex tool use, and autonomous code generation. Features a 256K context window and Venice's private inference guarantees."
+  },
+  {
+    "id": "venice/llama-3.3-70b",
+    "label": "Llama 3.3 70B (Venice)",
+    "provider": "Venice",
+    "tier": "mid",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 0.18,
+      "completion": 0.72
+    },
+    "modality": "text->text",
+    "description": "Meta's Llama 3.3 70B hosted on Venice AI for private, uncensored inference. Excellent all-around performance for reasoning, coding, and creative tasks. Venice guarantees no conversation logging or training on your data."
+  },
+  {
+    "id": "venice/llama-3.1-405b",
+    "label": "Llama 3.1 405B Hermes (Venice)",
+    "provider": "Venice",
+    "tier": "mid",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 0.8,
+      "completion": 2.4
+    },
+    "modality": "text->text",
+    "description": "Hermes 3 fine-tuned on Llama 3.1 405B, hosted on Venice AI. A top-tier open-weight model excelling at agentic tasks, function calling, and complex reasoning. Venice's privacy-first infrastructure ensures no data retention."
+  },
+  {
+    "id": "venice/gemma-3-27b",
+    "label": "Gemma 3 27B (Venice)",
+    "provider": "Venice",
+    "tier": "mid",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 0.2,
+      "completion": 0.8
+    },
+    "modality": "text->text",
+    "description": "Google's Gemma 3 27B instruction-tuned model hosted on Venice AI. Strong multimodal-trained backbone with excellent text performance for its size. Served with Venice's privacy-first, no-logging infrastructure."
+  },
+  {
+    "id": "venice/mistral-31-24b",
+    "label": "Mistral 3.1 24B (Venice)",
+    "provider": "Venice",
+    "tier": "budget",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 0.12,
+      "completion": 0.48
+    },
+    "modality": "text->text",
+    "description": "Mistral 3.1 24B hosted on Venice AI. A highly capable mid-size model with strong instruction following, multilingual support, and efficient inference. Venice's private compute ensures your conversations remain confidential."
+  },
+  {
+    "id": "venice/venice-uncensored",
+    "label": "Venice Uncensored",
+    "provider": "Venice",
+    "tier": "budget",
+    "context_length": 8192,
+    "pricing": {
+      "prompt": 0.05,
+      "completion": 0.2
+    },
+    "modality": "text->text",
+    "description": "Venice's own uncensored model with no content restrictions beyond illegality. Designed for creative writing, roleplay, and research that mainstream models decline. Operates entirely on Venice's private, no-log infrastructure."
+  },
+  {
+    "id": "venice/qwen3-4b",
+    "label": "Qwen3 4B (Venice)",
+    "provider": "Venice",
+    "tier": "budget",
+    "context_length": 32768,
+    "pricing": {
+      "prompt": 0.03,
+      "completion": 0.12
+    },
+    "modality": "text->text",
+    "description": "Qwen3 4B is a compact but capable model hosted on Venice AI. Ideal for fast, lightweight tasks where privacy matters. Venice's no-log policy applies to all inference, even at this budget tier."
+  },
+  {
+    "id": "venice/llama-3.2-3b",
+    "label": "Llama 3.2 3B (Venice)",
+    "provider": "Venice",
+    "tier": "budget",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 0.02,
+      "completion": 0.08
+    },
+    "modality": "text->text",
+    "description": "Meta's Llama 3.2 3B hosted on Venice AI. The most cost-effective option for simple tasks, summarization, and classification. Venice's privacy infrastructure ensures zero data retention even for high-volume, low-cost inference."
   }
 ]
