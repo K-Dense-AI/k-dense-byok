@@ -28,6 +28,10 @@ app = get_fast_api_app(
 
 SANDBOX_ROOT = Path("sandbox").resolve()
 
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+MAX_UPLOAD_COUNT = 20  # max files per upload request
+_MAX_MCP_SERVERS = 10
+
 _ZIP_EXCLUDED_NAMES = {"GEMINI.md", "uv.lock"}
 
 
@@ -95,14 +99,16 @@ def list_skills():
             if not match:
                 continue
             meta = yaml.safe_load(match.group(1)) or {}
-            skills.append({
-                "id": child.name,
-                "name": meta.get("name", child.name),
-                "description": meta.get("description", ""),
-                "author": (meta.get("metadata") or {}).get("skill-author", ""),
-                "license": meta.get("license", ""),
-                "compatibility": meta.get("compatibility", ""),
-            })
+            skills.append(
+                {
+                    "id": child.name,
+                    "name": meta.get("name", child.name),
+                    "description": meta.get("description", ""),
+                    "author": (meta.get("metadata") or {}).get("skill-author", ""),
+                    "license": meta.get("license", ""),
+                    "compatibility": meta.get("compatibility", ""),
+                }
+            )
         except Exception:
             continue
 
@@ -120,7 +126,9 @@ def sandbox_tree():
         if depth > 8:
             return node
         try:
-            entries = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+            entries = sorted(
+                directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower())
+            )
         except PermissionError:
             return node
 
@@ -135,12 +143,14 @@ def sandbox_tree():
                 child["path"] = rel
                 node["children"].append(child)
             elif entry.is_file():
-                node["children"].append({
-                    "name": entry.name,
-                    "type": "file",
-                    "path": rel,
-                    "size": entry.stat().st_size,
-                })
+                node["children"].append(
+                    {
+                        "name": entry.name,
+                        "type": "file",
+                        "path": rel,
+                        "size": entry.stat().st_size,
+                    }
+                )
         return node
 
     tree = build_tree(SANDBOX_ROOT)
@@ -165,7 +175,9 @@ async def sandbox_upload(
         rel = paths[i].strip() if i < len(paths) else ""
         if rel:
             parts = Path(rel).parts
-            safe_parts = [p for p in parts if p not in ("..", ".") and not p.startswith(".")]
+            safe_parts = [
+                p for p in parts if p not in ("..", ".") and not p.startswith(".")
+            ]
             if not safe_parts:
                 continue
             dest = UPLOAD_DIR / Path(*safe_parts)
@@ -237,9 +249,13 @@ def sandbox_move(src: str = Body(...), dest: str = Body(...)):
     if dest_path.exists():
         raise HTTPException(status_code=409, detail="Destination already exists")
     if not dest_path.parent.exists():
-        raise HTTPException(status_code=404, detail="Destination parent directory not found")
+        raise HTTPException(
+            status_code=404, detail="Destination parent directory not found"
+        )
     if src_path.is_dir() and dest_path.is_relative_to(src_path):
-        raise HTTPException(status_code=400, detail="Cannot move a directory into itself")
+        raise HTTPException(
+            status_code=400, detail="Cannot move a directory into itself"
+        )
     shutil.move(str(src_path), str(dest_path))
     return {"ok": True}
 
@@ -267,9 +283,11 @@ def sandbox_download_dir(path: str = Query(...)):
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path in sorted(target.rglob("*")):
             rel_parts = file_path.relative_to(target).parts
-            if file_path.is_file() and not any(
-                p.startswith(".") for p in rel_parts
-            ) and file_path.name not in _ZIP_EXCLUDED_NAMES:
+            if (
+                file_path.is_file()
+                and not any(p.startswith(".") for p in rel_parts)
+                and file_path.name not in _ZIP_EXCLUDED_NAMES
+            ):
                 zf.write(file_path, file_path.relative_to(target))
     buf.seek(0)
 
@@ -325,9 +343,11 @@ def sandbox_download_all():
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for file_path in sorted(SANDBOX_ROOT.rglob("*")):
             rel_parts = file_path.relative_to(SANDBOX_ROOT).parts
-            if file_path.is_file() and not any(
-                p.startswith(".") for p in rel_parts
-            ) and file_path.name not in _ZIP_EXCLUDED_NAMES:
+            if (
+                file_path.is_file()
+                and not any(p.startswith(".") for p in rel_parts)
+                and file_path.name not in _ZIP_EXCLUDED_NAMES
+            ):
                 zf.write(file_path, file_path.relative_to(SANDBOX_ROOT))
     buf.seek(0)
 
@@ -406,7 +426,9 @@ async def sandbox_compile_latex(request: Request):
 
     return {
         "success": success,
-        "pdf_path": str(pdf_path.relative_to(SANDBOX_ROOT)) if pdf_path.is_file() else None,
+        "pdf_path": str(pdf_path.relative_to(SANDBOX_ROOT))
+        if pdf_path.is_file()
+        else None,
         "log": log_text[-8000:] if len(log_text) > 8000 else log_text,
         "errors": errors,
     }
