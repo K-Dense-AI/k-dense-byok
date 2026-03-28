@@ -12,9 +12,7 @@ load_dotenv(REPO_ROOT / "kady_agent" / ".env")
 _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTIALS")
 
 # OpenRouter "App" label (via LiteLLM proxy). Format: gemini-cli-core GEMINI_CLI_CUSTOM_HEADERS.
-_CLI_OPENROUTER_HEADERS = (
-    "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
-)
+_CLI_OPENROUTER_HEADERS = "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
 
 
 def _parse_stream_json(raw: str) -> dict:
@@ -65,9 +63,7 @@ def _parse_stream_json(raw: str) -> dict:
     }
 
 
-async def delegate_task(
-    prompt: str, working_directory: str = "sandbox"
-) -> dict:
+async def delegate_task(prompt: str, working_directory: str = "sandbox") -> dict:
     """Delegate a task to an expert.
 
     Args:
@@ -119,7 +115,14 @@ async def delegate_task(
         cwd=cwd,
         env=env,
     )
-    stdout_bytes, stderr_bytes = await proc.communicate()
+    try:
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=300
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise RuntimeError("gemini command timed out after 300 seconds")
 
     if proc.returncode != 0:
         raise RuntimeError(

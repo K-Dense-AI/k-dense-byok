@@ -10,7 +10,9 @@ from .utils import load_instructions
 
 load_dotenv()
 
-DEFAULT_MODEL = os.getenv("DEFAULT_AGENT_MODEL")
+DEFAULT_MODEL = os.getenv(
+    "DEFAULT_AGENT_MODEL", "openrouter/google/gemini-3.1-pro-preview"
+)
 EXTRA_HEADERS = {"X-Title": "Kady", "HTTP-Referer": "https://www.k-dense.ai"}
 PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
 
