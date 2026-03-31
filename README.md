@@ -45,30 +45,11 @@ git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
 ```
 
-### Step 2 — Add your API key
+### Step 2 — Add your API keys
 
-Create a file called `.env` inside the `kady_agent` folder with this content:
+Inside the `kady_agent` folder you'll find a file called `env.example`. Make a copy of it and rename the copy to `.env` (note the dot at the start). Then open `.env` in any text editor and paste your **OpenRouter API key** on the first line — that's the only key you need to get started.
 
-```env
-# Your OpenRouter API key (required)
-OPENROUTER_API_KEY=paste-your-key-here
-
-# Enables web search (optional)
-PARALLEL_API_KEY=paste-your-key-here
-
-# Leave these as-is — they connect internal services
-GOOGLE_GEMINI_BASE_URL=http://localhost:4000
-GEMINI_API_KEY=sk-litellm-local
-
-# The default AI model Kady uses (you can change this in the app later)
-DEFAULT_AGENT_MODEL=openrouter/google/gemini-3.1-pro-preview
-
-# Remote compute — only fill in if you have a Modal account (optional)
-MODAL_TOKEN_ID=
-MODAL_TOKEN_SECRET=
-```
-
-At minimum, you need to fill in `OPENROUTER_API_KEY`. Everything else is optional or should be left as-is.
+The file also has sections for other keys you can optionally fill in: **Parallel** for web search, **Modal** for remote compute, and a long list of scientific database and government data API keys. Just leave blank anything you don't need.
 
 ### Step 3 — Start the app
 
@@ -102,7 +83,8 @@ k-dense-byok/
 ├── start.sh              ← The one script that starts everything
 ├── server.py             ← Backend server
 ├── kady_agent/           ← Kady's brain: instructions, tools, and config
-│   ├── .env              ← Your API keys go here
+│   ├── env.example       ← Template for your API keys (copy to .env)
+│   ├── .env              ← Your API keys (created from env.example)
 │   ├── agent.py          ← Main agent definition
 │   └── tools/            ← Tools Kady can use (web search, delegation, etc.)
 ├── web/                  ← Frontend (the UI you see in your browser)
