@@ -19,10 +19,16 @@ from kady_agent.gemini_settings import (
     write_merged_settings,
 )
 
+# In Railway the Next.js server proxies all API calls, so the browser never
+# talks directly to FastAPI. For local dev we still allow localhost:3000.
+# Set CORS_ORIGINS env var to a comma-separated list to override.
+_cors_env = os.environ.get("CORS_ORIGINS", "").strip()
+_allow_origins = _cors_env.split(",") if _cors_env else ["http://localhost:3000"]
+
 app = get_fast_api_app(
     agents_dir=".",
     web=False,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allow_origins,
     auto_create_session=True,
 )
 
@@ -48,8 +54,10 @@ async def config():
     """Expose non-secret feature flags to the frontend."""
     modal_id = os.environ.get("MODAL_TOKEN_ID", "").strip()
     modal_secret = os.environ.get("MODAL_TOKEN_SECRET", "").strip()
+    venice_key = os.environ.get("VENICE_API_KEY", "").strip()
     return {
         "modal_configured": bool(modal_id and modal_secret),
+        "venice_configured": bool(venice_key),
     }
 
 

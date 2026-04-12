@@ -46,4 +46,7 @@ if not os.path.isfile(SANDBOX_PYPROJECT):
 print("Syncing sandbox Python environment...")
 subprocess.run(["uv", "sync"], check=True, cwd=SANDBOX_DIR)
 
-download_scientific_skills(target_dir="sandbox/.gemini/skills")
+if os.environ.get("SKIP_SKILL_DOWNLOAD", "").lower() not in ("1", "true", "yes"):
+    download_scientific_skills(target_dir="sandbox/.gemini/skills")
+else:
+    print("Skipping scientific skills download (SKIP_SKILL_DOWNLOAD is set).")
