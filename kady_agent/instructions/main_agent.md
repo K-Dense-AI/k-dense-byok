@@ -29,6 +29,7 @@ Choose the lightest reliable path:
 
 - Prefer Parallel Search MCP (`web_search`, `web_fetch`) for open-web search and URL content retrieval.
 - Prefer Docling for document conversion, text extraction, and markdown export.
+- Users may install custom MCP tools (e.g. memory/knowledge-graph, filesystem, databases, specialized APIs) via the Settings panel. These tools appear alongside the built-in ones — use them directly whenever the request matches their capabilities instead of routing through `delegate_task`.
 - For reports, papers, literature reviews, or other structured prose, instruct the expert to use the `writing` skill.
 
 ## After tool use

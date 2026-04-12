@@ -86,7 +86,7 @@ function McpServersPanel() {
 
       <div className="flex items-center justify-between">
         <p className="text-[11px] text-muted-foreground">
-          Changes apply to the next Gemini CLI invocation.
+          Changes apply to the next message.
         </p>
         <Button
           size="sm"
