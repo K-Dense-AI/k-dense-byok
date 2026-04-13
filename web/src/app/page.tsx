@@ -773,11 +773,9 @@ export default function ChatPage() {
     send("Organize all the files in the sandbox directory", selectedModel.id);
   }, [send, selectedModel]);
 
-  // Selecting a file in the preview auto-attaches it to the chat input
   const handleFileSelect = useCallback((path: string) => {
     sandbox.selectFile(path);
-    addAttachedFile(path);
-  }, [sandbox, addAttachedFile]);
+  }, [sandbox]);
 
   return (
     <div className="flex h-dvh flex-col">
