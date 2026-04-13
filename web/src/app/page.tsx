@@ -256,14 +256,28 @@ function AssistantActivity({
   isStreaming: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el || expanded) { setIsOverflowing(false); return; }
+    const check = () => setIsOverflowing(el.scrollHeight > el.clientHeight);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [items, expanded]);
 
   if (items.length === 0 && !isStreaming) return null;
+
+  const toggle = () => setExpanded((v) => !v);
 
   return (
     <div className="mb-3 rounded-xl border border-border/70 bg-muted/30 px-3 py-2">
       <button
         type="button"
-        onClick={() => setExpanded((v) => !v)}
+        onClick={toggle}
         className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
         <ActivityIcon className="size-3.5 shrink-0" />
@@ -274,6 +288,11 @@ function AssistantActivity({
         ) : (
           <span>Activity</span>
         )}
+        {items.length > 1 && (
+          <span className="text-[10px] tabular-nums text-muted-foreground/70">
+            {items.length}
+          </span>
+        )}
         <ChevronDownIcon
           className={cn(
             "ml-auto size-3.5 shrink-0 transition-transform duration-200",
@@ -282,40 +301,60 @@ function AssistantActivity({
         />
       </button>
       {items.length > 0 ? (
-        <div
-          className={cn(
-            "relative overflow-hidden transition-all duration-200",
-            expanded ? "max-h-[2000px] mt-2" : "max-h-24 mt-2"
-          )}
-        >
-          <div className="space-y-2">
-            {items.map((item) => (
-              <div key={item.id} className="flex items-start gap-2 text-xs">
-                {item.status === "running" ? (
-                  <LoaderCircleIcon className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                ) : item.status === "error" ? (
-                  <XIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                ) : (
-                  <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                )}
-                <div className="min-w-0">
-                  <div className="text-foreground">{item.label}</div>
-                  {item.detail && (
-                    <div
-                      className={cn(
-                        "mt-0.5 text-muted-foreground",
-                        !expanded && "line-clamp-2"
-                      )}
-                    >
-                      {item.detail}
-                    </div>
+        <div className="mt-2">
+          <div
+            ref={contentRef}
+            className={cn(
+              "overflow-hidden transition-all duration-200",
+              expanded ? "max-h-[2000px]" : "max-h-24"
+            )}
+          >
+            <div className="space-y-2">
+              {items.map((item) => (
+                <div key={item.id} className="flex items-start gap-2 text-xs">
+                  {item.status === "running" ? (
+                    <LoaderCircleIcon className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                  ) : item.status === "error" ? (
+                    <XIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                  ) : (
+                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
                   )}
+                  <div className="min-w-0">
+                    <div className="text-foreground">{item.label}</div>
+                    {item.detail && (
+                      <div
+                        className={cn(
+                          "mt-0.5 text-muted-foreground",
+                          !expanded && "line-clamp-2"
+                        )}
+                      >
+                        {item.detail}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-          {!expanded && (
-            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-muted/60 to-transparent rounded-b-xl" />
+          {!expanded && isOverflowing && (
+            <button
+              type="button"
+              onClick={toggle}
+              className="flex w-full items-center justify-center gap-1 mt-1.5 text-[11px] font-medium text-primary/70 hover:text-primary transition-colors cursor-pointer"
+            >
+              <span>Show all {items.length} items</span>
+              <ChevronDownIcon className="size-3" />
+            </button>
+          )}
+          {expanded && items.length > 3 && (
+            <button
+              type="button"
+              onClick={toggle}
+              className="flex w-full items-center justify-center gap-1 mt-1.5 text-[11px] font-medium text-primary/70 hover:text-primary transition-colors cursor-pointer"
+            >
+              <span>Show less</span>
+              <ChevronDownIcon className="size-3 rotate-180" />
+            </button>
           )}
         </div>
       ) : (
