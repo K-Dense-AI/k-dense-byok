@@ -688,15 +688,16 @@ export default function ChatPage() {
   const [activeTab, setActiveTab] = useState<"chat" | "workflows">("chat");
 
   const handleWorkflowLaunch = useCallback(
-    async (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[]) => {
+    async (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[], uploadedFiles: string[]) => {
       setSelectedModel(model);
       setSelectedCompute(compute);
       setActiveTab("chat");
+      const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
       const computeCtx = buildComputeContext(compute);
       const skillsCtx = suggestedSkills.length > 0
         ? `\n\nMake sure to instruct the delegated expert to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
         : "";
-      const fullPrompt = prompt + computeCtx + skillsCtx;
+      const fullPrompt = prompt + fileRefs + computeCtx + skillsCtx;
       const msgId = await send(fullPrompt, model.id);
       if (msgId) {
         turnMetaRef.current.set(msgId, {
@@ -704,12 +705,12 @@ export default function ChatPage() {
           databases: [],
           compute: compute?.label ?? null,
           skills: suggestedSkills,
-          filesAttached: [...attachedFiles],
+          filesAttached: [...uploadedFiles],
           timestamp: Date.now(),
         });
       }
     },
-    [send, attachedFiles]
+    [send]
   );
 
   const handleSubmit = useCallback(

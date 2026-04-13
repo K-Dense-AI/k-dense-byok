@@ -291,7 +291,7 @@ function LaunchDialog({
   workflow: Workflow;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onLaunch: (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[]) => void;
+  onLaunch: (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[], uploadedFiles: string[]) => void;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   modalConfigured: boolean;
 }) {
@@ -338,13 +338,13 @@ function LaunchDialog({
   const finalPrompt = editedPrompt ?? assembledPrompt;
 
   const handleLaunch = useCallback(() => {
-    onLaunch(finalPrompt, model, compute, workflow.suggestedSkills);
+    onLaunch(finalPrompt, model, compute, workflow.suggestedSkills, uploadedFiles);
     onOpenChange(false);
     setPlaceholderValues({});
     setUploadedFiles([]);
     setEditedPrompt(null);
     setIsEditingPrompt(false);
-  }, [finalPrompt, model, compute, workflow.suggestedSkills, onLaunch, onOpenChange]);
+  }, [finalPrompt, model, compute, workflow.suggestedSkills, uploadedFiles, onLaunch, onOpenChange]);
 
   const iconColor = CATEGORY_ICON_COLOR[workflow.category] ?? "text-muted-foreground";
 
@@ -519,7 +519,7 @@ export function WorkflowsPanel({
   onUploadFiles,
   modalConfigured,
 }: {
-  onLaunch: (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[]) => void;
+  onLaunch: (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[], uploadedFiles: string[]) => void;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   modalConfigured: boolean;
 }) {
