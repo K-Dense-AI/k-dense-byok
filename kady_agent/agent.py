@@ -6,13 +6,23 @@ from google.adk.models.lite_llm import LiteLlm
 from .mcps import all_mcps
 
 from .tools.gemini_cli import delegate_task
-from .utils import load_instructions
+from .utils import (
+    format_skills_reference,
+    list_skill_summaries,
+    load_instructions,
+)
 
 load_dotenv()
 
 DEFAULT_MODEL = os.getenv("DEFAULT_AGENT_MODEL")
 EXTRA_HEADERS = {"X-Title": "Kady", "HTTP-Referer": "https://www.k-dense.ai"}
 PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
+
+
+def _build_instruction() -> str:
+    base = load_instructions("main_agent")
+    skills = list_skill_summaries()
+    return base + format_skills_reference(skills)
 
 
 def _override_model(callback_context, llm_request):
@@ -29,7 +39,7 @@ root_agent = LlmAgent(
         extra_headers=EXTRA_HEADERS,
     ),
     description="The main agent that makes sure the user's request is successfully fulfilled",
-    instruction=load_instructions("main_agent"),
+    instruction=_build_instruction(),
     tools=[delegate_task] + all_mcps,
     output_key="final_output",
     before_model_callback=_override_model,
