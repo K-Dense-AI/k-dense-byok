@@ -74,13 +74,19 @@ export function useSandbox(isActive = false) {
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
 
   const fetchTree = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const res = await fetch(`${API_BASE}/sandbox/tree`);
+      const res = await fetch(`${API_BASE}/sandbox/tree`, {
+        signal: controller.signal,
+      });
       if (!res.ok) return;
       const data = await res.json();
       setTree(data);
     } catch {
-      // silently fail -- sandbox may not exist yet
+      // silently fail -- sandbox may not exist yet, or request timed out
+    } finally {
+      clearTimeout(timeout);
     }
   }, []);
 
@@ -371,8 +377,13 @@ export function useSandbox(isActive = false) {
       const name = tab.path.split("/").pop() ?? "";
       const cat = fileCategory(name);
       if (cat === "image" || cat === "pdf") continue;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(`${API_BASE}/sandbox/file?path=${encodeURIComponent(tab.path)}`);
+        const res = await fetch(
+          `${API_BASE}/sandbox/file?path=${encodeURIComponent(tab.path)}`,
+          { signal: controller.signal },
+        );
         const content = res.ok
           ? await res.text()
           : `[Error: ${res.status} ${res.statusText}]`;
@@ -383,23 +394,35 @@ export function useSandbox(isActive = false) {
         });
       } catch {
         // silently skip tabs that fail to refresh
+      } finally {
+        clearTimeout(timeout);
       }
     }
   }, []);
 
   useEffect(() => {
-    fetchTree();
-    if (isActive) {
-      const interval = setInterval(() => {
-        fetchTree();
-        refreshOpenTabs();
-      }, 2000);
-      return () => clearInterval(interval);
-    } else {
-      const interval = setInterval(fetchTree, 3000);
-      return () => clearInterval(interval);
-    }
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      await fetchTree();
+      if (isActive && !cancelled) await refreshOpenTabs();
+      if (!cancelled) {
+        setTimeout(poll, isActive ? 1500 : 3000);
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
   }, [isActive, fetchTree, refreshOpenTabs]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchTree();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchTree]);
 
   return {
     tree,
