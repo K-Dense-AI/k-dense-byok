@@ -2,6 +2,12 @@
 # (browser closed SSE, idle timeout, user navigated away) or Google cancelled a stuck
 # request. Retries below help transient cases; client-side aborts will still fail.
 
+# Runtime contract:
+# - Backend / Gemini CLI should reach LiteLLM through GOOGLE_GEMINI_BASE_URL
+#   (localhost in the non-Docker path, the internal litellm service URL in containers).
+# - GEMINI_API_KEY is the internal backend -> LiteLLM credential. It is not an
+#   upstream provider secret.
+
 .openrouter_shared: &openrouter_shared
   api_base: https://openrouter.ai/api/v1
   api_key: os.environ/OPENROUTER_API_KEY
@@ -42,4 +48,4 @@ router_settings:
     "gemini-3-pro-preview": "gemini-3.1-pro-preview"
 
 general_settings:
-  master_key: sk-litellm-local
+  master_key: os.environ/GEMINI_API_KEY

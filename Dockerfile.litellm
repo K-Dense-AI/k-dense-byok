@@ -1,0 +1,28 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_NO_CACHE=1 \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:/root/.local/bin:${PATH}" \
+    LITELLM_PORT=4000
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml README.md ./
+COPY litellm_config.yaml ./litellm_config.yaml
+COPY docker-entrypoint.litellm.sh /usr/local/bin/docker-entrypoint.litellm.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.litellm.sh \
+    && uv sync --no-dev
+
+EXPOSE 4000
+
+ENTRYPOINT ["docker-entrypoint.litellm.sh"]
+CMD ["uv", "run", "litellm", "--config", "/app/litellm_config.yaml", "--host", "0.0.0.0", "--port", "4000"]
