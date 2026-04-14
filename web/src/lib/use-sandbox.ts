@@ -19,6 +19,7 @@ export type FileCategory =
   | "notebook"
   | "fasta"
   | "biotable"
+  | "latex"
   | "text";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
@@ -26,6 +27,8 @@ const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "
 const FASTA_EXTS = new Set(["fasta", "fa", "faa", "fna", "ffn", "fastq", "fq"]);
 
 const BIOTABLE_EXTS = new Set(["vcf", "bed", "gff", "gtf", "gff3", "sam", "tsv", "bcf"]);
+
+const LATEX_EXTS = new Set(["tex", "latex"]);
 
 export function fileCategory(name: string): FileCategory {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -36,6 +39,7 @@ export function fileCategory(name: string): FileCategory {
   if (ext === "ipynb") return "notebook";
   if (FASTA_EXTS.has(ext)) return "fasta";
   if (BIOTABLE_EXTS.has(ext)) return "biotable";
+  if (LATEX_EXTS.has(ext)) return "latex";
   return "text";
 }
 
@@ -47,6 +51,13 @@ export interface Tab {
   path: string;
   content: string | null;
   loading: boolean;
+}
+
+export interface LatexCompileResult {
+  success: boolean;
+  pdf_path: string | null;
+  log: string;
+  errors: string[];
 }
 
 export function useSandbox(isActive = false) {
@@ -62,14 +73,20 @@ export function useSandbox(isActive = false) {
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
 
   const fetchTree = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
       const apiBase = getApiBaseUrl();
-      const res = await fetch(`${apiBase}/sandbox/tree`);
+      const res = await fetch(`${apiBase}/sandbox/tree`, {
+        signal: controller.signal,
+      });
       if (!res.ok) return;
       const data = await res.json();
       setTree(data);
     } catch {
-      // silently fail -- sandbox may not exist yet
+      // silently fail -- sandbox may not exist yet, or request timed out
+    } finally {
+      clearTimeout(timeout);
     }
   }, []);
 
@@ -95,6 +112,7 @@ export function useSandbox(isActive = false) {
 
     const newTab: Tab = { path, content: null, loading: true };
     setTabs((prev) => {
+      if (prev.some((t) => t.path === path)) return prev;
       const next = [...prev, newTab];
       tabsRef.current = next;
       return next;
@@ -142,12 +160,19 @@ export function useSandbox(isActive = false) {
   }, []);
 
   const uploadFiles = useCallback(
-    async (files: FileList | File[]): Promise<string[]> => {
+    async (files: FileList | File[], paths?: string[]): Promise<string[]> => {
       if (!files.length) return [];
       setUploading(true);
       try {
         const body = new FormData();
-        for (const f of files) body.append("files", f);
+        const arr = Array.from(files);
+        for (let i = 0; i < arr.length; i++) {
+          body.append("files", arr[i]);
+          body.append(
+            "paths",
+            paths?.[i] || (arr[i] as File & { webkitRelativePath?: string }).webkitRelativePath || "",
+          );
+        }
         const res = await fetch(`${getApiBaseUrl()}/sandbox/upload`, { method: "POST", body });
         if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
         const data = await res.json();
@@ -159,7 +184,7 @@ export function useSandbox(isActive = false) {
         setUploading(false);
       }
     },
-    [fetchTree]
+    [fetchTree],
   );
 
   const saveFile = useCallback(async (path: string, content: string): Promise<boolean> => {
@@ -258,14 +283,107 @@ export function useSandbox(isActive = false) {
     a.remove();
   }, []);
 
+  const moveItem = useCallback(
+    async (src: string, dest: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/sandbox/move`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ src, dest }),
+        });
+        if (!res.ok) return false;
+
+        // Remap any open tabs whose paths were under the old location
+        const current = tabsRef.current;
+        const updated = current.map((t) => {
+          if (t.path === src) return { ...t, path: dest };
+          if (t.path.startsWith(src + "/"))
+            return { ...t, path: dest + t.path.slice(src.length) };
+          return t;
+        });
+        const pathsChanged = updated.some((t, i) => t.path !== current[i].path);
+        if (pathsChanged) {
+          tabsRef.current = updated;
+          openPathsRef.current = new Set(updated.map((t) => t.path));
+          setTabs(updated);
+          setActiveTabPath((prev) => {
+            if (prev === src) return dest;
+            if (prev && prev.startsWith(src + "/"))
+              return dest + prev.slice(src.length);
+            return prev;
+          });
+        }
+
+        await fetchTree();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [fetchTree]
+  );
+
+  const renameItem = useCallback(
+    async (oldPath: string, newName: string): Promise<boolean> => {
+      const parent = oldPath.includes("/") ? oldPath.slice(0, oldPath.lastIndexOf("/")) : "";
+      const dest = parent ? `${parent}/${newName}` : newName;
+      return moveItem(oldPath, dest);
+    },
+    [moveItem]
+  );
+
+  const createDir = useCallback(
+    async (path: string): Promise<boolean> => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/sandbox/mkdir`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path }),
+        });
+        if (!res.ok) return false;
+        await fetchTree();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [fetchTree]
+  );
+
+  const compileLatex = useCallback(
+    async (path: string, engine = "pdflatex"): Promise<LatexCompileResult> => {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/sandbox/compile-latex`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path, engine }),
+        });
+        if (!res.ok) {
+          const detail = await res.text();
+          return { success: false, pdf_path: null, log: detail, errors: [detail] };
+        }
+        return (await res.json()) as LatexCompileResult;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Network error";
+        return { success: false, pdf_path: null, log: msg, errors: [msg] };
+      }
+    },
+    [],
+  );
+
   const refreshOpenTabs = useCallback(async () => {
     const current = tabsRef.current;
     for (const tab of current) {
       const name = tab.path.split("/").pop() ?? "";
       const cat = fileCategory(name);
       if (cat === "image" || cat === "pdf") continue;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(`${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(tab.path)}`);
+        const res = await fetch(
+          `${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(tab.path)}`,
+          { signal: controller.signal },
+        );
         const content = res.ok
           ? await res.text()
           : `[Error: ${res.status} ${res.statusText}]`;
@@ -276,23 +394,35 @@ export function useSandbox(isActive = false) {
         });
       } catch {
         // silently skip tabs that fail to refresh
+      } finally {
+        clearTimeout(timeout);
       }
     }
   }, []);
 
   useEffect(() => {
-    fetchTree();
-    if (isActive) {
-      const interval = setInterval(() => {
-        fetchTree();
-        refreshOpenTabs();
-      }, 2000);
-      return () => clearInterval(interval);
-    } else {
-      const interval = setInterval(fetchTree, 3000);
-      return () => clearInterval(interval);
-    }
+    let cancelled = false;
+
+    const poll = async () => {
+      if (cancelled) return;
+      await fetchTree();
+      if (isActive && !cancelled) await refreshOpenTabs();
+      if (!cancelled) {
+        setTimeout(poll, isActive ? 1500 : 3000);
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
   }, [isActive, fetchTree, refreshOpenTabs]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchTree();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [fetchTree]);
 
   return {
     tree,
@@ -310,6 +440,10 @@ export function useSandbox(isActive = false) {
     downloadFile,
     downloadDir,
     downloadAll,
+    moveItem,
+    renameItem,
+    createDir,
     refreshOpenTabs,
+    compileLatex,
   };
 }

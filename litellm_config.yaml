@@ -14,11 +14,13 @@
   custom_llm_provider: openai
   # Long agent + tool runs; raise if you hit read timeouts
   timeout: 600
+  stream_timeout: 600
   extra_headers:
     HTTP-Referer: "https://www.k-dense.ai"
     X-Title: "Kady-Expert"
 
 model_list:
+  # ── Gemini models ──
   - model_name: gemini-3.1-pro-preview
     litellm_params:
       <<: *openrouter_shared
@@ -38,12 +40,12 @@ router_settings:
   model_group_alias:
     # ADK / LiteLLM appends "-customtools" when tool calling is enabled — route to the base deployment.
     "gemini-3.1-pro-preview-customtools": "gemini-3.1-pro-preview"
-    "gemini-3-flash-preview-customtools": "gemini-3.1-pro-preview"
-    "gemini-3-flash-preview": "gemini-3.1-pro-preview"
+    "gemini-3-flash-preview-customtools": "gemini-3-flash-preview"
+    "gemini-3-flash-preview": "gemini-3-flash-preview"
     "gemini-3.1-flash-lite-preview-customtools": "gemini-3-flash-preview"
     # Gemini CLI internal model IDs -> LiteLLM model_name (see @google/gemini-cli-core defaultModelConfigs)
     "gemini-2.5-pro": "gemini-3.1-pro-preview"
-    "gemini-2.5-flash": "gemini-3.1-pro-preview"
+    "gemini-2.5-flash": "gemini-3-flash-preview"
     "gemini-2.5-flash-lite": "gemini-3-flash-preview"
     "gemini-3-pro-preview": "gemini-3.1-pro-preview"
 

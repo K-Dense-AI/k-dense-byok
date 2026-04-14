@@ -1,10 +1,15 @@
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+import yaml
+
+_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
 
 
 def load_instructions(agent_name: str) -> str:
@@ -13,9 +18,72 @@ def load_instructions(agent_name: str) -> str:
     return instructions_path.read_text(encoding="utf-8")
 
 
+def list_skill_summaries(skills_dir: str = "sandbox/.gemini/skills") -> list[dict]:
+    """Read skill name and description from each SKILL.md frontmatter.
+
+    Returns a list of ``{"name": ..., "description": ...}`` dicts sorted by
+    name, suitable for injecting into the orchestrator's instruction as a
+    reference catalogue.
+    """
+    skills_path = Path(skills_dir)
+    if not skills_path.is_dir():
+        return []
+
+    summaries: list[dict] = []
+    for child in sorted(skills_path.iterdir(), key=lambda p: p.name.lower()):
+        skill_file = child / "SKILL.md"
+        if not child.is_dir() or not skill_file.is_file():
+            continue
+        try:
+            text = skill_file.read_text(encoding="utf-8", errors="replace")
+            match = _FRONTMATTER_RE.match(text)
+            if not match:
+                continue
+            meta = yaml.safe_load(match.group(1)) or {}
+            summaries.append({
+                "name": meta.get("name", child.name),
+                "description": meta.get("description", ""),
+            })
+        except Exception:
+            continue
+    return summaries
+
+
+def format_skills_reference(skills: list[dict]) -> str:
+    """Format a skill list into a compact markdown reference block."""
+    if not skills:
+        return ""
+
+    lines = [
+        "",
+        "## Available expert skills — reference only",
+        "",
+        "The following skills are installed on the expert (Gemini CLI) that runs "
+        "inside `delegate_task`. **You (Kady) MUST NOT attempt to activate, call, "
+        "or use these skills yourself.** They exist here ONLY so you can:",
+        "",
+        "1. Recognize when a user mentions a skill by name.",
+        "2. Pass the skill name verbatim in the `delegate_task` prompt.",
+        "3. Match user requests to the most relevant skill(s) even when the user "
+        "does not name one explicitly, and instruct the expert to use the "
+        "skill in your `delegate_task` prompt.",
+        "",
+        "| Skill name | Description |",
+        "|---|---|",
+    ]
+    for s in skills:
+        desc = (s["description"] or "").replace("\n", " ").strip()
+        if len(desc) > 200:
+            desc = desc[:197] + "..."
+        lines.append(f"| `{s['name']}` | {desc} |")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def download_scientific_skills(
     target_dir: str = "sandbox/.gemini/skills",
-    github_repo: str = "K-Dense-AI/claude-scientific-skills",
+    github_repo: str = "K-Dense-AI/scientific-agent-skills",
     source_path: str = "scientific-skills",
     branch: str = "main"
 ) -> None:
@@ -39,7 +107,7 @@ def download_scientific_skills(
         
         try:
             # Clone the repository with depth 1 for faster download
-            print("Cloning Claude Scientific Skills repository (this may take a moment)...")
+            print("Cloning Scientific Agent Skills repository (this may take a moment)...")
             subprocess.run(
                 ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_path)],
                 check=True,
@@ -263,7 +331,7 @@ def _pricing_tier(prompt_price: float) -> str:
 
 def update_models_json(
     output_path: str = "web/src/data/models.json",
-    default_model_id: str = "google/gemini-3.1-pro-preview",
+    default_model_id: str = "anthropic/claude-opus-4.6",
     max_age_days: int = 90,
     api_key: str | None = None,
 ) -> None:

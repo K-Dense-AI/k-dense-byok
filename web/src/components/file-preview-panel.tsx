@@ -1,8 +1,9 @@
 "use client";
 
 import { MessageResponse } from "@/components/ai-elements/message";
+import { LatexEditor } from "@/components/latex-editor";
 import { cn } from "@/lib/utils";
-import { fileCategory, rawFileUrl, type Tab } from "@/lib/use-sandbox";
+import { fileCategory, rawFileUrl, type Tab, type LatexCompileResult } from "@/lib/use-sandbox";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-langs";
 import { githubLight } from "@uiw/codemirror-theme-github";
@@ -95,6 +96,7 @@ function categoryLabel(name: string): string {
   if (cat === "markdown") return "markdown";
   if (cat === "csv") return "csv";
   if (cat === "notebook") return "jupyter";
+  if (cat === "latex") return "latex";
   if (cat === "fasta") return ext === "fastq" || ext === "fq" ? "fastq" : "fasta";
   if (cat === "biotable") return ext;
   return langForFile(name);
@@ -155,7 +157,16 @@ function TabBar({
     activeEl?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
   }, [activeTabPath]);
 
-  if (tabs.length === 0) return null;
+  const uniqueTabs = useMemo(() => {
+    const seen = new Set<string>();
+    return tabs.filter((t) => {
+      if (seen.has(t.path)) return false;
+      seen.add(t.path);
+      return true;
+    });
+  }, [tabs]);
+
+  if (uniqueTabs.length === 0) return null;
 
   return (
     <div
@@ -163,7 +174,7 @@ function TabBar({
       className="flex overflow-x-auto border-b bg-muted/20 shrink-0"
       style={{ scrollbarWidth: "none" }}
     >
-      {tabs.map((tab) => {
+      {uniqueTabs.map((tab) => {
         const name = tab.path.split("/").pop() ?? tab.path;
         const isActive = tab.path === activeTabPath;
         const mode = tabModes[tab.path] ?? "view";
@@ -347,6 +358,24 @@ function ReadOnlyCodeView({
   );
 }
 
+function resolveMarkdownImageUrls(content: string, filePath: string): string {
+  const dir = filePath.substring(0, filePath.lastIndexOf("/") + 1) || "";
+  const isAbsolute = (u: string) =>
+    /^https?:\/\//.test(u) || u.startsWith("data:") || u.startsWith("blob:");
+  const resolve = (u: string) =>
+    rawFileUrl(u.startsWith("/") ? u : dir + u);
+
+  let out = content.replace(
+    /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
+    (m, alt, url) => (isAbsolute(url) ? m : `![${alt}](${resolve(url)})`),
+  );
+  out = out.replace(
+    /(<img\s[^>]*?)src=(["'])([^"']+)\2/gi,
+    (m, before, q, url) => (isAbsolute(url) ? m : `${before}src=${q}${resolve(url)}${q}`),
+  );
+  return out;
+}
+
 function FileViewer({
   path, name, content, loading,
 }: {
@@ -375,7 +404,7 @@ function FileViewer({
   if (cat === "markdown") {
     return (
       <div className="h-full overflow-auto p-6 text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-        <MessageResponse>{content}</MessageResponse>
+        <MessageResponse>{resolveMarkdownImageUrls(content, path)}</MessageResponse>
       </div>
     );
   }
@@ -1165,6 +1194,7 @@ export interface FilePreviewPanelProps {
   onDownload: (path: string) => void;
   onSaveText: (path: string, content: string) => Promise<boolean>;
   onSaveImageBlob: (path: string, blob: Blob) => Promise<boolean>;
+  onCompileLatex?: (path: string, engine?: string) => Promise<LatexCompileResult>;
 }
 
 export function FilePreviewPanel({
@@ -1175,6 +1205,7 @@ export function FilePreviewPanel({
   onDownload,
   onSaveText,
   onSaveImageBlob,
+  onCompileLatex,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
   const [tabModes, setTabModes] = useState<Record<string, PanelMode>>({});
@@ -1257,8 +1288,26 @@ export function FilePreviewPanel({
         </div>
       )}
 
-      {/* Edit mode */}
-      {selectedPath && mode === "edit" && (
+      {/* Edit mode — LaTeX gets the split-pane editor */}
+      {selectedPath && mode === "edit" && cat === "latex" && onCompileLatex && (
+        <>
+          {header}
+          <div className="flex-1 min-h-0">
+            <LatexEditor
+              key={selectedPath}
+              path={selectedPath}
+              name={selectedName ?? ""}
+              initialContent={fileContent ?? ""}
+              onSave={(content) => onSaveText(selectedPath, content)}
+              onCompile={onCompileLatex}
+              onDiscard={() => setMode(selectedPath, "view")}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Edit mode — standard text editor */}
+      {selectedPath && mode === "edit" && (cat !== "latex" || !onCompileLatex) && (
         <>
           {header}
           <div className="flex-1 min-h-0">

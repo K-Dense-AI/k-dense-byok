@@ -36,6 +36,8 @@ if ! command -v gemini &>/dev/null; then
     echo "  Gemini CLI not found — installing (used to run expert tasks)..."
     npm install -g @google/gemini-cli
 else
+    echo "  Gemini CLI found — updating to latest..."
+    npm update -g @google/gemini-cli
     echo "  Gemini CLI ✓"
 fi
 

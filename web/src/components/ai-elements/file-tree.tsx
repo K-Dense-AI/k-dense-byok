@@ -111,12 +111,14 @@ export type FileTreeFolderProps = HTMLAttributes<HTMLDivElement> & {
   path: string;
   name: string;
   actions?: ReactNode;
+  nameContent?: ReactNode;
 };
 
 export const FileTreeFolder = ({
   path,
   name,
   actions,
+  nameContent,
   className,
   children,
   ...props
@@ -170,7 +172,7 @@ export const FileTreeFolder = ({
                   <FolderIcon className="size-4 text-blue-500" />
                 )}
               </FileTreeIcon>
-              <FileTreeName>{name}</FileTreeName>
+              {nameContent ?? <FileTreeName>{name}</FileTreeName>}
               {actions}
             </button>
           </CollapsibleTrigger>

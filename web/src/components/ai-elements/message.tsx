@@ -17,11 +17,14 @@ import {
 import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
-import { math } from "@streamdown/math";
+import { createMathPlugin } from "@streamdown/math";
+import "katex/dist/katex.min.css";
 import { mermaid } from "@streamdown/mermaid";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import {
+  type ReactNode,
   createContext,
+  isValidElement,
   memo,
   useCallback,
   useContext,
@@ -322,9 +325,49 @@ export const MessageBranchPage = ({
 
 export type MessageResponseProps = ComponentProps<typeof Streamdown>;
 
+const math = createMathPlugin({ singleDollarTextMath: true });
 const streamdownPlugins = { cjk, code, math, mermaid };
 
 const linkSafetyOff = { enabled: false } as const;
+
+type StreamdownParagraphProps = ComponentProps<"p"> & {
+  node?: unknown;
+};
+
+function hasImageChild(children: ReactNode): boolean {
+  const arr: ReactNode[] = Array.isArray(children) ? children : [children];
+  return arr.some(
+    (c) =>
+      isValidElement(c) &&
+      (c.props as Record<string, unknown>)?.node &&
+      ((c.props as Record<string, unknown>).node as { tagName?: string })
+        ?.tagName === "img"
+  );
+}
+
+const SafeParagraph = memo(
+  ({ children, node, ...rest }: StreamdownParagraphProps) => {
+    const kids = (Array.isArray(children) ? children : [children]).filter(
+      (c) => c != null && c !== ""
+    ) as ReactNode[];
+
+    if (kids.length === 1 && isValidElement(kids[0])) {
+      const tag = (kids[0].props as Record<string, unknown>)?.node as { tagName?: string } | undefined;
+      if (tag?.tagName === "img") return <>{children}</>;
+      if (tag?.tagName === "code" && "data-block" in (kids[0].props as Record<string, unknown>))
+        return <>{children}</>;
+    }
+
+    if (hasImageChild(children)) {
+      return <div {...(rest as React.HTMLAttributes<HTMLDivElement>)}>{children}</div>;
+    }
+
+    return <p {...(rest as React.HTMLAttributes<HTMLParagraphElement>)}>{children}</p>;
+  }
+);
+SafeParagraph.displayName = "SafeParagraph";
+
+const streamdownComponents = { p: SafeParagraph } as ComponentProps<typeof Streamdown>["components"];
 
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (
@@ -333,6 +376,7 @@ export const MessageResponse = memo(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
         className
       )}
+      components={streamdownComponents}
       linkSafety={linkSafetyOff}
       plugins={streamdownPlugins}
       {...props}

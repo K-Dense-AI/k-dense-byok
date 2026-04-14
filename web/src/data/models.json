@@ -23,7 +23,8 @@
       "completion": 25.0
     },
     "modality": "text+image->text",
-    "description": "Opus 4.6 is Anthropic\u2019s strongest model for coding and long-running professional tasks. It is built for agents that operate across entire workflows rather than single prompts, making it especially effective for large codebases, complex refactors, and multi-step debugging that unfolds over time. The model shows deeper contextual understanding, stronger problem decomposition, and greater reliability on hard engineering tasks than prior generations.\n\nBeyond coding, Opus 4.6 excels at sustained knowledge work. It produces near-production-ready documents, plans, and analyses in a single pass, and maintains coherence across very long outputs and extended sessions. This makes it a strong default for tasks that require persistence, judgment, and follow-through, such as technical design, migration planning, and end-to-end project execution.\n\nFor users upgrading from earlier Opus versions, see our [official migration guide here](https://openrouter.ai/docs/guides/guides/model-migrations/claude-4-6-opus)\n"
+    "description": "Opus 4.6 is Anthropic\u2019s strongest model for coding and long-running professional tasks. It is built for agents that operate across entire workflows rather than single prompts, making it especially effective for large codebases, complex refactors, and multi-step debugging that unfolds over time. The model shows deeper contextual understanding, stronger problem decomposition, and greater reliability on hard engineering tasks than prior generations.\n\nBeyond coding, Opus 4.6 excels at sustained knowledge work. It produces near-production-ready documents, plans, and analyses in a single pass, and maintains coherence across very long outputs and extended sessions. This makes it a strong default for tasks that require persistence, judgment, and follow-through, such as technical design, migration planning, and end-to-end project execution.\n\nFor users upgrading from earlier Opus versions, see our [official migration guide here](https://openrouter.ai/docs/guides/guides/model-migrations/claude-4-6-opus)\n",
+    "default": true
   },
   {
     "id": "openrouter/x-ai/grok-4.20-beta",
@@ -37,19 +38,6 @@
     },
     "modality": "text+image->text",
     "description": "Grok 4.20 Beta is xAI's newest flagship model with industry-leading speed and agentic tool calling capabilities. It combines the lowest hallucination rate on the market with strict prompt adherance, delivering consistently precise and truthful responses.\n\nReasoning can be enabled/disabled using the `reasoning` `enabled` parameter in the API. [Learn more in our docs](https://openrouter.ai/docs/use-cases/reasoning-tokens#controlling-reasoning-tokens)"
-  },
-  {
-    "id": "openrouter/x-ai/grok-4.20-multi-agent-beta",
-    "label": "Grok 4.20 Multi-Agent Beta",
-    "provider": "xAI",
-    "tier": "high",
-    "context_length": 2000000,
-    "pricing": {
-      "prompt": 2.0,
-      "completion": 6.0
-    },
-    "modality": "text+image->text",
-    "description": "Grok 4.20 Multi-Agent Beta is a variant of xAI\u2019s Grok 4.20 designed for collaborative, agent-based workflows. Multiple agents operate in parallel to conduct deep research, coordinate tool use, and synthesize information across complex tasks.\n\nReasoning effort behavior:\n- low / medium: 4 agents\n- high / xhigh: 16 agents"
   },
   {
     "id": "openrouter/openai/gpt-5.4",
@@ -75,8 +63,7 @@
       "completion": 12.0
     },
     "modality": "text+image+file+audio+video->text",
-    "description": "Gemini 3.1 Pro Preview is Google\u2019s frontier reasoning model, delivering enhanced software engineering performance, improved agentic reliability, and more efficient token usage across complex workflows. Building on the multimodal foundation of the Gemini 3 series, it combines high-precision reasoning across text, image, video, audio, and code with a 1M-token context window. Reasoning Details must be preserved when using multi-turn tool calling, see our docs here: https://openrouter.ai/docs/use-cases/reasoning-tokens#preserving-reasoning. The 3.1 update introduces measurable gains in SWE benchmarks and real-world coding environments, along with stronger autonomous task execution in structured domains such as finance and spreadsheet-based workflows.\n\nDesigned for advanced development and agentic systems, Gemini 3.1 Pro Preview improves long-horizon stability and tool orchestration while increasing token efficiency. It introduces a new medium thinking level to better balance cost, speed, and performance. The model excels in agentic coding, structured planning, multimodal analysis, and workflow automation, making it well-suited for autonomous agents, financial modeling, spreadsheet automation, and high-context enterprise tasks.",
-    "default": true
+    "description": "Gemini 3.1 Pro Preview is Google\u2019s frontier reasoning model, delivering enhanced software engineering performance, improved agentic reliability, and more efficient token usage across complex workflows. Building on the multimodal foundation of the Gemini 3 series, it combines high-precision reasoning across text, image, video, audio, and code with a 1M-token context window. Reasoning Details must be preserved when using multi-turn tool calling, see our docs here: https://openrouter.ai/docs/use-cases/reasoning-tokens#preserving-reasoning. The 3.1 update introduces measurable gains in SWE benchmarks and real-world coding environments, along with stronger autonomous task execution in structured domains such as finance and spreadsheet-based workflows.\n\nDesigned for advanced development and agentic systems, Gemini 3.1 Pro Preview improves long-horizon stability and tool orchestration while increasing token efficiency. It introduces a new medium thinking level to better balance cost, speed, and performance. The model excels in agentic coding, structured planning, multimodal analysis, and workflow automation, making it well-suited for autonomous agents, financial modeling, spreadsheet automation, and high-context enterprise tasks."
   },
   {
     "id": "openrouter/google/gemini-3.1-pro-preview-customtools",
@@ -170,19 +157,6 @@
     "description": "Gemini 3.1 Flash Lite Preview is Google's high-efficiency model optimized for high-volume use cases. It outperforms Gemini 2.5 Flash Lite on overall quality and approaches Gemini 2.5 Flash performance across key capabilities. Improvements span audio input/ASR, RAG snippet ranking, translation, data extraction, and code completion. Supports full thinking levels (minimal, low, medium, high) for fine-grained cost/performance trade-offs. Priced at half the cost of Gemini 3 Flash."
   },
   {
-    "id": "openrouter/openrouter/hunter-alpha",
-    "label": "Hunter Alpha",
-    "provider": "Openrouter",
-    "tier": "budget",
-    "context_length": 1048576,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text+image->text",
-    "description": "Hunter Alpha is a 1 Trillion parameter + 1M token context frontier intelligence model built for agentic use. It excels at long-horizon planning, complex reasoning, and sustained multi-step task execution, with the reliability and instruction-following precision that frameworks like OpenClaw need.\n\n**Note:** All prompts and completions for this model are logged by the provider and may be used to improve the model."
-  },
-  {
     "id": "openrouter/qwen/qwen3.5-plus-02-15",
     "label": "Qwen3.5 Plus 2026-02-15",
     "provider": "Qwen",
@@ -272,19 +246,6 @@
     },
     "modality": "text+image+video->text",
     "description": "Seed-2.0-mini targets latency-sensitive, high-concurrency, and cost-sensitive scenarios, emphasizing fast response and flexible inference deployment. It delivers performance comparable to ByteDance-Seed-1.6, supports 256k context, four reasoning effort modes (minimal/low/medium/high), multimodal understanding, and is optimized for lightweight tasks where cost and speed take priority."
-  },
-  {
-    "id": "openrouter/openrouter/healer-alpha",
-    "label": "Healer Alpha",
-    "provider": "Openrouter",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text+image+audio+video->text",
-    "description": "Healer Alpha is a frontier omni-modal model with vision, hearing, reasoning, and action capabilities. It brings the full power of agentic intelligence into the real world: natively perceiving visual and audio inputs, reasoning across modalities, and executing complex multi-step tasks with precision and reliability.\n\n**Note:** All prompts and completions for this model are logged by the provider and may be used to improve the model."
   },
   {
     "id": "openrouter/moonshotai/kimi-k2.5",
@@ -378,6 +339,19 @@
     "description": "Qwen3.5-9B is a multimodal foundation model from the Qwen3.5 family, designed to deliver strong reasoning, coding, and visual understanding in an efficient 9B-parameter architecture. It uses a unified vision-language design with early fusion of multimodal tokens, allowing the model to process and reason across text and images within the same context."
   },
   {
+    "id": "openrouter/nvidia/nemotron-3-super-120b-a12b",
+    "label": "Nemotron 3 Super",
+    "provider": "NVIDIA",
+    "tier": "budget",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 0.1,
+      "completion": 0.5
+    },
+    "modality": "text->text",
+    "description": "Nemotron 3 Super is NVIDIA's 120B-parameter open hybrid Mixture-of-Experts model that activates only 12B parameters during inference, built on a hybrid Mamba-Transformer architecture with multi-token prediction. It features a 1M token context window and delivers over 50% higher token generation throughput compared to leading open models. Trained with multi-environment reinforcement learning across 10+ environments, it excels at complex multi-agent applications with long-term agent coherence and multi-step task planning. Fully open with weights, datasets, and recipes available under the NVIDIA Open License."
+  },
+  {
     "id": "openrouter/minimax/minimax-m2.1",
     "label": "MiniMax M2.1",
     "provider": "MiniMax",
@@ -415,70 +389,5 @@
     },
     "modality": "text->text",
     "description": "MiniMax-M2.5 is a SOTA large language model designed for real-world productivity. Trained in a diverse range of complex real-world digital working environments, M2.5 builds upon the coding expertise of M2.1 to extend into general office work, reaching fluency in generating and operating Word, Excel, and Powerpoint files, context switching between diverse software environments, and working across different agent and human teams. Scoring 80.2% on SWE-Bench Verified, 51.3% on Multi-SWE-Bench, and 76.3% on BrowseComp, M2.5 is also more token efficient than previous generations, having been trained to optimize its actions and output through planning."
-  },
-  {
-    "id": "openrouter/minimax/minimax-m2-her",
-    "label": "MiniMax M2-her",
-    "provider": "MiniMax",
-    "tier": "budget",
-    "context_length": 65536,
-    "pricing": {
-      "prompt": 0.3,
-      "completion": 1.2
-    },
-    "modality": "text->text",
-    "description": "MiniMax M2-her is a dialogue-first large language model built for immersive roleplay, character-driven chat, and expressive multi-turn conversations. Designed to stay consistent in tone and personality, it supports rich message roles (user_system, group, sample_message_user, sample_message_ai) and can learn from example dialogue to better match the style and pacing of your scenario, making it a strong choice for storytelling, companions, and conversational experiences where natural flow and vivid interaction matter most."
-  },
-  {
-    "id": "openrouter/allenai/molmo-2-8b",
-    "label": "AllenAI: Molmo2 8B",
-    "provider": "Allenai",
-    "tier": "budget",
-    "context_length": 36864,
-    "pricing": {
-      "prompt": 0.2,
-      "completion": 0.2
-    },
-    "modality": "text+image+video->text",
-    "description": "Molmo2-8B is an open vision-language model developed by the Allen Institute for AI (Ai2) as part of the Molmo2 family, supporting image, video, and multi-image understanding and grounding. It is based on Qwen3-8B and uses SigLIP 2 as its vision backbone, outperforming other open-weight, open-data models on short videos, counting, and captioning, while remaining competitive on long-video tasks."
-  },
-  {
-    "id": "openrouter/liquid/lfm-2-24b-a2b",
-    "label": "LiquidAI: LFM2-24B-A2B",
-    "provider": "Liquid",
-    "tier": "budget",
-    "context_length": 32768,
-    "pricing": {
-      "prompt": 0.03,
-      "completion": 0.12
-    },
-    "modality": "text->text",
-    "description": "LFM2-24B-A2B is the largest model in the LFM2 family of hybrid architectures designed for efficient on-device deployment. Built as a 24B parameter Mixture-of-Experts model with only 2B active parameters per token, it delivers high-quality generation while maintaining low inference costs. The model fits within 32 GB of RAM, making it practical to run on consumer laptops and desktops without sacrificing capability."
-  },
-  {
-    "id": "openrouter/liquid/lfm-2.5-1.2b-instruct:free",
-    "label": "LiquidAI: LFM2.5-1.2B-Instruct (free)",
-    "provider": "Liquid",
-    "tier": "budget",
-    "context_length": 32768,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "LFM2.5-1.2B-Instruct is a compact, high-performance instruction-tuned model built for fast on-device AI. It delivers strong chat quality in a 1.2B parameter footprint, with efficient edge inference and broad runtime support."
-  },
-  {
-    "id": "openrouter/liquid/lfm-2.5-1.2b-thinking:free",
-    "label": "LiquidAI: LFM2.5-1.2B-Thinking (free)",
-    "provider": "Liquid",
-    "tier": "budget",
-    "context_length": 32768,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "LFM2.5-1.2B-Thinking is a lightweight reasoning-focused model optimized for agentic tasks, data extraction, and RAG\u2014while still running comfortably on edge devices. It supports long context (up to 32K tokens) and is designed to provide higher-quality \u201cthinking\u201d responses in a small 1.2B model."
   }
 ]

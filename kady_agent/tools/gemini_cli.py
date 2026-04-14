@@ -7,18 +7,7 @@ from dotenv import load_dotenv
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-_EXPERTS_MD = REPO_ROOT / "kady_agent" / "instructions" / "experts.md"
-
 load_dotenv(REPO_ROOT / "kady_agent" / ".env")
-
-
-def _gemini_md_content(append_system_prompt: str) -> str:
-    """Prepend shared expert instructions; remainder is role-specific prompt."""
-    base = _EXPERTS_MD.read_text(encoding="utf-8").strip() if _EXPERTS_MD.is_file() else ""
-    extra = (append_system_prompt or "").strip()
-    if base and extra:
-        return f"{base}\n\n---\n\n{extra}"
-    return base or extra
 
 _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTIALS")
 
@@ -26,10 +15,6 @@ _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTI
 _CLI_OPENROUTER_HEADERS = (
     "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
 )
-
-_GEMINI_CLI_SETTINGS = {
-    "security": {"auth": {"selectedType": "gemini-api-key"}},
-}
 
 
 def _parse_stream_json(raw: str) -> dict:
@@ -81,13 +66,12 @@ def _parse_stream_json(raw: str) -> dict:
 
 
 async def delegate_task(
-    prompt: str, append_system_prompt: str = "", working_directory: str = "sandbox"
+    prompt: str, working_directory: str = "sandbox"
 ) -> dict:
     """Delegate a task to an expert.
 
     Args:
         prompt: The prompt to delegate to the expert.
-        append_system_prompt: The system prompt describing the expert.
         working_directory: The sandbox directory to execute the task in.
 
     Returns:
@@ -106,19 +90,11 @@ async def delegate_task(
         else _CLI_OPENROUTER_HEADERS
     )
 
-    repo_root = REPO_ROOT
-
     cwd = Path(working_directory)
     if not cwd.is_absolute():
-        cwd = repo_root / cwd
+        cwd = REPO_ROOT / cwd
 
     cwd.mkdir(parents=True, exist_ok=True)
-
-    settings_path = cwd / ".gemini" / "settings.json"
-    settings_path.parent.mkdir(parents=True, exist_ok=True)
-    settings_path.write_text(json.dumps(_GEMINI_CLI_SETTINGS), encoding="utf-8")
-
-    (cwd / "GEMINI.md").write_text(_gemini_md_content(append_system_prompt), encoding="utf-8")
 
     sandbox_venv = cwd / ".venv"
     if sandbox_venv.is_dir():
