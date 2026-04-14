@@ -11,10 +11,25 @@ from fastapi import HTTPException, Query, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 from google.adk.cli.fast_api import get_fast_api_app
 
+
+def _allowed_origins() -> list[str]:
+    raw = os.environ.get("BACKEND_CORS_ALLOWED_ORIGINS", "").strip()
+    if not raw:
+        return ["http://localhost:3000"]
+
+    origins: list[str] = []
+    for value in raw.split(","):
+        origin = value.strip().rstrip("/")
+        if origin and origin not in origins:
+            origins.append(origin)
+
+    return origins or ["http://localhost:3000"]
+
+
 app = get_fast_api_app(
     agents_dir=".",
     web=False,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_allowed_origins(),
     auto_create_session=True,
 )
 
@@ -64,14 +79,16 @@ def list_skills():
             if not match:
                 continue
             meta = yaml.safe_load(match.group(1)) or {}
-            skills.append({
-                "id": child.name,
-                "name": meta.get("name", child.name),
-                "description": meta.get("description", ""),
-                "author": (meta.get("metadata") or {}).get("skill-author", ""),
-                "license": meta.get("license", ""),
-                "compatibility": meta.get("compatibility", ""),
-            })
+            skills.append(
+                {
+                    "id": child.name,
+                    "name": meta.get("name", child.name),
+                    "description": meta.get("description", ""),
+                    "author": (meta.get("metadata") or {}).get("skill-author", ""),
+                    "license": meta.get("license", ""),
+                    "compatibility": meta.get("compatibility", ""),
+                }
+            )
         except Exception:
             continue
 
@@ -89,7 +106,9 @@ def sandbox_tree():
         if depth > 8:
             return node
         try:
-            entries = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+            entries = sorted(
+                directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower())
+            )
         except PermissionError:
             return node
 
@@ -104,12 +123,14 @@ def sandbox_tree():
                 child["path"] = rel
                 node["children"].append(child)
             elif entry.is_file():
-                node["children"].append({
-                    "name": entry.name,
-                    "type": "file",
-                    "path": rel,
-                    "size": entry.stat().st_size,
-                })
+                node["children"].append(
+                    {
+                        "name": entry.name,
+                        "type": "file",
+                        "path": rel,
+                        "size": entry.stat().st_size,
+                    }
+                )
         return node
 
     tree = build_tree(SANDBOX_ROOT)
