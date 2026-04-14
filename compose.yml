@@ -1,5 +1,6 @@
 services:
   litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/k-dense-ai/k-dense-byok-litellm:latest}
     build:
       context: .
       dockerfile: Dockerfile.litellm
@@ -28,6 +29,7 @@ services:
     restart: unless-stopped
 
   backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/k-dense-ai/k-dense-byok-backend:latest}
     build:
       context: .
       dockerfile: Dockerfile.backend
@@ -67,6 +69,7 @@ services:
     restart: unless-stopped
 
   frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/k-dense-ai/k-dense-byok-frontend:latest}
     build:
       context: .
       dockerfile: Dockerfile.frontend

@@ -142,6 +142,8 @@ To stop everything, press **Ctrl+C** in the terminal.
 
 Docker and Compose are optional deployment methods. They do not replace `./start.sh`.
 
+#### Option A - Build locally with Docker Compose
+
 1. Copy the deployment contract to a root `.env` file:
 
    ```bash
@@ -165,7 +167,7 @@ Docker and Compose are optional deployment methods. They do not replace `./start
    docker compose config
    ```
 
-4. Start the stack:
+4. Start the stack from local Docker builds:
 
    ```bash
    docker compose up --build -d
@@ -184,6 +186,53 @@ Docker and Compose are optional deployment methods. They do not replace `./start
    ```bash
    docker compose down
    ```
+
+Minimal copy-paste path:
+
+```bash
+cp .env.example .env
+# edit .env with at least OPENROUTER_API_KEY and GEMINI_API_KEY
+docker compose config
+docker compose up --build -d
+docker compose ps
+```
+
+#### Option B - Start from prebuilt GHCR images
+
+After this branch is merged and the image workflow publishes artifacts to GHCR, the same `compose.yml` can start from prebuilt images instead of local builds.
+
+Default prebuilt image names:
+
+- `ghcr.io/k-dense-ai/k-dense-byok-backend:latest`
+- `ghcr.io/k-dense-ai/k-dense-byok-frontend:latest`
+- `ghcr.io/k-dense-ai/k-dense-byok-litellm:latest`
+
+You can use those defaults directly, or pin explicit tags with `BACKEND_IMAGE`, `FRONTEND_IMAGE`, and `LITELLM_IMAGE`.
+
+Default latest-tag flow:
+
+```bash
+cp .env.example .env
+# edit .env with at least OPENROUTER_API_KEY and GEMINI_API_KEY
+docker compose config
+docker compose pull
+docker compose up -d
+docker compose ps
+```
+
+Pinned-tag example:
+
+```bash
+BACKEND_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-backend:v0.2.6 \
+FRONTEND_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-frontend:v0.2.6 \
+LITELLM_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-litellm:v0.2.6 \
+docker compose pull
+
+BACKEND_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-backend:v0.2.6 \
+FRONTEND_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-frontend:v0.2.6 \
+LITELLM_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-litellm:v0.2.6 \
+docker compose up -d
+```
 
 If port `3000` or `8000` is already in use on your host, override the host bindings without editing `compose.yml`:
 
