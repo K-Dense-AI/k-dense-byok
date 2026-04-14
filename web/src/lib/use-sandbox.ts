@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 export interface TreeNode {
   name: string;
@@ -41,7 +40,7 @@ export function fileCategory(name: string): FileCategory {
 }
 
 export function rawFileUrl(path: string): string {
-  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(path)}`;
+  return `${getApiBaseUrl()}/sandbox/raw?path=${encodeURIComponent(path)}`;
 }
 
 export interface Tab {
@@ -64,7 +63,8 @@ export function useSandbox(isActive = false) {
 
   const fetchTree = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/sandbox/tree`);
+      const apiBase = getApiBaseUrl();
+      const res = await fetch(`${apiBase}/sandbox/tree`);
       if (!res.ok) return;
       const data = await res.json();
       setTree(data);
@@ -116,7 +116,7 @@ export function useSandbox(isActive = false) {
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const res = await fetch(
-        `${API_BASE}/sandbox/file?path=${encodeURIComponent(path)}`,
+        `${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(path)}`,
         { signal: controller.signal },
       );
       const content = res.ok
@@ -148,7 +148,7 @@ export function useSandbox(isActive = false) {
       try {
         const body = new FormData();
         for (const f of files) body.append("files", f);
-        const res = await fetch(`${API_BASE}/sandbox/upload`, { method: "POST", body });
+        const res = await fetch(`${getApiBaseUrl()}/sandbox/upload`, { method: "POST", body });
         if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
         const data = await res.json();
         await fetchTree();
@@ -165,7 +165,7 @@ export function useSandbox(isActive = false) {
   const saveFile = useCallback(async (path: string, content: string): Promise<boolean> => {
     try {
       const res = await fetch(
-        `${API_BASE}/sandbox/file?path=${encodeURIComponent(path)}`,
+        `${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(path)}`,
         { method: "PUT", body: content, headers: { "Content-Type": "text/plain; charset=utf-8" } }
       );
       if (res.ok) {
@@ -184,7 +184,7 @@ export function useSandbox(isActive = false) {
   const saveImageBlob = useCallback(async (path: string, blob: Blob): Promise<boolean> => {
     try {
       const res = await fetch(
-        `${API_BASE}/sandbox/file?path=${encodeURIComponent(path)}`,
+        `${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(path)}`,
         { method: "PUT", body: blob }
       );
       return res.ok;
@@ -197,7 +197,7 @@ export function useSandbox(isActive = false) {
     async (path: string) => {
       try {
         const res = await fetch(
-          `${API_BASE}/sandbox/file?path=${encodeURIComponent(path)}`,
+          `${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(path)}`,
           { method: "DELETE" }
         );
         if (!res.ok) return;
@@ -214,7 +214,7 @@ export function useSandbox(isActive = false) {
     async (path: string) => {
       try {
         const res = await fetch(
-          `${API_BASE}/sandbox/directory?path=${encodeURIComponent(path)}`,
+          `${getApiBaseUrl()}/sandbox/directory?path=${encodeURIComponent(path)}`,
           { method: "DELETE" }
         );
         if (!res.ok) return;
@@ -233,7 +233,7 @@ export function useSandbox(isActive = false) {
 
   const downloadDir = useCallback((path: string) => {
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download-dir?path=${encodeURIComponent(path)}`;
+    a.href = `${getApiBaseUrl()}/sandbox/download-dir?path=${encodeURIComponent(path)}`;
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -242,7 +242,7 @@ export function useSandbox(isActive = false) {
 
   const downloadFile = useCallback((path: string) => {
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download?path=${encodeURIComponent(path)}`;
+    a.href = `${getApiBaseUrl()}/sandbox/download?path=${encodeURIComponent(path)}`;
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -251,7 +251,7 @@ export function useSandbox(isActive = false) {
 
   const downloadAll = useCallback(() => {
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download-all`;
+    a.href = `${getApiBaseUrl()}/sandbox/download-all`;
     a.download = "sandbox.zip";
     document.body.appendChild(a);
     a.click();
@@ -265,7 +265,7 @@ export function useSandbox(isActive = false) {
       const cat = fileCategory(name);
       if (cat === "image" || cat === "pdf") continue;
       try {
-        const res = await fetch(`${API_BASE}/sandbox/file?path=${encodeURIComponent(tab.path)}`);
+        const res = await fetch(`${getApiBaseUrl()}/sandbox/file?path=${encodeURIComponent(tab.path)}`);
         const content = res.ok
           ? await res.text()
           : `[Error: ${res.status} ${res.statusText}]`;
