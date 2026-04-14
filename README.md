@@ -201,6 +201,8 @@ docker compose ps
 
 After this branch is merged and the image workflow publishes artifacts to GHCR, the same `compose.yml` can start from prebuilt images instead of local builds.
 
+Use this path when you want Docker to **pull images and run them**, not rebuild them locally.
+
 Default prebuilt image names:
 
 - `ghcr.io/k-dense-ai/k-dense-byok-backend:latest`
@@ -216,7 +218,7 @@ cp .env.example .env
 # edit .env with at least OPENROUTER_API_KEY and GEMINI_API_KEY
 docker compose config
 docker compose pull
-docker compose up -d
+docker compose up -d --no-build
 docker compose ps
 ```
 
@@ -231,7 +233,16 @@ docker compose pull
 BACKEND_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-backend:v0.2.6 \
 FRONTEND_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-frontend:v0.2.6 \
 LITELLM_IMAGE=ghcr.io/k-dense-ai/k-dense-byok-litellm:v0.2.6 \
-docker compose up -d
+docker compose up -d --no-build
+```
+
+If you are testing from a fork instead of the upstream repo, point Compose at your own image namespace:
+
+```bash
+BACKEND_IMAGE=ghcr.io/<your-user>/k-dense-byok-backend:<tag> \
+FRONTEND_IMAGE=ghcr.io/<your-user>/k-dense-byok-frontend:<tag> \
+LITELLM_IMAGE=ghcr.io/<your-user>/k-dense-byok-litellm:<tag> \
+docker compose up -d --no-build
 ```
 
 If port `3000` or `8000` is already in use on your host, override the host bindings without editing `compose.yml`:
