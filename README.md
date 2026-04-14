@@ -231,6 +231,66 @@ Docker and Compose are **optional deployment paths**. They do **not** replace th
 
 For production-style deployments, do not leave localhost assumptions implicit. Set explicit backend and LiteLLM URLs through environment variables so the frontend only reaches the backend's browser-visible URL and backend-to-LiteLLM traffic stays internal.
 
+### Visual deployment overview
+
+```mermaid
+flowchart LR
+    accTitle: K-Dense deployment topology
+    accDescr: This diagram shows the public browser entrypoint, the internal backend and LiteLLM services, the upstream model provider, and the persistent sandbox volume used by the backend.
+
+    user([👤 User]) --> frontend[🎨 Frontend]
+
+    subgraph public_surface ["🌐 Public surface"]
+        frontend
+    end
+
+    subgraph internal_services ["⚙️ Internal services"]
+        backend[🖥️ Backend]
+        litellm[🔌 LiteLLM proxy]
+        sandbox[(💾 Sandbox volume)]
+    end
+
+    provider[☁️ OpenRouter]
+
+    frontend --> backend
+    backend --> litellm
+    litellm --> provider
+    backend --> sandbox
+
+    classDef primary fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef accent fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764
+    classDef success fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef neutral fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#1f2937
+
+    class user,frontend primary
+    class backend,litellm accent
+    class sandbox success
+    class provider neutral
+```
+
+```mermaid
+stateDiagram-v2
+    accTitle: GitHub image build lifecycle
+    accDescr: This diagram shows that pull requests to main build all three images for validation only, while pushes to main or release tags publish the prebuilt images to GitHub Container Registry.
+
+    [*] --> pr_opened
+    pr_opened --> pr_builds: 🔍 PR to main
+    pr_builds --> validation_only: 🧪 Build three images
+    validation_only --> [*]
+
+    [*] --> main_push
+    main_push --> publish_ghcr: 🚀 Push to main
+    [*] --> release_tag
+    release_tag --> publish_ghcr: 🏷️ Push v* tag
+
+    publish_ghcr --> backend_image: 📦 Backend image
+    publish_ghcr --> frontend_image: 📦 Frontend image
+    publish_ghcr --> litellm_image: 📦 LiteLLM image
+    backend_image --> [*]
+    frontend_image --> [*]
+    litellm_image --> [*]
+```
+
 ### Dokploy wiring notes
 
 Dokploy variables are not injected into containers by magic. Define the variables in the Dokploy UI, then make sure the Compose file references them through `environment:` or variable substitution. This repo already does that for the supported deployment contract.
@@ -244,6 +304,35 @@ Recommended Dokploy service expectations:
 | `litellm` | No | `OPENROUTER_API_KEY`, `GEMINI_API_KEY` | Internal service only. Do not assign a public domain. |
 
 ### Local Compose verification flow
+
+```mermaid
+flowchart TB
+    accTitle: Local Compose runbook
+    accDescr: This diagram shows the operator flow for running the Compose stack locally, from setting environment variables through boot, health verification, persistence checks, and clean shutdown.
+
+    operator([👤 Operator]) --> env[📋 Set required env vars]
+    env --> config[🔍 Run docker compose config]
+    config --> boot[🚀 Run docker compose up --build -d]
+    boot --> status[📋 Run docker compose ps]
+    status --> frontend_check[🧪 Check frontend HTTP response]
+    status --> backend_check[🧪 Check backend health]
+    status --> persistence_check[💾 Verify sandbox persistence]
+    frontend_check --> degraded_check[⚠️ Stop backend and confirm degraded mode]
+    backend_check --> degraded_check
+    persistence_check --> degraded_check
+    degraded_check --> restore[🔄 Start backend again]
+    restore --> shutdown([🏁 Optional docker compose down])
+
+    classDef primary fill:#dbeafe,stroke:#2563eb,stroke-width:2px,color:#1e3a5f
+    classDef success fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d
+    classDef warning fill:#fef9c3,stroke:#ca8a04,stroke-width:2px,color:#713f12
+    classDef neutral fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#1f2937
+
+    class operator,env,config,boot,status,restore primary
+    class frontend_check,backend_check,persistence_check success
+    class degraded_check warning
+    class shutdown neutral
+```
 
 Use this flow after `docker compose up --build -d`:
 
