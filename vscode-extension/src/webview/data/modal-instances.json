@@ -1,0 +1,79 @@
+[
+  {
+    "id": "cpu",
+    "label": "CPU",
+    "modalGpu": null,
+    "vram": null,
+    "pricePerHour": 0.05,
+    "architecture": null,
+    "tier": "cpu",
+    "bestFor": "Data processing, scripting, light computation",
+    "description": "Serverless CPU — fast cold starts, no GPU overhead"
+  },
+  {
+    "id": "t4",
+    "label": "T4",
+    "modalGpu": "T4",
+    "vram": 16,
+    "pricePerHour": 0.59,
+    "architecture": "Tesla",
+    "tier": "budget",
+    "bestFor": "Small model inference, prototyping (≤7B params)",
+    "description": "Entry-level GPU — affordable, great for experimentation"
+  },
+  {
+    "id": "l4",
+    "label": "L4",
+    "modalGpu": "L4",
+    "vram": 24,
+    "pricePerHour": 0.80,
+    "architecture": "Lovelace",
+    "tier": "budget",
+    "bestFor": "Inference for small-medium models, image generation",
+    "description": "Modern efficient GPU — 2–4× faster than T4, same cost class"
+  },
+  {
+    "id": "a10g",
+    "label": "A10G",
+    "modalGpu": "A10G",
+    "vram": 24,
+    "pricePerHour": 1.10,
+    "architecture": "Ampere",
+    "tier": "mid",
+    "bestFor": "Training small models, fast inference, diffusion models",
+    "description": "Workhorse GPU — high memory bandwidth, great all-rounder"
+  },
+  {
+    "id": "a100-40gb",
+    "label": "A100 40GB",
+    "modalGpu": "A100-40GB",
+    "vram": 40,
+    "pricePerHour": 2.78,
+    "architecture": "Ampere",
+    "tier": "high",
+    "bestFor": "Large model training, 13B–30B inference",
+    "description": "High-end GPU — deep learning training and large-scale inference"
+  },
+  {
+    "id": "a100-80gb",
+    "label": "A100 80GB",
+    "modalGpu": "A100-80GB",
+    "vram": 80,
+    "pricePerHour": 3.40,
+    "architecture": "Ampere",
+    "tier": "high",
+    "bestFor": "70B model inference, large batch training",
+    "description": "High-end GPU with max memory — runs 70B models comfortably"
+  },
+  {
+    "id": "h100",
+    "label": "H100",
+    "modalGpu": "H100",
+    "vram": 80,
+    "pricePerHour": 4.56,
+    "architecture": "Hopper",
+    "tier": "flagship",
+    "bestFor": "Cutting-edge LLM training, fastest inference available",
+    "description": "Flagship GPU — 3.35 TB/s bandwidth, best for demanding workloads"
+  }
+]

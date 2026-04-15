@@ -5,16 +5,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+from ..runtime_paths import runtime_root, sandbox_root
+
+REPO_ROOT = runtime_root()
 
 load_dotenv(REPO_ROOT / "kady_agent" / ".env")
 
 _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTIALS")
 
 # OpenRouter "App" label (via LiteLLM proxy). Format: gemini-cli-core GEMINI_CLI_CUSTOM_HEADERS.
-_CLI_OPENROUTER_HEADERS = (
-    "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
-)
+_CLI_OPENROUTER_HEADERS = "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
 
 
 def _parse_stream_json(raw: str) -> dict:
@@ -65,9 +65,7 @@ def _parse_stream_json(raw: str) -> dict:
     }
 
 
-async def delegate_task(
-    prompt: str, working_directory: str = "sandbox"
-) -> dict:
+async def delegate_task(prompt: str, working_directory: str = "sandbox") -> dict:
     """Delegate a task to an expert.
 
     Args:
@@ -92,7 +90,7 @@ async def delegate_task(
 
     cwd = Path(working_directory)
     if not cwd.is_absolute():
-        cwd = REPO_ROOT / cwd
+        cwd = sandbox_root() if working_directory == "sandbox" else REPO_ROOT / cwd
 
     cwd.mkdir(parents=True, exist_ok=True)
 

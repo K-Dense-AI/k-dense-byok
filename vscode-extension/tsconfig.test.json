@@ -1,0 +1,25 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "out",
+    "noEmit": false,
+    "types": [
+      "node",
+      "vscode",
+      "mocha"
+    ],
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx"
+  ],
+  "exclude": [
+    "dist",
+    "out",
+    "node_modules"
+  ]
+}

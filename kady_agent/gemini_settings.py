@@ -8,7 +8,11 @@ project root — outside ``sandbox/`` so they survive sandbox deletion.
 import json
 from pathlib import Path
 
-CUSTOM_MCPS_PATH = Path("user_config/custom_mcps.json")
+from .runtime_paths import user_config_root
+
+
+def custom_mcps_path() -> Path:
+    return user_config_root() / "custom_mcps.json"
 
 
 def build_default_settings() -> dict:
@@ -31,7 +35,7 @@ def load_custom_mcps() -> dict:
     Returns an empty dict when the file is missing or unparseable.
     """
     try:
-        data = json.loads(CUSTOM_MCPS_PATH.read_text(encoding="utf-8"))
+        data = json.loads(custom_mcps_path().read_text(encoding="utf-8"))
         if isinstance(data, dict):
             return data
     except (FileNotFoundError, json.JSONDecodeError, OSError):
@@ -41,8 +45,9 @@ def load_custom_mcps() -> dict:
 
 def save_custom_mcps(data: dict) -> None:
     """Persist user-defined MCP servers to ``user_config/custom_mcps.json``."""
-    CUSTOM_MCPS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CUSTOM_MCPS_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    path = custom_mcps_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
 def write_merged_settings(target_dir: str | Path) -> None:

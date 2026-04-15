@@ -1,0 +1,30 @@
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_NO_CACHE=1 \
+    UV_PROJECT_ENVIRONMENT=/app/.venv \
+    PATH="/app/.venv/bin:/root/.local/bin:${PATH}"
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git nodejs npm \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv \
+    && npm install -g @google/gemini-cli
+
+COPY pyproject.toml README.md server.py prep_sandbox.py ./
+COPY kady_agent ./kady_agent
+COPY docker-entrypoint.backend.sh /usr/local/bin/docker-entrypoint.backend.sh
+
+RUN chmod +x /usr/local/bin/docker-entrypoint.backend.sh \
+    && mkdir -p sandbox \
+    && uv sync --no-dev
+
+EXPOSE 8000
+VOLUME ["/app/sandbox"]
+
+ENTRYPOINT ["docker-entrypoint.backend.sh"]
+CMD ["uv", "run", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

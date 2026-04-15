@@ -1,0 +1,393 @@
+[
+  {
+    "id": "openrouter/openai/gpt-5.4-pro",
+    "label": "GPT-5.4 Pro",
+    "provider": "OpenAI",
+    "tier": "flagship",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 30.0,
+      "completion": 180.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.4 Pro is OpenAI's most advanced model, building on GPT-5.4's unified architecture with enhanced reasoning capabilities for complex, high-stakes tasks. It features a 1M+ token context window (922K input, 128K output) with support for text and image inputs. Optimized for step-by-step reasoning, instruction following, and accuracy, GPT-5.4 Pro excels at agentic coding, long-context workflows, and multi-step problem solving."
+  },
+  {
+    "id": "openrouter/anthropic/claude-opus-4.6",
+    "label": "Claude Opus 4.6",
+    "provider": "Anthropic",
+    "tier": "flagship",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 5.0,
+      "completion": 25.0
+    },
+    "modality": "text+image->text",
+    "description": "Opus 4.6 is Anthropic\u2019s strongest model for coding and long-running professional tasks. It is built for agents that operate across entire workflows rather than single prompts, making it especially effective for large codebases, complex refactors, and multi-step debugging that unfolds over time. The model shows deeper contextual understanding, stronger problem decomposition, and greater reliability on hard engineering tasks than prior generations.\n\nBeyond coding, Opus 4.6 excels at sustained knowledge work. It produces near-production-ready documents, plans, and analyses in a single pass, and maintains coherence across very long outputs and extended sessions. This makes it a strong default for tasks that require persistence, judgment, and follow-through, such as technical design, migration planning, and end-to-end project execution.\n\nFor users upgrading from earlier Opus versions, see our [official migration guide here](https://openrouter.ai/docs/guides/guides/model-migrations/claude-4-6-opus)\n",
+    "default": true
+  },
+  {
+    "id": "openrouter/x-ai/grok-4.20-beta",
+    "label": "Grok 4.20 Beta",
+    "provider": "xAI",
+    "tier": "high",
+    "context_length": 2000000,
+    "pricing": {
+      "prompt": 2.0,
+      "completion": 6.0
+    },
+    "modality": "text+image->text",
+    "description": "Grok 4.20 Beta is xAI's newest flagship model with industry-leading speed and agentic tool calling capabilities. It combines the lowest hallucination rate on the market with strict prompt adherance, delivering consistently precise and truthful responses.\n\nReasoning can be enabled/disabled using the `reasoning` `enabled` parameter in the API. [Learn more in our docs](https://openrouter.ai/docs/use-cases/reasoning-tokens#controlling-reasoning-tokens)"
+  },
+  {
+    "id": "openrouter/openai/gpt-5.4",
+    "label": "GPT-5.4",
+    "provider": "OpenAI",
+    "tier": "high",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 2.5,
+      "completion": 15.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.4 is OpenAI\u2019s latest frontier model, unifying the Codex and GPT lines into a single system. It features a 1M+ token context window (922K input, 128K output) with support for text and image inputs, enabling high-context reasoning, coding, and multimodal analysis within the same workflow.\n\nThe model delivers improved performance in coding, document understanding, tool use, and instruction following. It is designed as a strong default for both general-purpose tasks and software engineering, capable of generating production-quality code, synthesizing information across multiple sources, and executing complex multi-step workflows with fewer iterations and greater token efficiency."
+  },
+  {
+    "id": "openrouter/google/gemini-3.1-pro-preview",
+    "label": "Gemini 3.1 Pro Preview",
+    "provider": "Google",
+    "tier": "high",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 2.0,
+      "completion": 12.0
+    },
+    "modality": "text+image+file+audio+video->text",
+    "description": "Gemini 3.1 Pro Preview is Google\u2019s frontier reasoning model, delivering enhanced software engineering performance, improved agentic reliability, and more efficient token usage across complex workflows. Building on the multimodal foundation of the Gemini 3 series, it combines high-precision reasoning across text, image, video, audio, and code with a 1M-token context window. Reasoning Details must be preserved when using multi-turn tool calling, see our docs here: https://openrouter.ai/docs/use-cases/reasoning-tokens#preserving-reasoning. The 3.1 update introduces measurable gains in SWE benchmarks and real-world coding environments, along with stronger autonomous task execution in structured domains such as finance and spreadsheet-based workflows.\n\nDesigned for advanced development and agentic systems, Gemini 3.1 Pro Preview improves long-horizon stability and tool orchestration while increasing token efficiency. It introduces a new medium thinking level to better balance cost, speed, and performance. The model excels in agentic coding, structured planning, multimodal analysis, and workflow automation, making it well-suited for autonomous agents, financial modeling, spreadsheet automation, and high-context enterprise tasks."
+  },
+  {
+    "id": "openrouter/google/gemini-3.1-pro-preview-customtools",
+    "label": "Gemini 3.1 Pro Preview Custom Tools",
+    "provider": "Google",
+    "tier": "high",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 2.0,
+      "completion": 12.0
+    },
+    "modality": "text+image+file+audio+video->text",
+    "description": "Gemini 3.1 Pro Preview Custom Tools is a variant of Gemini 3.1 Pro that improves tool selection behavior by preventing overuse of a general bash tool when more efficient third-party or user-defined functions are available. This specialized preview endpoint significantly increases function calling reliability and ensures the model selects the most appropriate tool in coding agents and complex, multi-tool workflows.\n\nIt retains the core strengths of Gemini 3.1 Pro, including multimodal reasoning across text, image, video, audio, and code, a 1M-token context window, and strong software engineering performance."
+  },
+  {
+    "id": "openrouter/anthropic/claude-sonnet-4.6",
+    "label": "Claude Sonnet 4.6",
+    "provider": "Anthropic",
+    "tier": "high",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 3.0,
+      "completion": 15.0
+    },
+    "modality": "text+image->text",
+    "description": "Sonnet 4.6 is Anthropic's most capable Sonnet-class model yet, with frontier performance across coding, agents, and professional work. It excels at iterative development, complex codebase navigation, end-to-end project management with memory, polished document creation, and confident computer use for web QA and workflow automation."
+  },
+   {
+    "id": "openrouter/openai/gpt-5.4-mini",
+    "label": "GPT-5.4 Mini",
+    "provider": "OpenAI",
+    "tier": "mid",
+    "context_length": 400000,
+    "pricing": {
+      "prompt": 0.75,
+      "completion": 4.5
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.4 mini brings the core capabilities of GPT-5.4 to a faster, more efficient model optimized for high-throughput workloads. It supports text and image inputs with strong performance across reasoning, coding, and tool use, while reducing latency and cost for large-scale deployments.\n\nThe model is designed for production environments that require a balance of capability and efficiency, making it well suited for chat applications, coding assistants, and agent workflows that operate at scale. GPT-5.4 mini delivers reliable instruction following, solid multi-step reasoning, and consistent performance across diverse tasks with improved cost efficiency."
+  },
+  {
+    "id": "openrouter/qwen/qwen3-max-thinking",
+    "label": "Qwen3 Max Thinking",
+    "provider": "Qwen",
+    "tier": "mid",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.78,
+      "completion": 3.9
+    },
+    "modality": "text->text",
+    "description": "Qwen3-Max-Thinking is the flagship reasoning model in the Qwen3 series, designed for high-stakes cognitive tasks that require deep, multi-step reasoning. By significantly scaling model capacity and reinforcement learning compute, it delivers major gains in factual accuracy, complex reasoning, instruction following, alignment with human preferences, and agentic behavior."
+  },
+  {
+    "id": "openrouter/z-ai/glm-5-turbo",
+    "label": "Z.ai: GLM 5 Turbo",
+    "provider": "Z Ai",
+    "tier": "mid",
+    "context_length": 202752,
+    "pricing": {
+      "prompt": 0.96,
+      "completion": 3.2
+    },
+    "modality": "text->text",
+    "description": "GLM-5 Turbo is a new model from Z.ai designed for fast inference and strong performance in agent-driven environments such as OpenClaw scenarios. It is deeply optimized for real-world agent workflows involving long execution chains, with improved complex instruction decomposition, tool use, scheduled and persistent execution, and overall stability across extended tasks."
+  },
+   {
+    "id": "openrouter/z-ai/glm-5",
+    "label": "Z.ai: GLM 5",
+    "provider": "Z Ai",
+    "tier": "mid",
+    "context_length": 80000,
+    "pricing": {
+      "prompt": 0.72,
+      "completion": 2.3
+    },
+    "modality": "text->text",
+    "description": "GLM-5 is Z.ai\u2019s flagship open-source foundation model engineered for complex systems design and long-horizon agent workflows. Built for expert developers, it delivers production-grade performance on large-scale programming tasks, rivaling leading closed-source models. With advanced agentic planning, deep backend reasoning, and iterative self-correction, GLM-5 moves beyond code generation to full-system construction and autonomous execution."
+  },
+  {
+    "id": "openrouter/google/gemini-3.1-flash-lite-preview",
+    "label": "Gemini 3.1 Flash Lite Preview",
+    "provider": "Google",
+    "tier": "budget",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 0.25,
+      "completion": 1.5
+    },
+    "modality": "text+image+file+audio+video->text",
+    "description": "Gemini 3.1 Flash Lite Preview is Google's high-efficiency model optimized for high-volume use cases. It outperforms Gemini 2.5 Flash Lite on overall quality and approaches Gemini 2.5 Flash performance across key capabilities. Improvements span audio input/ASR, RAG snippet ranking, translation, data extraction, and code completion. Supports full thinking levels (minimal, low, medium, high) for fine-grained cost/performance trade-offs. Priced at half the cost of Gemini 3 Flash."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-plus-02-15",
+    "label": "Qwen3.5 Plus 2026-02-15",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 0.26,
+      "completion": 1.56
+    },
+    "modality": "text+image+video->text",
+    "description": "The Qwen3.5 native vision-language series Plus models are built on a hybrid architecture that integrates linear attention mechanisms with sparse mixture-of-experts models, achieving higher inference efficiency. In a variety of task evaluations, the 3.5 series consistently demonstrates performance on par with state-of-the-art leading models. Compared to the 3 series, these models show a leap forward in both pure-text and multimodal capabilities."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-flash-02-23",
+    "label": "Qwen3.5-Flash",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 0.065,
+      "completion": 0.26
+    },
+    "modality": "text+image+video->text",
+    "description": "The Qwen3.5 native vision-language Flash models are built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. Compared to the 3 series, these models deliver a leap forward in performance for both pure text and multimodal tasks, offering fast response times while balancing inference speed and overall performance."
+  },
+  {
+    "id": "openrouter/openai/gpt-5.4-nano",
+    "label": "GPT-5.4 Nano",
+    "provider": "OpenAI",
+    "tier": "budget",
+    "context_length": 400000,
+    "pricing": {
+      "prompt": 0.2,
+      "completion": 1.25
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.4 nano is the most lightweight and cost-efficient variant of the GPT-5.4 family, optimized for speed-critical and high-volume tasks. It supports text and image inputs and is designed for low-latency use cases such as classification, data extraction, ranking, and sub-agent execution.\n\nThe model prioritizes responsiveness and efficiency over deep reasoning, making it ideal for pipelines that require fast, reliable outputs at scale. GPT-5.4 nano is well suited for background tasks, real-time systems, and distributed agent architectures where minimizing cost and latency is essential."
+  },
+  {
+    "id": "openrouter/bytedance-seed/seed-1.6",
+    "label": "ByteDance Seed: Seed 1.6",
+    "provider": "Bytedance Seed",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.25,
+      "completion": 2.0
+    },
+    "modality": "text+image+video->text",
+    "description": "Seed 1.6 is a general-purpose model released by the ByteDance Seed team. It incorporates multimodal capabilities and adaptive deep thinking with a 256K context window."
+  },
+  {
+    "id": "openrouter/bytedance-seed/seed-1.6-flash",
+    "label": "ByteDance Seed: Seed 1.6 Flash",
+    "provider": "Bytedance Seed",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.075,
+      "completion": 0.3
+    },
+    "modality": "text+image+video->text",
+    "description": "Seed 1.6 Flash is an ultra-fast multimodal deep thinking model by ByteDance Seed, supporting both text and visual understanding. It features a 256k context window and can generate outputs of up to 16k tokens."
+  },
+  {
+    "id": "openrouter/bytedance-seed/seed-2.0-lite",
+    "label": "ByteDance Seed: Seed-2.0-Lite",
+    "provider": "Bytedance Seed",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.25,
+      "completion": 2.0
+    },
+    "modality": "text+image+video->text",
+    "description": "Seed-2.0-Lite is a versatile, cost\u2011efficient enterprise workhorse that delivers strong multimodal and agent capabilities while offering noticeably lower latency, making it a practical default choice for most production workloads across text, vision, and tools. Engineered for high-frequency visual understanding and agentic workflows, it's an ideal choice for deployment at scale with minimal latency."
+  },
+  {
+    "id": "openrouter/bytedance-seed/seed-2.0-mini",
+    "label": "ByteDance Seed: Seed-2.0-Mini",
+    "provider": "Bytedance Seed",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.1,
+      "completion": 0.4
+    },
+    "modality": "text+image+video->text",
+    "description": "Seed-2.0-mini targets latency-sensitive, high-concurrency, and cost-sensitive scenarios, emphasizing fast response and flexible inference deployment. It delivers performance comparable to ByteDance-Seed-1.6, supports 256k context, four reasoning effort modes (minimal/low/medium/high), multimodal understanding, and is optimized for lightweight tasks where cost and speed take priority."
+  },
+  {
+    "id": "openrouter/moonshotai/kimi-k2.5",
+    "label": "MoonshotAI: Kimi K2.5",
+    "provider": "Moonshotai",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.45,
+      "completion": 2.2
+    },
+    "modality": "text+image->text",
+    "description": "Kimi K2.5 is Moonshot AI's native multimodal model, delivering state-of-the-art visual coding capability and a self-directed agent swarm paradigm. Built on Kimi K2 with continued pretraining over approximately 15T mixed visual and text tokens, it delivers strong performance in general reasoning, visual coding, and agentic tool-calling."
+  },
+  {
+    "id": "openrouter/qwen/qwen3-coder-next",
+    "label": "Qwen3 Coder Next",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.12,
+      "completion": 0.75
+    },
+    "modality": "text->text",
+    "description": "Qwen3-Coder-Next is an open-weight causal language model optimized for coding agents and local development workflows. It uses a sparse MoE design with 80B total parameters and only 3B activated per token, delivering performance comparable to models with 10 to 20x higher active compute, which makes it well suited for cost-sensitive, always-on agent deployment.\n\nThe model is trained with a strong agentic focus and performs reliably on long-horizon coding tasks, complex tool usage, and recovery from execution failures. With a native 256k context window, it integrates cleanly into real-world CLI and IDE environments and adapts well to common agent scaffolds used by modern coding tools. The model operates exclusively in non-thinking mode and does not emit <think> blocks, simplifying integration for production coding agents."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-397b-a17b",
+    "label": "Qwen3.5 397B A17B",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.39,
+      "completion": 2.34
+    },
+    "modality": "text+image+video->text",
+    "description": "The Qwen3.5 series 397B-A17B native vision-language model is built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. It delivers state-of-the-art performance comparable to leading-edge models across a wide range of tasks, including language understanding, logical reasoning, code generation, agent-based tasks, image understanding, video understanding, and graphical user interface (GUI) interactions. With its robust code-generation and agent capabilities, the model exhibits strong generalization across diverse agent."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-122b-a10b",
+    "label": "Qwen3.5-122B-A10B",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.26,
+      "completion": 2.08
+    },
+    "modality": "text+image+video->text",
+    "description": "The Qwen3.5 122B-A10B native vision-language model is built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. In terms of overall performance, this model is second only to Qwen3.5-397B-A17B. Its text capabilities significantly outperform those of Qwen3-235B-2507, and its visual capabilities surpass those of Qwen3-VL-235B."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-27b",
+    "label": "Qwen3.5-27B",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.195,
+      "completion": 1.56
+    },
+    "modality": "text+image+video->text",
+    "description": "The Qwen3.5 27B native vision-language Dense model incorporates a linear attention mechanism, delivering fast response times while balancing inference speed and performance. Its overall capabilities are comparable to those of the Qwen3.5-122B-A10B."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-35b-a3b",
+    "label": "Qwen3.5-35B-A3B",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.1625,
+      "completion": 1.3
+    },
+    "modality": "text+image+video->text",
+    "description": "The Qwen3.5 Series 35B-A3B is a native vision-language model designed with a hybrid architecture that integrates linear attention mechanisms and a sparse mixture-of-experts model, achieving higher inference efficiency. Its overall performance is comparable to that of the Qwen3.5-27B."
+  },
+  {
+    "id": "openrouter/qwen/qwen3.5-9b",
+    "label": "Qwen3.5-9B",
+    "provider": "Qwen",
+    "tier": "budget",
+    "context_length": 256000,
+    "pricing": {
+      "prompt": 0.05,
+      "completion": 0.15
+    },
+    "modality": "text+image+video->text",
+    "description": "Qwen3.5-9B is a multimodal foundation model from the Qwen3.5 family, designed to deliver strong reasoning, coding, and visual understanding in an efficient 9B-parameter architecture. It uses a unified vision-language design with early fusion of multimodal tokens, allowing the model to process and reason across text and images within the same context."
+  },
+  {
+    "id": "openrouter/nvidia/nemotron-3-super-120b-a12b",
+    "label": "Nemotron 3 Super",
+    "provider": "NVIDIA",
+    "tier": "budget",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 0.1,
+      "completion": 0.5
+    },
+    "modality": "text->text",
+    "description": "Nemotron 3 Super is NVIDIA's 120B-parameter open hybrid Mixture-of-Experts model that activates only 12B parameters during inference, built on a hybrid Mamba-Transformer architecture with multi-token prediction. It features a 1M token context window and delivers over 50% higher token generation throughput compared to leading open models. Trained with multi-environment reinforcement learning across 10+ environments, it excels at complex multi-agent applications with long-term agent coherence and multi-step task planning. Fully open with weights, datasets, and recipes available under the NVIDIA Open License."
+  },
+  {
+    "id": "openrouter/minimax/minimax-m2.1",
+    "label": "MiniMax M2.1",
+    "provider": "MiniMax",
+    "tier": "budget",
+    "context_length": 196608,
+    "pricing": {
+      "prompt": 0.27,
+      "completion": 0.95
+    },
+    "modality": "text->text",
+    "description": "MiniMax-M2.1 is a lightweight, state-of-the-art large language model optimized for coding, agentic workflows, and modern application development. With only 10 billion activated parameters, it delivers a major jump in real-world capability while maintaining exceptional latency, scalability, and cost efficiency.\n\nCompared to its predecessor, M2.1 delivers cleaner, more concise outputs and faster perceived response times. It shows leading multilingual coding performance across major systems and application languages, achieving 49.4% on Multi-SWE-Bench and 72.5% on SWE-Bench Multilingual, and serves as a versatile agent \u201cbrain\u201d for IDEs, coding tools, and general-purpose assistance.\n\nTo avoid degrading this model's performance, MiniMax highly recommends preserving reasoning between turns. Learn more about using reasoning_details to pass back reasoning in our [docs](https://openrouter.ai/docs/use-cases/reasoning-tokens#preserving-reasoning-blocks)."
+  },
+  {
+    "id": "openrouter/minimax/minimax-m2.5",
+    "label": "MiniMax M2.5",
+    "provider": "MiniMax",
+    "tier": "budget",
+    "context_length": 196608,
+    "pricing": {
+      "prompt": 0.2,
+      "completion": 1.2
+    },
+    "modality": "text->text",
+    "description": "MiniMax-M2.5 is a SOTA large language model designed for real-world productivity. Trained in a diverse range of complex real-world digital working environments, M2.5 builds upon the coding expertise of M2.1 to extend into general office work, reaching fluency in generating and operating Word, Excel, and Powerpoint files, context switching between diverse software environments, and working across different agent and human teams. Scoring 80.2% on SWE-Bench Verified, 51.3% on Multi-SWE-Bench, and 76.3% on BrowseComp, M2.5 is also more token efficient than previous generations, having been trained to optimize its actions and output through planning."
+  },
+  {
+    "id": "openrouter/minimax/minimax-m2.5:free",
+    "label": "MiniMax M2.5 (free)",
+    "provider": "MiniMax",
+    "tier": "budget",
+    "context_length": 196608,
+    "pricing": {
+      "prompt": 0.0,
+      "completion": 0.0
+    },
+    "modality": "text->text",
+    "description": "MiniMax-M2.5 is a SOTA large language model designed for real-world productivity. Trained in a diverse range of complex real-world digital working environments, M2.5 builds upon the coding expertise of M2.1 to extend into general office work, reaching fluency in generating and operating Word, Excel, and Powerpoint files, context switching between diverse software environments, and working across different agent and human teams. Scoring 80.2% on SWE-Bench Verified, 51.3% on Multi-SWE-Bench, and 76.3% on BrowseComp, M2.5 is also more token efficient than previous generations, having been trained to optimize its actions and output through planning."
+  }
+]

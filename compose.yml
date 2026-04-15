@@ -1,0 +1,108 @@
+services:
+  litellm:
+    image: ${LITELLM_IMAGE:-ghcr.io/k-dense-ai/k-dense-byok-litellm:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.litellm
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      LITELLM_PORT: ${LITELLM_PORT:-4000}
+    expose:
+      - "4000"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - app_net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import os, urllib.request;
+          req = urllib.request.Request('http://127.0.0.1:4000/v1/models', headers={'Authorization': 'Bearer ' + os.environ['GEMINI_API_KEY']});
+          urllib.request.urlopen(req)"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/k-dense-ai/k-dense-byok-backend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    depends_on:
+      litellm:
+        condition: service_healthy
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}
+      DEFAULT_AGENT_MODEL: ${DEFAULT_AGENT_MODEL:-openrouter/google/gemini-3.1-pro-preview}
+      GOOGLE_GEMINI_BASE_URL: ${GOOGLE_GEMINI_BASE_URL:-http://litellm:4000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?GEMINI_API_KEY is required}
+      BACKEND_CORS_ALLOWED_ORIGINS: ${BACKEND_CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      PARALLEL_API_KEY: ${PARALLEL_API_KEY:-}
+      MODAL_TOKEN_ID: ${MODAL_TOKEN_ID:-}
+      MODAL_TOKEN_SECRET: ${MODAL_TOKEN_SECRET:-}
+    expose:
+      - "8000"
+    ports:
+      - "127.0.0.1:${BACKEND_HOST_PORT:-8000}:8000"
+    volumes:
+      - sandbox_data:/app/sandbox
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - app_net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health')"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/k-dense-ai/k-dense-byok-frontend:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        NEXT_PUBLIC_ADK_API_URL: ${NEXT_PUBLIC_ADK_API_URL:-http://localhost:8000}
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_ADK_API_URL: ${NEXT_PUBLIC_ADK_API_URL:-http://localhost:8000}
+    ports:
+      - "${FRONTEND_HOST_PORT:-3000}:3000"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+    networks:
+      - app_net
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "fetch('http://127.0.0.1:3000').then((res) => {
+          if (!res.ok) process.exit(1);
+          }).catch(() => process.exit(1))"
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+networks:
+  app_net:
+    driver: bridge
+
+volumes:
+  sandbox_data:

@@ -3,12 +3,14 @@ import shutil
 import subprocess
 
 from kady_agent.gemini_settings import write_merged_settings
+from kady_agent.runtime_paths import runtime_root, sandbox_root
 from kady_agent.utils import download_scientific_skills
 
-SANDBOX_DIR = "sandbox"
-GEMINI_CLI_MD = os.path.join("kady_agent", "instructions", "gemini_cli.md")
-SANDBOX_VENV = os.path.join(SANDBOX_DIR, ".venv")
-SANDBOX_PYPROJECT = os.path.join(SANDBOX_DIR, "pyproject.toml")
+RUNTIME_ROOT = runtime_root()
+SANDBOX_DIR = sandbox_root()
+GEMINI_CLI_MD = RUNTIME_ROOT / "kady_agent" / "instructions" / "gemini_cli.md"
+SANDBOX_VENV = SANDBOX_DIR / ".venv"
+SANDBOX_PYPROJECT = SANDBOX_DIR / "pyproject.toml"
 
 _PYPROJECT_TEMPLATE = """\
 [project]
@@ -34,16 +36,16 @@ dependencies = [
 
 os.makedirs(SANDBOX_DIR, exist_ok=True)
 
-shutil.copy2(GEMINI_CLI_MD, os.path.join(SANDBOX_DIR, "GEMINI.md"))
+shutil.copy2(GEMINI_CLI_MD, SANDBOX_DIR / "GEMINI.md")
 
-write_merged_settings(os.path.join(SANDBOX_DIR, ".gemini"))
+write_merged_settings(SANDBOX_DIR / ".gemini")
 
 if not os.path.isfile(SANDBOX_PYPROJECT):
     print("Seeding sandbox pyproject.toml...")
-    with open(SANDBOX_PYPROJECT, "w") as f:
+    with open(SANDBOX_PYPROJECT, "w", encoding="utf-8") as f:
         f.write(_PYPROJECT_TEMPLATE)
 
 print("Syncing sandbox Python environment...")
 subprocess.run(["uv", "sync"], check=True, cwd=SANDBOX_DIR)
 
-download_scientific_skills(target_dir="sandbox/.gemini/skills")
+download_scientific_skills(target_dir=SANDBOX_DIR / ".gemini" / "skills")

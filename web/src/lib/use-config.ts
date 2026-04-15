@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 export interface AppConfig {
   modalConfigured: boolean;
@@ -15,7 +14,7 @@ export function useConfig(): AppConfig {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/config`)
+    fetch(`${getApiBaseUrl()}/config`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!cancelled && data) {

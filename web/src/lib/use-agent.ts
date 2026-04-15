@@ -1,8 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
+import { getApiBaseUrl } from "@/lib/api-base";
 const APP_NAME = "kady_agent";
 const USER_ID = "user";
 const MAX_ACTIVITY_ITEMS = 8;
@@ -37,6 +36,16 @@ type ToolResponsePart = {
   name?: string;
   response?: Record<string, unknown>;
 };
+
+const createActivityItem = (activity: {
+  detail?: string;
+  id: string;
+  label: string;
+  status: ActivityItem["status"];
+}): ActivityItem => ({
+  ...activity,
+  timestamp: Date.now(),
+});
 
 const truncateText = (value: unknown, max = 120) => {
   if (typeof value !== "string") return undefined;
@@ -108,7 +117,7 @@ export function useAgent() {
     if (sessionIdRef.current) return sessionIdRef.current;
 
     const res = await fetch(
-      `${API_BASE}/apps/${APP_NAME}/users/${USER_ID}/sessions`,
+      `${getApiBaseUrl()}/apps/${APP_NAME}/users/${USER_ID}/sessions`,
       { method: "POST", headers: { "Content-Type": "application/json" } }
     );
     if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
@@ -146,7 +155,7 @@ export function useAgent() {
           );
         };
 
-        const res = await fetch(`${API_BASE}/run_sse`, {
+        const res = await fetch(`${getApiBaseUrl()}/run_sse`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -230,13 +239,12 @@ export function useAgent() {
                       ...message,
                       activities: [
                         ...activities,
-                        {
+                        createActivityItem({
                           detail: activity.detail,
                           id: key,
                           label: activity.label,
                           status: "running",
-                          timestamp: Date.now(),
-                        },
+                        }),
                       ].slice(-MAX_ACTIVITY_ITEMS),
                     };
                   });
@@ -265,13 +273,12 @@ export function useAgent() {
                         ...message,
                         activities: [
                           ...activities,
-                          {
+                          createActivityItem({
                             detail: activity.detail,
                             id: key,
                             label: activity.label,
                             status: activity.status,
-                            timestamp: Date.now(),
-                          },
+                          }),
                         ].slice(-MAX_ACTIVITY_ITEMS),
                       };
                     }

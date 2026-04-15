@@ -55,10 +55,35 @@ echo
 
 # ---- Step 3: Load environment variables ----
 
-echo "Loading environment from kady_agent/.env..."
-set -a
-source kady_agent/.env
-set +a
+if [ -f "kady_agent/.env" ]; then
+    echo "Loading environment from kady_agent/.env..."
+    set -a
+    # shellcheck disable=SC1091
+    source kady_agent/.env
+    set +a
+else
+    echo "kady_agent/.env not found — continuing with the current shell environment and startup defaults."
+fi
+
+FRONTEND_PORT="${FRONTEND_PORT:-3000}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+LITELLM_PORT="${LITELLM_PORT:-4000}"
+
+FRONTEND_URL="http://localhost:${FRONTEND_PORT}"
+BACKEND_URL="http://localhost:${BACKEND_PORT}"
+LITELLM_URL="http://localhost:${LITELLM_PORT}"
+
+if [ -z "${NEXT_PUBLIC_ADK_API_URL:-}" ] || [ "${NEXT_PUBLIC_ADK_API_URL%/}" = "http://localhost:8000" ]; then
+    export NEXT_PUBLIC_ADK_API_URL="$BACKEND_URL"
+fi
+
+if [ -z "${BACKEND_CORS_ALLOWED_ORIGINS:-}" ] || [ "${BACKEND_CORS_ALLOWED_ORIGINS%/}" = "http://localhost:3000" ]; then
+    export BACKEND_CORS_ALLOWED_ORIGINS="$FRONTEND_URL"
+fi
+
+if [ -z "${GOOGLE_GEMINI_BASE_URL:-}" ] || [ "${GOOGLE_GEMINI_BASE_URL%/}" = "http://localhost:4000" ]; then
+    export GOOGLE_GEMINI_BASE_URL="$LITELLM_URL"
+fi
 
 # ---- Step 4: Prepare the sandbox ----
 
@@ -72,23 +97,23 @@ echo
 echo "Starting services..."
 echo
 
-echo "  → LiteLLM proxy on port 4000 (routes LLM calls to OpenRouter)"
-uv run litellm --config litellm_config.yaml --port 4000 &
+echo "  → LiteLLM proxy on port ${LITELLM_PORT} (routes LLM calls to OpenRouter)"
+uv run litellm --config litellm_config.yaml --port "$LITELLM_PORT" &
 LITELLM_PID=$!
 sleep 2
 
-echo "  → Backend on port 8000 (FastAPI + ADK agent)"
-uv run uvicorn server:app --reload --port 8000 &
+echo "  → Backend on port ${BACKEND_PORT} (FastAPI + ADK agent)"
+uv run uvicorn server:app --reload --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 
-echo "  → Frontend on port 3000 (Next.js UI)"
-cd web && npm run dev &
+echo "  → Frontend on port ${FRONTEND_PORT} (Next.js UI)"
+(cd web && npm run dev -- --port "$FRONTEND_PORT") &
 FRONTEND_PID=$!
 
 echo
 echo "============================================"
 echo "  All services running!"
-echo "  UI: http://localhost:3000"
+echo "  UI: ${FRONTEND_URL}"
 if command -v open &>/dev/null || command -v xdg-open &>/dev/null; then
   echo "  Opening that URL in your default browser in a few seconds…"
 fi
@@ -99,11 +124,16 @@ echo "============================================"
 (
   sleep 3
   if command -v open &>/dev/null; then
-    open "http://localhost:3000"
+    open "$FRONTEND_URL"
   elif command -v xdg-open &>/dev/null; then
-    xdg-open "http://localhost:3000" &>/dev/null
+    xdg-open "$FRONTEND_URL" &>/dev/null
   fi
 ) &
 
-trap "kill $LITELLM_PID $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit 0" INT TERM
+cleanup() {
+  kill "$LITELLM_PID" "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+  exit 0
+}
+
+trap 'cleanup' INT TERM
 wait
