@@ -29,7 +29,7 @@ import {
 
 type BridgeBackendAdapter = Pick<
   BackendServiceAdapter,
-  "getState" | "refreshStatus" | "initializeWorkspace" | "startBackend"
+  "getState" | "refreshStatus" | "initializeWorkspace" | "startBackend" | "stopBackend"
 >;
 
 type BridgeRouterOptions = {
@@ -149,7 +149,7 @@ export async function handleBridgeMessage(
         );
       }
 
-      if (payload.action === "initialize" || payload.action === "start") {
+      if (payload.action === "initialize" || payload.action === "start" || payload.action === "stop") {
         const allowed = await ensureWorkspaceCapability(
           "backendStart",
           options.workspaceTrustDependencies,
@@ -169,9 +169,11 @@ export async function handleBridgeMessage(
           ? await backendAdapter.initializeWorkspace({
               workspaceTargetId: payload.workspaceTargetId,
             })
-          : await backendAdapter.startBackend({
-              workspaceTargetId: payload.workspaceTargetId,
-            });
+          : payload.action === "stop"
+            ? await backendAdapter.stopBackend()
+            : await backendAdapter.startBackend({
+                workspaceTargetId: payload.workspaceTargetId,
+              });
         await target.postMessage(createSuccessResponse(request, state));
         return;
       }

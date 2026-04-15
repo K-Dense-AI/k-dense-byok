@@ -22,6 +22,7 @@ type SidebarBackendAdapter = Pick<
   | "refreshStatus"
   | "initializeWorkspace"
   | "startBackend"
+  | "stopBackend"
   | "sendChat"
   | "onDidChangeState"
   | "dispose"
@@ -74,6 +75,7 @@ export class KadyChatViewProvider implements vscode.WebviewViewProvider {
             modalTokenSecret: runtimeConfig.effectiveModalTokenSecret,
           };
         },
+        sessionOwnerId: `kdense-sidebar-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
       });
   }
 
@@ -220,31 +222,9 @@ export class KadyChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   async primeBackendForSidebarActivation() {
-    const trustState = this.getWorkspaceTrustState();
     const refreshed = await this.backendAdapter.refreshStatus();
 
-    if (
-      !trustState.capabilities.backendStart ||
-      refreshed.requiresInitialization ||
-      refreshed.status === "healthy" ||
-      refreshed.status === "starting"
-    ) {
-      return;
-    }
-
-    const targetOptions = this.getTargetOptions();
-    const selectedTargetId = this.resolveSelectedTargetId(targetOptions);
-    const targetRequirement = this.getTargetRequirement(targetOptions, selectedTargetId);
-
-    if (targetRequirement && !selectedTargetId) {
-      return;
-    }
-
-    const started = await this.backendAdapter.startBackend({
-      workspaceTargetId: selectedTargetId,
-    });
-
-    if (started.status === "healthy") {
+    if (refreshed.status === "healthy") {
       await this.refreshCurrentSidebarControls();
     }
   }
