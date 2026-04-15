@@ -1,4 +1,6 @@
 import * as vscode from "vscode";
+import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import {
   BACKEND_HEALTH_PATH,
   createBackendServiceState,
@@ -37,6 +39,11 @@ type BackendRuntimeEnvironment = {
   parallelApiKey?: string;
   modalTokenId?: string;
   modalTokenSecret?: string;
+};
+
+type RuntimeCommandOptions = {
+  cwd: vscode.Uri;
+  command: string;
 };
 
 type SessionResponse = {
@@ -97,6 +104,10 @@ export interface BackendServiceAdapterDependencies {
   litellmPort: number;
   initializeCommand: string;
   startCommand: string;
+  stopCommand: string;
+  sessionOwnerId: string;
+  readRuntimeOwner(ports: { backendPort: number; litellmPort: number }): Promise<string | undefined>;
+  runRuntimeCommand(options: RuntimeCommandOptions): Promise<void>;
   getRuntimeEnvironment?(): Promise<BackendRuntimeEnvironment> | BackendRuntimeEnvironment;
 }
 
@@ -119,6 +130,10 @@ const defaultDependencies: BackendServiceAdapterDependencies = {
   litellmPort: resolveDefaultLiteLlmPort(),
   initializeCommand: "bash ./initialize_kdense_workspace.sh",
   startCommand: "bash ./start_kdense_backend.sh",
+  stopCommand: "bash ./stop_kdense_backend.sh",
+  sessionOwnerId: `kdense-session-${Date.now()}`,
+  readRuntimeOwner: (ports) => readRuntimeOwner(ports),
+  runRuntimeCommand: (options) => runRuntimeCommand(options),
   getRuntimeEnvironment: () => ({}),
 };
 
@@ -128,6 +143,7 @@ export class BackendServiceAdapter implements vscode.Disposable {
   private readonly dependencies: BackendServiceAdapterDependencies;
   private state: BackendServiceState;
   private sessionId: string | null = null;
+  private disposePromise: Promise<void> | null = null;
 
   constructor(dependencies: Partial<BackendServiceAdapterDependencies> = {}) {
     this.dependencies = {
@@ -172,6 +188,27 @@ export class BackendServiceAdapter implements vscode.Disposable {
     const healthResult = await this.checkHealth(workspaceRoot);
 
     if (healthResult.ok) {
+      const runtimeOwner = await this.dependencies.readRuntimeOwner({
+        backendPort: extractPortFromBaseUrl(this.dependencies.baseUrl),
+        litellmPort: this.dependencies.litellmPort,
+      });
+
+      if (runtimeOwner !== this.dependencies.sessionOwnerId) {
+        return this.setState(
+          createBackendServiceState("unavailable", {
+            detail: runtimeOwner
+              ? "A K-Dense backend is already running on the configured ports, but it is owned by another VS Code session. Use Start backend from this session to take over cleanly."
+              : "A backend is responding on the configured ports, but it is not registered to this VS Code session. Use Start backend from this session to take over cleanly.",
+            baseUrl: this.dependencies.baseUrl,
+            executionLocation: this.getExecutionLocation(),
+            requiresInitialization: false,
+            skillsReady: false,
+            workspaceRootLabel: healthResult.workspaceRootLabel,
+            checkedAt: this.dependencies.now(),
+          }),
+        );
+      }
+
       const skillsReadiness = healthResult.workspaceRoot
         ? await this.checkSkillsReadiness(healthResult.workspaceRoot.uri)
         : { ok: true as const };
@@ -322,6 +359,10 @@ export class BackendServiceAdapter implements vscode.Disposable {
       );
     }
 
+    await this.stopBackend({ force: true, silent: true });
+
+    this.sessionId = null;
+
     this.setState(
       createBackendServiceState("starting", {
         detail: `Starting the K-Dense backend stack from workspace root '${resolvedWorkspaceRoot.label}' on the ${this.getExecutionLocation()} extension host.`,
@@ -405,6 +446,44 @@ export class BackendServiceAdapter implements vscode.Disposable {
           checkedAt: this.dependencies.now(),
         }),
     );
+  }
+
+  async stopBackend(options: { force?: boolean; silent?: boolean } = {}): Promise<BackendServiceState> {
+    const runtimeRoot = await this.resolveBundledRuntimeRoot();
+    if (!runtimeRoot.ok) {
+      return this.state;
+    }
+
+    try {
+      await this.dependencies.runRuntimeCommand({
+        cwd: runtimeRoot.value.uri,
+        command: this.createBundledRuntimeStopCommand(Boolean(options.force)),
+      });
+      this.sessionId = null;
+      if (options.silent) {
+        return this.state;
+      }
+      return this.setState(
+        createBackendServiceState("unavailable", {
+          detail: `Stopped the host-managed backend runtime owned by this VS Code session on ${this.getExecutionLocation()}.`,
+          baseUrl: this.dependencies.baseUrl,
+          executionLocation: this.getExecutionLocation(),
+          checkedAt: this.dependencies.now(),
+        }),
+      );
+    } catch (error) {
+      if (options.silent) {
+        return this.state;
+      }
+      return this.setState(
+        createBackendServiceState("failed", {
+          detail: `Failed to stop the backend runtime: ${getErrorMessage(error)}`,
+          baseUrl: this.dependencies.baseUrl,
+          executionLocation: this.getExecutionLocation(),
+          checkedAt: this.dependencies.now(),
+        }),
+      );
+    }
   }
 
   async getSidebarControlAvailability(): Promise<SidebarControlAvailability> {
@@ -634,6 +713,9 @@ export class BackendServiceAdapter implements vscode.Disposable {
   }
 
   dispose() {
+    if (!this.disposePromise) {
+      this.disposePromise = this.stopBackend({ silent: true }).then(() => undefined, () => undefined);
+    }
     this.onDidChangeStateEmitter.dispose();
   }
 
@@ -836,6 +918,7 @@ export class BackendServiceAdapter implements vscode.Disposable {
       "server.py",
       "initialize_kdense_workspace.sh",
       "start_kdense_backend.sh",
+      "stop_kdense_backend.sh",
       "prep_sandbox.py",
       "litellm_config.yaml",
       "pyproject.toml",
@@ -960,6 +1043,7 @@ export class BackendServiceAdapter implements vscode.Disposable {
       `KDENSE_WORKSPACE_ROOT=${shellQuote(workspaceRootUri.fsPath)}`,
       `BACKEND_PORT=${backendPort}`,
       `LITELLM_PORT=${this.dependencies.litellmPort}`,
+      `KDENSE_RUNTIME_OWNER=${shellQuote(this.dependencies.sessionOwnerId)}`,
     ];
 
     if (runtimeEnvironment?.defaultModelId) {
@@ -993,6 +1077,21 @@ export class BackendServiceAdapter implements vscode.Disposable {
     }
 
     return `${envAssignments.join(" ")} ${command}`;
+  }
+
+  private createBundledRuntimeStopCommand(force: boolean) {
+    const backendPort = extractPortFromBaseUrl(this.dependencies.baseUrl);
+    const envAssignments = [
+      `BACKEND_PORT=${backendPort}`,
+      `LITELLM_PORT=${this.dependencies.litellmPort}`,
+      `KDENSE_RUNTIME_OWNER=${shellQuote(this.dependencies.sessionOwnerId)}`,
+    ];
+
+    if (force) {
+      envAssignments.push("KDENSE_RUNTIME_FORCE=1");
+    }
+
+    return `${envAssignments.join(" ")} ${this.dependencies.stopCommand}`;
   }
 
   private labelForFolderUri(folderUri: vscode.Uri) {
@@ -1142,4 +1241,35 @@ function isSidebarSkillRecord(value: unknown): value is SidebarSkill {
 
 function shellQuote(value: string) {
   return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function runRuntimeCommand(options: RuntimeCommandOptions) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn("bash", ["-lc", options.command], {
+      cwd: options.cwd.fsPath,
+      stdio: "ignore",
+    });
+
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(`Runtime command exited with code ${code ?? "unknown"}.`));
+    });
+  });
+}
+
+async function readRuntimeOwner(ports: { backendPort: number; litellmPort: number }) {
+  const stateFile = `/tmp/kdense-backend-${ports.backendPort}-${ports.litellmPort}.env`;
+
+  try {
+    const contents = await readFile(stateFile, "utf8");
+    const match = contents.match(/^KDENSE_RUNTIME_OWNER='([^']*)'$/m);
+    return match?.[1] || undefined;
+  } catch {
+    return undefined;
+  }
 }

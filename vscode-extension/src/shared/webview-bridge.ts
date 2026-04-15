@@ -664,7 +664,7 @@ function isSidebarBackendActionPayload(
   return (
     isRecord(value) &&
     value.surface === "sidebar" &&
-    (value.action === "refresh" || value.action === "start" || value.action === "initialize") &&
+      (value.action === "refresh" || value.action === "start" || value.action === "initialize" || value.action === "stop") &&
     (value.workspaceTargetId === undefined ||
       (typeof value.workspaceTargetId === "string" && value.workspaceTargetId.length > 0)) &&
     (value.modelId === undefined ||

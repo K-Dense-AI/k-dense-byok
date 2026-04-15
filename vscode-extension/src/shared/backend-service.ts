@@ -8,7 +8,7 @@ export type BackendServiceStatus =
 
 export type BackendExecutionLocation = "desktop" | "remote";
 
-export type BackendServiceAction = "refresh" | "start" | "initialize";
+export type BackendServiceAction = "refresh" | "start" | "initialize" | "stop";
 
 export type BackendChatToolEvent = {
   id: string;
