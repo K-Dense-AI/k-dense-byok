@@ -1,0 +1,210 @@
+{
+  "name": "vscode-extension",
+  "displayName": "K-Dense BYOK",
+  "description": "Workspace-scoped VS Code extension with a Kady chat sidebar and explicit Kady Preview surfaces that keep native editing intact.",
+  "version": "0.0.0",
+  "publisher": "kdense",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/K-Dense-AI/k-dense-byok.git",
+    "directory": "vscode-extension"
+  },
+  "homepage": "https://github.com/K-Dense-AI/k-dense-byok/tree/main/vscode-extension",
+  "bugs": {
+    "url": "https://github.com/K-Dense-AI/k-dense-byok/issues"
+  },
+  "files": [
+    "dist/extension.js",
+    "dist/runtime/**",
+    "dist/webview/main.js",
+    "media/**",
+    "package.nls.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Visualization"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:kdense.chatView",
+    "onCommand:kdense.sidebar.focus",
+    "onCommand:kdense.preview.open",
+    "onCustomEditor:kdense.preview.editor"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%capabilities.untrustedWorkspaces.description%"
+    }
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "kdense.sidebar.focus",
+        "title": "Focus Chat Sidebar",
+        "category": "K-Dense"
+      },
+      {
+        "command": "kdense.preview.open",
+        "title": "Open With Kady Preview",
+        "category": "K-Dense"
+      }
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "kdense.preview.open",
+          "when": "resourceExtname =~ /\\.(md|markdown|mdown|mkd|tex|latex|csv|tsv|fasta|fa|fna|ffn|faa|frn|fastq|fq|vcf|gff|gff3|bed|sam|bcf)$/i",
+          "group": "navigation@50"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "kdense.preview.open",
+          "when": "resourceExtname =~ /\\.(md|markdown|mdown|mkd|tex|latex|csv|tsv|fasta|fa|fna|ffn|faa|frn|fastq|fq|vcf|gff|gff3|bed|sam|bcf)$/i",
+          "group": "navigation@50"
+        }
+      ]
+    },
+    "customEditors": [
+      {
+        "viewType": "kdense.preview.editor",
+        "displayName": "Kady Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.md"
+          },
+          {
+            "filenamePattern": "*.markdown"
+          },
+          {
+            "filenamePattern": "*.mdown"
+          },
+          {
+            "filenamePattern": "*.mkd"
+          },
+          {
+            "filenamePattern": "*.tex"
+          },
+          {
+            "filenamePattern": "*.latex"
+          },
+          {
+            "filenamePattern": "*.csv"
+          },
+          {
+            "filenamePattern": "*.tsv"
+          },
+          {
+            "filenamePattern": "*.fasta"
+          },
+          {
+            "filenamePattern": "*.fa"
+          },
+          {
+            "filenamePattern": "*.fna"
+          },
+          {
+            "filenamePattern": "*.ffn"
+          },
+          {
+            "filenamePattern": "*.faa"
+          },
+          {
+            "filenamePattern": "*.frn"
+          },
+          {
+            "filenamePattern": "*.fastq"
+          },
+          {
+            "filenamePattern": "*.fq"
+          },
+          {
+            "filenamePattern": "*.vcf"
+          },
+          {
+            "filenamePattern": "*.gff"
+          },
+          {
+            "filenamePattern": "*.gff3"
+          },
+          {
+            "filenamePattern": "*.bed"
+          },
+          {
+            "filenamePattern": "*.sam"
+          },
+          {
+            "filenamePattern": "*.bcf"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "kdense",
+          "title": "K-Dense",
+          "icon": "media/kdense.svg"
+        }
+      ]
+    },
+    "views": {
+      "kdense": [
+        {
+          "id": "kdense.chatView",
+          "name": "Kady Chat",
+          "type": "webview"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "clean": "node ./scripts/clean.mjs",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" \"test/**/*.{ts,tsx}\"",
+    "typecheck": "tsc --project tsconfig.json --noEmit && tsc --project tsconfig.test.json --noEmit",
+    "build:extension": "node ./scripts/build-extension.mjs",
+    "build:runtime": "node ./scripts/build-runtime.mjs",
+    "build:webview": "node ./scripts/build-webview.mjs",
+    "build:tests": "tsc --project tsconfig.test.json",
+    "build": "npm run clean && npm run typecheck && npm run build:extension && npm run build:webview && npm run build:runtime",
+    "test:extension": "npm run build && npm run build:tests && node ./scripts/run-extension-tests.mjs",
+    "package:vsix": "npm run build && vsce package --out kdense-vscode-extension.vsix"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.25",
+    "markdown-it": "^14.1.0",
+    "markdown-it-texmath": "^1.0.0",
+    "mermaid": "^11.12.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/markdown-it": "^14.1.2",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.19.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^2.5.2",
+    "@vscode/vsce": "^3.6.2",
+    "esbuild": "^0.25.11",
+    "eslint": "^9.39.1",
+    "mocha": "^11.7.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.46.1"
+  }
+}

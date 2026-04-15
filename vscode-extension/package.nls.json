@@ -1,0 +1,3 @@
+{
+  "capabilities.untrustedWorkspaces.description": "K-Dense BYOK supports read-only sidebar browsing and explicit preview opening in Restricted Mode. Write actions, code execution, backend start flows, and secret-sensitive features stay blocked until the workspace is trusted."
+}
