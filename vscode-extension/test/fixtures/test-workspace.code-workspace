@@ -1,0 +1,12 @@
+{
+  "folders": [
+    {
+      "name": "workspace-a",
+      "path": "./workspace-a"
+    },
+    {
+      "name": "workspace-b",
+      "path": "./workspace-b"
+    }
+  ]
+}

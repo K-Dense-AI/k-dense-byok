@@ -1,0 +1,1834 @@
+[
+  {
+    "id": "nasa-apis",
+    "name": "NASA APIs",
+    "url": "https://api.nasa.gov",
+    "description": "APOD, Mars Rover photos, Near-Earth Objects, Earth imagery, and more",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "nasa-ads",
+    "name": "NASA Astrophysics Data System",
+    "url": "https://ui.adsabs.harvard.edu/help/api/api-docs.html",
+    "description": "Astronomy and astrophysics literature search and retrieval",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "nasa-earthdata",
+    "name": "NASA Earthdata",
+    "url": "https://www.earthdata.nasa.gov/",
+    "description": "NASA Earth observation data across atmosphere, biosphere, cryosphere, ocean, and land",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "nasa-horizons",
+    "name": "NASA HORIZONS",
+    "url": "https://ssd-api.jpl.nasa.gov/doc/horizons.html",
+    "description": "Solar system body ephemeris, physical properties, and observation data",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "arxiv",
+    "name": "arXiv API",
+    "url": "https://arxiv.org/help/api/user-manual",
+    "description": "Preprints in physics, mathematics, computer science, and economics",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "inspirehep",
+    "name": "InspireHEP",
+    "url": "https://github.com/inspirehep/rest-api-doc",
+    "description": "High energy physics literature, data, and conference proceedings",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "launch-library-2",
+    "name": "Launch Library 2",
+    "url": "https://thespacedevs.com/llapi",
+    "description": "Spaceflight launches, events, and rocket information database",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "open-notify",
+    "name": "Open Notify",
+    "url": "http://api.open-notify.org",
+    "description": "International Space Station location and people currently in space",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "celestrak",
+    "name": "CelesTrak",
+    "url": "https://celestrak.org",
+    "description": "NORAD orbital elements and general perturbations data for satellites",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "arcsecond",
+    "name": "Arcsecond.io",
+    "url": "https://api.arcsecond.io/",
+    "description": "Worldwide astronomy data including stars, exoplanets, and observatories",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "asterank-mpc",
+    "name": "Asterank / Minor Planet Center",
+    "url": "http://www.asterank.com/mpc",
+    "description": "Asteroids, minor planets, comets, and other small solar system bodies",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "simbad",
+    "name": "SIMBAD (CDS Strasbourg)",
+    "url": "http://simbad.u-strasbg.fr/simbad/sim-tap",
+    "description": "Astronomical object database: stars, galaxies, nebulae, and more",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "vizier",
+    "name": "VizieR",
+    "url": "https://vizier.u-strasbg.fr",
+    "description": "Largest collection of astronomical catalogs maintained at CDS",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "sdss",
+    "name": "SDSS SkyServer",
+    "url": "https://skyserver.sdss.org/dr18/SkyServerWS/",
+    "description": "Sloan Digital Sky Survey — photometric and spectroscopic galaxy/star data",
+    "category": "Astronomy & Space",
+    "domain": "science"
+  },
+  {
+    "id": "ncbi-entrez",
+    "name": "NCBI E-utilities (Entrez)",
+    "url": "https://eutils.ncbi.nlm.nih.gov",
+    "description": "Access PubMed, PMC, Gene, Genome, Protein, and 40+ NCBI databases",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "gbif",
+    "name": "GBIF",
+    "url": "https://www.gbif.org/developer/summary",
+    "description": "Global Biodiversity Information Facility — species occurrence records worldwide",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "idigbio",
+    "name": "iDigBio",
+    "url": "https://github.com/idigbio/idigbio-search-api/wiki",
+    "description": "Digitized biological specimens from museums around the world",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "itis",
+    "name": "ITIS",
+    "url": "https://www.itis.gov/ws_description.html",
+    "description": "Integrated Taxonomic Information System — authoritative taxonomic names",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "uniprot",
+    "name": "UniProt API",
+    "url": "https://www.uniprot.org/help/api",
+    "description": "Protein sequences, functions, and annotations — Swiss-Prot and TrEMBL",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "ensembl",
+    "name": "Ensembl REST API",
+    "url": "https://rest.ensembl.org",
+    "description": "Genome annotations, variants, gene trees, and comparative genomics",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "embl-ebi",
+    "name": "EMBL-EBI APIs",
+    "url": "https://www.ebi.ac.uk/Tools/webservices/",
+    "description": "European bioinformatics — sequence alignment, molecular biology tools",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "pubmlst",
+    "name": "PubMLST",
+    "url": "https://pubmlst.org/api",
+    "description": "Public databases for molecular typing and microbial genome diversity",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "gnomad",
+    "name": "gnomAD",
+    "url": "https://gnomad.broadinstitute.org/api",
+    "description": "Genome Aggregation Database — population genomic variant frequencies",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "gtex",
+    "name": "GTEx Portal API",
+    "url": "https://gtexportal.org/api/v2/redoc",
+    "description": "Genotype-tissue expression data — gene expression across human tissues",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "kegg",
+    "name": "KEGG API",
+    "url": "https://www.kegg.jp/kegg/rest/keggapi.html",
+    "description": "Biological pathways, genomes, diseases, and chemical substances",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "chembl",
+    "name": "ChEMBL API",
+    "url": "https://www.ebi.ac.uk/chembl/api/data/docs",
+    "description": "Bioactive drug-like molecules and their biological activities",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "reactome",
+    "name": "Reactome",
+    "url": "https://reactome.org/dev/content-service",
+    "description": "Curated biological pathway database for humans and model organisms",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "string-db",
+    "name": "STRING API",
+    "url": "https://string-db.org/help/api/",
+    "description": "Known and predicted protein-protein interaction networks",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "inaturalist",
+    "name": "iNaturalist API",
+    "url": "https://api.inaturalist.org/v1/docs/",
+    "description": "Citizen science naturalist observations of plants, animals, and fungi",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "ebird",
+    "name": "eBird API",
+    "url": "https://documenter.getpostman.com/view/664302/S1ENwy59",
+    "description": "Real-time bird observation data from citizen scientists worldwide",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "iucn-red-list",
+    "name": "IUCN Red List API",
+    "url": "https://apiv3.iucnredlist.org",
+    "description": "Conservation status and population data for threatened species",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "paleobiology-db",
+    "name": "Paleobiology Database",
+    "url": "https://paleobiodb.org/data1.2/",
+    "description": "Fossil occurrence records and taxonomic data through deep time",
+    "category": "Biology & Biodiversity",
+    "domain": "science"
+  },
+  {
+    "id": "pubchem-pug",
+    "name": "PubChem PUG REST",
+    "url": "https://pubchem.ncbi.nlm.nih.gov/pug_rest/PUG_REST.html",
+    "description": "Chemical structures, properties, biological assay data from NCBI",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "clinicaltrials",
+    "name": "ClinicalTrials.gov API",
+    "url": "https://clinicaltrials.gov/data-api/api",
+    "description": "US and international clinical study data — 450,000+ trials",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "openfda",
+    "name": "openFDA",
+    "url": "https://open.fda.gov/apis/",
+    "description": "FDA data on drugs, devices, food, and adverse events",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "who-gho",
+    "name": "WHO Global Health Observatory (Athena API)",
+    "url": "https://www.who.int/data/gho/info/athena-api-examples",
+    "description": "WHO's Global Health Observatory — 1,000+ health indicators by country",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "nppes",
+    "name": "NPPES API",
+    "url": "https://npiregistry.cms.hhs.gov/search",
+    "description": "National Plan & Provider Enumeration System — US healthcare providers",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "fooddata-central",
+    "name": "FoodData Central (USDA)",
+    "url": "https://fdc.nal.usda.gov/api-guide.html",
+    "description": "National nutrient database — detailed nutrient data for 300,000+ foods",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "nutritionix",
+    "name": "Nutritionix API",
+    "url": "https://developer.nutritionix.com",
+    "description": "World's largest verified nutrition database with NLP food parsing",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "rxnorm",
+    "name": "RxNorm API (NLM)",
+    "url": "https://lhncbc.nlm.nih.gov/RxNav/APIs/index.html",
+    "description": "Normalized names for clinical drugs and drug interactions",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "drugbank",
+    "name": "DrugBank API",
+    "url": "https://dev.drugbank.com/guides/api",
+    "description": "Comprehensive drug information including targets, interactions, pharmacology",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "lapis-covid",
+    "name": "LAPIS (SARS-CoV-2)",
+    "url": "https://lapis.cov-spectrum.org/open/v2/docs/",
+    "description": "SARS-CoV-2 genomic sequences aggregated from public sources",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "open-disease",
+    "name": "Open Disease API",
+    "url": "https://disease.sh",
+    "description": "COVID-19, influenza, and other disease statistics globally",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "physionet",
+    "name": "PhysioNet",
+    "url": "https://physionet.org",
+    "description": "Physiological signals, waveforms, and clinical databases for research",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "cms-data",
+    "name": "CMS Open Data API",
+    "url": "https://data.cms.gov",
+    "description": "US Medicare and Medicaid data — costs, utilization, and quality",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "nhs-scotland",
+    "name": "Open Data NHS Scotland",
+    "url": "https://www.opendata.nhs.scot/api/",
+    "description": "NHS Scotland medical reference data and public health statistics",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "europe-pmc",
+    "name": "Europe PMC API",
+    "url": "https://europepmc.org/RestfulWebService",
+    "description": "Life science literature including articles, patents, and preprints",
+    "category": "Biomedical & Health",
+    "domain": "science"
+  },
+  {
+    "id": "pdb",
+    "name": "RCSB Protein Data Bank",
+    "url": "https://data.rcsb.org",
+    "description": "3D macromolecular structures of proteins, DNA, RNA, and complexes",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "materials-project",
+    "name": "Materials Project API",
+    "url": "https://api.materialsproject.org",
+    "description": "Computed properties of inorganic materials — DFT calculations",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "chemspider",
+    "name": "ChemSpider API",
+    "url": "https://developer.rsc.org/",
+    "description": "Free chemical structure database with 100M+ structures",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "mpds",
+    "name": "Materials Platform for Data Science",
+    "url": "https://mpds.io",
+    "description": "Curated experimental data for materials science and crystal structures",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "aflow",
+    "name": "AFLOW API",
+    "url": "https://aflowlib.org/aflow-service/",
+    "description": "Computational materials science — 3M+ material compounds",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "nist-webbook",
+    "name": "NIST WebBook",
+    "url": "https://webbook.nist.gov/chemistry/form-ser/",
+    "description": "Physical and chemical property data for 80,000+ compounds",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "chebi",
+    "name": "ChEBI API",
+    "url": "https://www.ebi.ac.uk/chebi/webServices.do",
+    "description": "Chemical Entities of Biological Interest — small molecules and biochemicals",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "nmrshiftdb",
+    "name": "NMRShiftDB",
+    "url": "https://nmrshiftdb.nmr.de/NMRShiftDB/sdfservice/",
+    "description": "NMR chemical shift database for structure determination",
+    "category": "Chemistry & Materials",
+    "domain": "science"
+  },
+  {
+    "id": "noaa-cdo",
+    "name": "NOAA Climate Data Online API",
+    "url": "https://www.ncdc.noaa.gov/cdo-web/webservices/v2",
+    "description": "Historical climate records from global weather stations",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "ncei-data-service",
+    "name": "NCEI Data Service API",
+    "url": "https://www.ncei.noaa.gov/support/access-data-service-api-user-documentation",
+    "description": "NOAA weather, marine, and climate data in JSON, CSV, and NetCDF",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "noaa-weather",
+    "name": "NOAA National Weather Service API",
+    "url": "https://www.weather.gov/documentation/services-web-api",
+    "description": "US weather forecasts, alerts, and observations",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "usgs-water",
+    "name": "USGS Water Data APIs",
+    "url": "https://api.waterdata.usgs.gov",
+    "description": "Streamflow, groundwater levels, water quality, and flood data",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "usgs-earthquake",
+    "name": "USGS Earthquake API",
+    "url": "https://earthquake.usgs.gov/fdsnws/event/1/",
+    "description": "Real-time and historical earthquake catalog globally",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "usgs-national-map",
+    "name": "USGS National Map API",
+    "url": "https://tnmaccess.nationalmap.gov/api/v1/docs/",
+    "description": "US geospatial and topographic data — elevation, land cover, hydrography",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "usgs-minerals",
+    "name": "USGS Mineral Resources API",
+    "url": "https://mrdata.usgs.gov/catalog/api.php",
+    "description": "Geochemistry, geophysics, and mineral resource maps and data",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "usgs-volcanoes",
+    "name": "USGS Volcanoes API",
+    "url": "https://volcanoes.usgs.gov/hans-public/api/volcano/",
+    "description": "Volcano alerts, eruption history, and monitoring data",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "usgs-geomagnetism",
+    "name": "USGS Geomagnetism API",
+    "url": "https://www.usgs.gov/tools/web-service-geomagnetism-data",
+    "description": "Geomagnetic field measurements from observatories",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "epa-air-quality",
+    "name": "EPA Air Quality System API",
+    "url": "https://aqs.epa.gov/aqsweb/documents/data_api.html",
+    "description": "US air quality monitoring data — pollutants, sites, and measurements",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "water-quality-portal",
+    "name": "Water Quality Portal",
+    "url": "https://www.waterqualitydata.us/webservices_documentation/",
+    "description": "USGS/EPA combined water quality data from 400+ agencies",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "copernicus-cds",
+    "name": "Copernicus Climate Data Store API",
+    "url": "https://cds.climate.copernicus.eu/api/v2",
+    "description": "European climate reanalysis data — ERA5 and other datasets",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "open-meteo",
+    "name": "Open-Meteo API",
+    "url": "https://open-meteo.com/en/docs",
+    "description": "Free global weather forecast API with historical weather data",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "openweathermap",
+    "name": "OpenWeatherMap API",
+    "url": "https://openweathermap.org/api",
+    "description": "Current weather, forecasts, and historical data globally",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "world-air-quality",
+    "name": "World Air Quality Index API",
+    "url": "https://aqicn.org/api/",
+    "description": "Real-time air quality index data from 12,000+ stations worldwide",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "global-fishing-watch",
+    "name": "Global Fishing Watch API",
+    "url": "https://globalfishingwatch.org/our-apis/",
+    "description": "Fishing vessel tracking and fishing activity data via AIS",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "sentinel-hub",
+    "name": "Sentinel Hub API",
+    "url": "https://www.sentinel-hub.com/develop/api/",
+    "description": "Satellite imagery from Sentinel, Landsat, MODIS, and more",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "openaq",
+    "name": "OpenAQ API",
+    "url": "https://docs.openaq.org",
+    "description": "Aggregated real-time and historical air quality data from 12,000+ stations",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "nsidc",
+    "name": "NSIDC API",
+    "url": "https://nsidc.org/data/user-resources/help-center/api",
+    "description": "Snow, ice, and cryosphere data from the National Snow and Ice Data Center",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "uk-met-office",
+    "name": "UK Met Office DataPoint API",
+    "url": "https://www.metoffice.gov.uk/services/data/datapoint/api-documentation",
+    "description": "UK weather forecasts, observations, and climate data",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "windy-api",
+    "name": "Windy API",
+    "url": "https://api.windy.com",
+    "description": "Global wind, wave, and weather forecast data",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "nasa-firms",
+    "name": "NASA FIRMS (Fire Data)",
+    "url": "https://firms.modaps.eosdis.nasa.gov/api/",
+    "description": "Near real-time fire/hotspot data from MODIS and VIIRS satellites",
+    "category": "Earth, Climate & Environment",
+    "domain": "science"
+  },
+  {
+    "id": "openstreetmap",
+    "name": "OpenStreetMap Overpass API",
+    "url": "https://overpass-api.de",
+    "description": "Query global map data — roads, buildings, amenities, and more",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "geonames",
+    "name": "GeoNames API",
+    "url": "https://www.geonames.org/export/web-services.html",
+    "description": "Geographic names, postal codes, elevation, and timezone data",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "us-census",
+    "name": "US Census Bureau API",
+    "url": "https://www.census.gov/data/developers/data-sets.html",
+    "description": "Demographic, economic, geographic, and housing data for the US",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "opencage",
+    "name": "OpenCage Geocoding API",
+    "url": "https://opencagedata.com/api",
+    "description": "Forward and reverse geocoding using open data sources",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "natural-earth",
+    "name": "Natural Earth",
+    "url": "https://naturalearthdata.com",
+    "description": "Public domain vector and raster map data at multiple scales",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "gadm",
+    "name": "GADM (Global Administrative Areas)",
+    "url": "https://gadm.org/data.html",
+    "description": "Administrative boundary data for all countries at multiple levels",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "arcgis-rest",
+    "name": "ArcGIS REST API (ESRI)",
+    "url": "https://developers.arcgis.com/rest/",
+    "description": "GIS data, maps, and geospatial services",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "what3words",
+    "name": "what3words API",
+    "url": "https://developer.what3words.com",
+    "description": "Convert geographic coordinates to/from 3-word addresses",
+    "category": "Geospatial & Geography",
+    "domain": "science"
+  },
+  {
+    "id": "crossref",
+    "name": "CrossRef API",
+    "url": "https://api.crossref.org",
+    "description": "DOI metadata for 150M+ scholarly works — journals, books, datasets",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "openalex",
+    "name": "OpenAlex API",
+    "url": "https://docs.openalex.org",
+    "description": "Open scholarly metadata catalog — papers, authors, venues, institutions",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "semantic-scholar",
+    "name": "Semantic Scholar API",
+    "url": "https://api.semanticscholar.org/api-docs/",
+    "description": "AI-enhanced academic paper search, citations, and recommendations",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "core-api",
+    "name": "CORE API",
+    "url": "https://core.ac.uk/services/api",
+    "description": "Access the world's open access research papers — 200M+ articles",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "ieee-xplore",
+    "name": "IEEE Xplore API",
+    "url": "https://developer.ieee.org",
+    "description": "IEEE technical publications — journals, conferences, and standards",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "orcid",
+    "name": "ORCID Public API",
+    "url": "https://info.orcid.org/documentation/features/public-api/",
+    "description": "Researcher profiles, identifiers, and publication lists",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "unpaywall",
+    "name": "Unpaywall API",
+    "url": "https://unpaywall.org/products/api",
+    "description": "Free, open access version finder for scholarly articles by DOI",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "loc-api",
+    "name": "Library of Congress API",
+    "url": "https://www.loc.gov/apis/json-and-yaml-apis/",
+    "description": "Digital collections — historical newspapers, maps, photos, and manuscripts",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "eric",
+    "name": "ERIC API",
+    "url": "https://eric.ed.gov/?api",
+    "description": "Education research literature — 1.7M+ education-related records",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "springer-nature",
+    "name": "Springer Nature API",
+    "url": "https://dev.springernature.com",
+    "description": "Springer Nature scientific publications metadata and open access content",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "elsevier-scopus",
+    "name": "Elsevier / Scopus API",
+    "url": "https://dev.elsevier.com",
+    "description": "Research metadata — 90M+ records in Scopus abstract database",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "biorxiv",
+    "name": "bioRxiv / medRxiv API",
+    "url": "https://api.biorxiv.org",
+    "description": "Biology and medicine preprints before peer review",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "doaj",
+    "name": "DOAJ API",
+    "url": "https://doaj.org/api/v3/docs",
+    "description": "Directory of Open Access Journals — 18,000+ peer-reviewed journals",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "hathitrust",
+    "name": "HathiTrust API",
+    "url": "https://www.hathitrust.org/data_api",
+    "description": "Digital library — 17M+ volumes with metadata and full-text access",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "web-of-science",
+    "name": "Web of Science API",
+    "url": "https://developer.clarivate.com/apis",
+    "description": "Citation database — research metadata and citation graph",
+    "category": "Scholarly Publications",
+    "domain": "science"
+  },
+  {
+    "id": "open-food-facts",
+    "name": "Open Food Facts API",
+    "url": "https://world.openfoodfacts.org/data",
+    "description": "Food product data — ingredients, nutrition, and labels globally",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "usda-nass",
+    "name": "USDA NASS QuickStats API",
+    "url": "https://quickstats.nass.usda.gov/api",
+    "description": "US agricultural statistics — crop production, livestock, and prices",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "fao-faostat",
+    "name": "FAO FAOSTAT API",
+    "url": "https://www.fao.org/faostat/en/#data",
+    "description": "UN Food and Agriculture Organization — global food and agriculture statistics",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "marine-traffic",
+    "name": "MarineTraffic API",
+    "url": "https://www.marinetraffic.com/en/ais-api-services",
+    "description": "Global vessel tracking, port calls, and ocean data via AIS",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "vertnet",
+    "name": "VertNet API",
+    "url": "http://portal.vertnet.org/api",
+    "description": "Vertebrate specimen records from natural history collections",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "ecoengine",
+    "name": "Berkeley Ecoengine API",
+    "url": "https://ecoengine.berkeley.edu/docs/",
+    "description": "Natural history data — specimens, photos, and observations from UC Berkeley",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "try-plant-trait",
+    "name": "TRY Plant Trait Database",
+    "url": "https://www.try-db.org/TryWeb/Api.php",
+    "description": "Global plant trait database — leaf area, height, seed mass, and more",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "particle-data-group",
+    "name": "Particle Data Group API",
+    "url": "https://pdg.lbl.gov/2022/api/index.html",
+    "description": "Particle physics data — masses, lifetimes, and decay modes",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "sesar-samples",
+    "name": "SESAR Sample API",
+    "url": "https://www.geosamples.org/interop/api",
+    "description": "System for Earth Sample Registration — geological samples",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "ncbi-datasets",
+    "name": "NCBI Datasets API v2",
+    "url": "https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/rest-api/",
+    "description": "Download curated genome, gene, and protein datasets from NCBI",
+    "category": "Other Science",
+    "domain": "science"
+  },
+  {
+    "id": "alpha-vantage",
+    "name": "Alpha Vantage",
+    "url": "https://www.alphavantage.co/documentation/",
+    "description": "Stocks, forex, crypto, commodities, and 60+ technical indicators",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "financial-modeling-prep",
+    "name": "Financial Modeling Prep (FMP)",
+    "url": "https://site.financialmodelingprep.com/developer/docs",
+    "description": "Financial statements, ratios, real-time quotes, and fundamentals",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "polygon-io",
+    "name": "Polygon.io",
+    "url": "https://polygon.io/docs/",
+    "description": "US market real-time and tick-level data, options, forex, and crypto",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "iex-cloud",
+    "name": "IEX Cloud",
+    "url": "https://iexcloud.io/docs/",
+    "description": "Institutional-grade stock market data — 50,000 API calls/month free",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "twelve-data",
+    "name": "Twelve Data",
+    "url": "https://twelvedata.com/docs",
+    "description": "Multi-asset time-series — stocks, forex, crypto, ETFs with built-in indicators",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "marketstack",
+    "name": "Marketstack",
+    "url": "https://marketstack.com/documentation",
+    "description": "Real-time and historical market data from 170,000+ tickers worldwide",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "finnhub",
+    "name": "Finnhub",
+    "url": "https://finnhub.io/docs/api",
+    "description": "Real-time quotes, fundamentals, alternative data, and insider trades",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "tiingo",
+    "name": "Tiingo",
+    "url": "https://www.tiingo.com/documentation/general/overview",
+    "description": "End-of-day and intraday stock data with fundamental data",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "eodhd",
+    "name": "EOD Historical Data (EODHD)",
+    "url": "https://eodhd.com/financial-apis/",
+    "description": "Historical prices, fundamentals, and corporate actions for 150+ exchanges",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "nasdaq-data-link",
+    "name": "Nasdaq Data Link (Quandl)",
+    "url": "https://docs.data.nasdaq.com/",
+    "description": "Financial and alternative datasets — formerly Quandl",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "alpaca",
+    "name": "Alpaca API",
+    "url": "https://alpaca.markets/docs/api-references/market-data-api/",
+    "description": "US stock market data and commission-free trading API",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "intrinio",
+    "name": "Intrinio",
+    "url": "https://docs.intrinio.com",
+    "description": "Financial data, fundamentals, real-time prices, and news sentiment",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "simfin",
+    "name": "SimFin API",
+    "url": "https://simfin.com/api/v2/documentation/",
+    "description": "Fundamental financial data — income statements, balance sheets, free tier available",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "sec-edgar",
+    "name": "SEC EDGAR API",
+    "url": "https://www.sec.gov/developer",
+    "description": "SEC company filings, financial statements, and XBRL data",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "openfigi",
+    "name": "OpenFIGI (Bloomberg)",
+    "url": "https://www.openfigi.com/api",
+    "description": "Financial instrument global identifier mapping — free API",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "schwab-api",
+    "name": "Charles Schwab Market Data API",
+    "url": "https://developer.schwab.com",
+    "description": "US equities market data, options chains, and account API",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "finazon",
+    "name": "Finazon",
+    "url": "https://finazon.io/docs",
+    "description": "Financial data aggregator — stocks, crypto, forex, and earnings",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "stooq",
+    "name": "Stooq API",
+    "url": "https://stooq.com",
+    "description": "Free historical stock, index, and bond data — no API key required",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "barchart-ondemand",
+    "name": "Barchart OnDemand",
+    "url": "https://www.barchart.com/ondemand/api",
+    "description": "Market data feeds for equities, futures, forex, and options",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "webull",
+    "name": "Webull API",
+    "url": "https://developer.webull.com",
+    "description": "Market data and trading for stocks and ETFs",
+    "category": "Stock Market & Equities",
+    "domain": "finance"
+  },
+  {
+    "id": "fred",
+    "name": "FRED (Federal Reserve Economic Data)",
+    "url": "https://fred.stlouisfed.org/docs/api/fred/",
+    "description": "800,000+ US and international economic time series from 100+ sources",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "world-bank",
+    "name": "World Bank Open Data API",
+    "url": "https://datahelpdesk.worldbank.org/knowledgebase/articles/889386",
+    "description": "Development data for 200+ countries — 16,000+ indicators",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "imf-api",
+    "name": "IMF Data API",
+    "url": "https://data.imf.org/en/Resource-Pages/IMF-API",
+    "description": "IMF macroeconomic and financial data — WEO, IFS, BOP, and more",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "oecd-api",
+    "name": "OECD Data API",
+    "url": "https://www.oecd.org/en/data/insights/data-explainers/2024/09/api.html",
+    "description": "OECD statistics on economy, society, and environment (SDMX-based)",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "bea-api",
+    "name": "US Bureau of Economic Analysis API",
+    "url": "https://apps.bea.gov/API/signup/index.cfm",
+    "description": "GDP, personal income, trade, and national accounts data",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "bls-api",
+    "name": "US Bureau of Labor Statistics API",
+    "url": "https://www.bls.gov/developers/",
+    "description": "Employment, CPI, wages, and productivity data",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "treasury-fiscal-data",
+    "name": "US Treasury Fiscal Data API",
+    "url": "https://fiscaldata.treasury.gov/api-documentation/",
+    "description": "Federal debt, revenue, spending, interest rates, and savings bonds",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "ecb-api",
+    "name": "European Central Bank API",
+    "url": "https://data.ecb.europa.eu/help/api/overview",
+    "description": "Euro area monetary statistics, exchange rates, and financial data",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "eurostat",
+    "name": "Eurostat API",
+    "url": "https://ec.europa.eu/eurostat/web/sdmx-web-services/rest-sdmx-2.1",
+    "description": "EU statistics on economy, population, environment, and trade",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "bis-api",
+    "name": "Bank for International Settlements API",
+    "url": "https://stats.bis.org/api/v1/",
+    "description": "Global banking, debt, and financial statistics",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "un-data",
+    "name": "UN Data API",
+    "url": "http://data.un.org/Host.aspx?Content=API",
+    "description": "United Nations statistical databases — 60M+ data series",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "ilo-stat",
+    "name": "ILO ILOSTAT API",
+    "url": "https://ilostat.ilo.org/resources/ilostat-developer-tools/ilostat-api/",
+    "description": "International Labour Organization — global labor market statistics",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "world-bank-data360",
+    "name": "World Bank Data360 API",
+    "url": "https://data360.worldbank.org/en/api",
+    "description": "World Bank development indicators with advanced search and filtering",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "dbnomics",
+    "name": "DBnomics",
+    "url": "https://db.nomics.world/docs",
+    "description": "Aggregates economic data from 80+ public providers in one API",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "our-world-in-data",
+    "name": "Our World in Data API",
+    "url": "https://ourworldindata.org/owid-grapher-js",
+    "description": "Global statistics on poverty, health, education, and more",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "usaspending",
+    "name": "USASpending API",
+    "url": "https://api.usaspending.gov",
+    "description": "Official source of US federal government spending data",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "statcan",
+    "name": "Statistics Canada API",
+    "url": "https://www.statcan.gc.ca/en/developers",
+    "description": "Canadian economic, demographic, and social statistics",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "uk-ons",
+    "name": "UK ONS API",
+    "url": "https://developer.ons.gov.uk",
+    "description": "UK Office for National Statistics — economy, population, and society",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "abs-api",
+    "name": "Australian Bureau of Statistics API",
+    "url": "https://api.data.abs.gov.au",
+    "description": "Australian economic, social, and environmental statistics",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "adb-api",
+    "name": "Asian Development Bank API",
+    "url": "https://data.adb.org/documentation",
+    "description": "Asian and Pacific economic data and development indicators",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "knoema",
+    "name": "Knoema API",
+    "url": "https://knoema.com/apps/developers",
+    "description": "Global economic data aggregator — 900M+ data points from 1,000+ sources",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "eia-api",
+    "name": "EIA Open Data API",
+    "url": "https://www.eia.gov/opendata/",
+    "description": "US energy data — oil, gas, coal, electricity production and prices",
+    "category": "Economic & Government",
+    "domain": "finance"
+  },
+  {
+    "id": "coingecko",
+    "name": "CoinGecko API",
+    "url": "https://www.coingecko.com/en/api/documentation",
+    "description": "Crypto prices, market cap, volume, and on-chain data for 10,000+ coins",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "coinmarketcap",
+    "name": "CoinMarketCap API",
+    "url": "https://coinmarketcap.com/api/documentation/v2/",
+    "description": "Cryptocurrency market data — rankings, prices, and market cap",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "binance",
+    "name": "Binance API",
+    "url": "https://binance-docs.github.io/apidocs/spot/en/",
+    "description": "Crypto exchange data and trading — world's largest exchange",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "kraken",
+    "name": "Kraken API",
+    "url": "https://docs.kraken.com/rest/",
+    "description": "Crypto exchange market data, order book, and trading",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "coinbase-advanced",
+    "name": "Coinbase Advanced API",
+    "url": "https://docs.cdp.coinbase.com/advanced-trade/docs/",
+    "description": "Crypto market data and trading from Coinbase",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "blockchain-com",
+    "name": "Blockchain.com API",
+    "url": "https://www.blockchain.com/explorer/api/api_receive",
+    "description": "Bitcoin blockchain data — transactions, blocks, and addresses",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "etherscan",
+    "name": "Etherscan API",
+    "url": "https://docs.etherscan.io",
+    "description": "Ethereum blockchain explorer — transactions, tokens, and contracts",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "cryptocompare",
+    "name": "CryptoCompare API",
+    "url": "https://min-api.cryptocompare.com/documentation",
+    "description": "Crypto market data, news, social stats, and historical OHLCV",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "blockchair",
+    "name": "Blockchair API",
+    "url": "https://blockchair.com/api/docs",
+    "description": "Multi-chain blockchain explorer — BTC, ETH, and 40+ chains",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "alchemy",
+    "name": "Alchemy API",
+    "url": "https://docs.alchemy.com",
+    "description": "Web3 infrastructure, NFT data, and enhanced Ethereum APIs",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "moralis",
+    "name": "Moralis API",
+    "url": "https://docs.moralis.io",
+    "description": "Web3 DApp data — wallets, NFTs, DeFi, and cross-chain queries",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "amberdata",
+    "name": "Amberdata API",
+    "url": "https://docs.amberdata.io",
+    "description": "Institutional digital asset market data, DeFi, and on-chain analytics",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "coindesk-api",
+    "name": "CoinDesk API",
+    "url": "https://developers.coindesk.com",
+    "description": "Institutional-grade crypto data — 300+ exchanges, 300,000+ pairs",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "bitquery",
+    "name": "Bitquery API",
+    "url": "https://bitquery.io/labs/graphql",
+    "description": "GraphQL blockchain data for 40+ chains — DEX trades, tokens, and more",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "kaiko",
+    "name": "Kaiko API",
+    "url": "https://docs.kaiko.com",
+    "description": "Institutional-grade crypto market data and digital asset analytics",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "glassnode",
+    "name": "Glassnode API",
+    "url": "https://docs.glassnode.com",
+    "description": "On-chain analytics for Bitcoin, Ethereum, and major cryptocurrencies",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "messari",
+    "name": "Messari API",
+    "url": "https://messari.io/api/docs",
+    "description": "Crypto research data — metrics, profiles, and market intelligence",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "infura",
+    "name": "Infura API",
+    "url": "https://docs.infura.io",
+    "description": "Ethereum and IPFS node gateway — high-availability Web3 infrastructure",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "the-graph",
+    "name": "The Graph Protocol",
+    "url": "https://thegraph.com/docs/en/querying/querying-the-graph/",
+    "description": "Decentralized protocol for indexing and querying blockchain data",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "okx-api",
+    "name": "OKX API",
+    "url": "https://www.okx.com/docs-v5/",
+    "description": "Crypto exchange data, derivatives, and DeFi from OKX",
+    "category": "Cryptocurrency & Blockchain",
+    "domain": "finance"
+  },
+  {
+    "id": "open-exchange-rates",
+    "name": "Open Exchange Rates",
+    "url": "https://openexchangerates.org/documentation",
+    "description": "Real-time and historical currency exchange rates for 200+ currencies",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "fixer",
+    "name": "Fixer API",
+    "url": "https://fixer.io/documentation",
+    "description": "Real-time forex rates and currency conversion for 170+ currencies",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "currencylayer",
+    "name": "CurrencyLayer API",
+    "url": "https://currencylayer.com/documentation",
+    "description": "Live currency data with 168 world currencies sourced from banks",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "exchangerate-api",
+    "name": "ExchangeRate-API",
+    "url": "https://www.exchangerate-api.com/docs/overview",
+    "description": "Simple currency conversion API with free tier",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "xe-currency",
+    "name": "XE Currency API",
+    "url": "https://xecdapi.xe.com/docs/v1/",
+    "description": "Exchange rates from the internet's most trusted currency authority",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "ecb-forex",
+    "name": "ECB Foreign Exchange Reference Rates",
+    "url": "https://data.ecb.europa.eu/help/api/overview",
+    "description": "Official EUR exchange rates published daily by the European Central Bank",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "frankfurter",
+    "name": "Frankfurter API",
+    "url": "https://www.frankfurter.app/docs/",
+    "description": "Free ECB exchange rates API — no API key required",
+    "category": "Foreign Exchange",
+    "domain": "finance"
+  },
+  {
+    "id": "eia-energy",
+    "name": "EIA Energy Data API",
+    "url": "https://www.eia.gov/opendata/",
+    "description": "US energy production, consumption, and prices — oil, gas, electricity, renewables",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "world-bank-commodities",
+    "name": "World Bank Commodity Prices API",
+    "url": "https://www.worldbank.org/en/research/commodity-markets",
+    "description": "Monthly global commodity price data for 70+ commodities",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "alpha-vantage-commodities",
+    "name": "Alpha Vantage Commodities",
+    "url": "https://www.alphavantage.co/documentation/#commodities",
+    "description": "Real-time and historical commodity prices — oil, natural gas, metals, grains",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "nasdaq-commodities",
+    "name": "Nasdaq Data Link Commodities",
+    "url": "https://docs.data.nasdaq.com",
+    "description": "Commodity futures and spot prices — energy, metals, and agricultural",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "usda-nass-commodities",
+    "name": "USDA NASS Agricultural Data",
+    "url": "https://quickstats.nass.usda.gov/api",
+    "description": "US agricultural commodity statistics — production, prices, and stocks",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "cme-group",
+    "name": "CME Group Market Data API",
+    "url": "https://www.cmegroup.com/market-data-and-reports/files/api.html",
+    "description": "Futures and derivatives data from the world's largest derivatives exchange",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "quandl-energy",
+    "name": "Quandl Energy Datasets",
+    "url": "https://docs.data.nasdaq.com",
+    "description": "Energy market datasets from EIA, OPEC, and other sources",
+    "category": "Commodities & Energy",
+    "domain": "finance"
+  },
+  {
+    "id": "us-treasury-direct",
+    "name": "TreasuryDirect API",
+    "url": "https://www.treasurydirect.gov/webapis/webservices.htm",
+    "description": "US Treasury securities data — bonds, notes, bills, and TIPS",
+    "category": "Fixed Income & Bonds",
+    "domain": "finance"
+  },
+  {
+    "id": "fred-bonds",
+    "name": "FRED Bond Yields (Fed)",
+    "url": "https://fred.stlouisfed.org/categories/115",
+    "description": "Treasury yield curves, interest rates, and bond market data",
+    "category": "Fixed Income & Bonds",
+    "domain": "finance"
+  },
+  {
+    "id": "finra-trace",
+    "name": "FINRA TRACE API",
+    "url": "https://developer.finra.org",
+    "description": "Bond transaction reporting — corporate, agency, and securitized products",
+    "category": "Fixed Income & Bonds",
+    "domain": "finance"
+  },
+  {
+    "id": "msrb-emma",
+    "name": "MSRB EMMA API",
+    "url": "https://www.msrb.org",
+    "description": "Municipal securities disclosures, trade data, and official statements",
+    "category": "Fixed Income & Bonds",
+    "domain": "finance"
+  },
+  {
+    "id": "ecb-yield-curves",
+    "name": "ECB Yield Curves",
+    "url": "https://data.ecb.europa.eu/help/api/overview",
+    "description": "Euro-area government bond yield curves published by the ECB",
+    "category": "Fixed Income & Bonds",
+    "domain": "finance"
+  },
+  {
+    "id": "bank-of-england",
+    "name": "Bank of England API",
+    "url": "https://www.bankofengland.co.uk/boeapps/database/",
+    "description": "UK interest rates, monetary policy, and financial stability data",
+    "category": "Fixed Income & Bonds",
+    "domain": "finance"
+  },
+  {
+    "id": "open-corporates",
+    "name": "Open Corporates API",
+    "url": "https://api.opencorporates.com/documentation/API-Reference",
+    "description": "200M+ global company records — registrations, officers, and filings",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "companies-house",
+    "name": "Companies House API (UK)",
+    "url": "https://developer.company-information.service.gov.uk",
+    "description": "UK company data — registrations, filings, and officer information",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "gleif",
+    "name": "GLEIF API (Legal Entity Identifiers)",
+    "url": "https://www.gleif.org/en/lei-data/gleif-golden-copy/download-the-golden-copy",
+    "description": "Legal Entity Identifier (LEI) data — 2M+ organizations globally",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "crunchbase",
+    "name": "Crunchbase API",
+    "url": "https://data.crunchbase.com/docs/using-the-api",
+    "description": "Startup and VC data — funding rounds, acquisitions, and investor profiles",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "wikidata-finance",
+    "name": "Wikidata SPARQL Query",
+    "url": "https://query.wikidata.org",
+    "description": "Structured open knowledge graph — company, market, and financial data",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "sec-edgar-xbrl",
+    "name": "SEC EDGAR XBRL API",
+    "url": "https://data.sec.gov/api/xbrl/",
+    "description": "Structured financial data from SEC filings in machine-readable XBRL format",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "hunter-io",
+    "name": "Hunter.io API",
+    "url": "https://hunter.io/api-documentation",
+    "description": "Company email and contact data — domain search and verification",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "clearbit",
+    "name": "Clearbit API",
+    "url": "https://clearbit.com/docs",
+    "description": "Company data enrichment — employee count, industry, and technology stack",
+    "category": "Company & Fundamental Data",
+    "domain": "finance"
+  },
+  {
+    "id": "fdic-bankfind",
+    "name": "FDIC BankFind API",
+    "url": "https://banks.data.fdic.gov/docs/",
+    "description": "US bank financial data — balance sheets, income, and call reports",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "cfpb-hmda",
+    "name": "CFPB HMDA API",
+    "url": "https://ffiec.cfpb.gov/documentation/api/filtering/",
+    "description": "Home Mortgage Disclosure Act data — mortgage loan originations",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "cfpb-complaints",
+    "name": "CFPB Consumer Complaints API",
+    "url": "https://www.consumerfinance.gov/data-research/consumer-complaints/search/api/v1/",
+    "description": "Consumer financial protection complaints data",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "plaid",
+    "name": "Plaid API",
+    "url": "https://plaid.com/docs/",
+    "description": "Bank account connectivity, transaction data, and financial insights",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "truelayer",
+    "name": "TrueLayer API",
+    "url": "https://docs.truelayer.com",
+    "description": "Open banking data API for Europe and UK (PSD2)",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "yodlee",
+    "name": "Yodlee API",
+    "url": "https://developer.yodlee.com/docs",
+    "description": "Aggregated financial data — accounts, transactions, and investments",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "mx-api",
+    "name": "MX API",
+    "url": "https://docs.mx.com",
+    "description": "Financial data aggregation and analytics for fintech apps",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "finra-api",
+    "name": "FINRA API",
+    "url": "https://developer.finra.org",
+    "description": "Securities regulation data — market activity, short interest, and OTC",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "ffiec-cdr",
+    "name": "FFIEC Central Data Repository",
+    "url": "https://www.ffiec.gov/nicpubweb/content/NICAPITOC.aspx",
+    "description": "Banking regulator financial data from US bank holding companies",
+    "category": "Banking & Regulatory",
+    "domain": "finance"
+  },
+  {
+    "id": "gdelt",
+    "name": "GDELT Project API",
+    "url": "https://blog.gdeltproject.org/gdelt-2-0-our-global-database-of-society/",
+    "description": "Global events, news sentiment, and media coverage — 300B+ records",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "newsapi",
+    "name": "NewsAPI",
+    "url": "https://newsapi.org/docs",
+    "description": "Financial and breaking news from 150,000+ sources worldwide",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "similarweb",
+    "name": "SimilarWeb API",
+    "url": "https://developers.similarweb.com",
+    "description": "Web traffic, engagement, and audience data for market research",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "intrinio-news",
+    "name": "Intrinio News & Sentiment API",
+    "url": "https://docs.intrinio.com/documentation/api_v2/tag/News",
+    "description": "Financial news sentiment and event-driven signals",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "quiver-quant",
+    "name": "Quiver Quantitative API",
+    "url": "https://www.quiverquant.com/sources/api",
+    "description": "Alternative data — Congress trades, lobbying, and government contracts",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "unusual-whales",
+    "name": "Unusual Whales API",
+    "url": "https://unusualwhales.com/api-documentation",
+    "description": "Options flow data and unusual activity alerts",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "senate-stock-watcher",
+    "name": "Senate Stock Watcher API",
+    "url": "https://senatestockwatcher.com",
+    "description": "US Senate members' stock trades and financial disclosures",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "house-stock-watcher",
+    "name": "House Stock Watcher API",
+    "url": "https://housestockwatcher.com",
+    "description": "US House representatives' stock trades and financial disclosures",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "reddit-api",
+    "name": "Reddit API",
+    "url": "https://www.reddit.com/dev/api/",
+    "description": "Social sentiment, WallStreetBets discussions, and market commentary",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "google-trends",
+    "name": "Google Trends (via pytrends)",
+    "url": "https://pytrends.readthedocs.io",
+    "description": "Search interest data as a proxy for consumer and investor attention",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "glassdoor",
+    "name": "Glassdoor API",
+    "url": "https://www.glassdoor.com/developer/index.htm",
+    "description": "Employee reviews, company ratings, salary data, and job listings",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "open-insider",
+    "name": "OpenInsider",
+    "url": "http://openinsider.com",
+    "description": "SEC Form 4 insider trading filings — director and executive trades",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "nasdaq-alternative",
+    "name": "Nasdaq Alternative Data",
+    "url": "https://docs.data.nasdaq.com",
+    "description": "Alternative datasets including satellite, shipping, and web data",
+    "category": "Alternative Financial Data",
+    "domain": "finance"
+  },
+  {
+    "id": "attom-data",
+    "name": "ATTOM Data API",
+    "url": "https://api.attomdata.com/docs",
+    "description": "Property data, AVM, foreclosures, and neighborhood analytics",
+    "category": "Real Estate",
+    "domain": "finance"
+  },
+  {
+    "id": "rentcast",
+    "name": "Rentcast API",
+    "url": "https://developers.rentcast.io/reference",
+    "description": "Rental market data — listings, rent estimates, and market trends",
+    "category": "Real Estate",
+    "domain": "finance"
+  },
+  {
+    "id": "realty-mole",
+    "name": "Realty Mole API",
+    "url": "https://docs.realtymole.com",
+    "description": "Property and rental data — valuations and market comparables",
+    "category": "Real Estate",
+    "domain": "finance"
+  },
+  {
+    "id": "hud-api",
+    "name": "HUD Open Data API",
+    "url": "https://www.hud.gov",
+    "description": "US Housing and Urban Development data — housing programs and policy",
+    "category": "Real Estate",
+    "domain": "finance"
+  },
+  {
+    "id": "census-housing",
+    "name": "US Census Housing API",
+    "url": "https://www.census.gov/data/developers/data-sets/acs-1year.html",
+    "description": "Housing characteristics, homeownership, and housing cost burden",
+    "category": "Real Estate",
+    "domain": "finance"
+  },
+  {
+    "id": "bridge-interactive",
+    "name": "Bridge Interactive (Zillow) API",
+    "url": "https://www.bridgeinteractive.com",
+    "description": "MLS real estate listings and property data from Zillow Group",
+    "category": "Real Estate",
+    "domain": "finance"
+  },
+  {
+    "id": "cfpb-hmda-real-estate",
+    "name": "CFPB HMDA Mortgage Data",
+    "url": "https://ffiec.cfpb.gov/documentation/api/filtering/",
+    "description": "Home mortgage origination data by geography, loan type, and demographics",
+    "category": "Real Estate",
+    "domain": "finance"
+  }
+]
