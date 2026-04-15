@@ -30,6 +30,17 @@ export function renderWebviewHtml(
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${escapeHtml(model.title)}</title>
+    <style>
+      html,
+      body,
+      #app {
+        height: 100%;
+      }
+
+      body {
+        overflow: hidden;
+      }
+    </style>
   </head>
   <body>
     <div id="app"></div>

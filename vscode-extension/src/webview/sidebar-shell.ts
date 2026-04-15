@@ -19,6 +19,16 @@ export const sharedWebviewStyles = `
     color: var(--vscode-editor-foreground);
   }
 
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  #app {
+    overflow: hidden;
+  }
+
   button,
   input,
   textarea {
@@ -37,8 +47,8 @@ export const sharedWebviewStyles = `
   }
 
   .shell--sidebar {
+    height: 100%;
     align-content: start;
-    height: calc(100vh - 32px);
     min-height: 0;
     overflow: hidden;
   }
@@ -784,157 +794,11 @@ export const sharedWebviewStyles = `
 
   .sidebar-chat {
     display: grid;
-    gap: 12px;
+    gap: 10px;
     height: 100%;
     min-height: 0;
-    align-content: start;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    padding-right: 4px;
-  }
-
-  .conversation-card {
-    display: grid;
-    gap: 12px;
-    min-height: 0;
-    padding: 0;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
     overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .conversation-frame {
-    min-height: 0;
-    overflow-y: auto;
-    padding: 16px;
-  }
-
-  .conversation-frame--empty {
-    display: grid;
-    place-items: center;
-  }
-
-  .empty-state {
-    display: grid;
-    gap: 8px;
-    justify-items: center;
-    padding: 24px;
-    text-align: center;
-  }
-
-  .empty-state__title {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 600;
-  }
-
-  .empty-state__copy {
-    margin: 0;
-    max-width: 28ch;
-    color: var(--vscode-descriptionForeground);
-    line-height: 1.5;
-  }
-
-  .composer-shell {
-    display: grid;
-    gap: 10px;
-    border: 1px solid color-mix(in srgb, var(--vscode-input-border, var(--vscode-panel-border)) 88%, transparent);
-    border-radius: 14px;
-    padding: 10px;
-    background: color-mix(in srgb, var(--vscode-input-background) 84%, transparent);
-    box-shadow: 0 10px 30px color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
-  }
-
-  .composer-shell:focus-within {
-    border-color: var(--vscode-focusBorder);
-  }
-
-  .composer__input {
-    min-height: 88px;
-    border: 0;
-    background: transparent;
-    padding: 2px 4px;
-    color: var(--vscode-input-foreground);
-  }
-
-  .composer__input:focus {
-    outline: none;
-  }
-
-  .composer__footer {
-    display: grid;
-    gap: 8px;
-    border-top: 1px solid color-mix(in srgb, var(--vscode-panel-border) 82%, transparent);
-    padding-top: 8px;
-  }
-
-  .control-strip {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-  }
-
-  .control-pill,
-  .target-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 86%, transparent);
-    border-radius: 10px;
-    padding: 6px 10px;
-    background: color-mix(in srgb, var(--vscode-editorWidget-background) 72%, transparent);
-    color: var(--vscode-editor-foreground);
-    font-size: 12px;
-    line-height: 1.3;
-  }
-
-  .control-pill--muted {
-    color: var(--vscode-descriptionForeground);
-  }
-
-  .control-pill__label {
-    color: var(--vscode-descriptionForeground);
-  }
-
-  .control-pill__value {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .target-pill {
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .target-pill__select {
-    min-height: 34px;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    padding: 0 10px;
-    font: inherit;
-  }
-
-  .composer__meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .composer__hint {
-    margin: 0;
-    color: var(--vscode-descriptionForeground);
-    font-size: 12px;
-    line-height: 1.45;
-  }
-
-  .send-button {
-    min-width: 80px;
-    min-height: 26px;
-    padding-block: 0;
   }
 
   .service-notice {
@@ -979,6 +843,8 @@ export const sharedWebviewStyles = `
   }
 
   .sidebar-drawer {
+    display: grid;
+    min-height: 0;
     border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 86%, transparent);
     border-radius: 12px;
     background: color-mix(in srgb, var(--vscode-editorWidget-background) 78%, transparent);
@@ -986,7 +852,7 @@ export const sharedWebviewStyles = `
   }
 
   .sidebar-drawer[open] {
-    max-height: 33vh;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .sidebar-drawer summary {
@@ -1007,18 +873,9 @@ export const sharedWebviewStyles = `
 
   .sidebar-drawer__body {
     border-top: 1px solid color-mix(in srgb, var(--vscode-panel-border) 82%, transparent);
-    padding: 12px;
-    max-height: calc(33vh - 44px);
-    overflow: auto;
-  }
-
-  .sidebar-chat {
-    display: grid;
-    gap: 10px;
-    height: calc(100vh - 32px);
     min-height: 0;
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
-    align-content: start;
+    padding: 12px;
+    overflow: auto;
   }
 
   .chat-tabbar {
@@ -1390,20 +1247,76 @@ export const sharedWebviewStyles = `
 
   .chat-footer-stack {
     display: grid;
-    gap: 8px;
+    grid-template-rows: auto auto;
+    gap: 10px;
     min-height: 0;
+    overflow: hidden;
   }
 
   .chat-footer-stack__composer,
   .chat-footer-stack__provenance {
     display: grid;
     min-height: 0;
+    overflow: hidden;
+  }
+
+  .chat-footer-stack__composer {
+    max-height: 20rem;
+  }
+
+  .chat-footer-stack__provenance {
+    max-height: 16rem;
+    position: relative;
+    z-index: 2;
+  }
+
+  .provenance-dock {
+    height: 100%;
+    max-height: 100%;
+  }
+
+  .provenance-dock[open] {
+    height: 100%;
+  }
+
+  .provenance-dock summary {
+    align-items: flex-start;
+  }
+
+  .provenance-dock__summary {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .provenance-dock__title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .provenance-dock__preview {
+    color: var(--vscode-descriptionForeground);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.4;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .provenance-dock__body {
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
   }
 
   .provenance-list--scroll {
-    max-height: calc(33vh - 68px);
+    min-height: 0;
     overflow: auto;
-    overscroll-behavior: contain;
   }
 
   .conversation-frame--empty {
@@ -1434,12 +1347,21 @@ export const sharedWebviewStyles = `
 
   .composer-shell {
     display: grid;
-    gap: 10px;
+    gap: 12px;
+    min-height: 0;
+    max-height: 100%;
     border: 1px solid color-mix(in srgb, var(--vscode-input-border, var(--vscode-panel-border)) 88%, transparent);
-    border-radius: 14px;
-    padding: 10px;
-    background: color-mix(in srgb, var(--vscode-input-background) 84%, transparent);
+    border-radius: 16px;
+    padding: 12px;
+    background:
+      linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--vscode-focusBorder) 8%, transparent),
+        transparent 42%
+      ),
+      color-mix(in srgb, var(--vscode-input-background) 86%, transparent);
     box-shadow: 0 10px 30px color-mix(in srgb, var(--vscode-editor-background) 82%, transparent);
+    overflow: hidden;
     position: relative;
     z-index: 1;
   }
@@ -1457,46 +1379,90 @@ export const sharedWebviewStyles = `
     border-color: var(--vscode-focusBorder);
   }
 
+  .composer__body,
+  .composer__surface {
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .composer__body {
+    overflow: auto;
+    overscroll-behavior: contain;
+  }
+
+  .composer__surface {
+    border-radius: 12px;
+    padding: 10px 12px;
+    background: color-mix(in srgb, var(--vscode-editor-background) 30%, transparent);
+    border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 78%, transparent);
+    overflow: hidden;
+  }
+
   .composer__input {
-    min-height: 3.6em;
-    max-height: 33vh;
+    min-height: 72px;
     border: 0;
     background: transparent;
-    padding: 2px 4px;
+    padding: 0;
     color: var(--vscode-input-foreground);
     resize: none;
+    line-height: 1.45;
   }
 
   .composer__input:focus {
     outline: none;
   }
 
+  .composer__input--sr-only {
+    display: none;
+  }
+
   .composer__footer {
     display: grid;
-    gap: 3px;
+    gap: 8px;
     border-top: 1px solid color-mix(in srgb, var(--vscode-panel-border) 82%, transparent);
-    padding-top: 3px;
+    padding-top: 10px;
+  }
+
+  .composer__toolbar {
+    display: grid;
+    gap: 8px;
   }
 
   .control-strip {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: 6px;
+  }
+
+  .composer__cluster {
+    align-items: center;
+  }
+
+  .composer__cluster--core {
+    padding-bottom: 2px;
+  }
+
+  .composer__cluster--context {
+    border-top: 1px dashed color-mix(in srgb, var(--vscode-panel-border) 72%, transparent);
+    padding-top: 8px;
   }
 
   .composer-control,
   .composer-control--select {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
+    gap: 6px;
     min-width: 0;
     border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 86%, transparent);
-    border-radius: 5px;
-    padding: 0 4px;
-    background: color-mix(in srgb, var(--vscode-editorWidget-background) 72%, transparent);
+    border-radius: 999px;
+    min-height: 26px;
+    padding: 0 8px;
+    background: color-mix(in srgb, var(--vscode-editorWidget-background) 78%, transparent);
     color: var(--vscode-editor-foreground);
-    font-size: 9px;
-    line-height: 1;
+    font-size: 11px;
+    line-height: 1.2;
   }
 
   .composer-control--muted {
@@ -1520,14 +1486,14 @@ export const sharedWebviewStyles = `
   }
 
   .composer-control__select {
-    min-height: 14px;
-    height: 14px;
+    min-height: 26px;
+    height: 26px;
     border: 0;
     background: transparent;
     color: inherit;
-    padding: 0 4px;
+    padding: 0 10px;
     font: inherit;
-    line-height: 1;
+    line-height: 1.2;
     appearance: none;
     -webkit-appearance: none;
   }
@@ -1550,13 +1516,13 @@ export const sharedWebviewStyles = `
   list-style: none;
   cursor: pointer;
   border: 1px solid color-mix(in srgb, var(--vscode-panel-border) 86%, transparent);
-  border-radius: 5px;
-  padding: 0 4px;
-  background: color-mix(in srgb, var(--vscode-editorWidget-background) 72%, transparent);
-  color: var(--vscode-editor-foreground);
-  font-size: 9px;
-  line-height: 1;
-  min-height: 14px;
+   border-radius: 999px;
+   padding: 0 10px;
+   background: color-mix(in srgb, var(--vscode-editorWidget-background) 78%, transparent);
+   color: var(--vscode-editor-foreground);
+   font-size: 11px;
+   line-height: 1.2;
+   min-height: 26px;
 }
 
 .composer-picker__summary::-webkit-details-marker {
@@ -1570,7 +1536,7 @@ export const sharedWebviewStyles = `
 
 .composer-picker__menu {
   position: absolute;
-  left: 0;
+   left: 0;
   bottom: calc(100% + 4px);
   width: min(340px, 80vw);
   max-height: 220px;
@@ -1607,38 +1573,32 @@ export const sharedWebviewStyles = `
 }
 
 .composer-picker__option-title {
-  font-size: 10px;
-  color: var(--vscode-editor-foreground);
-  line-height: 1.15;
+   font-size: 11px;
+   color: var(--vscode-editor-foreground);
+   line-height: 1.3;
 }
 
 .composer-picker__option-copy,
 .composer-picker__empty {
-  font-size: 9px;
-  color: var(--vscode-descriptionForeground);
-  line-height: 1.2;
+   font-size: 10px;
+   color: var(--vscode-descriptionForeground);
+   line-height: 1.35;
 }
 
   .composer__meta {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 6px;
-  }
-
-  .composer__hint {
-    margin: 0;
-    color: var(--vscode-descriptionForeground);
-    font-size: 12px;
-    line-height: 1.45;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
   .send-button {
-    min-width: 56px;
-    min-height: 16px;
-    padding: 0 5px;
-    font-size: 9px;
-    line-height: 1;
+    min-width: 72px;
+    min-height: 30px;
+    padding: 0 12px;
+    font-size: 11px;
+    line-height: 1.1;
   }
 
 `;

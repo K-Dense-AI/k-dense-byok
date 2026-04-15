@@ -362,7 +362,9 @@ function ChatHeader({
         {activeTab === "chat"
           ? provenanceCount > 0
             ? `${provenanceCount} event${provenanceCount === 1 ? "" : "s"}`
-            : "Session provenance"
+            : userTurns > 0
+              ? `${userTurns} turn${userTurns === 1 ? "" : "s"}`
+              : "Ready to chat"
           : activeTab === "workflows"
             ? "Workflow launcher"
             : "Sidebar settings"}
@@ -519,7 +521,7 @@ export function SidebarApp({
         <ChatHeader
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          provenanceCount={state.provenance.length}
+          provenanceCount={state.settings.showProvenance ? state.provenance.length : 0}
           userTurns={userTurns}
         />
         <ServiceNotice
@@ -531,7 +533,7 @@ export function SidebarApp({
 
         {activeTab === "chat" ? (
           <>
-            <section aria-label="Kady chat" className="chat-panel">
+            <section aria-label="Kady chat" className="chat-panel" data-chat-region="transcript">
               <Conversation className={state.messages.length === 0 ? "conversation-frame--empty" : undefined}>
                 {state.messages.length > 0 ? (
                   <ConversationContent>
@@ -565,59 +567,67 @@ export function SidebarApp({
               <div className="chat-footer-stack__composer">
                 <PromptInput
                   aria-label="Chat composer"
+                  data-chat-region="composer"
                   onSubmit={(event) => {
                     event.preventDefault();
                     handleSend();
                   }}
                 >
-                  <PromptInputTextarea
-                    data-chat-input
-                    disabled={pendingChatSend}
-                    onChange={(event) => onComposerDraftChange(event.currentTarget.value)}
-                    onSubmit={handleSend}
-                    placeholder={state.composerPlaceholder}
-                    value={composerDraft}
-                  />
+                  <div className="composer__body">
+                    <div className="composer__surface">
+                      <PromptInputTextarea
+                        data-chat-input
+                        disabled={pendingChatSend}
+                        onChange={(event) => onComposerDraftChange(event.currentTarget.value)}
+                        onSubmit={handleSend}
+                        placeholder={state.composerPlaceholder}
+                        value={composerDraft}
+                      />
+                    </div>
+                  </div>
                   <PromptInputFooter>
-                    <PromptInputTools>
-                      <ModelControl onChange={setSelectedModelId} selectedModelId={selectedModelId} />
-                      <MultiSelectControl
-                        controlLabel="Data sources"
-                        emptyMessage="No databases available."
-                        items={DATABASES.map((database) => ({
-                          id: database.id,
-                          name: database.name,
-                          description: database.description,
-                        }))}
-                        onToggle={handleToggleDatabase}
-                        selectedIds={selectedDatabaseIds}
-                      />
-                      <ComputeControl
-                        modalConfigured={state.modalConfigured}
-                        onChange={setSelectedComputeId}
-                        selectedComputeId={selectedComputeId}
-                      />
-                      <MultiSelectControl
-                        controlLabel="Skills"
-                        emptyMessage="No skills available from the backend yet."
-                        items={state.availableSkills.map((skill) => ({
-                          id: skill.id,
-                          name: skill.name,
-                          description: skill.description,
-                        }))}
-                        onToggle={handleToggleSkill}
-                        selectedIds={selectedSkillIds}
-                      />
-                      {showTargetSelector ? (
-                        <TargetSelector
-                          onTargetChange={onTargetChange}
-                          selectedTargetId={selectedTargetId}
-                          state={state}
+                    <div className="composer__toolbar" aria-label="Composer controls" role="group">
+                      <PromptInputTools className="composer__cluster composer__cluster--core">
+                        <ModelControl onChange={setSelectedModelId} selectedModelId={selectedModelId} />
+                        <ComputeControl
+                          modalConfigured={state.modalConfigured}
+                          onChange={setSelectedComputeId}
+                          selectedComputeId={selectedComputeId}
                         />
-                      ) : null}
-                    </PromptInputTools>
+                        {showTargetSelector ? (
+                          <TargetSelector
+                            onTargetChange={onTargetChange}
+                            selectedTargetId={selectedTargetId}
+                            state={state}
+                          />
+                        ) : null}
+                      </PromptInputTools>
+                      <PromptInputTools className="composer__cluster composer__cluster--context">
+                        <MultiSelectControl
+                          controlLabel="Data sources"
+                          emptyMessage="No databases available."
+                          items={DATABASES.map((database) => ({
+                            id: database.id,
+                            name: database.name,
+                            description: database.description,
+                          }))}
+                          onToggle={handleToggleDatabase}
+                          selectedIds={selectedDatabaseIds}
+                        />
+                        <MultiSelectControl
+                          controlLabel="Skills"
+                          emptyMessage="No skills available from the backend yet."
+                          items={state.availableSkills.map((skill) => ({
+                            id: skill.id,
+                            name: skill.name,
+                            description: skill.description,
+                          }))}
+                          onToggle={handleToggleSkill}
+                          selectedIds={selectedSkillIds}
+                        />
+                      </PromptInputTools>
+                    </div>
                     <div className="composer__meta">
-                      <p className="composer__hint">{state.composerHint}</p>
                       <PromptInputSubmit
                         disabled={sendDisabled}
                         label={getSendLabel(state, pendingChatSend)}
