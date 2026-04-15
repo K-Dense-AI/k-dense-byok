@@ -26,6 +26,8 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 LITELLM_PORT="${LITELLM_PORT:-4000}"
 BACKEND_URL="http://localhost:${BACKEND_PORT}"
 LITELLM_URL="http://localhost:${LITELLM_PORT}"
+KDENSE_RUNTIME_OWNER="${KDENSE_RUNTIME_OWNER:-anonymous}"
+KDENSE_RUNTIME_STATE_FILE="${KDENSE_RUNTIME_STATE_FILE:-/tmp/kdense-backend-${BACKEND_PORT}-${LITELLM_PORT}.env}"
 
 if [ -z "${GOOGLE_GEMINI_BASE_URL:-}" ] || [ "${GOOGLE_GEMINI_BASE_URL%/}" = "http://localhost:4000" ]; then
     export GOOGLE_GEMINI_BASE_URL="$LITELLM_URL"
@@ -44,6 +46,15 @@ echo "Starting backend on port ${BACKEND_PORT}..."
 uv run uvicorn server:app --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 
+cat >"$KDENSE_RUNTIME_STATE_FILE" <<EOF
+KDENSE_RUNTIME_OWNER='${KDENSE_RUNTIME_OWNER//\'/\'"\'"\'}'
+KDENSE_WORKSPACE_ROOT='${KDENSE_WORKSPACE_ROOT//\'/\'"\'"\'}'
+BACKEND_PORT='${BACKEND_PORT}'
+LITELLM_PORT='${LITELLM_PORT}'
+BACKEND_PID='${BACKEND_PID}'
+LITELLM_PID='${LITELLM_PID}'
+EOF
+
 echo
 echo "============================================"
 echo "  Backend stack running"
@@ -54,6 +65,7 @@ echo "============================================"
 
 cleanup() {
   kill "$LITELLM_PID" "$BACKEND_PID" 2>/dev/null || true
+  rm -f "$KDENSE_RUNTIME_STATE_FILE"
   exit 0
 }
 

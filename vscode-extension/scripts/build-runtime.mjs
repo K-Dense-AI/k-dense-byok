@@ -11,6 +11,7 @@ const runtimeFiles = [
   "server.py",
   "initialize_kdense_workspace.sh",
   "start_kdense_backend.sh",
+  "stop_kdense_backend.sh",
   "prep_sandbox.py",
   "litellm_config.yaml",
   "pyproject.toml",
@@ -46,4 +47,5 @@ for (const relativePath of runtimeFiles) {
 await Promise.all([
   chmod(path.join(outputRoot, "initialize_kdense_workspace.sh"), 0o755),
   chmod(path.join(outputRoot, "start_kdense_backend.sh"), 0o755),
+  chmod(path.join(outputRoot, "stop_kdense_backend.sh"), 0o755),
 ]);
