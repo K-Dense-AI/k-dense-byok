@@ -7,6 +7,8 @@ suite("backend service adapter", () => {
     const adapter = new BackendServiceAdapter({
       fetch: async () => new Response(null, { status: 200, statusText: "OK" }),
       getWorkspaceFolders: () => [],
+      sessionOwnerId: "session-owner-healthy",
+      readRuntimeOwner: async () => "session-owner-healthy",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -82,6 +84,8 @@ suite("backend service adapter", () => {
         modalTokenId: "modal-id-runtime",
         modalTokenSecret: "modal-secret-runtime",
       }),
+      sessionOwnerId: "session-owner-1",
+      readRuntimeOwner: async () => "session-owner-1",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -92,7 +96,7 @@ suite("backend service adapter", () => {
     assert.equal(state.status, "healthy");
     assert.match(state.detail, /\/skills is ready/i);
     assert.match(terminalCwd, /extension\/dist\/runtime/);
-    assert.match(startCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/k-dense-byok' BACKEND_PORT=\d+ LITELLM_PORT=\d+ DEFAULT_AGENT_MODEL='openrouter\/google\/gemini-3.1-pro-preview' OPENROUTER_API_KEY='sk-openrouter-runtime' PARALLEL_API_KEY='parallel-runtime' MODAL_TOKEN_ID='modal-id-runtime' MODAL_TOKEN_SECRET='modal-secret-runtime' bash \.\/start_kdense_backend\.sh/);
+    assert.match(startCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/k-dense-byok' BACKEND_PORT=\d+ LITELLM_PORT=\d+ KDENSE_RUNTIME_OWNER='session-owner-1' DEFAULT_AGENT_MODEL='openrouter\/google\/gemini-3.1-pro-preview' OPENROUTER_API_KEY='sk-openrouter-runtime' PARALLEL_API_KEY='parallel-runtime' MODAL_TOKEN_ID='modal-id-runtime' MODAL_TOKEN_SECRET='modal-secret-runtime' bash \.\/start_kdense_backend\.sh/);
     assert.equal(skillsCalls, 2);
     adapter.dispose();
   });
@@ -107,6 +111,8 @@ suite("backend service adapter", () => {
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
       readDirectory: fs.readDirectory,
+      sessionOwnerId: "session-owner-send",
+      readRuntimeOwner: async () => "session-owner-send",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -159,6 +165,9 @@ suite("backend service adapter", () => {
       initializationPollIntervalMs: 0,
       healthPollAttempts: 2,
       healthPollIntervalMs: 0,
+      runRuntimeCommand: async () => undefined,
+      sessionOwnerId: "session-owner-init",
+      readRuntimeOwner: async () => "session-owner-init",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -168,7 +177,7 @@ suite("backend service adapter", () => {
 
     assert.equal(state.status, "starting");
     assert.equal(state.requiresInitialization, true);
-    assert.match(initCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/k-dense-byok' BACKEND_PORT=\d+ LITELLM_PORT=\d+ bash \.\/initialize_kdense_workspace\.sh/);
+    assert.match(initCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/k-dense-byok' BACKEND_PORT=\d+ LITELLM_PORT=\d+ KDENSE_RUNTIME_OWNER='session-owner-init' bash \.\/initialize_kdense_workspace\.sh/);
 
     await flushAsyncWork();
 
@@ -176,7 +185,7 @@ suite("backend service adapter", () => {
     assert.equal(finalState.status, "healthy");
     assert.equal(finalState.requiresInitialization, false);
     assert.equal(finalState.skillsReady, true);
-    assert.match(backendCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/k-dense-byok' BACKEND_PORT=\d+ LITELLM_PORT=\d+ bash \.\/start_kdense_backend\.sh/);
+    assert.match(backendCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/k-dense-byok' BACKEND_PORT=\d+ LITELLM_PORT=\d+ KDENSE_RUNTIME_OWNER='session-owner-init' bash \.\/start_kdense_backend\.sh/);
     adapter.dispose();
   });
 
@@ -190,6 +199,7 @@ suite("backend service adapter", () => {
         sendText() {},
         show() {},
       }),
+      runRuntimeCommand: async () => undefined,
       getWorkspaceFolders: () => [workspaceRoot],
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
@@ -229,6 +239,7 @@ suite("backend service adapter", () => {
         sendText() {},
         show() {},
       }),
+      runRuntimeCommand: async () => undefined,
       getWorkspaceFolders: () => [workspaceRoot],
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
@@ -265,6 +276,8 @@ suite("backend service adapter", () => {
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
       readDirectory: fs.readDirectory,
+      sessionOwnerId: "session-owner-skills-health",
+      readRuntimeOwner: async () => "session-owner-skills-health",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -281,12 +294,30 @@ suite("backend service adapter", () => {
       fetch: async () => new Response(null, { status: 200, statusText: "OK" }),
       getWorkspaceFolders: () => [],
       remoteName: "ssh-remote+research",
+      sessionOwnerId: "session-owner-remote",
+      readRuntimeOwner: async () => "session-owner-remote",
       baseUrl: "http://127.0.0.1:8000",
     });
 
     const state = await adapter.refreshStatus();
 
     assert.equal(state.executionLocation, "remote");
+    adapter.dispose();
+  });
+
+  test("treats a foreign-owned runtime as unavailable until this session takes over", async () => {
+    const adapter = new BackendServiceAdapter({
+      fetch: async () => new Response(null, { status: 200, statusText: "OK" }),
+      getWorkspaceFolders: () => [],
+      sessionOwnerId: "session-owner-current",
+      readRuntimeOwner: async () => "session-owner-other",
+      baseUrl: "http://127.0.0.1:8000",
+    });
+
+    const state = await adapter.refreshStatus();
+
+    assert.equal(state.status, "unavailable");
+    assert.match(state.detail, /owned by another VS Code session/i);
     adapter.dispose();
   });
 
@@ -328,6 +359,8 @@ suite("backend service adapter", () => {
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
       readDirectory: fs.readDirectory,
+      sessionOwnerId: "session-owner-send",
+      readRuntimeOwner: async () => "session-owner-send",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -357,6 +390,8 @@ suite("backend service adapter", () => {
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
       readDirectory: fs.readDirectory,
+      sessionOwnerId: "session-owner-send",
+      readRuntimeOwner: async () => "session-owner-send",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -412,6 +447,8 @@ suite("backend service adapter", () => {
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
       readDirectory: fs.readDirectory,
+      sessionOwnerId: "session-owner-send",
+      readRuntimeOwner: async () => "session-owner-send",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -477,9 +514,12 @@ suite("backend service adapter", () => {
       runtimeRootUri: runtimeRoot,
       stat: fs.stat,
       readDirectory: fs.readDirectory,
+      runRuntimeCommand: async () => undefined,
       sleep: async () => undefined,
       healthPollAttempts: 1,
       healthPollIntervalMs: 0,
+      sessionOwnerId: "session-owner-arbitrary",
+      readRuntimeOwner: async () => "session-owner-arbitrary",
       baseUrl: "http://127.0.0.1:8000",
     });
 
@@ -487,8 +527,73 @@ suite("backend service adapter", () => {
 
     assert.equal(state.status, "healthy");
     assert.equal(terminalCwd, runtimeRoot.toString());
-    assert.match(startCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/arbitrary-project' BACKEND_PORT=\d+ LITELLM_PORT=\d+ bash \.\/start_kdense_backend\.sh/);
+    assert.match(startCommand, /KDENSE_WORKSPACE_ROOT='\/workspace\/arbitrary-project' BACKEND_PORT=\d+ LITELLM_PORT=\d+ KDENSE_RUNTIME_OWNER='session-owner-arbitrary' bash \.\/start_kdense_backend\.sh/);
     adapter.dispose();
+  });
+
+  test("startBackend force-stops the existing runtime before relaunching", async () => {
+    const runtimeCommands: string[] = [];
+    let startCommand = "";
+    const workspaceRoot = createWorkspaceFolder("file:///workspace/arbitrary-project", 0, "arbitrary-project");
+    const runtimeRoot = vscode.Uri.parse("file:///extension/dist/runtime");
+    const fs = createWorkspaceBootstrapFs(runtimeRoot, workspaceRoot, { preparedRuntime: true });
+    const adapter = new BackendServiceAdapter({
+      fetch: async (input) => {
+        if (String(input).endsWith("/health")) {
+          return new Response(null, { status: 200, statusText: "OK" });
+        }
+        if (String(input).endsWith("/skills")) {
+          return Response.json([createSkillRecord()]);
+        }
+        return new Response(null, { status: 200, statusText: "OK" });
+      },
+      createTerminal: () => ({
+        sendText(text) {
+          startCommand = text;
+        },
+        show() {},
+      }),
+      runRuntimeCommand: async ({ command }) => {
+        runtimeCommands.push(command);
+      },
+      getWorkspaceFolders: () => [workspaceRoot],
+      runtimeRootUri: runtimeRoot,
+      stat: fs.stat,
+      readDirectory: fs.readDirectory,
+      sleep: async () => undefined,
+      healthPollAttempts: 1,
+      healthPollIntervalMs: 0,
+      sessionOwnerId: "session-owner-2",
+      baseUrl: "http://127.0.0.1:8000",
+    });
+
+    const state = await adapter.startBackend({ workspaceTargetId: workspaceRoot.uri.toString() });
+
+    assert.equal(state.status, "healthy");
+    assert.equal(runtimeCommands.length, 1);
+    assert.match(runtimeCommands[0], /BACKEND_PORT=8000 LITELLM_PORT=17400 KDENSE_RUNTIME_OWNER='session-owner-2' KDENSE_RUNTIME_FORCE=1 bash \.\/stop_kdense_backend\.sh/);
+    assert.match(startCommand, /KDENSE_RUNTIME_OWNER='session-owner-2'.*bash \.\/start_kdense_backend\.sh/);
+    adapter.dispose();
+  });
+
+  test("dispose stops only the runtime owned by the current session", async () => {
+    const runtimeCommands: string[] = [];
+    const adapter = new BackendServiceAdapter({
+      runRuntimeCommand: async ({ command }) => {
+        runtimeCommands.push(command);
+      },
+      runtimeRootUri: vscode.Uri.parse("file:///extension/dist/runtime"),
+      stat: async () => ({ ctime: 0, mtime: 0, size: 0, type: vscode.FileType.File }),
+      readDirectory: async () => [],
+      sessionOwnerId: "session-owner-3",
+    });
+
+    adapter.dispose();
+    await flushAsyncWork();
+
+    assert.equal(runtimeCommands.length, 1);
+    assert.match(runtimeCommands[0], /KDENSE_RUNTIME_OWNER='session-owner-3' bash \.\/stop_kdense_backend\.sh/);
+    assert.doesNotMatch(runtimeCommands[0], /KDENSE_RUNTIME_FORCE=1/);
   });
 });
 
@@ -509,11 +614,12 @@ function createWorkspaceBootstrapFs(
   stat(uri: vscode.Uri): Promise<vscode.FileStat>;
   readDirectory(uri: vscode.Uri): Promise<readonly [string, vscode.FileType][]>;
 } {
-  const sourceFiles = [
-    "server.py",
-    "initialize_kdense_workspace.sh",
-    "start_kdense_backend.sh",
-    "prep_sandbox.py",
+    const sourceFiles = [
+      "server.py",
+      "initialize_kdense_workspace.sh",
+      "start_kdense_backend.sh",
+      "stop_kdense_backend.sh",
+      "prep_sandbox.py",
     "litellm_config.yaml",
     "pyproject.toml",
     "kady_agent",

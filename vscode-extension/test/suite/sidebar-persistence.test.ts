@@ -73,6 +73,77 @@ suite("sidebar persistence", () => {
     assert.equal(restored.settings.defaultComputeId, "local");
   });
 
+  test("window persistence stays schema-neutral for the chat pane refresh and does not add UI chrome state", async () => {
+    const context = createStorageContext();
+    const workspaceFolder = createWorkspaceFolder("file:///workspace/alpha");
+    const storage = new SidebarStateStorage(context, () => [workspaceFolder]);
+    const scaffoldState = createSidebarScaffoldState(
+      createBridgeState("sidebar"),
+      createBackendServiceState("healthy", {
+        detail: "Backend is healthy.",
+        baseUrl: "http://127.0.0.1:8000",
+        executionLocation: "desktop",
+      }),
+      {
+        workspaceIdentity: storage.getWorkspaceIdentity(),
+        session: {
+          messages: [
+            {
+              id: "persisted-message",
+              role: "assistant",
+              content: "Persisted window session",
+              timestampLabel: "Earlier",
+            },
+          ],
+          provenance: [
+            {
+              id: "persisted-prov",
+              type: "assistant_response",
+              label: "Window session",
+              detail: "Persisted in window state.",
+              relativeTime: "earlier",
+            },
+          ],
+        },
+        settings: {
+          showReasoning: true,
+          showProvenance: true,
+          defaultModelId: "openrouter/anthropic/claude-opus-4.6",
+          defaultComputeId: "local",
+        },
+      },
+    );
+
+    const persistedWindowState = await storage.persistScaffoldState(
+      scaffoldState,
+      "Bridge from workspace",
+    );
+    const workspaceSnapshot = context.workspaceMemento.values[SIDEBAR_WORKSPACE_SNAPSHOT_KEY] as {
+      version: number;
+      workspaceIdentity: string;
+      updatedAt: string;
+    };
+
+    assert.deepEqual(Object.keys(persistedWindowState).sort(), [
+      "bridgeStatus",
+      "session",
+      "settings",
+      "version",
+      "workspaceIdentity",
+    ]);
+    assert.equal("activeTab" in persistedWindowState, false);
+    assert.equal("provenanceOpen" in persistedWindowState, false);
+    assert.equal("chatLayout" in persistedWindowState, false);
+    assert.equal("composerHeight" in persistedWindowState, false);
+    assert.deepEqual(Object.keys(workspaceSnapshot).sort(), [
+      "updatedAt",
+      "version",
+      "workspaceIdentity",
+    ]);
+    assert.equal(workspaceSnapshot.workspaceIdentity, storage.getWorkspaceIdentity());
+    assert.match(workspaceSnapshot.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+  });
+
   test("does not let a second window inherit another window's live session for the same workspace", async () => {
     const context = createStorageContext();
     const workspaceFolder = createWorkspaceFolder("file:///workspace/shared");
