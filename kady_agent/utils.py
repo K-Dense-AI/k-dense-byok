@@ -9,23 +9,29 @@ from pathlib import Path
 
 import yaml
 
+from .runtime_paths import instructions_root, sandbox_root
+
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
 
 
 def load_instructions(agent_name: str) -> str:
     """Load instructions from a markdown file in the instructions directory."""
-    instructions_path = Path("kady_agent/instructions") / f"{agent_name}.md"
+    instructions_path = instructions_root() / f"{agent_name}.md"
     return instructions_path.read_text(encoding="utf-8")
 
 
-def list_skill_summaries(skills_dir: str = "sandbox/.gemini/skills") -> list[dict]:
+def list_skill_summaries(skills_dir: str | Path | None = None) -> list[dict]:
     """Read skill name and description from each SKILL.md frontmatter.
 
     Returns a list of ``{"name": ..., "description": ...}`` dicts sorted by
     name, suitable for injecting into the orchestrator's instruction as a
     reference catalogue.
     """
-    skills_path = Path(skills_dir)
+    skills_path = (
+        Path(skills_dir)
+        if skills_dir is not None
+        else sandbox_root() / ".gemini" / "skills"
+    )
     if not skills_path.is_dir():
         return []
 
@@ -40,10 +46,12 @@ def list_skill_summaries(skills_dir: str = "sandbox/.gemini/skills") -> list[dic
             if not match:
                 continue
             meta = yaml.safe_load(match.group(1)) or {}
-            summaries.append({
-                "name": meta.get("name", child.name),
-                "description": meta.get("description", ""),
-            })
+            summaries.append(
+                {
+                    "name": meta.get("name", child.name),
+                    "description": meta.get("description", ""),
+                }
+            )
         except Exception:
             continue
     return summaries
@@ -82,64 +90,83 @@ def format_skills_reference(skills: list[dict]) -> str:
 
 
 def download_scientific_skills(
-    target_dir: str = "sandbox/.gemini/skills",
+    target_dir: str | Path | None = None,
     github_repo: str = "K-Dense-AI/scientific-agent-skills",
     source_path: str = "scientific-skills",
-    branch: str = "main"
+    branch: str = "main",
 ) -> None:
     """
     Download all directories from the scientific-skills folder in the GitHub repository
     and place them in the target directory using git clone.
-    
+
     Args:
         target_dir: Local directory to save the skills to
         github_repo: GitHub repository in format "owner/repo"
         source_path: Path within the repo to download from
         branch: Git branch to download from
     """
-    target_path = Path(target_dir)
+    target_path = (
+        Path(target_dir)
+        if target_dir is not None
+        else sandbox_root() / ".gemini" / "skills"
+    )
     target_path.mkdir(parents=True, exist_ok=True)
-    
+
     # Create a temporary directory
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
         repo_url = f"https://github.com/{github_repo}.git"
-        
+
         try:
             # Clone the repository with depth 1 for faster download
-            print("Cloning Scientific Agent Skills repository (this may take a moment)...")
+            print(
+                "Cloning Scientific Agent Skills repository (this may take a moment)..."
+            )
             subprocess.run(
-                ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_path)],
+                [
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--branch",
+                    branch,
+                    repo_url,
+                    str(temp_path),
+                ],
                 check=True,
                 capture_output=True,
-                text=True
+                text=True,
             )
-            
+
             # Path to the scientific-skills folder in the cloned repo
             source_dir = temp_path / source_path
-            
+
             if not source_dir.exists():
-                raise FileNotFoundError(f"Source path '{source_path}' not found in repository")
-            
+                raise FileNotFoundError(
+                    f"Source path '{source_path}' not found in repository"
+                )
+
             # Copy all skill directories from scientific-skills to target
             print(f"\n📂 Copying skills to {target_path}...")
             skill_count = 0
-            
+
             for skill_dir in source_dir.iterdir():
                 if skill_dir.is_dir():
                     dest_dir = target_path / skill_dir.name
-                    
+
                     # Remove existing directory if it exists
                     if dest_dir.exists():
                         shutil.rmtree(dest_dir)
-                    
+
                     # Copy the skill directory
                     shutil.copytree(skill_dir, dest_dir)
                     print(f"  ✓ {skill_dir.name}")
                     skill_count += 1
-            
-            print(f"\n✅ Successfully downloaded {skill_count} scientific skills to {target_path.absolute()}")
-            
+
+            print(
+                f"\n✅ Successfully downloaded {skill_count} scientific skills to {target_path.absolute()}"
+            )
+
         except subprocess.CalledProcessError as e:
             print(f"❌ Error cloning repository: {e.stderr}")
             raise
@@ -168,9 +195,7 @@ def fetch_openrouter_models(
 
     key = api_key or os.getenv("OPENROUTER_API_KEY")
     if not key:
-        raise ValueError(
-            "No API key provided. Set OPENROUTER_API_KEY or pass api_key."
-        )
+        raise ValueError("No API key provided. Set OPENROUTER_API_KEY or pass api_key.")
 
     with OpenRouter(api_key=key) as client:
         res = client.models.list()
@@ -196,23 +221,33 @@ def fetch_openrouter_models(
 
         created_dt = datetime.fromtimestamp(created_ts, tz=timezone.utc)
 
-        models.append({
-            "id": m.id,
-            "name": m.name,
-            "provider": provider,
-            "created": created_dt.strftime("%Y-%m-%d"),
-            "context_length": int(m.context_length or 0),
-            "modality": m.architecture.modality if m.architecture else None,
-            "input_modalities": list(m.architecture.input_modalities) if m.architecture and m.architecture.input_modalities else [],
-            "output_modalities": list(m.architecture.output_modalities) if m.architecture and m.architecture.output_modalities else [],
-            "pricing": {
-                "prompt_per_1m": round(prompt_price, 4),
-                "completion_per_1m": round(completion_price, 4),
-            },
-            "max_completion_tokens": int(m.top_provider.max_completion_tokens or 0) if m.top_provider else None,
-            "supported_parameters": list(m.supported_parameters) if m.supported_parameters else [],
-            "description": m.description,
-        })
+        models.append(
+            {
+                "id": m.id,
+                "name": m.name,
+                "provider": provider,
+                "created": created_dt.strftime("%Y-%m-%d"),
+                "context_length": int(m.context_length or 0),
+                "modality": m.architecture.modality if m.architecture else None,
+                "input_modalities": list(m.architecture.input_modalities)
+                if m.architecture and m.architecture.input_modalities
+                else [],
+                "output_modalities": list(m.architecture.output_modalities)
+                if m.architecture and m.architecture.output_modalities
+                else [],
+                "pricing": {
+                    "prompt_per_1m": round(prompt_price, 4),
+                    "completion_per_1m": round(completion_price, 4),
+                },
+                "max_completion_tokens": int(m.top_provider.max_completion_tokens or 0)
+                if m.top_provider
+                else None,
+                "supported_parameters": list(m.supported_parameters)
+                if m.supported_parameters
+                else [],
+                "description": m.description,
+            }
+        )
 
     models.sort(key=lambda x: x["name"] or x["id"])
     return models
@@ -245,7 +280,8 @@ def search_openrouter_models(
     if query:
         q = query.lower()
         results = [
-            m for m in results
+            m
+            for m in results
             if q in (m["id"] or "").lower()
             or q in (m["name"] or "").lower()
             or q in (m["description"] or "").lower()
@@ -260,8 +296,7 @@ def search_openrouter_models(
 
     if max_prompt_price is not None:
         results = [
-            m for m in results
-            if m["pricing"]["prompt_per_1m"] <= max_prompt_price
+            m for m in results if m["pricing"]["prompt_per_1m"] <= max_prompt_price
         ]
 
     if modality:
@@ -270,9 +305,7 @@ def search_openrouter_models(
     return results
 
 
-def print_openrouter_models(
-    models: list[dict] | None = None, **filter_kwargs
-) -> None:
+def print_openrouter_models(models: list[dict] | None = None, **filter_kwargs) -> None:
     """Pretty-print a table of OpenRouter models. Accepts same filters as search_openrouter_models."""
     if models is None:
         models = search_openrouter_models(**filter_kwargs)
@@ -315,7 +348,7 @@ def _model_label(name: str, provider_slug: str) -> str:
     display = _provider_label(provider_slug)
     for prefix in [f"{display}: ", f"{provider_slug}: ", f"{provider_slug}/"]:
         if name.startswith(prefix):
-            return name[len(prefix):]
+            return name[len(prefix) :]
     return name
 
 

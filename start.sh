@@ -55,11 +55,15 @@ echo
 
 # ---- Step 3: Load environment variables ----
 
-echo "Loading environment from kady_agent/.env..."
-set -a
-# shellcheck disable=SC1091
-source kady_agent/.env
-set +a
+if [ -f "kady_agent/.env" ]; then
+    echo "Loading environment from kady_agent/.env..."
+    set -a
+    # shellcheck disable=SC1091
+    source kady_agent/.env
+    set +a
+else
+    echo "kady_agent/.env not found — continuing with the current shell environment and startup defaults."
+fi
 
 FRONTEND_PORT="${FRONTEND_PORT:-3000}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"

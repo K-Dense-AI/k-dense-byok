@@ -33,6 +33,7 @@ from kady_agent.gemini_settings import (
     save_custom_mcps,
     write_merged_settings,
 )
+from kady_agent.runtime_paths import sandbox_root
 
 app = get_fast_api_app(
     agents_dir=".",
@@ -41,7 +42,7 @@ app = get_fast_api_app(
     auto_create_session=True,
 )
 
-SANDBOX_ROOT = Path("sandbox").resolve()
+SANDBOX_ROOT = sandbox_root().resolve()
 
 _ZIP_EXCLUDED_NAMES = {"GEMINI.md", "uv.lock"}
 
