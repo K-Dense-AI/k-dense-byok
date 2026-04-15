@@ -27,18 +27,39 @@ function ProvenanceItem({ event }: { event: SidebarProvenanceEvent }) {
   );
 }
 
+function getCollapsedSummary(events: SidebarProvenanceEvent[]) {
+  const latestEvent = events[events.length - 1];
+  if (!latestEvent) {
+    return "Session events appear here after the first chat activity.";
+  }
+
+  return `${latestEvent.label} · ${latestEvent.relativeTime} · ${latestEvent.detail}`;
+}
+
 export function ProvenancePanel({ events }: { events: SidebarProvenanceEvent[] }) {
   if (events.length === 0) {
     return null;
   }
 
+  const eventCountLabel = `${events.length} event${events.length === 1 ? "" : "s"}`;
+  const collapsedSummary = getCollapsedSummary(events);
+
   return (
-    <details className="sidebar-drawer" aria-label="Session provenance">
+    <details
+      className="sidebar-drawer provenance-dock"
+      data-chat-region="provenance"
+      aria-label="Session provenance"
+    >
       <summary>
-        <span>Session provenance</span>
-        <span className="chip">{`${events.length} event${events.length === 1 ? "" : "s"}`}</span>
+        <span className="provenance-dock__summary">
+          <span className="provenance-dock__title-row">
+            <span>Session provenance</span>
+            <span className="chip">{eventCountLabel}</span>
+          </span>
+          <span className="provenance-dock__preview">{collapsedSummary}</span>
+        </span>
       </summary>
-      <div className="sidebar-drawer__body">
+      <div className="sidebar-drawer__body provenance-dock__body">
         <div className="provenance-list provenance-list--scroll">
           {events.map((event) => (
             <ProvenanceItem event={event} key={event.id} />

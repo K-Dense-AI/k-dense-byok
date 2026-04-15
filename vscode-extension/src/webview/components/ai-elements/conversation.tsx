@@ -5,16 +5,51 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+const CONVERSATION_FOLLOW_THRESHOLD_PX = 48;
+
+export type ConversationScrollMetrics = {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+};
+
+export function isConversationNearBottom({
+  scrollTop,
+  scrollHeight,
+  clientHeight,
+}: ConversationScrollMetrics): boolean {
+  return scrollHeight - clientHeight - scrollTop <= CONVERSATION_FOLLOW_THRESHOLD_PX;
+}
+
 export type ConversationProps = HTMLAttributes<HTMLDivElement>;
 
 export function Conversation({ className, children, ...props }: ConversationProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const shouldFollowRef = useRef(true);
 
   useEffect(() => {
     const node = ref.current;
     if (!node) {
       return;
     }
+
+    const handleScroll = () => {
+      shouldFollowRef.current = isConversationNearBottom(node);
+    };
+
+    node.addEventListener("scroll", handleScroll);
+
+    return () => {
+      node.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || !shouldFollowRef.current) {
+      return;
+    }
+
     node.scrollTop = node.scrollHeight;
   }, [children]);
 

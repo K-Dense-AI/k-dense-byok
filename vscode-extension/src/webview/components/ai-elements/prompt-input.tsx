@@ -22,6 +22,27 @@ export type PromptInputTextareaProps = TextareaHTMLAttributes<HTMLTextAreaElemen
   onSubmit?: () => void;
 };
 
+export type PromptInputAutosizeLayout = {
+  maxHeight: number;
+  nextHeight: number;
+  overflowY: "auto" | "hidden";
+};
+
+export function getPromptInputAutosizeLayout(
+  scrollHeight: number,
+  viewportHeight: number,
+): PromptInputAutosizeLayout {
+  const safeViewportHeight = Number.isFinite(viewportHeight) && viewportHeight > 0 ? viewportHeight : 720;
+  const maxHeight = Math.min(Math.max(Math.floor(safeViewportHeight * 0.24), 120), 176);
+  const nextHeight = Math.min(scrollHeight, maxHeight);
+
+  return {
+    maxHeight,
+    nextHeight,
+    overflowY: scrollHeight > maxHeight ? "auto" : "hidden",
+  };
+}
+
 export function PromptInputTextarea({
   className,
   onChange,
@@ -39,10 +60,12 @@ export function PromptInputTextarea({
     }
 
     node.style.height = "0px";
-    const maxHeight = Math.max(Math.floor(window.innerHeight / 3), 120);
-    const nextHeight = Math.min(node.scrollHeight, maxHeight);
+    const { nextHeight, overflowY } = getPromptInputAutosizeLayout(
+      node.scrollHeight,
+      window.innerHeight,
+    );
     node.style.height = `${nextHeight}px`;
-    node.style.overflowY = node.scrollHeight > maxHeight ? "auto" : "hidden";
+    node.style.overflowY = overflowY;
   }, [props.value]);
 
   const handleKeyDown = useCallback(
