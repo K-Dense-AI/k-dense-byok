@@ -247,8 +247,14 @@ export function ComputeSelector({
 /** Build a prompt suffix describing the selected compute instance */
 export function buildComputeContext(instance: ModalInstance | null): string {
   if (!instance) return "";
+  // Always instruct the agent (and any delegated expert) to activate the
+  // `modal` skill. The main agent's instructions require this exact phrasing
+  // so the skill is invoked instead of the agent improvising Modal usage.
+  const skillDirective =
+    `You MUST activate and follow the skill: 'modal' to execute this code on a Modal instance. ` +
+    `When delegating, pass this skill activation requirement through to the expert.`;
   if (instance.id === "cpu") {
-    return `\n\n[Compute Instance]\nUse Modal with CPU-only compute (no GPU). Specify no gpu argument in @app.function().`;
+    return `\n\n[Compute Instance]\n${skillDirective}\nUse Modal with CPU-only compute (no GPU). Specify no gpu argument in @app.function().`;
   }
-  return `\n\n[Compute Instance]\nUse Modal with a ${instance.label} GPU (${instance.vram}GB VRAM, $${instance.pricePerHour}/hr). In your Modal code use gpu="${instance.modalGpu}" in @app.function(). Prefer this instance type unless the task explicitly requires a different one.`;
+  return `\n\n[Compute Instance]\n${skillDirective}\nUse Modal with a ${instance.label} GPU (${instance.vram}GB VRAM, $${instance.pricePerHour}/hr). In your Modal code use gpu="${instance.modalGpu}" in @app.function(). Prefer this instance type unless the task explicitly requires a different one.`;
 }

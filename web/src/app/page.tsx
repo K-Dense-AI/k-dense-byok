@@ -1055,6 +1055,7 @@ export default function ChatPage() {
               onDownload={sandbox.downloadFile}
               onSaveText={sandbox.saveFile}
               onSaveImageBlob={sandbox.saveImageBlob}
+              onRetry={sandbox.retryFile}
               onCompileLatex={sandbox.compileLatex}
             />
           </div>

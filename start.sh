@@ -78,7 +78,11 @@ LITELLM_PID=$!
 sleep 2
 
 echo "  → Backend on port 8000 (FastAPI + ADK agent)"
-uv run uvicorn server:app --reload --port 8000 &
+# Restrict the reload watcher to kady_agent/ so that writes inside sandbox/
+# (done by the Gemini CLI subprocess during delegate_task) do NOT cause
+# uvicorn to shut down mid-stream and stall /sandbox/* endpoints.
+# Note: edits to server.py require a manual restart of this script.
+uv run uvicorn server:app --reload --reload-dir kady_agent --port 8000 &
 BACKEND_PID=$!
 
 echo "  → Frontend on port 3000 (Next.js UI)"

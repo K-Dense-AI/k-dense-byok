@@ -33,6 +33,8 @@ import {
   ActivityIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  RefreshCcwIcon,
+  AlertCircleIcon,
 } from "lucide-react";
 import {
   useCallback,
@@ -376,10 +378,40 @@ function resolveMarkdownImageUrls(content: string, filePath: string): string {
   return out;
 }
 
+function FileLoadError({
+  message,
+  onRetry,
+}: {
+  message: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+      <div className="flex size-10 items-center justify-center rounded-full bg-amber-500/10">
+        <AlertCircleIcon className="size-5 text-amber-600" />
+      </div>
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Could not load file</p>
+        <p className="max-w-md text-xs text-muted-foreground">{message}</p>
+      </div>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="mt-1 inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-muted"
+        >
+          <RefreshCcwIcon className="size-3.5" />
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 function FileViewer({
-  path, name, content, loading,
+  path, name, content, loading, onRetry,
 }: {
   path: string; name: string | null; content: string | null; loading: boolean;
+  onRetry?: () => void;
 }) {
   if (loading) {
     return (
@@ -387,6 +419,12 @@ function FileViewer({
         <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
       </div>
     );
+  }
+  // Surface backend load errors with an explicit retry affordance so the
+  // user doesn't have to close and reopen the tab.
+  if (content !== null && /^\[Error:/.test(content)) {
+    const msg = content.replace(/^\[Error:\s*/, "").replace(/\]$/, "");
+    return <FileLoadError message={msg} onRetry={onRetry} />;
   }
   const cat = name ? fileCategory(name) : "text";
   if (cat === "image") {
@@ -1194,6 +1232,7 @@ export interface FilePreviewPanelProps {
   onDownload: (path: string) => void;
   onSaveText: (path: string, content: string) => Promise<boolean>;
   onSaveImageBlob: (path: string, blob: Blob) => Promise<boolean>;
+  onRetry?: (path: string) => void;
   onCompileLatex?: (path: string, engine?: string) => Promise<LatexCompileResult>;
 }
 
@@ -1205,6 +1244,7 @@ export function FilePreviewPanel({
   onDownload,
   onSaveText,
   onSaveImageBlob,
+  onRetry,
   onCompileLatex,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
@@ -1352,6 +1392,7 @@ export function FilePreviewPanel({
               name={selectedName}
               content={fileContent}
               loading={loadingFile}
+              onRetry={onRetry ? () => onRetry(selectedPath) : undefined}
             />
           </div>
         </>

@@ -103,6 +103,40 @@ export function useSandbox(isActive = false) {
     });
   }, []);
 
+  // Fetch file body into an open tab, handling timeout/error bookkeeping.
+  // Kept as its own callback so retryFile can reuse it without re-adding
+  // the tab.
+  const fetchFileContent = useCallback(async (path: string) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    try {
+      const res = await fetch(
+        `${API_BASE}/sandbox/file?path=${encodeURIComponent(path)}`,
+        { signal: controller.signal },
+      );
+      const content = res.ok
+        ? await res.text()
+        : `[Error: ${res.status} ${res.statusText}]`;
+      setTabs((prev) => {
+        const next = prev.map((t) => (t.path === path ? { ...t, content, loading: false } : t));
+        tabsRef.current = next;
+        return next;
+      });
+    } catch {
+      // Drop the path so a later click or explicit retry re-fetches cleanly.
+      openPathsRef.current.delete(path);
+      setTabs((prev) => {
+        const next = prev.map((t) =>
+          t.path === path ? { ...t, content: "[Error: Could not load file — click to retry]", loading: false } : t
+        );
+        tabsRef.current = next;
+        return next;
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }, []);
+
   const selectFile = useCallback(async (path: string) => {
     setActiveTabPath(path);
 
@@ -130,34 +164,20 @@ export function useSandbox(isActive = false) {
       return;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    try {
-      const res = await fetch(
-        `${API_BASE}/sandbox/file?path=${encodeURIComponent(path)}`,
-        { signal: controller.signal },
+    await fetchFileContent(path);
+  }, [fetchFileContent]);
+
+  const retryFile = useCallback(async (path: string) => {
+    openPathsRef.current.add(path);
+    setTabs((prev) => {
+      const next = prev.map((t) =>
+        t.path === path ? { ...t, content: null, loading: true } : t,
       );
-      const content = res.ok
-        ? await res.text()
-        : `[Error: ${res.status} ${res.statusText}]`;
-      setTabs((prev) => {
-        const next = prev.map((t) => (t.path === path ? { ...t, content, loading: false } : t));
-        tabsRef.current = next;
-        return next;
-      });
-    } catch {
-      openPathsRef.current.delete(path);
-      setTabs((prev) => {
-        const next = prev.map((t) =>
-          t.path === path ? { ...t, content: "[Error: Could not load file — click to retry]", loading: false } : t
-        );
-        tabsRef.current = next;
-        return next;
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
-  }, []);
+      tabsRef.current = next;
+      return next;
+    });
+    await fetchFileContent(path);
+  }, [fetchFileContent]);
 
   const uploadFiles = useCallback(
     async (files: FileList | File[], paths?: string[]): Promise<string[]> => {
@@ -431,6 +451,7 @@ export function useSandbox(isActive = false) {
     uploading,
     fetchTree,
     selectFile,
+    retryFile,
     closeTab,
     saveFile,
     saveImageBlob,
