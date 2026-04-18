@@ -99,9 +99,31 @@ cd k-dense-byok
 
 ### Step 2 - Add your API keys
 
-Inside the `kady_agent` folder you'll find a file called `env.example`. Make a copy of it and rename the copy to `.env` (note the dot at the start). Then open `.env` in any text editor and paste your **OpenRouter API key** on the first line - that's the only key you need to get started.
+For the existing non-Docker startup path, keep using `kady_agent/.env` because `./start.sh` reads that file directly.
 
-The file also has sections for other keys you can optionally fill in: **Parallel** for web search, **Modal** for remote compute, and a long list of scientific database and government data API keys. Just leave blank anything you don't need.
+The repo also includes a root-level [`.env.example`](./.env.example) that documents the broader deployment contract for optional Docker / Compose runs and other self-hosted environments. You do not need the root `.env.example` just to use `./start.sh`, but it is the source of truth for the full variable set.
+
+Inside the `kady_agent` folder you'll find a file called `env.example`. Make a copy of it and rename the copy to `.env` (note the dot at the start). At minimum, set:
+
+```env
+OPENROUTER_API_KEY=your-openrouter-api-key
+DEFAULT_AGENT_MODEL=openrouter/google/gemini-3.1-pro-preview
+GOOGLE_GEMINI_BASE_URL=http://localhost:4000
+GEMINI_API_KEY=sk-litellm-local
+```
+
+Optional values for the non-Docker path:
+
+```env
+PARALLEL_API_KEY=your-parallel-api-key
+MODAL_TOKEN_ID=your-modal-token-id
+MODAL_TOKEN_SECRET=your-modal-token-secret
+FRONTEND_PORT=3000
+BACKEND_PORT=8000
+LITELLM_PORT=4000
+```
+
+The current `./start.sh` flow does not require `NEXT_PUBLIC_ADK_API_URL` unless you want to override the frontend default. If you need different localhost ports, set `FRONTEND_PORT`, `BACKEND_PORT`, and/or `LITELLM_PORT` before starting.
 
 ### Step 3 - Start the app
 
@@ -112,9 +134,13 @@ chmod +x start.sh
 
 The first time you run this, it will automatically install any missing tools (Python packages, Node.js, Gemini CLI) and download scientific skills. This may take a few minutes. After that, future starts will be much faster.
 
-Once everything is running, your browser will open to **[http://localhost:3000](http://localhost:3000)** - that's the app.
+Once everything is running, your browser will open to the configured frontend URL (default **[http://localhost:3000](http://localhost:3000)**) - that's the app.
 
 To stop everything, press **Ctrl+C** in the terminal.
+
+### Step 4 - Optional Docker / Compose path
+
+If you want to run the app with Docker Compose, use prebuilt GHCR images, or self-host the stack, see the dedicated [Docker deployment guide](./docs/docker-deployment.md).
 
 ## How it works (the short version)
 

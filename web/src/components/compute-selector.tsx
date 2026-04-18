@@ -125,8 +125,7 @@ export function ComputeSelector({
             <div className="mt-0.5 size-1.5 shrink-0 rounded-full bg-amber-500" />
             <div className="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
               <span className="font-medium text-foreground">Modal API keys not configured.</span>{" "}
-              Set <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">MODAL_TOKEN_ID</code> and{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">MODAL_TOKEN_SECRET</code> in your{" "}
+              Set your <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">Modal credentials</code> in your{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-[10px] font-mono">.env</code> file.
               <a
                 href="https://modal.com"
@@ -217,7 +216,7 @@ export function ComputeSelector({
                   <Tooltip key={instance.id}>
                     <TooltipTrigger asChild>{row}</TooltipTrigger>
                     <TooltipContent side="right" className="max-w-56">
-                      Set MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in .env to enable compute
+                      Set your Modal credentials in .env to enable compute
                     </TooltipContent>
                   </Tooltip>
                 );

@@ -330,6 +330,10 @@ const streamdownPlugins = { cjk, code, math, mermaid };
 
 const linkSafetyOff = { enabled: false } as const;
 
+type StreamdownParagraphProps = ComponentProps<"p"> & {
+  node?: unknown;
+};
+
 function hasImageChild(children: ReactNode): boolean {
   const arr: ReactNode[] = Array.isArray(children) ? children : [children];
   return arr.some(
@@ -342,7 +346,7 @@ function hasImageChild(children: ReactNode): boolean {
 }
 
 const SafeParagraph = memo(
-  ({ children, node, ...rest }: Record<string, unknown> & { children?: ReactNode; node?: unknown }) => {
+  ({ children, node, ...rest }: StreamdownParagraphProps) => {
     const kids = (Array.isArray(children) ? children : [children]).filter(
       (c) => c != null && c !== ""
     ) as ReactNode[];

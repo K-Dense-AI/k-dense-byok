@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
+import { getApiBaseUrl } from "@/lib/api-base";
 
 export interface Skill {
   id: string;
@@ -19,7 +18,7 @@ export function useSkills(): { skills: Skill[]; loading: boolean } {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/skills`)
+    fetch(`${getApiBaseUrl()}/skills`)
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => {
         if (!cancelled && Array.isArray(data)) {
