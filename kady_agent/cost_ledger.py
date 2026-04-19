@@ -20,6 +20,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from pathlib import Path
 from typing import Any, Optional
 
@@ -135,18 +136,22 @@ def record_cost(
     cost_usd: Optional[float],
     delegation_id: Optional[str] = None,
     project_id: Optional[str] = None,
-) -> None:
+) -> Optional[str]:
     """Append one completion row to the session ledger.
 
     ``cost_usd`` may be ``None`` when a provider does not report a cost (e.g.
-    Ollama). In that case we still record the row with ``costUsd: 0`` so the
-    UI can show token counts; aggregation treats 0 as free.
+    Ollama, or streaming OpenRouter responses where cost is resolved out-of-
+    band). In that case we still record the row with ``costUsd: 0`` so the
+    UI can show token counts immediately; aggregation treats 0 as free.
+
+    Returns the generated ``entryId`` so callers can update this row later
+    via :func:`update_cost_entry` once authoritative cost becomes available.
     """
     if not session_id or not turn_id or not role:
-        return
+        return None
 
     if not model or not isinstance(model, str):
-        return
+        return None
 
     udict = _coerce_usage_dict(usage_dict)
     prompt_tokens = int(udict.get("prompt_tokens") or 0)
@@ -155,7 +160,9 @@ def record_cost(
     cached_tokens = _extract_cached_tokens(udict)
     reasoning_tokens = _extract_reasoning_tokens(udict)
 
+    entry_id = uuid.uuid4().hex
     entry = {
+        "entryId": entry_id,
         "ts": time.time(),
         "sessionId": session_id,
         "turnId": turn_id,
@@ -168,6 +175,7 @@ def record_cost(
         "cachedTokens": cached_tokens,
         "reasoningTokens": reasoning_tokens,
         "costUsd": float(cost_usd) if cost_usd is not None else 0.0,
+        "costPending": cost_usd is None,
     }
 
     try:
@@ -178,8 +186,77 @@ def record_cost(
         # proxy processes to coexist without a lock file.
         with open(path, "a", encoding="utf-8") as f:
             f.write(line)
+        return entry_id
     except OSError as exc:
         logger.warning("Failed to append cost ledger entry: %s", exc)
+        return None
+
+
+def update_cost_entry(
+    *,
+    session_id: str,
+    entry_id: str,
+    cost_usd: float,
+    project_id: Optional[str] = None,
+) -> bool:
+    """Rewrite the ledger with ``entry_id``'s cost updated.
+
+    Used when an async backfill (e.g. OpenRouter's ``/generation`` endpoint)
+    resolves cost after :func:`record_cost` has already persisted the row
+    with a placeholder ``$0``. Quiet no-op when the file or entry is
+    missing. Returns ``True`` if the entry was found and rewritten.
+    """
+    if not session_id or not entry_id:
+        return False
+    try:
+        path = _ledger_path(session_id, project_id)
+    except (OSError, ValueError):
+        return False
+    if not path.is_file():
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    except OSError as exc:
+        logger.warning("Failed to read cost ledger %s for update: %s", path, exc)
+        return False
+
+    updated = False
+    rewritten: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            rewritten.append(line)
+            continue
+        try:
+            entry = json.loads(stripped)
+        except json.JSONDecodeError:
+            rewritten.append(line)
+            continue
+        if isinstance(entry, dict) and entry.get("entryId") == entry_id:
+            entry["costUsd"] = float(cost_usd)
+            entry["costPending"] = False
+            rewritten.append(json.dumps(entry, ensure_ascii=False) + "\n")
+            updated = True
+        else:
+            rewritten.append(line if line.endswith("\n") else line + "\n")
+
+    if not updated:
+        return False
+
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            f.writelines(rewritten)
+        os.replace(tmp_path, path)
+    except OSError as exc:
+        logger.warning("Failed to rewrite cost ledger %s: %s", path, exc)
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
 
 
 def _empty_summary(session_id: str) -> dict[str, Any]:
@@ -273,4 +350,5 @@ __all__ = [
     "extract_cost_tags",
     "read_costs",
     "record_cost",
+    "update_cost_entry",
 ]

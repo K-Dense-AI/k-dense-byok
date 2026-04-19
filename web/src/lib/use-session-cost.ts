@@ -17,6 +17,8 @@ export interface CostEntry {
   cachedTokens: number;
   reasoningTokens: number;
   costUsd: number;
+  entryId?: string;
+  costPending?: boolean;
 }
 
 export interface CostTurnBucket {
@@ -56,9 +58,11 @@ const EMPTY: SessionCostSummary = {
  * Fetches the OpenRouter cost ledger for a session.
  *
  * `refreshKey` is a monotonic counter — bump it whenever a turn completes so
- * the summary refetches. We poll on demand rather than streaming; real-time
- * cost updates during a turn would need a new SSE channel and are rarely
- * what users want when the question is "what did this session cost".
+ * the summary refetches. We also keep polling on a short interval whenever
+ * any entry still has ``costPending: true`` (the backend writes the row
+ * immediately with ``$0`` and backfills the OpenRouter ``/generation``
+ * cost asynchronously, which can lag the stream close by a few seconds up
+ * to ~60s).
  */
 export function useSessionCost(
   sessionId: string | null | undefined,
@@ -73,21 +77,37 @@ export function useSessionCost(
       return;
     }
     let cancelled = false;
-    setLoading(true);
-    apiFetch(`/sessions/${encodeURIComponent(sessionId)}/costs`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled) return;
-        if (data && typeof data === "object") {
-          setSummary({ ...EMPTY, ...data });
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const fetchOnce = async (isPoll: boolean) => {
+      if (!isPoll) setLoading(true);
+      try {
+        const r = await apiFetch(
+          `/sessions/${encodeURIComponent(sessionId)}/costs`,
+        );
+        if (!r.ok) return;
+        const data = await r.json();
+        if (cancelled || !data || typeof data !== "object") return;
+        const next: SessionCostSummary = { ...EMPTY, ...data };
+        setSummary(next);
+        const hasPending = (next.entries ?? []).some(
+          (e) => e.costPending === true,
+        );
+        if (hasPending && !cancelled) {
+          pollTimer = setTimeout(() => fetchOnce(true), 2000);
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      } catch {
+        // swallow -- next refreshKey bump will retry
+      } finally {
+        if (!cancelled && !isPoll) setLoading(false);
+      }
+    };
+
+    fetchOnce(false);
+
     return () => {
       cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
     };
   }, [sessionId, refreshKey]);
 
