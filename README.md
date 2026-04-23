@@ -22,7 +22,7 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 - **Organise your work in projects.** Each project has its own files, chat history, and settings. Upload files, browse folders, preview documents, and download results - all from inside the app.
 - **Rich file previews.** Built-in viewers for code, Markdown (with math and diagrams), CSVs, PDFs, images, Jupyter notebooks, and bioinformatics formats (FASTA, FASTQ, VCF, BED, GFF, SAM, BCF).
 - **LaTeX editor.** Split-pane editor with live PDF compilation (pdfLaTeX, XeLaTeX, LuaLaTeX).
-- **Web search and document conversion.** Kady can search the web (via [Parallel](https://parallel.ai/)) and convert documents between formats (PDF, DOCX, HTML, etc.) with no extra setup.
+- **Web search and document conversion.** Kady can search the web (via [Parallel](https://parallel.ai/) or [Exa](https://exa.ai/)) and convert documents between formats (PDF, DOCX, HTML, etc.) with no extra setup.
 - **Voice input, drag-and-drop attachments, `@` file mentions,** and a **message queue** for batching up to 5 messages while the agent is working.
 - **Publication-ready provenance.** A timeline of every step in your session, plus a one-click "Copy as Methods" button that exports a paragraph ready to paste into a paper.
 - **Optional remote compute.** Plug in [Modal](https://modal.com/) to run heavy jobs on cloud GPUs (T4, L4, A10G, A100, H100) or serverless CPUs - selected right from the input bar.
@@ -35,6 +35,7 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 | A computer running **macOS or Linux** | The app runs locally on your machine | Windows works too - use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) |
 | An **OpenRouter API key** | This is how the AI models are accessed | [openrouter.ai](https://openrouter.ai/) - sign up and create a key |
 | A **Parallel API key** *(optional)* | Lets Kady search the web | [parallel.ai](https://parallel.ai/) |
+| An **Exa API key** *(optional)* | Alternative web search provider; neural (embedding-based) retrieval tuned for scientific content | [exa.ai](https://exa.ai/) |
 | **Modal** credentials *(optional)* | Only needed for remote GPU/CPU compute | [modal.com](https://modal.com/) |
 
 You do not need any coding experience. The startup script installs everything else for you.
@@ -54,7 +55,7 @@ cd k-dense-byok
 
 Inside the `kady_agent` folder you'll find a file called `env.example`. Make a copy and rename the copy to `.env` (note the dot at the start). Open `.env` in any text editor and paste your **OpenRouter API key** on the first line - that's the only key you need to get started.
 
-The file also has sections for other optional keys (Parallel for web search, Modal for remote compute, and many scientific and government database keys). Leave blank anything you don't need.
+The file also has sections for other optional keys (Parallel or Exa for web search, Modal for remote compute, and many scientific and government database keys). Leave blank anything you don't need.
 
 ### Step 3 - Start the app
 

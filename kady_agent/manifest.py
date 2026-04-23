@@ -198,6 +198,19 @@ def _mcp_servers_snapshot() -> list[dict]:
                 },
             }
         )
+    if os.getenv("EXA_API_KEY"):
+        entries.append(
+            {
+                "name": "exa-search",
+                "spec": {
+                    "httpUrl": "https://mcp.exa.ai/mcp",
+                    "headers": {
+                        "x-api-key": "<redacted>",
+                        "x-exa-integration": "k-dense-byok",
+                    },
+                },
+            }
+        )
     return entries
 
 

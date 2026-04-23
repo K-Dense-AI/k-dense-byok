@@ -37,6 +37,7 @@ DEFAULT_EXPERT_MODEL = (
 )
 EXTRA_HEADERS = {"X-Title": "Kady", "HTTP-Referer": "https://www.k-dense.ai"}
 PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
+EXA_API_KEY = os.getenv("EXA_API_KEY")
 
 logger = logging.getLogger(__name__)
 
