@@ -1,154 +1,74 @@
 "use client";
 
-import {
-  Conversation,
-  ConversationContent,
-  ConversationEmptyState,
-  ConversationScrollButton,
-} from "@/components/ai-elements/conversation";
-import {
-  Message,
-  MessageContent,
-  MessageResponse,
-  MessageActions,
-  MessageAction,
-  MessageToolbar,
-} from "@/components/ai-elements/message";
-import {
-  PromptInput,
-  PromptInputTextarea,
-  PromptInputFooter,
-  PromptInputSubmit,
-  PromptInputProvider,
-  usePromptInputController,
-} from "@/components/ai-elements/prompt-input";
-import { Shimmer } from "@/components/ai-elements/shimmer";
 import { FileTreePanel } from "@/components/sandbox-panel";
 import { FilePreviewPanel } from "@/components/file-preview-panel";
-import { buildDatabaseContext, type Database } from "@/components/database-selector";
-import { buildComputeContext, type ModalInstance } from "@/components/compute-selector";
-import { PairedModelSelector, DEFAULT_MODEL, DEFAULT_EXPERT_MODEL, type Model } from "@/components/model-selector";
-import { buildSkillsContext, type Skill } from "@/components/skills-selector";
-import { buildBrowserContext } from "@/components/browser-selector";
-import { AddContextMenu } from "@/components/add-context-menu";
-import { ContextChipsBar } from "@/components/context-chips";
-import { useBrowserUseSettings, useChromeProfiles } from "@/lib/use-settings";
+import type { ModalInstance } from "@/components/compute-selector";
+import type { Model } from "@/components/model-selector";
+import { ChatTab, type ChatTabHandle, type ChatTabMeta } from "@/components/chat-tab";
+import { ChatTabsBar, type ChatTabDescriptor } from "@/components/chat-tabs-bar";
 import { ProvenancePanel } from "@/components/provenance-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
-import { CitationBadge } from "@/components/citation-badge";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { SessionCostPill } from "@/components/session-cost-pill";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
 import type { ChatMessage } from "@/lib/use-agent";
 import { APP_VERSION, useUpdateCheck } from "@/lib/version";
-import { useAgent, type ActivityItem } from "@/lib/use-agent";
 import { useConfig } from "@/lib/use-config";
 import { useSkills } from "@/lib/use-skills";
 import type { TurnMeta } from "@/lib/provenance";
-import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
-import { useSandbox, fileCategory, type TreeNode } from "@/lib/use-sandbox";
-import { SpeechInput } from "@/components/ai-elements/speech-input";
+import { useSandbox, type TreeNode } from "@/lib/use-sandbox";
+import { onProjectChange } from "@/lib/projects";
 import {
-  CopyIcon,
-  CheckIcon,
-  LoaderCircleIcon,
   PanelLeftCloseIcon,
   PanelLeftIcon,
-  FileIcon,
-  FileCodeIcon,
-  FileJsonIcon,
-  FileTextIcon,
-  FileImageIcon,
-  BookOpenIcon,
-  ActivityIcon,
-  TableIcon,
-  XIcon,
-  PaperclipIcon,
-  ChevronDownIcon,
   ScrollTextIcon,
-  MessageSquareTextIcon,
-  WorkflowIcon,
   SettingsIcon,
   SunIcon,
   MoonIcon,
-  ListOrderedIcon,
-  DatabaseIcon,
-  CpuIcon,
-  SparklesIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-const MAX_QUEUE = 5;
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
-interface QueuedMessage {
+const MAX_CHAT_TABS = 10;
+
+interface ChatTabEntry {
   id: string;
-  rawText: string;
-  text: string;
-  model: { id: string; label: string };
-  expertModel: { id: string; label: string };
-  databases: Database[];
-  compute: ModalInstance | null;
-  skills: Skill[];
-  files: string[];
-  timestamp: number;
+  title: string;
 }
 
-function formatBudgetCost(usd: number): string {
-  if (!Number.isFinite(usd) || usd <= 0) return "$0.00";
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(2)}`;
+const EMPTY_TURN_META: Map<string, TurnMeta> = new Map();
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
+function makeTabId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/**
- * Inline banner above the chat input when the project is approaching (warn)
- * or over (exceeded) its spend limit. Rendered by ChatInput (and mirrored
- * above the Workflows launch button) when ``budgetState !== "ok"``.
- */
-function BudgetBanner({
-  state,
-  totalUsd,
-  limitUsd,
-}: {
-  state: "warn" | "exceeded";
-  totalUsd: number;
-  limitUsd: number | null;
-}) {
-  const blocked = state === "exceeded";
-  return (
-    <div
-      role="alert"
-      className={cn(
-        "mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs",
-        blocked
-          ? "border-destructive/40 bg-destructive/10 text-destructive"
-          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-      )}
-    >
-      <span className="flex-1">
-        {blocked ? (
-          <>
-            <b>Project spend limit reached</b> (
-            {formatBudgetCost(totalUsd)}
-            {limitUsd !== null ? ` / ${formatBudgetCost(limitUsd)}` : ""})
-            . New delegations are blocked. Raise the limit in the project
-            settings to continue.
-          </>
-        ) : (
-          <>
-            <b>Approaching spend limit</b> (
-            {formatBudgetCost(totalUsd)}
-            {limitUsd !== null ? ` / ${formatBudgetCost(limitUsd)}` : ""})
-            . You're over 80% of the project's cap.
-          </>
-        )}
-      </span>
-    </div>
-  );
+function defaultTabTitle(index: number): string {
+  return `Chat ${index + 1}`;
+}
+
+function flattenFiles(node: TreeNode | null): string[] {
+  if (!node) return [];
+  const paths: string[] = [];
+  function walk(n: TreeNode) {
+    if (n.type === "file") paths.push(n.path);
+    for (const c of n.children ?? []) walk(c);
+  }
+  walk(node);
+  return paths;
 }
 
 // Thin vertical drag handle between two panels
@@ -163,758 +83,126 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
   );
 }
 
-const FILE_DRAG_TYPE = "application/x-kady-filepath";
-
-/**
- * Must be rendered inside <PromptInputProvider>.
- * Accepts both internal file-path drags (from file tree / tabs) and
- * OS file drops from outside the browser.
- */
-function PromptDropZone({
-  children,
-  onFileDrop,
-  onFilesUpload,
-}: {
-  children: React.ReactNode;
-  onFileDrop?: (path: string) => void;
-  onFilesUpload?: (files: FileList | File[], paths?: string[]) => void;
-}) {
-  const controller = usePromptInputController();
-  const [isDragOver, setIsDragOver] = useState(false);
-  const dragCounter = useRef(0);
-
-  const isAccepted = useCallback((e: React.DragEvent) => {
-    return e.dataTransfer.types.includes(FILE_DRAG_TYPE) || e.dataTransfer.types.includes("Files");
-  }, []);
-
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isAccepted(e)) return;
-    e.preventDefault();
-    dragCounter.current++;
-    setIsDragOver(true);
-  }, [isAccepted]);
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!isAccepted(e)) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "copy";
-  }, [isAccepted]);
-
-  const handleDragLeave = useCallback(() => {
-    dragCounter.current--;
-    if (dragCounter.current <= 0) {
-      dragCounter.current = 0;
-      setIsDragOver(false);
-    }
-  }, []);
-
-  const handleDrop = useCallback(
-    async (e: React.DragEvent) => {
-      e.preventDefault();
-      dragCounter.current = 0;
-      setIsDragOver(false);
-
-      // Internal file-path drag from tree/tabs
-      const path = e.dataTransfer.getData(FILE_DRAG_TYPE);
-      if (path) {
-        if (onFileDrop) {
-          onFileDrop(path);
-        } else {
-          const current = controller.textInput.value;
-          const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? " " : "";
-          controller.textInput.setInput(current + sep + path);
-        }
-        return;
-      }
-
-      if (!onFilesUpload) return;
-
-      // OS directory or file drop from outside the browser
-      if (hasDirectoryEntries(e.dataTransfer.items)) {
-        const { files, paths } = await traverseDroppedEntries(e.dataTransfer.items);
-        if (files.length > 0) onFilesUpload(files, paths);
-      } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        onFilesUpload(e.dataTransfer.files);
-      }
-    },
-    [controller, onFileDrop, onFilesUpload],
-  );
-
-  const isOsDrag = isDragOver;
-  const label = isDragOver ? "Drop to attach" : "Attach file";
-
-  return (
-    <div
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-      className="relative"
-    >
-      {isOsDrag && (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/5">
-          <div className="flex items-center gap-2 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow">
-            <PaperclipIcon className="size-3.5" />
-            {label}
-          </div>
-        </div>
-      )}
-      <div className={cn("transition-all duration-150", isOsDrag && "opacity-40 pointer-events-none")}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-
-// ---------------------------------------------------------------------------
-// @ mention helpers
-// ---------------------------------------------------------------------------
-
-function flattenFiles(node: TreeNode | null): string[] {
-  if (!node) return [];
-  const paths: string[] = [];
-  function walk(n: TreeNode) {
-    if (n.type === "file") paths.push(n.path);
-    for (const c of n.children ?? []) walk(c);
-  }
-  walk(node);
-  return paths;
-}
-
-function mentionIconForFile(name: string): ReactNode {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const cat = fileCategory(name);
-  if (cat === "notebook") return <BookOpenIcon className="size-3.5 text-orange-500" />;
-  if (cat === "fasta") return <ActivityIcon className="size-3.5 text-cyan-600" />;
-  if (cat === "biotable") return <TableIcon className="size-3.5 text-indigo-500" />;
-  if (cat === "image") return <FileImageIcon className="size-3.5 text-rose-500" />;
-  if (cat === "markdown") return <FileTextIcon className="size-3.5 text-emerald-600" />;
-  if (cat === "latex") return <FileCodeIcon className="size-3.5 text-teal-500" />;
-  if (ext === "json" || ext === "jsonl") return <FileJsonIcon className="size-3.5 text-amber-600" />;
-  const codeExts = ["py","ts","tsx","js","jsx","rs","go","java","c","cpp","h","rb","sh","bash","css","html","xml","yaml","yml","toml","sql"];
-  if (codeExts.includes(ext)) return <FileCodeIcon className="size-3.5 text-violet-500" />;
-  return <FileIcon className="size-3.5 text-muted-foreground" />;
-}
-
-function HighlightMatch({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>;
-  const lower = text.toLowerCase();
-  const qLower = query.toLowerCase();
-  const idx = lower.indexOf(qLower);
-  if (idx === -1) return <>{text}</>;
-  return (
-    <>
-      {text.slice(0, idx)}
-      <span className="font-semibold text-foreground">{text.slice(idx, idx + query.length)}</span>
-      {text.slice(idx + query.length)}
-    </>
-  );
-}
-
-function AssistantActivity({
-  items,
-  isStreaming,
-}: {
-  items: ActivityItem[];
-  isStreaming: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el || expanded) { setIsOverflowing(false); return; }
-    const check = () => setIsOverflowing(el.scrollHeight > el.clientHeight);
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [items, expanded]);
-
-  if (items.length === 0 && !isStreaming) return null;
-
-  const toggle = () => setExpanded((v) => !v);
-
-  return (
-    <div className="mb-3 rounded-xl border border-border/70 bg-muted/30 px-3 py-2">
-      <button
-        type="button"
-        onClick={toggle}
-        className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ActivityIcon className="size-3.5 shrink-0" />
-        {isStreaming ? (
-          <Shimmer as="span" className="text-xs" duration={1.2}>
-            Working...
-          </Shimmer>
-        ) : (
-          <span>Activity</span>
-        )}
-        {items.length > 1 && (
-          <span className="text-[10px] tabular-nums text-muted-foreground/70">
-            {items.length}
-          </span>
-        )}
-        <ChevronDownIcon
-          className={cn(
-            "ml-auto size-3.5 shrink-0 transition-transform duration-200",
-            expanded && "rotate-180"
-          )}
-        />
-      </button>
-      {items.length > 0 ? (
-        <div className="mt-2">
-          <div
-            ref={contentRef}
-            className={cn(
-              "overflow-hidden transition-all duration-200",
-              expanded ? "max-h-[2000px]" : "max-h-24"
-            )}
-          >
-            <div className="space-y-2">
-              {items.map((item) => (
-                <div key={item.id} className="flex items-start gap-2 text-xs">
-                  {item.status === "running" ? (
-                    <LoaderCircleIcon className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                  ) : item.status === "error" ? (
-                    <XIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                  ) : (
-                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-foreground">{item.label}</div>
-                    {item.detail && (
-                      <div
-                        className={cn(
-                          "mt-0.5 text-muted-foreground",
-                          !expanded && "line-clamp-2"
-                        )}
-                      >
-                        {item.detail}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          {!expanded && isOverflowing && (
-            <button
-              type="button"
-              onClick={toggle}
-              className="flex w-full items-center justify-center gap-1 mt-1.5 text-[11px] font-medium text-primary/70 hover:text-primary transition-colors cursor-pointer"
-            >
-              <span>Show all {items.length} items</span>
-              <ChevronDownIcon className="size-3" />
-            </button>
-          )}
-          {expanded && items.length > 3 && (
-            <button
-              type="button"
-              onClick={toggle}
-              className="flex w-full items-center justify-center gap-1 mt-1.5 text-[11px] font-medium text-primary/70 hover:text-primary transition-colors cursor-pointer"
-            >
-              <span>Show less</span>
-              <ChevronDownIcon className="size-3 rotate-180" />
-            </button>
-          )}
-        </div>
-      ) : (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Waiting for the delegated task to report progress...
-        </p>
-      )}
-    </div>
-  );
-}
-
-function MessageQueueDisplay({
-  queue,
-  onRemove,
-}: {
-  queue: QueuedMessage[];
-  onRemove: (id: string) => void;
-}) {
-  if (queue.length === 0) return null;
-
-  return (
-    <div className="absolute bottom-full left-0 right-0 z-10 mb-2">
-      <div className="overflow-hidden rounded-xl border bg-background shadow-lg">
-        <div className="flex items-center gap-2 border-b px-3 py-1.5">
-          <ListOrderedIcon className="size-3.5 text-muted-foreground" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Queued
-          </span>
-          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
-            {queue.length}/{MAX_QUEUE}
-          </span>
-        </div>
-        <div className="max-h-52 overflow-y-auto py-1">
-          {queue.map((item, i) => (
-            <div
-              key={item.id}
-              className="group flex items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/50"
-            >
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
-                {i + 1}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-foreground">
-                  {item.rawText || item.text.split("\n")[0]}
-                </div>
-                <div className="mt-0.5 flex flex-wrap gap-1">
-                  <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {item.model.label}
-                    {item.expertModel.id !== item.model.id && (
-                      <>
-                        <span className="mx-0.5 text-muted-foreground/50">·</span>
-                        {item.expertModel.label}
-                      </>
-                    )}
-                  </span>
-                  {item.files.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <PaperclipIcon className="size-2.5" />
-                      {item.files.length}
-                    </span>
-                  )}
-                  {item.databases.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <DatabaseIcon className="size-2.5" />
-                      {item.databases.length}
-                    </span>
-                  )}
-                  {item.compute && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <CpuIcon className="size-2.5" />
-                      {item.compute.label}
-                    </span>
-                  )}
-                  {item.skills.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <SparklesIcon className="size-2.5" />
-                      {item.skills.length}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemove(item.id)}
-                className="shrink-0 rounded p-1 text-muted-foreground/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                aria-label={`Remove queued message ${i + 1}`}
-              >
-                <XIcon className="size-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Full prompt input: @ mention overlay + drag-drop zone.
- * Must be rendered inside <PromptInputProvider>.
- */
-function ChatInput({
-  allFiles,
-  attachedFiles,
-  onAddFile,
-  onRemoveFile,
-  onClearFiles,
-  onSubmit,
-  isStreaming,
-  agentStatus,
-  onStop,
-  selectedDbs,
-  onDbsChange,
-  selectedCompute,
-  onComputeChange,
-  selectedModel,
-  onModelChange,
-  selectedExpertModel,
-  onExpertModelChange,
-  onUploadFiles,
-  modalConfigured,
-  allSkills,
-  selectedSkills,
-  onSkillsChange,
-  queuedMessages,
-  onRemoveFromQueue,
-  budgetState = "ok",
-  budgetTotalUsd = 0,
-  budgetLimitUsd = null,
-}: {
-  allFiles: string[];
-  attachedFiles: string[];
-  onAddFile: (path: string) => void;
-  onRemoveFile: (path: string) => void;
-  onClearFiles: () => void;
-  onSubmit: Parameters<typeof PromptInput>[0]["onSubmit"];
-  isStreaming: boolean;
-  agentStatus: string;
-  onStop: () => void;
-  selectedDbs: Database[];
-  onDbsChange: (dbs: Database[]) => void;
-  selectedCompute: ModalInstance | null;
-  onComputeChange: (instance: ModalInstance | null) => void;
-  selectedModel: Model;
-  onModelChange: (model: Model) => void;
-  selectedExpertModel: Model;
-  onExpertModelChange: (model: Model) => void;
-  onUploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
-  modalConfigured: boolean;
-  allSkills: Skill[];
-  selectedSkills: Skill[];
-  onSkillsChange: (skills: Skill[]) => void;
-  queuedMessages: QueuedMessage[];
-  onRemoveFromQueue: (id: string) => void;
-  budgetState?: "ok" | "warn" | "exceeded";
-  budgetTotalUsd?: number;
-  budgetLimitUsd?: number | null;
-}) {
-  const budgetBlocked = budgetState === "exceeded";
-  const controller = usePromptInputController();
-  const browserUse = useBrowserUseSettings();
-  const chromeProfiles = useChromeProfiles();
-
-  const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
-    const uploaded = await onUploadFiles(files, paths);
-    for (const p of uploaded) onAddFile(p);
-  }, [onUploadFiles, onAddFile]);
-
-  // Wrap onSubmit to append attached file paths and database context, then clear chips
-  const handleSubmit = useCallback<Parameters<typeof PromptInput>[0]["onSubmit"]>(
-    (msg, event) => {
-      if (budgetBlocked) {
-        // Belt-and-braces guard: the submit button is already disabled in this
-        // state, but Enter-key submission could otherwise slip past it.
-        event?.preventDefault();
-        return;
-      }
-      const refs = attachedFiles.length > 0 ? "\n" + attachedFiles.join("\n") : "";
-      const dbCtx = buildDatabaseContext(selectedDbs);
-      const computeCtx = buildComputeContext(selectedCompute);
-      const skillsCtx = buildSkillsContext(selectedSkills);
-      const browserCtx = buildBrowserContext(browserUse.config, chromeProfiles.profiles);
-      onSubmit({ ...msg, text: msg.text + refs + dbCtx + computeCtx + skillsCtx + browserCtx }, event);
-      onClearFiles();
-    },
-    [budgetBlocked, onSubmit, attachedFiles, onClearFiles, selectedDbs, selectedCompute, selectedSkills, browserUse.config, chromeProfiles.profiles]
-  );
-
-  // @ mention state
-  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
-  const [mentionAtIdx, setMentionAtIdx] = useState(0);
-  const [mentionSelIdx, setMentionSelIdx] = useState(0);
-  const listRef = useRef<HTMLDivElement>(null);
-
-  // Filtered + sorted file list for the current query
-  const filteredFiles = useMemo(() => {
-    if (mentionQuery === null) return [];
-    const q = mentionQuery.toLowerCase();
-    if (!q) return allFiles.slice(0, 8);
-    const nameHits = allFiles.filter(f =>
-      (f.split("/").pop()?.toLowerCase() ?? "").includes(q)
-    );
-    const pathOnly = allFiles.filter(f => {
-      const name = f.split("/").pop()?.toLowerCase() ?? "";
-      return !name.includes(q) && f.toLowerCase().includes(q);
-    });
-    return [...nameHits, ...pathOnly].slice(0, 8);
-  }, [allFiles, mentionQuery]);
-
-  // Close mention when selection goes out of range
-  useEffect(() => {
-    if (mentionSelIdx >= filteredFiles.length) setMentionSelIdx(0);
-  }, [filteredFiles.length, mentionSelIdx]);
-
-  // Scroll selected item into view
-  useEffect(() => {
-    listRef.current
-      ?.children[mentionSelIdx]
-      ?.scrollIntoView({ block: "nearest" });
-  }, [mentionSelIdx]);
-
-  const closeMention = useCallback(() => setMentionQuery(null), []);
-
-  const applyMention = useCallback((path: string) => {
-    // Strip the @query text from the input and add a chip instead
-    const current = controller.textInput.value;
-    const before = current.slice(0, mentionAtIdx).trimEnd();
-    const after = current.slice(mentionAtIdx + 1 + (mentionQuery?.length ?? 0)).trimStart();
-    const cleaned = [before, after].filter(Boolean).join(" ");
-    controller.textInput.setInput(cleaned);
-    onAddFile(path);
-    setMentionQuery(null);
-    setMentionSelIdx(0);
-  }, [controller, mentionAtIdx, mentionQuery, onAddFile]);
-
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    const cursor = e.target.selectionStart ?? val.length;
-    const before = val.slice(0, cursor);
-    // Match last @ that isn't preceded by a non-space character (i.e., starts a mention)
-    const m = before.match(/@([^\s@]*)$/);
-    if (m && m.index !== undefined) {
-      setMentionQuery(m[1]);
-      setMentionAtIdx(m.index);
-      setMentionSelIdx(0);
-    } else {
-      setMentionQuery(null);
-    }
-  }, []);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    const isOpen = mentionQuery !== null && filteredFiles.length > 0;
-    if (!isOpen) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setMentionSelIdx(i => Math.min(i + 1, filteredFiles.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setMentionSelIdx(i => Math.max(i - 1, 0));
-    } else if (e.key === "Enter" || e.key === "Tab") {
-      e.preventDefault();
-      applyMention(filteredFiles[mentionSelIdx]);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      closeMention();
-    }
-  }, [mentionQuery, filteredFiles, mentionSelIdx, applyMention, closeMention]);
-
-  const handleTranscription = useCallback((text: string) => {
-    const current = controller.textInput.value;
-    const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? " " : "";
-    controller.textInput.setInput(current + sep + text);
-  }, [controller]);
-
-  const isMentionOpen = mentionQuery !== null && filteredFiles.length > 0;
-  const submitStatus = isStreaming ? "streaming" : agentStatus === "error" ? "error" : "ready";
-
-  return (
-    <PromptDropZone onFileDrop={onAddFile} onFilesUpload={handleFilesUpload}>
-      {/* Relative container so the dropdown can be absolute-positioned above the input */}
-      <div className="relative">
-        {/* @ mention dropdown */}
-        {isMentionOpen && (
-          <div
-            className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border bg-background shadow-lg"
-            onMouseDown={(e) => e.preventDefault()} // prevent textarea blur on click
-          >
-            {/* Header */}
-            <div className="flex items-center gap-2 border-b px-3 py-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Files</span>
-              {mentionQuery && (
-                <span className="font-mono text-[11px] text-primary">@{mentionQuery}</span>
-              )}
-              <span className="ml-auto text-[10px] text-muted-foreground">
-                {filteredFiles.length} match{filteredFiles.length !== 1 ? "es" : ""}
-              </span>
-              <kbd className="rounded border bg-muted px-1 py-0.5 text-[9px] font-mono text-muted-foreground">↑↓</kbd>
-              <kbd className="rounded border bg-muted px-1 py-0.5 text-[9px] font-mono text-muted-foreground">↵</kbd>
-            </div>
-
-            {/* File list */}
-            <div ref={listRef} className="max-h-52 overflow-y-auto py-1">
-              {filteredFiles.map((path, i) => {
-                const name = path.split("/").pop() ?? path;
-                const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
-                return (
-                  <div
-                    key={path}
-                    onClick={() => applyMention(path)}
-                    className={cn(
-                      "flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors",
-                      i === mentionSelIdx ? "bg-muted" : "hover:bg-muted/50"
-                    )}
-                  >
-                    <span className="shrink-0">{mentionIconForFile(name)}</span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-foreground">
-                        <HighlightMatch text={name} query={mentionQuery ?? ""} />
-                      </span>
-                      {dir && (
-                        <span className="block truncate text-muted-foreground/70 text-[11px]">
-                          <HighlightMatch text={dir} query={mentionQuery ?? ""} />
-                        </span>
-                      )}
-                    </span>
-                    {i === mentionSelIdx && (
-                      <kbd className="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 text-[9px] font-mono text-muted-foreground">↵</kbd>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {!isMentionOpen && (
-          <MessageQueueDisplay queue={queuedMessages} onRemove={onRemoveFromQueue} />
-        )}
-
-        {budgetState !== "ok" && (
-          <BudgetBanner
-            state={budgetState}
-            totalUsd={budgetTotalUsd}
-            limitUsd={budgetLimitUsd}
-          />
-        )}
-
-        <PromptInput onSubmit={handleSubmit} className="rounded-xl border shadow-sm">
-          <ContextChipsBar
-            attachedFiles={attachedFiles}
-            onRemoveFile={onRemoveFile}
-            selectedDbs={selectedDbs}
-            onDbsChange={onDbsChange}
-            selectedCompute={selectedCompute}
-            onComputeChange={onComputeChange}
-            selectedSkills={selectedSkills}
-            onSkillsChange={onSkillsChange}
-          />
-          <PromptInputTextarea
-            placeholder={
-              queuedMessages.length >= MAX_QUEUE
-                ? `Queue full (${MAX_QUEUE}/${MAX_QUEUE})`
-                : isStreaming && queuedMessages.length > 0
-                  ? `Ask Kady anything… (${queuedMessages.length}/${MAX_QUEUE} queued)`
-                  : "Ask Kady anything… (@ for files, + for data / compute / skills)"
-            }
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-          />
-          <PromptInputFooter>
-            <div className="flex min-w-0 items-center gap-1.5">
-              <AddContextMenu
-                selectedDbs={selectedDbs}
-                onDbsChange={onDbsChange}
-                selectedCompute={selectedCompute}
-                onComputeChange={onComputeChange}
-                modalConfigured={modalConfigured}
-                allSkills={allSkills}
-                selectedSkills={selectedSkills}
-                onSkillsChange={onSkillsChange}
-                onUploadFiles={handleFilesUpload}
-              />
-              <PairedModelSelector
-                orchestrator={selectedModel}
-                expert={selectedExpertModel}
-                onChangeOrchestrator={onModelChange}
-                onChangeExpert={onExpertModelChange}
-              />
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <InfoTooltip
-                content={
-                  <>
-                    <b>Dictate</b>
-                    <br />
-                    Transcribe speech into the prompt. Uses the provider
-                    configured in Settings → Speech.
-                  </>
-                }
-              >
-                <span>
-                  <SpeechInput
-                    size="icon-sm"
-                    variant="ghost"
-                    onTranscriptionChange={handleTranscription}
-                  />
-                </span>
-              </InfoTooltip>
-              <InfoTooltip
-                content={
-                  budgetBlocked ? (
-                    <>
-                      <b>Spend limit reached</b>
-                      <br />
-                      Project has hit its spend limit (
-                      {formatBudgetCost(budgetTotalUsd)}
-                      {budgetLimitUsd !== null
-                        ? ` / ${formatBudgetCost(budgetLimitUsd)}`
-                        : ""}
-                      ). Raise the limit in the project settings to continue.
-                    </>
-                  ) : isStreaming ? (
-                    <>
-                      <b>Stop</b>
-                      <br />
-                      Cancel the current turn. Files the agent already wrote
-                      stay in the sandbox.
-                    </>
-                  ) : queuedMessages.length >= MAX_QUEUE ? (
-                    <>
-                      <b>Queue is full</b>
-                      <br />
-                      Wait for the agent to finish before adding more prompts.
-                    </>
-                  ) : (
-                    <>
-                      <b>Send message</b>
-                      <br />
-                      Press <kbd>↵</kbd> to send, <kbd>⇧</kbd>+<kbd>↵</kbd> for
-                      a new line. Prompts sent while the agent is busy are
-                      queued.
-                    </>
-                  )
-                }
-              >
-                <PromptInputSubmit
-                  status={submitStatus as "streaming" | "error" | "ready"}
-                  onStop={onStop}
-                  disabled={budgetBlocked && !isStreaming}
-                />
-              </InfoTooltip>
-            </div>
-          </PromptInputFooter>
-        </PromptInput>
-      </div>
-    </PromptDropZone>
-  );
-}
-
-function AssistantMessageBody({ message }: { message: ChatMessage }) {
-  return (
-    <>
-      <MessageResponse>{message.content}</MessageResponse>
-      {message.citations && (
-        <div className="flex flex-wrap items-center gap-2">
-          <CitationBadge report={message.citations} />
-        </div>
-      )}
-    </>
-  );
-}
-
 export default function ChatPage() {
-  const { messages, status, send, stop, reset, getSessionId } = useAgent();
-  const isStreaming = status === "streaming" || status === "submitted";
-  const sandbox = useSandbox(isStreaming);
+  const sandbox = useSandbox(false);
   const config = useConfig();
   const { updateAvailable } = useUpdateCheck();
   const { skills: allSkills } = useSkills();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const turnMetaRef = useRef<Map<string, TurnMeta>>(new Map());
-  const prevMessageCount = useRef(0);
-  const [costRefreshKey, setCostRefreshKey] = useState(0);
-  const { summary: costSummary, loading: costLoading } = useSessionCost(
-    getSessionId(),
-    costRefreshKey,
+
+  // Chat tab management. We allocate the initial id once via useRef so it
+  // stays stable across React's strict-mode double-invocation of
+  // useState's lazy initializer (which would otherwise mint two different
+  // ids — one for the tabs array and one for activeTabId).
+  const initialTabIdRef = useRef<string | null>(null);
+  if (initialTabIdRef.current === null) initialTabIdRef.current = makeTabId();
+  const initialTabId = initialTabIdRef.current;
+  const [tabs, setTabs] = useState<ChatTabEntry[]>(() => [
+    { id: initialTabId, title: defaultTabTitle(0) },
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>(() => initialTabId);
+  const [view, setView] = useState<"chat" | "workflows">("chat");
+  // Mirror of tabs in a ref so synchronous handlers can read length without
+  // putting impure logic inside a setState updater (which strict mode runs
+  // twice for purity testing).
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  // Per-tab agent meta, populated by each <ChatTab> via onMetaChange. We
+  // read from this to drive the cost pill, provenance panel, and tab
+  // strip badges (streaming spinner, message count) for the active tab.
+  const [tabsMeta, setTabsMeta] = useState<Record<string, ChatTabMeta>>({});
+  const tabHandles = useRef<Map<string, ChatTabHandle | null>>(new Map());
+  // Stable per-tab ref callbacks so React doesn't repeatedly clear+set the
+  // tab handle map on every render (inline `ref={(h) => ...}` would).
+  const tabRefCallbacks = useRef<
+    Map<string, (handle: ChatTabHandle | null) => void>
+  >(new Map());
+  const getTabRefCallback = useCallback(
+    (id: string) => {
+      let cb = tabRefCallbacks.current.get(id);
+      if (!cb) {
+        cb = (handle: ChatTabHandle | null) => {
+          if (handle) tabHandles.current.set(id, handle);
+          else tabHandles.current.delete(id);
+        };
+        tabRefCallbacks.current.set(id, cb);
+      }
+      return cb;
+    },
+    [],
   );
-  const { summary: projectCost, loading: projectCostLoading } =
-    useProjectCost(costRefreshKey);
+
+  // Bumped whenever any chat tab finishes a turn, so the cost pill (which
+  // tracks the active tab's session) refetches.
+  const [costRefreshKey, setCostRefreshKey] = useState(0);
+
+  const handleMetaChange = useCallback(
+    (tabId: string, meta: ChatTabMeta) => {
+      setTabsMeta((prev) => {
+        const existing = prev[tabId];
+        // Avoid noisy state updates that would loop back into ChatTab's
+        // onMetaChange dependency array. We compare the small primitive
+        // fields plus identity-equality on the messages array (useAgent
+        // returns a fresh array only when it actually mutates).
+        if (
+          existing &&
+          existing.sessionId === meta.sessionId &&
+          existing.status === meta.status &&
+          existing.isStreaming === meta.isStreaming &&
+          existing.userMessageCount === meta.userMessageCount &&
+          existing.messages === meta.messages &&
+          existing.turnMeta === meta.turnMeta
+        ) {
+          return prev;
+        }
+        return { ...prev, [tabId]: meta };
+      });
+    },
+    [],
+  );
+
+  const handleTurnComplete = useCallback(() => {
+    setCostRefreshKey((k) => k + 1);
+  }, []);
+
+  // Pull out the two sandbox functions we re-trigger on turn completion.
+  // Destructuring keeps the deps stable below — useSandbox returns a new
+  // object literal each render, so depending on `sandbox` directly would
+  // make `handleSandboxRefresh` change identity every render.
+  const { fetchTree: sandboxFetchTree, refreshOpenTabs: sandboxRefreshOpenTabs } =
+    sandbox;
+  const handleSandboxRefresh = useCallback(() => {
+    sandboxFetchTree();
+    sandboxRefreshOpenTabs();
+  }, [sandboxFetchTree, sandboxRefreshOpenTabs]);
 
   useEffect(() => setMounted(true), []);
+
+  // Drive sandbox polling cadence off the active tab's streaming state
+  // (the live-poll mode used to be hard-wired to the single chat).
+  const activeMeta = tabsMeta[activeTabId];
+  const anyStreaming = useMemo(
+    () => Object.values(tabsMeta).some((m) => m.isStreaming),
+    [tabsMeta],
+  );
+  // While any tab is streaming, poll the sandbox more aggressively so the
+  // file tree + open previews update as the agent writes files. The base
+  // 3s poll inside useSandbox keeps running independently.
+  useEffect(() => {
+    if (!anyStreaming) return;
+    const id = setInterval(() => {
+      sandboxFetchTree();
+      sandboxRefreshOpenTabs();
+    }, 1500);
+    return () => clearInterval(id);
+  }, [anyStreaming, sandboxFetchTree, sandboxRefreshOpenTabs]);
 
   // Resizable panel widths (px)
   const [treeWidth, setTreeWidth] = useState(320);
@@ -954,198 +242,142 @@ export default function ChatPage() {
     };
   }, []);
 
-  // Auto-refresh sandbox tree when the agent finishes a response
-  useEffect(() => {
-    if (
-      status === "ready" &&
-      messages.length > 0 &&
-      messages.length !== prevMessageCount.current
-    ) {
-      prevMessageCount.current = messages.length;
-      sandbox.fetchTree();
-      sandbox.refreshOpenTabs();
-      // Re-pull the cost ledger so the header pill reflects the turn that
-      // just completed. The orchestrator callback writes synchronously on
-      // completion but the expert callback runs in the proxy process, so
-      // there can be a small delay; refetching once here is usually enough.
-      setCostRefreshKey((k) => k + 1);
-    }
-  }, [status, messages.length, sandbox]);
+  // Switching projects nukes every tab's session, so we reduce the tab list
+  // back to one fresh tab. Each <ChatTab>'s own useAgent listens for the
+  // same event and clears its messages, so this is just bookkeeping for
+  // the strip.
+  useEffect(
+    () =>
+      onProjectChange(() => {
+        const id = makeTabId();
+        tabHandles.current.clear();
+        tabRefCallbacks.current.clear();
+        setTabsMeta({});
+        setTabs([{ id, title: defaultTabTitle(0) }]);
+        setActiveTabId(id);
+        setView("chat");
+        setCostRefreshKey((k) => k + 1);
+      }),
+    [],
+  );
 
-  // Selected LLM models: one for the orchestrator (ADK agent) and one for
-  // the expert subprocess (Gemini CLI / delegate_task). Each role has its
-  // own recommended default — Claude Opus for planning/orchestration and
-  // Gemini 3.1 Pro for the tool-heavy CLI expert.
-  const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL);
-  const [selectedExpertModel, setSelectedExpertModel] = useState<Model>(DEFAULT_EXPERT_MODEL);
-
-  const handleCopy = useCallback((id: string, content: string) => {
-    navigator.clipboard.writeText(content);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
-  }, []);
-
-  const activeAssistantId =
-    [...messages].reverse().find((message) => message.role === "assistant")?.id ??
-    null;
-
-  // Flat list of all sandbox file paths for @ mentions
+  // Flat list of all sandbox file paths for @ mentions (shared across tabs)
   const allFiles = useMemo(() => flattenFiles(sandbox.tree), [sandbox.tree]);
 
-  // Attached file chips — lifted here so file selection can write to them
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
-  const addAttachedFile = useCallback((path: string) => {
-    setAttachedFiles(prev => prev.includes(path) ? prev : [...prev, path]);
-  }, []);
-  const removeAttachedFile = useCallback((path: string) => {
-    setAttachedFiles(prev => prev.filter(p => p !== path));
-  }, []);
-  const clearAttachedFiles = useCallback(() => setAttachedFiles([]), []);
+  // ------------------------------------------------------------------
+  // Tab management callbacks
+  // ------------------------------------------------------------------
 
-  // Selected data source databases
-  const [selectedDbs, setSelectedDbs] = useState<Database[]>([]);
-
-  // Selected Modal compute instance
-  const [selectedCompute, setSelectedCompute] = useState<ModalInstance | null>(null);
-
-  // Selected expert skills
-  const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
-
-  // Message queue for prompts sent while the agent is busy
-  const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
-  const queueIdCounter = useRef(0);
-
-  const removeFromQueue = useCallback((id: string) => {
-    setMessageQueue((prev) => prev.filter((item) => item.id !== id));
+  const newTab = useCallback(() => {
+    // Mint the id OUTSIDE any setState updater. Strict mode invokes
+    // updaters twice for purity testing, which would otherwise produce
+    // two different ids on a single click — the array would commit one
+    // id while setActiveTabId got the other, leaving every tab with
+    // isActive=false and display:none.
+    if (tabsRef.current.length >= MAX_CHAT_TABS) return;
+    const id = makeTabId();
+    setTabs((prev) =>
+      prev.length >= MAX_CHAT_TABS
+        ? prev
+        : [...prev, { id, title: defaultTabTitle(prev.length) }],
+    );
+    setActiveTabId(id);
+    setView("chat");
   }, []);
 
-  // Chat vs Workflows tab
-  const [activeTab, setActiveTab] = useState<"chat" | "workflows">("chat");
+  const closeTab = useCallback((id: string) => {
+    // Abort an in-flight stream so the agent doesn't keep running into a
+    // detached component. Safe to call on a non-streaming tab too.
+    tabHandles.current.get(id)?.stop();
+    setTabs((prev) => {
+      if (prev.length <= 1) return prev;
+      const idx = prev.findIndex((t) => t.id === id);
+      if (idx === -1) return prev;
+      const next = prev.filter((t) => t.id !== id);
+      setActiveTabId((curr) => {
+        if (curr !== id) return curr;
+        const fallback = next[Math.min(idx, next.length - 1)];
+        return fallback?.id ?? next[0].id;
+      });
+      return next;
+    });
+    tabHandles.current.delete(id);
+    tabRefCallbacks.current.delete(id);
+    setTabsMeta((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _removed, ...rest } = prev;
+      void _removed;
+      return rest;
+    });
+  }, []);
+
+  const renameTab = useCallback((id: string, title: string) => {
+    setTabs((prev) =>
+      prev.map((t) => (t.id === id ? { ...t, title } : t)),
+    );
+  }, []);
+
+  const selectTab = useCallback((id: string) => {
+    setActiveTabId(id);
+    setView("chat");
+  }, []);
+
+  // ------------------------------------------------------------------
+  // Workflow launch — routes to the active chat tab via its imperative
+  // handle and switches the view back to "chat".
+  // ------------------------------------------------------------------
 
   const handleWorkflowLaunch = useCallback(
-    async (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[], uploadedFiles: string[]) => {
-      if (projectCost.budget.state === "exceeded") {
-        // Silent no-op: the WorkflowsPanel's Launch button is already
-        // disabled in this state, but guarding here too keeps any future
-        // programmatic caller honest.
-        return;
-      }
-      setSelectedModel(model);
-      // Workflows only expose a single model picker today; mirror the
-      // chosen model to the expert slot so the whole pipeline runs on it.
-      setSelectedExpertModel(model);
-      setSelectedCompute(compute);
-      setActiveTab("chat");
-      const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
-      const computeCtx = buildComputeContext(compute);
-      const skillsCtx = suggestedSkills.length > 0
-        ? `\n\nMake sure to instruct the delegated expert to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
-        : "";
-      const fullPrompt = prompt + fileRefs + computeCtx + skillsCtx;
-      const msgId = await send(fullPrompt, model.id, {
-        expertModel: model.id,
-        attachments: uploadedFiles,
-        skills: suggestedSkills,
-        databases: [],
-        compute: compute?.label ?? null,
-      });
-      if (msgId) {
-        turnMetaRef.current.set(msgId, {
-          model: model.label,
-          expertModel: model.label,
-          databases: [],
-          compute: compute?.label ?? null,
-          skills: suggestedSkills,
-          filesAttached: [...uploadedFiles],
-          timestamp: Date.now(),
-        });
-      }
+    async (
+      prompt: string,
+      model: Model,
+      compute: ModalInstance | null,
+      suggestedSkills: string[],
+      uploadedFiles: string[],
+    ) => {
+      const handle = tabHandles.current.get(activeTabId);
+      if (!handle) return;
+      setView("chat");
+      await handle.launchWorkflow(
+        prompt,
+        model,
+        compute,
+        suggestedSkills,
+        uploadedFiles,
+      );
     },
-    [send, projectCost.budget.state]
+    [activeTabId],
   );
-
-  const handleSubmit = useCallback(
-    async ({ text }: { text: string }) => {
-      if (projectCost.budget.state === "exceeded") {
-        // Budget gate: ChatInput already blocks the submit button + Enter,
-        // this is the belt-and-braces guard covering any caller path.
-        return;
-      }
-      if (isStreaming) {
-        if (messageQueue.length >= MAX_QUEUE) return;
-        const rawText = text.split("\n")[0];
-        setMessageQueue((prev) => [
-          ...prev,
-          {
-            id: String(++queueIdCounter.current),
-            rawText,
-            text,
-            model: { id: selectedModel.id, label: selectedModel.label },
-            expertModel: { id: selectedExpertModel.id, label: selectedExpertModel.label },
-            databases: [...selectedDbs],
-            compute: selectedCompute,
-            skills: [...selectedSkills],
-            files: [...attachedFiles],
-            timestamp: Date.now(),
-          },
-        ]);
-        return;
-      }
-      const msgId = await send(text, selectedModel.id, {
-        expertModel: selectedExpertModel.id,
-        attachments: attachedFiles,
-        skills: selectedSkills.map((s) => s.name),
-        databases: selectedDbs.map((db) => db.name),
-        compute: selectedCompute?.label ?? null,
-      });
-      if (msgId) {
-        turnMetaRef.current.set(msgId, {
-          model: selectedModel.label,
-          expertModel: selectedExpertModel.label,
-          databases: selectedDbs.map((db) => db.name),
-          compute: selectedCompute?.label ?? null,
-          skills: selectedSkills.map((s) => s.name),
-          filesAttached: [...attachedFiles],
-          timestamp: Date.now(),
-        });
-      }
-    },
-    [send, selectedModel, selectedExpertModel, selectedDbs, selectedCompute, selectedSkills, attachedFiles, isStreaming, messageQueue.length, projectCost.budget.state]
-  );
-
-  // Auto-send the next queued message when the agent becomes ready
-  useEffect(() => {
-    if (status !== "ready" || messageQueue.length === 0) return;
-    const [next, ...rest] = messageQueue;
-    setMessageQueue(rest);
-    send(next.text, next.model.id, {
-      expertModel: next.expertModel.id,
-      attachments: next.files,
-      skills: next.skills.map((s) => s.name),
-      databases: next.databases.map((db) => db.name),
-      compute: next.compute?.label ?? null,
-    }).then((msgId) => {
-      if (msgId) {
-        turnMetaRef.current.set(msgId, {
-          model: next.model.label,
-          expertModel: next.expertModel.label,
-          databases: next.databases.map((db) => db.name),
-          compute: next.compute?.label ?? null,
-          skills: next.skills.map((s) => s.name),
-          filesAttached: [...next.files],
-          timestamp: next.timestamp,
-        });
-      }
-    });
-  }, [status, messageQueue, send]);
-
-  const handleOrganize = useCallback(() => {
-    send("Organize all the files in the sandbox directory", selectedModel.id);
-  }, [send, selectedModel]);
 
   const handleFileSelect = useCallback((path: string) => {
     sandbox.selectFile(path);
   }, [sandbox]);
+
+  // ------------------------------------------------------------------
+  // Header pieces — cost pill, provenance — read from the active tab.
+  // ------------------------------------------------------------------
+
+  const activeSessionId = activeMeta?.sessionId ?? null;
+  const activeMessages = activeMeta?.messages ?? EMPTY_MESSAGES;
+  const activeTurnMeta = activeMeta?.turnMeta ?? EMPTY_TURN_META;
+
+  const { summary: costSummary, loading: costLoading } = useSessionCost(
+    activeSessionId,
+    costRefreshKey,
+  );
+  const { summary: projectCost, loading: projectCostLoading } =
+    useProjectCost(costRefreshKey);
+
+  const tabDescriptors: ChatTabDescriptor[] = useMemo(
+    () =>
+      tabs.map((t) => ({
+        id: t.id,
+        title: t.title,
+        isStreaming: tabsMeta[t.id]?.isStreaming ?? false,
+        userMessageCount: tabsMeta[t.id]?.userMessageCount ?? 0,
+      })),
+    [tabs, tabsMeta],
+  );
 
   return (
     <div className="flex h-dvh flex-col">
@@ -1202,45 +434,26 @@ export default function ChatPage() {
             limitUsd={projectCost.limitUsd}
             loading={costLoading || projectCostLoading}
           />
-          {messages.length > 0 && (
-            <>
-              <InfoTooltip
-                content={
-                  <>
-                    <b>Session provenance</b>
-                    <br />
-                    Full record of every turn in this session: prompts, model, expert,
-                    datasets, compute, skills, and attached files. Exportable for your
-                    methods section.
-                  </>
-                }
+          {activeMessages.length > 0 && (
+            <InfoTooltip
+              content={
+                <>
+                  <b>Session provenance</b>
+                  <br />
+                  Full record of every turn in the active chat tab: prompts,
+                  model, expert, datasets, compute, skills, and attached
+                  files. Exportable for your methods section.
+                </>
+              }
+            >
+              <button
+                onClick={() => setProvenanceOpen(true)}
+                aria-label="Open session provenance"
+                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               >
-                <button
-                  onClick={() => setProvenanceOpen(true)}
-                  aria-label="Open session provenance"
-                  className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <ScrollTextIcon className="size-4" />
-                </button>
-              </InfoTooltip>
-              <InfoTooltip
-                content={
-                  <>
-                    <b>New chat</b>
-                    <br />
-                    Start a fresh session. Sandbox files stay; chat history and
-                    cost tracking reset.
-                  </>
-                }
-              >
-                <button
-                  onClick={reset}
-                  className="rounded-lg px-3 py-1.5 text-muted-foreground text-sm transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  New chat
-                </button>
-              </InfoTooltip>
-            </>
+                <ScrollTextIcon className="size-4" />
+              </button>
+            </InfoTooltip>
           )}
           <InfoTooltip
             content={
@@ -1333,7 +546,14 @@ export default function ChatPage() {
               onRefresh={sandbox.fetchTree}
               onClose={() => setPanelOpen(false)}
               onUpload={sandbox.uploadFiles}
-              onOrganize={handleOrganize}
+              onOrganize={() => {
+                const handle = tabHandles.current.get(activeTabId);
+                if (!handle) return;
+                setView("chat");
+                void handle.sendQuick(
+                  "Organize all the files in the sandbox directory",
+                );
+              }}
               onMove={sandbox.moveItem}
               onRename={sandbox.renameItem}
               onCreateDir={sandbox.createDir}
@@ -1365,171 +585,54 @@ export default function ChatPage() {
         {panelOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
 
         {/* Right: chat / workflows — fills all space when sandbox is hidden */}
-        <div className={`flex flex-col border-l overflow-hidden ${panelOpen ? "shrink-0" : "flex-1"}`} style={{ width: panelOpen ? chatWidth : undefined }}>
+        <div
+          className={`flex flex-col border-l overflow-hidden ${panelOpen ? "shrink-0" : "flex-1"}`}
+          style={{ width: panelOpen ? chatWidth : undefined }}
+        >
 
-          {/* Tab bar */}
-          <div className="flex shrink-0 items-center gap-1 border-b px-3 py-1.5">
-            <InfoTooltip
-              content={
-                <>
-                  <b>Chat</b>
-                  <br />
-                  Open-ended conversation with Kady. The orchestrator can
-                  delegate work to an expert subprocess, run code in the
-                  sandbox, and call tools.
-                </>
-              }
-            >
-              <button
-                onClick={() => setActiveTab("chat")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  activeTab === "chat"
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                )}
-              >
-                <MessageSquareTextIcon className="size-3.5" />
-                Chat
-                {messages.length > 0 && (
-                  <span className="ml-0.5 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary tabular-nums">
-                    {messages.filter(m => m.role === "user").length}
-                  </span>
-                )}
-              </button>
-            </InfoTooltip>
-            <InfoTooltip
-              content={
-                <>
-                  <b>Workflows</b>
-                  <br />
-                  Pre-built scientific pipelines (e.g. RNA-seq, literature
-                  review). Pick a template, attach inputs, and launch — they
-                  run in the same chat.
-                </>
-              }
-            >
-              <button
-                onClick={() => setActiveTab("workflows")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  activeTab === "workflows"
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                )}
-              >
-                <WorkflowIcon className="size-3.5" />
-                Workflows
-              </button>
-            </InfoTooltip>
-          </div>
+          <ChatTabsBar
+            tabs={tabDescriptors}
+            activeTabId={activeTabId}
+            view={view}
+            maxTabs={MAX_CHAT_TABS}
+            onSelect={selectTab}
+            onClose={closeTab}
+            onNew={newTab}
+            onRename={renameTab}
+            onSelectWorkflows={() => setView("workflows")}
+          />
 
-          {/* Tab content */}
-          {activeTab === "chat" ? (
-            <>
-              <Conversation className="flex-1">
-                <ConversationContent className="mx-auto w-full max-w-full px-4">
-                  {messages.length === 0 ? (
-                    <ConversationEmptyState
-                      title="What can I help you with?"
-                      description="I can research topics, write code, analyze data, and delegate tasks to specialized agents."
-                    />
-                  ) : (
-                    messages.map((message) => (
-                      <Message from={message.role} key={message.id}>
-                        <MessageContent>
-                          {message.role === "assistant" && (
-                            <AssistantActivity
-                              items={message.activities ?? []}
-                              isStreaming={
-                                isStreaming && message.id === activeAssistantId
-                              }
-                            />
-                          )}
-                          {message.role === "assistant" &&
-                          !message.content &&
-                          !(message.activities && message.activities.length > 0) &&
-                          isStreaming ? (
-                            <Shimmer className="text-sm" duration={1.5}>
-                              Thinking...
-                            </Shimmer>
-                          ) : message.role === "assistant" ? (
-                            <AssistantMessageBody message={message} />
-                          ) : (
-                            <MessageResponse>{message.content}</MessageResponse>
-                          )}
-                          {message.role === "assistant" && message.modelVersion && (
-                            <span className="text-xs text-muted-foreground mt-1">
-                              {message.modelVersion}
-                            </span>
-                          )}
-                        </MessageContent>
-                        {message.role === "assistant" && message.content && (
-                          <MessageToolbar>
-                            <MessageActions>
-                              <MessageAction
-                                tooltip="Copy"
-                                onClick={() =>
-                                  handleCopy(message.id, message.content)
-                                }
-                              >
-                                {copiedId === message.id ? (
-                                  <CheckIcon className="size-4" />
-                                ) : (
-                                  <CopyIcon className="size-4" />
-                                )}
-                              </MessageAction>
-                            </MessageActions>
-                          </MessageToolbar>
-                        )}
-                      </Message>
-                    ))
-                  )}
-                </ConversationContent>
-                <ConversationScrollButton />
-              </Conversation>
-
-              <div className="px-4 pb-6 pt-2">
-                <PromptInputProvider>
-                  <ChatInput
-                    allFiles={allFiles}
-                    attachedFiles={attachedFiles}
-                    onAddFile={addAttachedFile}
-                    onRemoveFile={removeAttachedFile}
-                    onClearFiles={clearAttachedFiles}
-                    onSubmit={handleSubmit}
-                    isStreaming={isStreaming}
-                    agentStatus={status}
-                    onStop={stop}
-                    selectedDbs={selectedDbs}
-                    onDbsChange={setSelectedDbs}
-                    selectedCompute={selectedCompute}
-                    onComputeChange={setSelectedCompute}
-                    selectedModel={selectedModel}
-                    onModelChange={setSelectedModel}
-                    selectedExpertModel={selectedExpertModel}
-                    onExpertModelChange={setSelectedExpertModel}
-                    onUploadFiles={sandbox.uploadFiles}
-                    modalConfigured={config.modalConfigured}
-                    allSkills={allSkills}
-                    selectedSkills={selectedSkills}
-                    onSkillsChange={setSelectedSkills}
-                    queuedMessages={messageQueue}
-                    onRemoveFromQueue={removeFromQueue}
-                    budgetState={projectCost.budget.state}
-                    budgetTotalUsd={projectCost.budget.totalUsd}
-                    budgetLimitUsd={projectCost.budget.limitUsd}
-                  />
-                </PromptInputProvider>
-              </div>
-            </>
-          ) : (
-            <WorkflowsPanel
-              onLaunch={handleWorkflowLaunch}
-              onUploadFiles={sandbox.uploadFiles}
+          {/* Chat tabs — all kept mounted so background streams continue.
+              Each ChatTab hides itself with `display: none` when inactive. */}
+          {tabs.map((t) => (
+            <ChatTab
+              key={t.id}
+              ref={getTabRefCallback(t.id)}
+              tabId={t.id}
+              isActive={view === "chat" && t.id === activeTabId}
+              allFiles={allFiles}
+              uploadFiles={sandbox.uploadFiles}
+              onSandboxRefresh={handleSandboxRefresh}
+              onTurnComplete={handleTurnComplete}
               modalConfigured={config.modalConfigured}
-              budgetBlocked={projectCost.budget.state === "exceeded"}
+              allSkills={allSkills}
+              budgetState={projectCost.budget.state}
+              budgetTotalUsd={projectCost.budget.totalUsd}
+              budgetLimitUsd={projectCost.budget.limitUsd}
+              onMetaChange={handleMetaChange}
             />
+          ))}
+
+          {/* Workflows view */}
+          {view === "workflows" && (
+            <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
+              <WorkflowsPanel
+                onLaunch={handleWorkflowLaunch}
+                onUploadFiles={sandbox.uploadFiles}
+                modalConfigured={config.modalConfigured}
+                budgetBlocked={projectCost.budget.state === "exceeded"}
+              />
+            </div>
           )}
         </div>
 
@@ -1537,9 +640,9 @@ export default function ChatPage() {
 
       {provenanceOpen && (
         <ProvenancePanel
-          messages={messages}
-          turnMeta={turnMetaRef.current}
-          sessionId={getSessionId()}
+          messages={activeMessages}
+          turnMeta={activeTurnMeta}
+          sessionId={activeSessionId}
           onClose={() => setProvenanceOpen(false)}
         />
       )}

@@ -16,10 +16,42 @@ The `start.sh` script launches three local services that work together:
 
 When you send a message:
 
-1. The frontend passes it to the backend.
+1. The frontend passes it to the backend, tagged with the project id and the chat tab's session id.
 2. Kady (on the backend) decides whether to answer directly or delegate to an expert agent.
 3. Any AI calls go through the LiteLLM proxy to the correct provider.
 4. Responses stream back to your browser in real time.
+
+## Chat tabs and sessions
+
+Every chat tab in the UI is backed by its own backend **session**. A session
+is a single conversation: an id, an ordered list of messages, and a cost
+ledger. You can open up to 10 tabs in a project; the list of tabs lives only
+in the browser, but each tab's session is persistent on disk under that
+project.
+
+What a tab owns (per-tab):
+
+- Message history (one session row in `projects/<project>/sessions.db`).
+- Selected orchestrator and expert models.
+- Attached files for the next message and the queued-message buffer.
+- Cost ledger (`projects/<project>/sandbox/.kady/runs/<sessionId>/costs.jsonl`).
+- The streaming connection — closing a tab aborts the in-flight turn for
+  that session only.
+
+What every tab in a project shares:
+
+- The sandbox (`projects/<project>/sandbox/`) — files written by one tab are
+  immediately visible to the others.
+- Project settings: budget cap, custom MCP servers (`custom_mcps.json`),
+  browser-automation toggle, and the project-level cost total shown in the
+  header pill.
+- API keys and global preferences from `kady_agent/.env`.
+
+Switching tabs in the UI is purely client-side; the backend doesn't need to
+know which tab is "active" because each request already carries its own
+session id. Inactive tabs stay mounted in the DOM (hidden with CSS) so a
+streaming turn keeps producing output even when you're looking at another
+tab.
 
 ## First-run setup
 
@@ -52,8 +84,10 @@ k-dense-byok/
     └── default/          ← The "Default" project
         ├── project.json      ← Project metadata
         ├── sandbox/          ← Workspace for files and expert tasks
+        │   └── .kady/
+        │       └── runs/<sessionId>/  ← Per-tab cost ledger and turn artifacts
         ├── custom_mcps.json  ← Per-project custom MCP servers
-        └── sessions.db       ← Chat history (SQLite, per project)
+        └── sessions.db       ← Chat history (SQLite, one session per chat tab)
 ```
 
 ## A note on the expert model

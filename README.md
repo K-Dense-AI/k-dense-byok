@@ -15,6 +15,7 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 ## What can it do?
 
 - **Answer questions and take on tasks.** Chat with Kady like any AI assistant. For bigger work, Kady delegates to a specialist "expert" agent that runs with a full Python environment and scientific tools.
+- **Run up to 10 chats in parallel.** Open a new tab for each thread of work — every tab keeps its own message history, model, attached files, and cost meter, but all tabs share the project's sandbox so files written in one tab are immediately available in the others. Tabs keep streaming in the background while you switch between them.
 - **Pick any AI model, any time.** Choose from 30+ models across 10 providers (OpenAI, Anthropic, Google, xAI, Qwen, and more) with a simple dropdown. Switch models message to message. You can also use free local models through [Ollama](./docs/local-models-ollama.md).
 - **170+ scientific skills, pre-installed.** Covers genomics, proteomics, drug discovery, materials science, and more. Kady passes the right skills to the expert automatically for each task.
 - **326 ready-to-run workflow templates.** Browse a built-in library across 22 disciplines - genomics, drug discovery, finance, astrophysics, and more. Pick one, fill in the blanks, and launch.
@@ -59,7 +60,6 @@ The file also has sections for other optional keys (Parallel for web search, Mod
 ### Step 3 - Start the app
 
 ```bash
-chmod +x start.sh
 ./start.sh
 ```
 
@@ -74,9 +74,10 @@ Press **Ctrl+C** in the terminal.
 ## Using the app day to day
 
 - **Send a message.** Type a question or task and hit enter. Kady will either answer directly or hand off to an expert for bigger work.
-- **Switch models.** Use the model dropdown in the input bar - any message can use any model.
+- **Open multiple chats.** Click `+` in the chat tab strip to start a new chat in the same project (up to 10). Double-click a tab title or use the pencil icon to rename it. Closing a tab cancels any turn it had running. The cost pill in the header shows both the active tab's session cost (`sess`) and the project total across every tab (`proj`).
+- **Switch models.** Use the model dropdown in the input bar - any message can use any model. Each tab keeps its own model selection.
 - **Upload files.** Drag files into the file browser or directly onto the input bar. Use `@filename` in your message to reference files.
-- **Launch a workflow.** Open the workflows panel, pick one, fill in the blanks, and click Launch.
+- **Launch a workflow.** Open the workflows panel, pick one, fill in the blanks, and click Launch. Workflows run in whichever chat tab is currently active.
 - **Open Settings** (the gear icon in the top-right) for API keys, MCP servers, browser automation, and appearance.
 - **Copy as Methods.** When you're done, export a publication-ready Methods paragraph summarising the session.
 
@@ -100,7 +101,7 @@ These guides live in the [`docs/`](./docs) folder:
 - AutoResearch integration
 - And much more
 
-Recently completed: Ollama local model support, MCP server configuration in the UI, and choosing the expert's model from the main dropdown.
+Recently completed: tabbed chats (up to 10 parallel sessions per project, sharing the same sandbox), Ollama local model support, MCP server configuration in the UI, and choosing the expert's model from the main dropdown.
 
 ## Want more?
 
