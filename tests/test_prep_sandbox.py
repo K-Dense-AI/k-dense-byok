@@ -1,6 +1,6 @@
 """Unit tests for ``prep_sandbox.py``.
 
-All side-effect-producing calls (migrate, subprocess.run, init_project_sandbox)
+All side-effect-producing calls (subprocess.run, init_project_sandbox)
 are mocked so the test is hermetic.
 """
 
@@ -59,9 +59,8 @@ def test_install_browser_use_chromium_handles_failure(tmp_path, monkeypatch, cap
 
 
 def test_main_initializes_every_non_archived_project(tmp_projects_root, monkeypatch):
-    # No network, no subprocess, no migration.
+    # No network, no subprocess.
     monkeypatch.setattr(prep_sandbox, "install_browser_use_chromium", lambda: None)
-    monkeypatch.setattr(prep_sandbox, "migrate_legacy_layout", lambda: False)
     # Seed one live and one archived project.
     from kady_agent import projects as projects_module
 

@@ -1,14 +1,9 @@
 """One-shot sandbox bootstrap for every known project.
 
-Historically this script set up a single ``sandbox/`` folder. Now that each
-project has its own isolated sandbox under ``projects/<id>/sandbox/``, this
-script:
-
-1. Migrates the legacy ``sandbox/`` + ``user_config/custom_mcps.json`` into
-   ``projects/default/`` on first run (idempotent - no-op afterwards).
-2. Runs the heavy sandbox init (copy GEMINI.md, merge Gemini settings,
-   seed pyproject.toml, ``uv sync``, download scientific skills) for every
-   non-archived project in the registry.
+Each project has its own isolated sandbox under ``projects/<id>/sandbox/``.
+This script runs the heavy sandbox init (copy GEMINI.md, merge Gemini
+settings, seed pyproject.toml, ``uv sync``, download scientific skills) for
+every non-archived project in the registry.
 
 Running this is safe and idempotent; it can be re-invoked any time a new
 dependency is added to the sandbox pyproject template.
@@ -24,7 +19,6 @@ from kady_agent.projects import (
     ensure_project_exists,
     init_project_sandbox,
     list_projects,
-    migrate_legacy_layout,
 )
 
 REPO_ROOT = Path(__file__).resolve().parent
@@ -60,14 +54,8 @@ def install_browser_use_chromium() -> None:
 
 
 def main() -> None:
-    migrated = migrate_legacy_layout()
-    if migrated:
-        print("Migrated legacy sandbox/ + user_config/ into projects/default/.")
-
     install_browser_use_chromium()
 
-    # Guarantee the default project exists even on a fresh checkout where
-    # there was no legacy layout to migrate.
     ensure_project_exists(DEFAULT_PROJECT_ID)
 
     projects = list_projects()

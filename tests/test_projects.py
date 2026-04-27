@@ -240,17 +240,3 @@ def test_seed_project_skills_no_remote_falls_through_when_no_sibling(
     assert not any(target.gemini_settings_dir.joinpath("skills").iterdir())
 
 
-# ---------------------------------------------------------------------------
-# migrate_legacy_layout
-# ---------------------------------------------------------------------------
-
-
-def test_migrate_legacy_layout_returns_false_when_default_exists(
-    tmp_projects_root: Path, monkeypatch
-):
-    # If default project already seeded, migrate returns False.
-    projects_module.create_project(
-        name="Default", project_id=projects_module.DEFAULT_PROJECT_ID
-    )
-    monkeypatch.setattr(projects_module, "REPO_ROOT", tmp_projects_root.parent)
-    assert projects_module.migrate_legacy_layout() is False

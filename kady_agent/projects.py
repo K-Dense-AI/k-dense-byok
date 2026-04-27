@@ -665,64 +665,6 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
     return paths
 
 
-# ---------------------------------------------------------------------------
-# Migration from the legacy single-sandbox layout
-# ---------------------------------------------------------------------------
-
-
-def migrate_legacy_layout() -> bool:
-    """Move the pre-projects ``sandbox/`` + ``user_config/`` into ``projects/default``.
-
-    Returns True when migration ran, False when nothing to migrate. Safe to
-    call on every startup: the no-op path is a single ``exists()`` check.
-    """
-    legacy_sandbox = REPO_ROOT / "sandbox"
-    legacy_user_config = REPO_ROOT / "user_config"
-
-    default_paths = resolve_paths(DEFAULT_PROJECT_ID)
-    if default_paths.root.exists() and default_paths.project_json.is_file():
-        return False
-
-    _ensure_projects_root()
-    default_paths.root.mkdir(parents=True, exist_ok=True)
-
-    if legacy_sandbox.is_dir() and not default_paths.sandbox.exists():
-        shutil.move(str(legacy_sandbox), str(default_paths.sandbox))
-
-    if legacy_user_config.is_dir():
-        legacy_mcps = legacy_user_config / "custom_mcps.json"
-        if legacy_mcps.is_file() and not default_paths.custom_mcps_path.is_file():
-            shutil.copy2(legacy_mcps, default_paths.custom_mcps_path)
-        # Best-effort: remove the now-empty user_config folder so it doesn't
-        # clutter the repo root. Ignore failures (e.g. other files present).
-        try:
-            remaining = [p for p in legacy_user_config.iterdir()]
-            if len(remaining) == 1 and remaining[0].name == "custom_mcps.json":
-                remaining[0].unlink()
-                legacy_user_config.rmdir()
-            elif not remaining:
-                legacy_user_config.rmdir()
-        except OSError:
-            pass
-
-    now = _now_iso()
-    meta = ProjectMeta(
-        id=DEFAULT_PROJECT_ID,
-        name="Default",
-        description="Migrated from the pre-projects sandbox.",
-        createdAt=now,
-        updatedAt=now,
-    )
-    _write_project_json(default_paths, meta)
-    if not default_paths.custom_mcps_path.is_file():
-        default_paths.custom_mcps_path.write_text("{}\n", encoding="utf-8")
-
-    index = _load_index()
-    index["projects"][meta.id] = meta.to_dict()
-    _save_index(index)
-    return True
-
-
 __all__ = [
     "ACTIVE_PROJECT",
     "DEFAULT_PROJECT_ID",
@@ -737,7 +679,6 @@ __all__ = [
     "get_project",
     "init_project_sandbox",
     "list_projects",
-    "migrate_legacy_layout",
     "project_exists",
     "resolve_paths",
     "seed_project_skills",
