@@ -206,8 +206,8 @@ def test_mcp_snapshot_includes_exa_when_key_set(active_project, monkeypatch):
     assert "parallel-search" not in names
     exa = next(e for e in entries if e["name"] == "exa-search")
     assert exa["spec"]["httpUrl"] == "https://mcp.exa.ai/mcp"
-    # API key redacted; integration header preserved verbatim.
-    assert exa["spec"]["headers"]["x-api-key"] == "<redacted>"
+    # API key redacted to a clear placeholder; integration header preserved verbatim.
+    assert exa["spec"]["headers"]["x-api-key"] == "YOUR_EXA_API_KEY"
     assert exa["spec"]["headers"]["x-exa-integration"] == "k-dense-byok"
 
 

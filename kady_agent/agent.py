@@ -36,8 +36,8 @@ DEFAULT_EXPERT_MODEL = (
     or "openrouter/google/gemini-3.1-pro-preview"
 )
 EXTRA_HEADERS = {"X-Title": "Kady", "HTTP-Referer": "https://www.k-dense.ai"}
-PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
 EXA_API_KEY = os.getenv("EXA_API_KEY")
+PARALLEL_API_KEY = os.getenv("PARALLEL_API_KEY")
 
 logger = logging.getLogger(__name__)
 

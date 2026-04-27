@@ -188,16 +188,6 @@ def _mcp_servers_snapshot() -> list[dict]:
     entries: list[dict] = []
     for name in sorted(merged):
         entries.append({"name": name, "spec": merged[name]})
-    if os.getenv("PARALLEL_API_KEY"):
-        entries.append(
-            {
-                "name": "parallel-search",
-                "spec": {
-                    "httpUrl": "https://search-mcp.parallel.ai/mcp",
-                    "headers": {"Authorization": "Bearer <redacted>"},
-                },
-            }
-        )
     if os.getenv("EXA_API_KEY"):
         entries.append(
             {
@@ -205,9 +195,19 @@ def _mcp_servers_snapshot() -> list[dict]:
                 "spec": {
                     "httpUrl": "https://mcp.exa.ai/mcp",
                     "headers": {
-                        "x-api-key": "<redacted>",
+                        "x-api-key": "YOUR_EXA_API_KEY",
                         "x-exa-integration": "k-dense-byok",
                     },
+                },
+            }
+        )
+    if os.getenv("PARALLEL_API_KEY"):
+        entries.append(
+            {
+                "name": "parallel-search",
+                "spec": {
+                    "httpUrl": "https://search-mcp.parallel.ai/mcp",
+                    "headers": {"Authorization": "Bearer <redacted>"},
                 },
             }
         )

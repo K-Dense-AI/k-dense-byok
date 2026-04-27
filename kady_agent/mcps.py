@@ -168,19 +168,6 @@ class DynamicBuiltinBrowserUseToolset(BaseToolset):
 
 all_mcps: list[BaseToolset] = []
 
-if os.getenv("PARALLEL_API_KEY"):
-    parallel_search_mcp = ResilientMcpToolset(
-        McpToolset(
-            connection_params=StreamableHTTPConnectionParams(
-                url="https://search-mcp.parallel.ai/mcp",
-                headers={"Authorization": f"Bearer {os.getenv('PARALLEL_API_KEY')}"},
-                timeout=600,
-            ),
-        ),
-        label="Parallel Search MCP",
-    )
-    all_mcps.append(parallel_search_mcp)
-
 if os.getenv("EXA_API_KEY"):
     exa_search_mcp = ResilientMcpToolset(
         McpToolset(
@@ -196,6 +183,19 @@ if os.getenv("EXA_API_KEY"):
         label="Exa Search MCP",
     )
     all_mcps.append(exa_search_mcp)
+
+if os.getenv("PARALLEL_API_KEY"):
+    parallel_search_mcp = ResilientMcpToolset(
+        McpToolset(
+            connection_params=StreamableHTTPConnectionParams(
+                url="https://search-mcp.parallel.ai/mcp",
+                headers={"Authorization": f"Bearer {os.getenv('PARALLEL_API_KEY')}"},
+                timeout=600,
+            ),
+        ),
+        label="Parallel Search MCP",
+    )
+    all_mcps.append(parallel_search_mcp)
 
 docling_mcp = ResilientMcpToolset(
     McpToolset(
