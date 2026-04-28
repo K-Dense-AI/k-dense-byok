@@ -178,3 +178,52 @@ def test_update_manifest_in_place(active_project):
     # Persisted
     reread = manifest_module.read_manifest("s4", turn_id)
     assert reread["citations"]["total"] == 3
+
+
+# ---------------------------------------------------------------------------
+# _mcp_servers_snapshot — built-in MCP registration
+# ---------------------------------------------------------------------------
+
+
+def test_mcp_snapshot_includes_parallel_when_key_set(active_project, monkeypatch):
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel")
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    entries = manifest_module._mcp_servers_snapshot()
+    names = [entry["name"] for entry in entries]
+    assert "parallel-search" in names
+    assert "exa-search" not in names
+    parallel = next(e for e in entries if e["name"] == "parallel-search")
+    # Keys are redacted before they hit disk.
+    assert parallel["spec"]["headers"]["Authorization"] == "Bearer <redacted>"
+
+
+def test_mcp_snapshot_includes_exa_when_key_set(active_project, monkeypatch):
+    monkeypatch.setenv("EXA_API_KEY", "test-exa")
+    monkeypatch.delenv("PARALLEL_API_KEY", raising=False)
+    entries = manifest_module._mcp_servers_snapshot()
+    names = [entry["name"] for entry in entries]
+    assert "exa-search" in names
+    assert "parallel-search" not in names
+    exa = next(e for e in entries if e["name"] == "exa-search")
+    assert exa["spec"]["httpUrl"] == "https://mcp.exa.ai/mcp"
+    # API key redacted to a clear placeholder; integration header preserved verbatim.
+    assert exa["spec"]["headers"]["x-api-key"] == "YOUR_EXA_API_KEY"
+    assert exa["spec"]["headers"]["x-exa-integration"] == "k-dense-byok"
+
+
+def test_mcp_snapshot_omits_both_when_keys_unset(active_project, monkeypatch):
+    monkeypatch.delenv("PARALLEL_API_KEY", raising=False)
+    monkeypatch.delenv("EXA_API_KEY", raising=False)
+    entries = manifest_module._mcp_servers_snapshot()
+    names = [entry["name"] for entry in entries]
+    assert "parallel-search" not in names
+    assert "exa-search" not in names
+
+
+def test_mcp_snapshot_includes_both_when_both_keys_set(active_project, monkeypatch):
+    monkeypatch.setenv("PARALLEL_API_KEY", "test-parallel")
+    monkeypatch.setenv("EXA_API_KEY", "test-exa")
+    entries = manifest_module._mcp_servers_snapshot()
+    names = [entry["name"] for entry in entries]
+    assert "parallel-search" in names
+    assert "exa-search" in names

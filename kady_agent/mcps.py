@@ -168,6 +168,22 @@ class DynamicBuiltinBrowserUseToolset(BaseToolset):
 
 all_mcps: list[BaseToolset] = []
 
+if os.getenv("EXA_API_KEY"):
+    exa_search_mcp = ResilientMcpToolset(
+        McpToolset(
+            connection_params=StreamableHTTPConnectionParams(
+                url="https://mcp.exa.ai/mcp",
+                headers={
+                    "x-api-key": os.getenv("EXA_API_KEY"),
+                    "x-exa-integration": "k-dense-byok",
+                },
+                timeout=600,
+            ),
+        ),
+        label="Exa Search MCP",
+    )
+    all_mcps.append(exa_search_mcp)
+
 if os.getenv("PARALLEL_API_KEY"):
     parallel_search_mcp = ResilientMcpToolset(
         McpToolset(

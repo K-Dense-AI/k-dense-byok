@@ -1,6 +1,6 @@
 # Custom MCP Servers
 
-K-Dense BYOK comes with built-in [MCP](https://modelcontextprotocol.io/) servers (Docling for document conversion and Parallel for web search). You can add your own MCP servers to give Kady's expert agents more tools - for example, connecting to internal databases, custom APIs, or specialised scientific tooling.
+K-Dense BYOK comes with built-in [MCP](https://modelcontextprotocol.io/) servers: Docling for document conversion, and two optional web-search providers — Exa and Parallel — each enabled by supplying the corresponding API key in `.env` (get an Exa key at [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys)). You can add your own MCP servers to give Kady's expert agents more tools - for example, connecting to internal databases, custom APIs, or specialised scientific tooling.
 
 ## Adding a server through the UI
 
@@ -30,6 +30,6 @@ Two transport types are supported:
 
 ## How it's stored
 
-- Your custom servers are **merged** with the built-in defaults (Docling and Parallel) and passed to the Gemini CLI.
+- Your custom servers are **merged** with the built-in defaults (Docling, plus Exa and/or Parallel when their API keys are set) and passed to the Gemini CLI.
 - The configuration is saved **per project** in `projects/<project-id>/custom_mcps.json` (outside the `sandbox/` folder) so it survives sandbox deletion and app restarts.
 - Switching projects automatically swaps the MCP set - each project has its own.
