@@ -4,6 +4,120 @@ import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch, onProjectChange } from "@/lib/projects";
 
+export interface McpServerStatus {
+  /** Server key in the merged settings.json (e.g. "paperclip"). */
+  name: string;
+  /** "http" for streamable / SSE servers, "stdio" otherwise. */
+  transport: "http" | "stdio";
+  /** Connection URL for HTTP transports; null for stdio. */
+  url: string | null;
+  /** True when the server is one Kady ships by default. */
+  builtin: boolean;
+  /**
+   * null = stdio (auth doesn't apply); true/false = whether we have a
+   * stored OAuth token for this server.
+   */
+  signedIn: boolean | null;
+  /**
+   * True when the server replied 401 to an unauthenticated probe -- i.e.
+   * an OAuth flow is required to make it usable.
+   */
+  needsAuth: boolean;
+  /** Safe metadata about the stored token (no secrets). */
+  tokenInfo: {
+    issuer?: string | null;
+    obtainedAt?: number | null;
+    expiresAt?: number | null;
+    tokenType?: string;
+    hasRefreshToken?: boolean;
+  } | null;
+}
+
+export interface UseMcpStatusReturn {
+  servers: McpServerStatus[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
+  /** Kick off OAuth for ``name``. Returns the authorize URL on success. */
+  signIn: (name: string) => Promise<string | null>;
+  /** Drop the stored token for ``name``. */
+  signOut: (name: string) => Promise<boolean>;
+}
+
+/**
+ * Live view of every configured MCP server (defaults + custom) plus its
+ * auth status. Mirrors GET /settings/mcps/status on the backend.
+ */
+export function useMcpStatus(): UseMcpStatusReturn {
+  const [servers, setServers] = useState<McpServerStatus[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchStatus = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    apiFetch(`/settings/mcps/status`)
+      .then((r) =>
+        r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)),
+      )
+      .then((data: { servers?: McpServerStatus[] }) => {
+        setServers(Array.isArray(data.servers) ? data.servers : []);
+      })
+      .catch((e) => setError(e.message ?? "Failed to load"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    fetchStatus();
+  }, [fetchStatus]);
+
+  useEffect(() => onProjectChange(() => fetchStatus()), [fetchStatus]);
+
+  const signIn = useCallback(
+    async (name: string): Promise<string | null> => {
+      try {
+        const res = await apiFetch(
+          `/settings/mcps/${encodeURIComponent(name)}/sign-in`,
+          { method: "POST" },
+        );
+        if (!res.ok) {
+          const detail = await res.text();
+          throw new Error(detail || `HTTP ${res.status}`);
+        }
+        const body: { authUrl?: string } = await res.json();
+        return body.authUrl ?? null;
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Sign-in failed");
+        return null;
+      }
+    },
+    [],
+  );
+
+  const signOut = useCallback(
+    async (name: string): Promise<boolean> => {
+      try {
+        const res = await apiFetch(
+          `/settings/mcps/${encodeURIComponent(name)}/sign-out`,
+          { method: "POST" },
+        );
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
+        }
+        fetchStatus();
+        return true;
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Sign-out failed");
+        return false;
+      }
+    },
+    [fetchStatus],
+  );
+
+  return { servers, loading, error, refresh: fetchStatus, signIn, signOut };
+}
+
+
 export interface UseCustomMcpsReturn {
   /** Raw JSON string of the user's custom MCP servers. */
   value: string;

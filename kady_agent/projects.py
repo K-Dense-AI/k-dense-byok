@@ -34,6 +34,17 @@ PROJECTS_ROOT = (REPO_ROOT / "projects").resolve()
 INDEX_PATH = PROJECTS_ROOT / "index.json"
 DEFAULT_PROJECT_ID = "default"
 
+# Kady-owned Gemini CLI trust file. Pointed at via the
+# ``GEMINI_CLI_TRUSTED_FOLDERS_PATH`` env var when spawning the expert (see
+# ``kady_agent/tools/gemini_cli.py``). Without this, recent Gemini CLI versions
+# treat the project sandbox as untrusted and silently *ignore* the workspace
+# ``<sandbox>/.gemini/settings.json`` we wrote -- so the user's
+# ``~/.gemini/settings.json`` (often left on ``vertex-ai`` from a prior gcloud
+# login) wins and the CLI exits demanding GOOGLE_CLOUD_PROJECT/_LOCATION. The
+# trust file lives under ``projects/`` (which is gitignored) so we don't touch
+# the user's global ``~/.gemini/trustedFolders.json``.
+GEMINI_TRUSTED_FOLDERS_FILENAME = ".gemini-trustedFolders.json"
+
 # Reserved project ids that can never be minted via create_project()
 _RESERVED_IDS = {"new", "index", "archive", "..", "."}
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -175,6 +186,39 @@ def _now_iso() -> str:
 
 def _ensure_projects_root() -> None:
     PROJECTS_ROOT.mkdir(parents=True, exist_ok=True)
+
+
+def gemini_trusted_folders_path() -> Path:
+    """Return the absolute path to Kady's Gemini CLI trust file.
+
+    Computed lazily so tests that monkeypatch ``PROJECTS_ROOT`` are honored.
+    """
+    return PROJECTS_ROOT / GEMINI_TRUSTED_FOLDERS_FILENAME
+
+
+def ensure_gemini_trust_file() -> Path:
+    """Write/refresh the Kady-owned Gemini CLI trust file (idempotent).
+
+    Maps ``PROJECTS_ROOT`` to ``TRUST_PARENT`` so every project sandbox under
+    ``projects/<id>/sandbox`` inherits trust automatically. The expert spawn
+    points the CLI at this file via ``GEMINI_CLI_TRUSTED_FOLDERS_PATH``;
+    without that, the workspace ``settings.json`` is ignored and the CLI
+    falls back to the user's ``~/.gemini/settings.json`` -- which often
+    selects ``vertex-ai`` and refuses to run.
+
+    Returns the file's absolute path.
+    """
+    _ensure_projects_root()
+    target = gemini_trusted_folders_path()
+    desired = {str(PROJECTS_ROOT): "TRUST_PARENT"}
+    try:
+        existing = json.loads(target.read_text(encoding="utf-8"))
+        if isinstance(existing, dict) and existing == desired:
+            return target
+    except (OSError, json.JSONDecodeError):
+        pass
+    target.write_text(json.dumps(desired, indent=2) + "\n", encoding="utf-8")
+    return target
 
 
 def _load_index() -> dict:
@@ -595,6 +639,8 @@ def init_project_sandbox(
     finally:
         ACTIVE_PROJECT.reset(token)
 
+    ensure_gemini_trust_file()
+
     pyproject_path = paths.sandbox / "pyproject.toml"
     if not pyproject_path.is_file():
         pyproject_path.write_text(_SANDBOX_PYPROJECT_TEMPLATE, encoding="utf-8")
@@ -651,7 +697,11 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
     # authenticates via our LiteLLM proxy (gemini-api-key) regardless of
     # what the user has in ~/.gemini/settings.json (which defaults to
     # `vertex-ai` on machines that were previously logged into gcloud).
-    # Workspace-level settings override user-level settings in Gemini CLI.
+    # Workspace settings only win over user settings when the folder is
+    # *trusted*; recent Gemini CLI versions silently ignore the workspace
+    # settings.json otherwise. ``ensure_gemini_trust_file`` writes the
+    # Kady-owned trust file that ``delegate_task`` points the CLI at via
+    # ``GEMINI_CLI_TRUSTED_FOLDERS_PATH`` so this protocol actually holds.
     workspace_settings = paths.gemini_settings_dir / "settings.json"
     if not workspace_settings.is_file():
         from .gemini_settings import write_merged_settings
@@ -662,12 +712,15 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
         finally:
             ACTIVE_PROJECT.reset(token)
 
+    ensure_gemini_trust_file()
+
     return paths
 
 
 __all__ = [
     "ACTIVE_PROJECT",
     "DEFAULT_PROJECT_ID",
+    "GEMINI_TRUSTED_FOLDERS_FILENAME",
     "PROJECTS_ROOT",
     "ProjectMeta",
     "ProjectPaths",
@@ -675,7 +728,9 @@ __all__ = [
     "create_project",
     "current_project_id",
     "delete_project",
+    "ensure_gemini_trust_file",
     "ensure_project_exists",
+    "gemini_trusted_folders_path",
     "get_project",
     "init_project_sandbox",
     "list_projects",

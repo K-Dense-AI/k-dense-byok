@@ -92,6 +92,153 @@ async def test_mcp_settings_rejects_non_object(asgi_client):
     assert resp.status_code == 400
 
 
+# ---------------------------------------------------------------------------
+# MCP OAuth: status + sign-in + callback + sign-out
+# ---------------------------------------------------------------------------
+
+
+async def test_mcp_status_lists_builtins_with_unsigned_state(asgi_client, monkeypatch):
+    """The status endpoint surfaces every configured MCP with its transport
+    + signed-in state. We stub the auth probe so the test doesn't reach
+    the public internet."""
+    import server as server_module
+
+    async def fake_probe(url: str) -> bool:
+        return url.startswith("https://paperclip")
+
+    monkeypatch.setattr(server_module, "_probe_needs_auth", fake_probe)
+    resp = await asgi_client.get("/settings/mcps/status")
+    assert resp.status_code == 200
+    by_name = {s["name"]: s for s in resp.json()["servers"]}
+    # Built-in stdio servers always present.
+    assert by_name["docling"]["transport"] == "stdio"
+    assert by_name["docling"]["signedIn"] is None
+    # Built-in HTTP server.
+    pcp = by_name["paperclip"]
+    assert pcp["transport"] == "http"
+    assert pcp["signedIn"] is False
+    assert pcp["needsAuth"] is True
+    assert pcp["builtin"] is True
+    assert pcp["url"] == "https://paperclip.gxl.ai/mcp"
+
+
+async def test_mcp_status_reports_signed_in_when_token_present(
+    asgi_client, monkeypatch
+):
+    import server as server_module
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token(
+        "paperclip",
+        {
+            "access_token": "tok",
+            "obtained_at": 0,
+            "issuer": "https://paperclip.example",
+        },
+    )
+
+    async def fake_probe(url: str) -> bool:
+        return False
+
+    monkeypatch.setattr(server_module, "_probe_needs_auth", fake_probe)
+    resp = await asgi_client.get("/settings/mcps/status")
+    by_name = {s["name"]: s for s in resp.json()["servers"]}
+    pcp = by_name["paperclip"]
+    assert pcp["signedIn"] is True
+    assert pcp["tokenInfo"]["issuer"] == "https://paperclip.example"
+
+
+async def test_mcp_sign_in_returns_authorize_url(asgi_client, monkeypatch):
+    """POST /settings/mcps/{name}/sign-in delegates to mcp_oauth.start_flow
+    and surfaces the auth URL the user must visit."""
+    import server as server_module
+
+    captured: dict = {}
+
+    async def fake_start_flow(name: str, url: str, redirect_uri: str) -> str:
+        captured["name"] = name
+        captured["url"] = url
+        captured["redirect_uri"] = redirect_uri
+        return "https://paperclip.example/api/oauth/authorize?client_id=abc&state=xyz"
+
+    monkeypatch.setattr(server_module.mcp_oauth, "start_flow", fake_start_flow)
+    resp = await asgi_client.post("/settings/mcps/paperclip/sign-in")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["authUrl"].startswith("https://paperclip.example/api/oauth/authorize")
+    assert body["redirectUri"].endswith("/oauth/mcp/callback")
+    assert captured["name"] == "paperclip"
+    assert captured["url"] == "https://paperclip.gxl.ai/mcp"
+
+
+async def test_mcp_sign_in_404_for_unknown_server(asgi_client):
+    resp = await asgi_client.post("/settings/mcps/never-heard-of-it/sign-in")
+    assert resp.status_code == 404
+
+
+async def test_mcp_sign_in_400_for_stdio_server(asgi_client):
+    resp = await asgi_client.post("/settings/mcps/docling/sign-in")
+    assert resp.status_code == 400
+
+
+async def test_mcp_oauth_callback_persists_token_on_success(asgi_client, monkeypatch):
+    import server as server_module
+
+    async def fake_complete(state: str, code: str) -> str:
+        assert state == "the-state"
+        assert code == "the-code"
+        return "paperclip"
+
+    monkeypatch.setattr(server_module.mcp_oauth, "complete_flow", fake_complete)
+    resp = await asgi_client.get(
+        "/oauth/mcp/callback", params={"state": "the-state", "code": "the-code"}
+    )
+    assert resp.status_code == 200
+    assert "Signed in to paperclip" in resp.text
+    assert resp.headers["content-type"].startswith("text/html")
+
+
+async def test_mcp_oauth_callback_renders_error_when_provider_returns_error(
+    asgi_client,
+):
+    resp = await asgi_client.get(
+        "/oauth/mcp/callback",
+        params={"state": "x", "error": "access_denied", "error_description": "User said no"},
+    )
+    assert resp.status_code == 400
+    assert "User said no" in resp.text
+
+
+async def test_mcp_oauth_callback_handles_complete_flow_failure(asgi_client, monkeypatch):
+    import server as server_module
+
+    async def boom(state: str, code: str) -> str:
+        raise RuntimeError("PKCE mismatch")
+
+    monkeypatch.setattr(server_module.mcp_oauth, "complete_flow", boom)
+    resp = await asgi_client.get(
+        "/oauth/mcp/callback", params={"state": "s", "code": "c"}
+    )
+    assert resp.status_code == 400
+    assert "PKCE mismatch" in resp.text
+
+
+async def test_mcp_sign_out_removes_stored_token(asgi_client):
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token("paperclip", {"access_token": "x", "obtained_at": 0})
+    resp = await asgi_client.post("/settings/mcps/paperclip/sign-out")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "removed": True}
+    assert mcp_oauth.has_token("paperclip") is False
+
+
+async def test_mcp_sign_out_is_idempotent(asgi_client):
+    resp = await asgi_client.post("/settings/mcps/paperclip/sign-out")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "removed": False}
+
+
 async def test_browser_use_settings(asgi_client):
     # Defaults
     resp = await asgi_client.get("/settings/browser-use")

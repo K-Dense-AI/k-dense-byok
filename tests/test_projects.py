@@ -41,6 +41,37 @@ def test_resolve_paths_defaults_when_empty(tmp_projects_root: Path):
 
 
 # ---------------------------------------------------------------------------
+# ensure_gemini_trust_file
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_gemini_trust_file_writes_trust_parent(tmp_projects_root: Path):
+    target = projects_module.ensure_gemini_trust_file()
+    assert target == tmp_projects_root / projects_module.GEMINI_TRUSTED_FOLDERS_FILENAME
+    assert target.is_file()
+    data = json.loads(target.read_text(encoding="utf-8"))
+    assert data == {str(tmp_projects_root): "TRUST_PARENT"}
+
+
+def test_ensure_gemini_trust_file_is_idempotent(tmp_projects_root: Path):
+    first = projects_module.ensure_gemini_trust_file()
+    mtime = first.stat().st_mtime_ns
+    second = projects_module.ensure_gemini_trust_file()
+    assert second == first
+    # Same content on disk -> we should not have rewritten the file.
+    assert second.stat().st_mtime_ns == mtime
+
+
+def test_ensure_gemini_trust_file_repairs_corrupted_contents(tmp_projects_root: Path):
+    target = tmp_projects_root / projects_module.GEMINI_TRUSTED_FOLDERS_FILENAME
+    target.write_text("not json {{{", encoding="utf-8")
+    projects_module.ensure_gemini_trust_file()
+    assert json.loads(target.read_text(encoding="utf-8")) == {
+        str(tmp_projects_root): "TRUST_PARENT"
+    }
+
+
+# ---------------------------------------------------------------------------
 # ACTIVE_PROJECT + active_paths
 # ---------------------------------------------------------------------------
 

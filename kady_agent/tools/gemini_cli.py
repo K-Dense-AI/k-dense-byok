@@ -9,16 +9,23 @@ from dotenv import load_dotenv
 from google.adk.tools.tool_context import ToolContext
 
 from ..cost_ledger import check_project_budget
+from ..gemini_settings import refresh_oauth_tokens, write_merged_settings
 from ..manifest import (
     attach_delegation,
     session_seed,
 )
-from ..projects import active_paths, get_project
+from ..projects import active_paths, ensure_gemini_trust_file, get_project
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(REPO_ROOT / "kady_agent" / ".env")
 
+# Env vars that would push the CLI into Vertex AI mode regardless of what we
+# write in the workspace ``settings.json``. We pop them from the spawn env so
+# the LiteLLM-proxy + ``gemini-api-key`` path the workspace settings select is
+# what actually gets used. Note: this is *necessary but not sufficient*: the
+# workspace ``settings.json`` is only honored when the folder is trusted, which
+# is why we also stamp ``GEMINI_CLI_TRUSTED_FOLDERS_PATH`` below.
 _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTIALS")
 
 # OpenRouter "App" label (via LiteLLM proxy). Format: gemini-cli-core GEMINI_CLI_CUSTOM_HEADERS.
@@ -139,6 +146,15 @@ async def delegate_task(
     env = os.environ.copy()
     for var in _VERTEX_AI_ENV_VARS:
         env.pop(var, None)
+
+    # Point Gemini CLI at our own trust file (instead of the default
+    # ``~/.gemini/trustedFolders.json``) so the project sandbox is treated as
+    # trusted and the workspace ``settings.json`` -- which selects
+    # ``gemini-api-key`` and our LiteLLM proxy -- is actually loaded. Without
+    # this, the user's global ``~/.gemini/settings.json`` (often left on
+    # ``vertex-ai`` from a previous gcloud login) wins and the CLI bails out
+    # demanding GOOGLE_CLOUD_PROJECT/_LOCATION env vars.
+    env["GEMINI_CLI_TRUSTED_FOLDERS_PATH"] = str(ensure_gemini_trust_file())
 
     prev_headers = env.get("GEMINI_CLI_CUSTOM_HEADERS", "").strip()
 
@@ -265,6 +281,14 @@ async def delegate_task(
                            "--output-format", "stream-json"]
     if selected_model and _cli_can_route(selected_model):
         cli_args.extend(["-m", selected_model])
+
+    # Refresh any near-expiry MCP OAuth tokens, then re-materialize
+    # ``<sandbox>/.gemini/settings.json`` so its ``Authorization`` headers
+    # carry the current bearer. Cheap (a couple of file writes) and means
+    # the user never sees a 401 from a signed-in MCP just because its
+    # access_token rolled over between turns.
+    await refresh_oauth_tokens()
+    write_merged_settings(paths.gemini_settings_dir)
 
     started_at = time.time()
     proc = await asyncio.create_subprocess_exec(

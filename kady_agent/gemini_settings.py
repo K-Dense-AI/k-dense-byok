@@ -112,6 +112,19 @@ def build_default_settings() -> dict:
                     "kady_agent.mcp_servers.pdf_annotations",
                 ],
             },
+            # Hosted streamable-HTTP MCP. No local install required; the
+            # CLI opens an HTTP connection per session and tears it down
+            # at exit, so adding it here is essentially free for projects
+            # that don't actually use it.
+            #
+            # Schema note: Gemini CLI accepts both ``httpUrl`` (original
+            # form, always works) and ``{url, type: "http"}`` (newer
+            # unified form). 0.40.1 silently drops the newer form on
+            # untyped servers, so we stick with ``httpUrl``. See
+            # https://github.com/google-gemini/gemini-cli/pull/13762.
+            "paperclip": {
+                "httpUrl": "https://paperclip.gxl.ai/mcp",
+            },
         },
     }
 
@@ -151,17 +164,88 @@ def save_custom_mcps(data: dict) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
 
 
+def _inject_oauth_bearers(servers: dict) -> dict:
+    """Stamp ``Authorization: Bearer <token>`` on HTTP MCPs that we've signed in to.
+
+    Reads tokens straight off disk via :mod:`kady_agent.mcp_oauth` -- no
+    refresh here so this stays sync. ``delegate_task`` calls
+    :func:`refresh_oauth_tokens` first so spawn-time writes pick up
+    freshly rotated tokens.
+
+    User-supplied ``headers.Authorization`` (set in ``custom_mcps.json``)
+    always wins so power users can override our injection with a
+    different scheme (e.g. a static API key).
+    """
+    # Local import: avoid a hard dependency at module import time so test
+    # fixtures that monkeypatch projects.PROJECTS_ROOT don't accidentally
+    # touch the real tokens file via ``mcp_oauth`` import side effects.
+    from . import mcp_oauth
+
+    tokens = mcp_oauth.load_tokens()
+    if not tokens:
+        return servers
+    for name, spec in servers.items():
+        if not isinstance(spec, dict):
+            continue
+        url = spec.get("httpUrl") or spec.get("url")
+        if not url:
+            continue
+        entry = tokens.get(name)
+        if not entry or not entry.get("access_token"):
+            continue
+        headers = dict(spec.get("headers") or {})
+        # Case-insensitive check: Authorization vs authorization etc.
+        if any(k.lower() == "authorization" for k in headers):
+            continue
+        token_type = entry.get("token_type") or "Bearer"
+        headers["Authorization"] = f"{token_type} {entry['access_token']}"
+        spec["headers"] = headers
+    return servers
+
+
+def build_merged_settings() -> dict:
+    """Return defaults + custom + injected OAuth bearers, fully resolved."""
+    settings = build_default_settings()
+    custom = load_custom_mcps()
+    settings["mcpServers"].update(custom)
+    settings["mcpServers"] = _inject_oauth_bearers(settings["mcpServers"])
+    return settings
+
+
 def write_merged_settings(target_dir: str | Path) -> None:
     """Build merged settings and write to ``<target_dir>/settings.json``.
 
-    *target_dir* is typically ``<project>/sandbox/.gemini``.
+    *target_dir* is typically ``<project>/sandbox/.gemini``. The merged
+    config includes any OAuth bearer tokens currently on disk (see
+    :func:`_inject_oauth_bearers`) so the Gemini CLI subprocess
+    authenticates against signed-in HTTP MCPs out of the box.
     """
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    settings = build_default_settings()
-    custom = load_custom_mcps()
-    settings["mcpServers"].update(custom)
-
+    settings = build_merged_settings()
     out = target_dir / "settings.json"
     out.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+
+
+async def refresh_oauth_tokens() -> None:
+    """Refresh every stored MCP OAuth token that's near expiry.
+
+    Called by ``delegate_task`` right before it rewrites the workspace
+    ``settings.json``, so the bearer the Gemini CLI sees is always
+    current. Errors are swallowed -- a stale-but-still-active token
+    still beats failing to spawn the expert.
+    """
+    from . import mcp_oauth
+
+    names = list(mcp_oauth.load_tokens().keys())
+    for name in names:
+        try:
+            await mcp_oauth.get_access_token(name)
+        except Exception:  # noqa: BLE001
+            # Best-effort: log via the module logger but don't raise.
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Pre-spawn OAuth refresh failed for %s; using cached token", name
+            )

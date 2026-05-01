@@ -16,6 +16,8 @@ import {
   useBrowserUseSettings,
   useChromeProfiles,
   useCustomMcps,
+  useMcpStatus,
+  type McpServerStatus,
 } from "@/lib/use-settings";
 import {
   Select,
@@ -37,15 +39,154 @@ import {
   LoaderCircleIcon,
   AlertCircleIcon,
   InfoIcon,
+  LogInIcon,
+  LogOutIcon,
+  TerminalIcon,
+  ExternalLinkIcon,
 } from "lucide-react";
 
 const jsonLang = loadLanguage("json");
 const cmExtensions = jsonLang ? [jsonLang] : [];
 
+function formatExpiry(epochSeconds: number | null | undefined): string | null {
+  if (!epochSeconds) return null;
+  const ms = epochSeconds * 1000;
+  const diff = ms - Date.now();
+  if (diff <= 0) return "expired";
+  const minutes = Math.round(diff / 60000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  return `${days}d`;
+}
+
+function McpServerRow({
+  server,
+  onSignIn,
+  onSignOut,
+  pendingAuthUrl,
+  isSigningIn,
+  signOutBusy,
+}: {
+  server: McpServerStatus;
+  onSignIn: (name: string) => void;
+  onSignOut: (name: string) => void;
+  pendingAuthUrl: string | null;
+  isSigningIn: boolean;
+  signOutBusy: boolean;
+}) {
+  const isHttp = server.transport === "http";
+  const expiresLabel = formatExpiry(server.tokenInfo?.expiresAt ?? null);
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border px-3 py-2.5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 text-xs font-medium">
+            {isHttp ? (
+              <GlobeIcon className="size-3.5 text-muted-foreground" />
+            ) : (
+              <TerminalIcon className="size-3.5 text-muted-foreground" />
+            )}
+            <span className="truncate">{server.name}</span>
+            {server.builtin && (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                built-in
+              </span>
+            )}
+          </div>
+          {server.url && (
+            <div className="text-[11px] text-muted-foreground mt-0.5 truncate">
+              {server.url}
+            </div>
+          )}
+          {server.signedIn === true && (
+            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
+              <CheckIcon className="size-3" />
+              Signed in
+              {expiresLabel ? (
+                <span className="text-muted-foreground">
+                  · token valid {expiresLabel}
+                </span>
+              ) : null}
+            </div>
+          )}
+          {server.signedIn === false && server.needsAuth && (
+            <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">
+              Sign-in required
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {isHttp && server.signedIn === true && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => onSignOut(server.name)}
+              disabled={signOutBusy}
+              className="h-7 text-[11px]"
+            >
+              {signOutBusy ? (
+                <LoaderCircleIcon className="size-3 animate-spin" />
+              ) : (
+                <LogOutIcon className="size-3" />
+              )}
+              Sign out
+            </Button>
+          )}
+          {isHttp && server.signedIn === false && (
+            <Button
+              size="sm"
+              onClick={() => onSignIn(server.name)}
+              disabled={isSigningIn}
+              className="h-7 text-[11px]"
+            >
+              {isSigningIn ? (
+                <LoaderCircleIcon className="size-3 animate-spin" />
+              ) : (
+                <LogInIcon className="size-3" />
+              )}
+              Sign in
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {pendingAuthUrl && (
+        <div className="flex items-start gap-2 rounded-md border border-blue-500/30 bg-blue-500/5 px-2.5 py-2 text-[11px]">
+          <InfoIcon className="size-3.5 shrink-0 mt-px text-blue-500" />
+          <div className="flex-1 min-w-0">
+            <div className="font-medium">Open the auth URL to finish</div>
+            <div className="text-muted-foreground mt-0.5">
+              We tried to open it in a new tab. If nothing opened, click below:
+            </div>
+            <a
+              href={pendingAuthUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-blue-600 hover:underline dark:text-blue-400 break-all"
+            >
+              <ExternalLinkIcon className="size-3 shrink-0" />
+              <span className="truncate">{pendingAuthUrl}</span>
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function McpServersPanel() {
   const mcps = useCustomMcps();
+  const status = useMcpStatus();
   const [draft, setDraft] = useState("");
   const [saved, setSaved] = useState(false);
+  const [pendingAuthUrls, setPendingAuthUrls] = useState<Record<string, string>>(
+    {},
+  );
+  const [signingIn, setSigningIn] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState<string | null>(null);
   const { resolvedTheme } = useTheme();
 
   useEffect(() => {
@@ -59,71 +200,172 @@ function McpServersPanel() {
     if (ok) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      // Custom MCP edits can change the set of HTTP servers; refresh status.
+      status.refresh();
     }
-  }, [mcps, draft]);
+  }, [mcps, draft, status]);
+
+  const handleSignIn = useCallback(
+    async (name: string) => {
+      setSigningIn(name);
+      const url = await status.signIn(name);
+      setSigningIn(null);
+      if (!url) return;
+      setPendingAuthUrls((prev) => ({ ...prev, [name]: url }));
+      // Best-effort browser tab open. Popup blockers may swallow this --
+      // the link in the row is the user-clickable fallback.
+      try {
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch {
+        /* ignored */
+      }
+    },
+    [status],
+  );
+
+  const handleSignOut = useCallback(
+    async (name: string) => {
+      setSigningOut(name);
+      await status.signOut(name);
+      setSigningOut(null);
+      setPendingAuthUrls((prev) => {
+        const { [name]: _, ...rest } = prev;
+        return rest;
+      });
+    },
+    [status],
+  );
+
+  // Poll status while there's an in-flight auth so the row flips to
+  // "Signed in" once the OAuth callback writes the token. Stops polling
+  // as soon as every pending server reports signedIn=true.
+  useEffect(() => {
+    const pendingNames = Object.keys(pendingAuthUrls);
+    if (pendingNames.length === 0) return;
+    const interval = window.setInterval(() => {
+      status.refresh();
+    }, 2000);
+    return () => window.clearInterval(interval);
+  }, [pendingAuthUrls, status]);
+
+  // Clear pending URLs once their server reports signedIn=true.
+  useEffect(() => {
+    const pendingNames = Object.keys(pendingAuthUrls);
+    if (pendingNames.length === 0) return;
+    const finished = pendingNames.filter(
+      (name) => status.servers.find((s) => s.name === name)?.signedIn === true,
+    );
+    if (finished.length > 0) {
+      setPendingAuthUrls((prev) => {
+        const next = { ...prev };
+        for (const name of finished) delete next[name];
+        return next;
+      });
+    }
+  }, [status.servers, pendingAuthUrls]);
 
   const isDirty = draft !== mcps.value;
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto">
       <div>
-        <h3 className="text-sm font-medium">Custom MCP Servers</h3>
+        <h3 className="text-sm font-medium">MCP Servers</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          Add MCP servers that will be merged with the defaults (docling,
-          parallel-search). Define each server as a key in the JSON object.
+          Tools the agent can call. HTTP servers may require sign-in;
+          stdio servers run as local subprocesses.
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 rounded-lg border overflow-hidden">
-        {mcps.loading ? (
-          <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            <LoaderCircleIcon className="mr-2 size-4 animate-spin" />
-            Loading...
+      <div className="flex flex-col gap-2">
+        {status.loading ? (
+          <div className="flex items-center text-xs text-muted-foreground">
+            <LoaderCircleIcon className="mr-2 size-3.5 animate-spin" />
+            Loading servers...
+          </div>
+        ) : status.servers.length === 0 ? (
+          <div className="text-xs text-muted-foreground">
+            No MCP servers configured.
           </div>
         ) : (
-          <CodeMirror
-            value={draft}
-            onChange={setDraft}
-            extensions={cmExtensions}
-            theme={resolvedTheme === "dark" ? githubDark : githubLight}
-            height="100%"
-            className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
-            placeholder='{\n  "my-server": {\n    "command": "npx",\n    "args": ["-y", "my-mcp-server"]\n  }\n}'
-          />
+          status.servers.map((server) => (
+            <McpServerRow
+              key={server.name}
+              server={server}
+              onSignIn={handleSignIn}
+              onSignOut={handleSignOut}
+              pendingAuthUrl={pendingAuthUrls[server.name] ?? null}
+              isSigningIn={signingIn === server.name}
+              signOutBusy={signingOut === server.name}
+            />
+          ))
+        )}
+        {status.error && (
+          <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+            <AlertCircleIcon className="size-3.5 shrink-0" />
+            {status.error}
+          </div>
         )}
       </div>
 
-      {mcps.error && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-          <AlertCircleIcon className="size-3.5 shrink-0" />
-          {mcps.error}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between">
-        <p className="text-[11px] text-muted-foreground">
-          Changes apply to the next message.
-        </p>
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={mcps.saving || mcps.loading || !isDirty}
-        >
-          {mcps.saving ? (
-            <>
-              <LoaderCircleIcon className="size-3.5 animate-spin" />
-              Saving...
-            </>
-          ) : saved ? (
-            <>
-              <CheckIcon className="size-3.5" />
-              Saved
-            </>
-          ) : (
-            "Save"
+      <details className="rounded-lg border" open={false}>
+        <summary className="cursor-pointer px-3 py-2 text-xs font-medium hover:bg-muted/40">
+          Custom MCP servers (advanced)
+        </summary>
+        <div className="flex flex-col gap-3 p-3 pt-2">
+          <p className="text-[11px] text-muted-foreground">
+            JSON object merged on top of the defaults. Each key becomes
+            a server entry visible in the list above.
+          </p>
+          <div className="h-48 rounded-lg border overflow-hidden">
+            {mcps.loading ? (
+              <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+                <LoaderCircleIcon className="mr-2 size-4 animate-spin" />
+                Loading...
+              </div>
+            ) : (
+              <CodeMirror
+                value={draft}
+                onChange={setDraft}
+                extensions={cmExtensions}
+                theme={resolvedTheme === "dark" ? githubDark : githubLight}
+                height="100%"
+                className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
+                placeholder='{\n  "my-server": {\n    "command": "npx",\n    "args": ["-y", "my-mcp-server"]\n  }\n}'
+              />
+            )}
+          </div>
+          {mcps.error && (
+            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              <AlertCircleIcon className="size-3.5 shrink-0" />
+              {mcps.error}
+            </div>
           )}
-        </Button>
-      </div>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground">
+              Changes apply to the next message.
+            </p>
+            <Button
+              size="sm"
+              onClick={handleSave}
+              disabled={mcps.saving || mcps.loading || !isDirty}
+            >
+              {mcps.saving ? (
+                <>
+                  <LoaderCircleIcon className="size-3.5 animate-spin" />
+                  Saving...
+                </>
+              ) : saved ? (
+                <>
+                  <CheckIcon className="size-3.5" />
+                  Saved
+                </>
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

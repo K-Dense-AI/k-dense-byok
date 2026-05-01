@@ -70,6 +70,12 @@ def test_build_default_settings_contains_core_mcps(active_project):
     mcp = settings["mcpServers"]
     assert "docling" in mcp
     assert "pdf-annotations" in mcp
+    # Hosted streamable-HTTP MCP shipped as a default for everyone.
+    # Use the ``httpUrl`` form (universally accepted by Gemini CLI; the
+    # newer ``{url, type: "http"}`` form is buggy in some 0.4x versions).
+    assert mcp["paperclip"] == {
+        "httpUrl": "https://paperclip.gxl.ai/mcp",
+    }
     assert settings["security"]["auth"]["selectedType"] == "gemini-api-key"
 
 
@@ -103,3 +109,97 @@ def test_write_merged_settings_overlays_custom(active_project, tmp_path):
     settings = json.loads((target / "settings.json").read_text())
     assert "docling" in settings["mcpServers"]
     assert "mycustom" in settings["mcpServers"]
+
+
+def test_write_merged_settings_injects_oauth_bearer(active_project, tmp_path):
+    """Stored MCP OAuth tokens land in the workspace settings.json as
+    ``Authorization: Bearer ...`` headers so the spawned Gemini CLI
+    authenticates on its first MCP call."""
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token(
+        "paperclip",
+        {"access_token": "pcp-tok", "token_type": "Bearer", "obtained_at": 0},
+    )
+    target = tmp_path / "settings"
+    gs.write_merged_settings(target)
+    settings = json.loads((target / "settings.json").read_text())
+    paperclip = settings["mcpServers"]["paperclip"]
+    assert paperclip["headers"]["Authorization"] == "Bearer pcp-tok"
+
+
+def test_write_merged_settings_respects_user_authorization_header(
+    active_project, tmp_path
+):
+    """If the user already set Authorization in custom_mcps.json we don't
+    clobber it, even if there's a Kady-stored token for that server."""
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token(
+        "paperclip",
+        {"access_token": "auto", "token_type": "Bearer", "obtained_at": 0},
+    )
+    gs.save_custom_mcps(
+        {
+            "paperclip": {
+                "httpUrl": "https://paperclip.gxl.ai/mcp",
+                "headers": {"Authorization": "Bearer manual"},
+            }
+        }
+    )
+    target = tmp_path / "settings"
+    gs.write_merged_settings(target)
+    settings = json.loads((target / "settings.json").read_text())
+    assert settings["mcpServers"]["paperclip"]["headers"]["Authorization"] == "Bearer manual"
+
+
+def test_write_merged_settings_skips_stdio_servers_for_bearer(active_project, tmp_path):
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token(
+        "docling",
+        {"access_token": "shouldnt-go-here", "token_type": "Bearer", "obtained_at": 0},
+    )
+    target = tmp_path / "settings"
+    gs.write_merged_settings(target)
+    settings = json.loads((target / "settings.json").read_text())
+    # docling is stdio; a bearer in headers would never reach it.
+    assert "headers" not in settings["mcpServers"]["docling"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_oauth_tokens_invokes_get_access_token_for_each_stored(
+    active_project, monkeypatch
+):
+    """The pre-spawn hook walks every stored token so near-expiry ones get
+    rotated before we materialize settings.json."""
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token("a", {"access_token": "1", "obtained_at": 0})
+    mcp_oauth.save_token("b", {"access_token": "2", "obtained_at": 0})
+
+    seen: list[str] = []
+
+    async def fake_get(name: str):
+        seen.append(name)
+        return "ok"
+
+    monkeypatch.setattr(mcp_oauth, "get_access_token", fake_get)
+    await gs.refresh_oauth_tokens()
+    assert sorted(seen) == ["a", "b"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_oauth_tokens_swallows_per_server_failures(
+    active_project, monkeypatch
+):
+    from kady_agent import mcp_oauth
+
+    mcp_oauth.save_token("a", {"access_token": "1"})
+
+    async def boom(name: str):
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(mcp_oauth, "get_access_token", boom)
+    # Should not raise.
+    await gs.refresh_oauth_tokens()

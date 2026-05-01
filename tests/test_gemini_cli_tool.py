@@ -101,6 +101,8 @@ class _FakeProc:
 
 
 async def test_delegate_task_without_tool_context(active_project, monkeypatch):
+    from kady_agent import projects as projects_module
+
     called = {}
 
     async def fake_exec(*args, **kwargs):
@@ -124,6 +126,14 @@ async def test_delegate_task_without_tool_context(active_project, monkeypatch):
     assert called["cwd"] == active_project.sandbox
     # Env was stamped with the active project id
     assert called["env"]["KADY_PROJECT_ID"] == active_project.id
+    # Trust file is created and pointed at via env so the CLI honors the
+    # workspace ``.gemini/settings.json`` (gemini-api-key auth).
+    trust_path = projects_module.gemini_trusted_folders_path()
+    assert called["env"]["GEMINI_CLI_TRUSTED_FOLDERS_PATH"] == str(trust_path)
+    assert trust_path.is_file()
+    assert json.loads(trust_path.read_text(encoding="utf-8")) == {
+        str(projects_module.PROJECTS_ROOT): "TRUST_PARENT"
+    }
 
 
 async def test_delegate_task_routes_relative_working_dir_into_sandbox(active_project, monkeypatch):
@@ -164,6 +174,61 @@ async def test_delegate_task_subprocess_failure_raises(active_project, monkeypat
 
     with pytest.raises(RuntimeError, match="boom"):
         await gemini_cli.delegate_task("hi")
+
+
+async def test_delegate_task_refreshes_oauth_and_writes_settings_before_spawn(
+    active_project, monkeypatch
+):
+    """``delegate_task`` rotates near-expiry MCP tokens and re-emits the
+    workspace ``settings.json`` before forking gemini, so the bearer the
+    CLI reads is current and signed-in HTTP MCPs don't 401 the expert."""
+    from kady_agent import gemini_settings, mcp_oauth
+
+    mcp_oauth.save_token(
+        "paperclip",
+        {
+            "access_token": "fresh-bearer",
+            "obtained_at": 0,
+            "expires_in": 3600,
+            "token_type": "Bearer",
+            "client_id": "abc",
+            "token_endpoint": "https://paperclip.example/api/oauth/token",
+        },
+    )
+
+    refresh_calls: list[bool] = []
+    settings_writes: list[str] = []
+
+    real_refresh = gemini_settings.refresh_oauth_tokens
+
+    async def tracking_refresh():
+        refresh_calls.append(True)
+        await real_refresh()
+
+    real_write = gemini_settings.write_merged_settings
+
+    def tracking_write(path):
+        settings_writes.append(str(path))
+        real_write(path)
+
+    monkeypatch.setattr(gemini_cli, "refresh_oauth_tokens", tracking_refresh)
+    monkeypatch.setattr(gemini_cli, "write_merged_settings", tracking_write)
+
+    async def fake_exec(*args, **kwargs):
+        return _FakeProc(b"")
+
+    monkeypatch.setattr(gemini_cli.asyncio, "create_subprocess_exec", fake_exec)
+    await gemini_cli.delegate_task("hi")
+
+    assert refresh_calls, "refresh_oauth_tokens was not called pre-spawn"
+    assert settings_writes, "settings.json was not re-materialized pre-spawn"
+    # The materialized file should carry the bearer Authorization header.
+    settings_path = active_project.gemini_settings_dir / "settings.json"
+    settings = json.loads(settings_path.read_text(encoding="utf-8"))
+    assert (
+        settings["mcpServers"]["paperclip"]["headers"]["Authorization"]
+        == "Bearer fresh-bearer"
+    )
 
 
 async def test_delegate_task_records_delegation_when_state_present(
