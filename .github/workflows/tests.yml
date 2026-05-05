@@ -21,8 +21,28 @@ jobs:
       - name: Set up Python
         run: uv python install 3.13
 
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
       - name: Install dependencies
         run: uv sync --all-extras --dev
 
+      - name: Install frontend dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Install Gemini CLI
+        run: npm install -g @google/gemini-cli
+
+      - name: Install Playwright Chromium
+        run: uv run playwright install --with-deps chromium
+
       - name: Run tests
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OR_API_KEY: ${{ secrets.OR_API_KEY }}
         run: uv run pytest
