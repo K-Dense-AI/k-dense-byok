@@ -36,30 +36,25 @@ import { buildBrowserContext } from "@/components/browser-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
+import { BudgetBanner } from "@/components/chat/budget-banner";
+import { KadyFileIcon } from "@/components/file-icon";
 import { useBrowserUseSettings, useChromeProfiles } from "@/lib/use-settings";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
-import { fileCategory } from "@/lib/use-sandbox";
+import { formatUsd } from "@/lib/format";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
 import type { TurnMeta } from "@/lib/provenance";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   ActivityIcon,
-  BookOpenIcon,
   CheckIcon,
   ChevronDownIcon,
   CopyIcon,
   CpuIcon,
   DatabaseIcon,
-  FileCodeIcon,
-  FileIcon,
-  FileImageIcon,
-  FileJsonIcon,
-  FileTextIcon,
   ListOrderedIcon,
   LoaderCircleIcon,
   PaperclipIcon,
   SparklesIcon,
-  TableIcon,
   XIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -72,7 +67,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 
 const MAX_QUEUE = 5;
@@ -88,59 +82,6 @@ interface QueuedMessage {
   skills: Skill[];
   files: string[];
   timestamp: number;
-}
-
-function formatBudgetCost(usd: number): string {
-  if (!Number.isFinite(usd) || usd <= 0) return "$0.00";
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(2)}`;
-}
-
-/**
- * Inline banner above the chat input when the project is approaching (warn)
- * or over (exceeded) its spend limit.
- */
-function BudgetBanner({
-  state,
-  totalUsd,
-  limitUsd,
-}: {
-  state: "warn" | "exceeded";
-  totalUsd: number;
-  limitUsd: number | null;
-}) {
-  const blocked = state === "exceeded";
-  return (
-    <div
-      role="alert"
-      className={cn(
-        "mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs",
-        blocked
-          ? "border-destructive/40 bg-destructive/10 text-destructive"
-          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-      )}
-    >
-      <span className="flex-1">
-        {blocked ? (
-          <>
-            <b>Project spend limit reached</b> (
-            {formatBudgetCost(totalUsd)}
-            {limitUsd !== null ? ` / ${formatBudgetCost(limitUsd)}` : ""})
-            . New delegations are blocked. Raise the limit in the project
-            settings to continue.
-          </>
-        ) : (
-          <>
-            <b>Approaching spend limit</b> (
-            {formatBudgetCost(totalUsd)}
-            {limitUsd !== null ? ` / ${formatBudgetCost(limitUsd)}` : ""})
-            . You&apos;re over 80% of the project&apos;s cap.
-          </>
-        )}
-      </span>
-    </div>
-  );
 }
 
 const FILE_DRAG_TYPE = "application/x-kady-filepath";
@@ -246,19 +187,8 @@ function PromptDropZone({
 // @ mention helpers
 // ---------------------------------------------------------------------------
 
-function mentionIconForFile(name: string): ReactNode {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const cat = fileCategory(name);
-  if (cat === "notebook") return <BookOpenIcon className="size-3.5 text-orange-500" />;
-  if (cat === "fasta") return <ActivityIcon className="size-3.5 text-cyan-600" />;
-  if (cat === "biotable") return <TableIcon className="size-3.5 text-indigo-500" />;
-  if (cat === "image") return <FileImageIcon className="size-3.5 text-rose-500" />;
-  if (cat === "markdown") return <FileTextIcon className="size-3.5 text-emerald-600" />;
-  if (cat === "latex") return <FileCodeIcon className="size-3.5 text-teal-500" />;
-  if (ext === "json" || ext === "jsonl") return <FileJsonIcon className="size-3.5 text-amber-600" />;
-  const codeExts = ["py","ts","tsx","js","jsx","rs","go","java","c","cpp","h","rb","sh","bash","css","html","xml","yaml","yml","toml","sql"];
-  if (codeExts.includes(ext)) return <FileCodeIcon className="size-3.5 text-violet-500" />;
-  return <FileIcon className="size-3.5 text-muted-foreground" />;
+function mentionIconForFile(name: string) {
+  return <KadyFileIcon name={name} className="size-3.5" />;
 }
 
 function HighlightMatch({ text, query }: { text: string; query: string }) {
@@ -787,9 +717,9 @@ function ChatInput({
                       <b>Spend limit reached</b>
                       <br />
                       Project has hit its spend limit (
-                      {formatBudgetCost(budgetTotalUsd)}
+                      {formatUsd(budgetTotalUsd)}
                       {budgetLimitUsd !== null
-                        ? ` / ${formatBudgetCost(budgetLimitUsd)}`
+                        ? ` / ${formatUsd(budgetLimitUsd)}`
                         : ""}
                       ). Raise the limit in the project settings to continue.
                     </>

@@ -35,7 +35,8 @@ _REPO_ROOT = Path(__file__).resolve().parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from kady_agent.cost_ledger import extract_cost_tags, record_cost  # noqa: E402
+from kady_agent.cost_ledger import record_cost  # noqa: E402
+from kady_agent.tracking import extract_tags_from_headers  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class OpenRouterPrefixFix(CustomLogger):
     def _record(self, kwargs: dict[str, Any], response_obj: Any) -> None:
         try:
             headers = _merge_header_sources(kwargs)
-            tags = extract_cost_tags(headers)
+            tags = extract_tags_from_headers(headers)
             if not tags or tags.get("role") != "expert":
                 return
 

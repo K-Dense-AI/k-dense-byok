@@ -8,6 +8,7 @@ import {
   FileTreeName,
   FileTreeActions,
 } from "@/components/ai-elements/file-tree";
+import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { type TreeNode } from "@/lib/use-sandbox";
@@ -19,16 +20,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
-  FileIcon,
-  FileTextIcon,
-  FileCodeIcon,
-  FileJsonIcon,
-  FileSpreadsheetIcon,
-  FileArchiveIcon,
-  FileVideoIcon,
-  FileAudioIcon,
-  FileImageIcon,
-  FileTerminalIcon,
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
@@ -43,54 +34,13 @@ import {
   WandSparklesIcon,
   PencilIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const FILE_DRAG_TYPE = "application/x-kady-filepath";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function iconForFile(name: string): ReactNode {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const codeExts = [
-    "py", "ts", "tsx", "js", "jsx", "rs", "go", "java", "c", "cpp", "h",
-    "rb", "css", "scss", "html", "xml", "yaml", "yml", "toml", "graphql", "sql",
-  ];
-  const shellExts = ["sh", "bash", "zsh", "fish", "ps1", "cmd", "bat"];
-  const imageExts = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"];
-  const videoExts = ["mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v"];
-  const audioExts = ["mp3", "wav", "ogg", "flac", "m4a", "aac", "opus", "wma"];
-  const archiveExts = ["zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz"];
-  const spreadsheetExts = ["csv", "xlsx", "xls", "ods", "tsv"];
-  const docExts = ["doc", "docx", "odt", "rtf"];
-
-  if (ext === "json" || ext === "jsonl")
-    return <FileJsonIcon className="size-4 text-amber-600" />;
-  if (ext === "pdf")
-    return <FileTextIcon className="size-4 text-red-500" />;
-  if (ext === "tex" || ext === "latex" || ext === "bib")
-    return <FileCodeIcon className="size-4 text-teal-500" />;
-  if (codeExts.includes(ext))
-    return <FileCodeIcon className="size-4 text-violet-500" />;
-  if (shellExts.includes(ext))
-    return <FileTerminalIcon className="size-4 text-slate-500" />;
-  if (imageExts.includes(ext))
-    return <FileImageIcon className="size-4 text-rose-500" />;
-  if (videoExts.includes(ext))
-    return <FileVideoIcon className="size-4 text-blue-500" />;
-  if (audioExts.includes(ext))
-    return <FileAudioIcon className="size-4 text-purple-500" />;
-  if (archiveExts.includes(ext))
-    return <FileArchiveIcon className="size-4 text-orange-500" />;
-  if (spreadsheetExts.includes(ext))
-    return <FileSpreadsheetIcon className="size-4 text-emerald-600" />;
-  if (["md", "mdx", "txt", "log", "rst"].includes(ext))
-    return <FileTextIcon className="size-4 text-emerald-600" />;
-  if (docExts.includes(ext))
-    return <FileTextIcon className="size-4 text-blue-600" />;
-  return <FileIcon className="size-4 text-muted-foreground" />;
-}
 
 function makeDragGhost(label: string, color: string) {
   const ghost = document.createElement("div");
@@ -364,7 +314,9 @@ function TreeNodes({
             onDragEnd={() => setDropTargetPath(null)}
           >
             <span className="size-4" />
-            <FileTreeIcon>{iconForFile(node.name)}</FileTreeIcon>
+            <FileTreeIcon>
+              <KadyFileIcon name={node.name} />
+            </FileTreeIcon>
             {renamingPath === node.path ? (
               <InlineInput
                 defaultValue={node.name}

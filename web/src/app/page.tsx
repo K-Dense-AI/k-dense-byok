@@ -18,7 +18,9 @@ import { APP_VERSION, useUpdateCheck } from "@/lib/version";
 import { useConfig } from "@/lib/use-config";
 import { useSkills } from "@/lib/use-skills";
 import type { TurnMeta } from "@/lib/provenance";
-import { useSandbox, type TreeNode } from "@/lib/use-sandbox";
+import { useSandbox } from "@/lib/use-sandbox";
+import { flattenFiles } from "@/lib/tree";
+import { usePanelResize } from "@/lib/use-panel-resize";
 import { onProjectChange } from "@/lib/projects";
 import {
   PanelLeftCloseIcon,
@@ -58,17 +60,6 @@ function makeTabId(): string {
 
 function defaultTabTitle(index: number): string {
   return `Chat ${index + 1}`;
-}
-
-function flattenFiles(node: TreeNode | null): string[] {
-  if (!node) return [];
-  const paths: string[] = [];
-  function walk(n: TreeNode) {
-    if (n.type === "file") paths.push(n.path);
-    for (const c of n.children ?? []) walk(c);
-  }
-  walk(node);
-  return paths;
 }
 
 // Thin vertical drag handle between two panels
@@ -204,43 +195,7 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [anyStreaming, sandboxFetchTree, sandboxRefreshOpenTabs]);
 
-  // Resizable panel widths (px)
-  const [treeWidth, setTreeWidth] = useState(320);
-  const [chatWidth, setChatWidth] = useState(640);
-  const [isResizing, setIsResizing] = useState(false);
-  const dragging = useRef<"tree" | "chat" | null>(null);
-  const dragStartX = useRef(0);
-  const dragStartWidth = useRef(0);
-
-  const startDrag = useCallback((panel: "tree" | "chat") => (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = panel;
-    dragStartX.current = e.clientX;
-    dragStartWidth.current = panel === "tree" ? treeWidth : chatWidth;
-    setIsResizing(true);
-  }, [treeWidth, chatWidth]);
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      const delta = e.clientX - dragStartX.current;
-      if (dragging.current === "tree") {
-        setTreeWidth(Math.max(150, Math.min(480, dragStartWidth.current + delta)));
-      } else {
-        setChatWidth(Math.max(280, Math.min(720, dragStartWidth.current - delta)));
-      }
-    };
-    const onUp = () => {
-      dragging.current = null;
-      setIsResizing(false);
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-  }, []);
+  const { treeWidth, chatWidth, isResizing, startDrag } = usePanelResize();
 
   // Switching projects nukes every tab's session, so we reduce the tab list
   // back to one fresh tab. Each <ChatTab>'s own useAgent listens for the

@@ -63,6 +63,23 @@ type ToolResponsePart = {
   response?: Record<string, unknown>;
 };
 
+type AgentEvent = {
+  error?: unknown;
+  modelVersion?: string;
+  partial?: boolean;
+  actions?: {
+    stateDelta?: Record<string, unknown>;
+    state_delta?: Record<string, unknown>;
+  };
+  content?: {
+    parts?: Array<{
+      functionCall?: ToolCallPart;
+      functionResponse?: ToolResponsePart;
+      text?: string;
+    }>;
+  };
+};
+
 const truncateText = (value: unknown, max = 120) => {
   if (typeof value !== "string") return undefined;
   const compact = value.replace(/\s+/g, " ").trim();
@@ -119,6 +136,113 @@ const formatToolResponse = (tool: ToolResponsePart) => {
     status,
   } as const;
 };
+
+export function applyAgentEventToMessage(
+  message: ChatMessage,
+  event: AgentEvent,
+  nextActivityId: () => string,
+  now = Date.now()
+): ChatMessage {
+  let next = message;
+  if (event.error) {
+    next = { ...next, content: `Error: ${event.error}` };
+  }
+
+  if (event.modelVersion) {
+    next = { ...next, modelVersion: event.modelVersion };
+  }
+
+  const stateDelta = event.actions?.stateDelta ?? event.actions?.state_delta;
+  if (stateDelta && typeof stateDelta === "object") {
+    const nextTurnId = stateDelta._turnId;
+    if (typeof nextTurnId === "string") {
+      next = { ...next, turnId: nextTurnId };
+    }
+  }
+
+  const parts = event.content?.parts;
+  if (!parts) return next;
+
+  for (const part of parts) {
+    if (part.functionCall) {
+      const tool = part.functionCall;
+      const activity = formatToolCall(tool);
+      const key = String(tool.id ?? tool.name ?? nextActivityId());
+      const activities = next.activities ?? [];
+      if (
+        activities.some(
+          (existing) => existing.id === key && existing.status === "running"
+        )
+      ) {
+        continue;
+      }
+      next = {
+        ...next,
+        activities: [
+          ...activities,
+          {
+            detail: activity.detail,
+            id: key,
+            label: activity.label,
+            status: "running" as const,
+            timestamp: now,
+          },
+        ].slice(-MAX_ACTIVITY_ITEMS),
+      };
+      continue;
+    }
+
+    if (part.functionResponse) {
+      const tool = part.functionResponse;
+      const activity = formatToolResponse(tool);
+      const key = String(tool.id ?? tool.name ?? nextActivityId());
+      const activities = next.activities ?? [];
+      const existingIndex = activities.findIndex(
+        (existing) =>
+          existing.id === key ||
+          (tool.name &&
+            existing.status === "running" &&
+            existing.label.toLowerCase().includes(humanizeToolName(tool.name)))
+      );
+
+      if (existingIndex === -1) {
+        next = {
+          ...next,
+          activities: [
+            ...activities,
+            {
+              detail: activity.detail,
+              id: key,
+              label: activity.label,
+              status: activity.status as ActivityItem["status"],
+              timestamp: now,
+            },
+          ].slice(-MAX_ACTIVITY_ITEMS),
+        };
+        continue;
+      }
+
+      const nextActivities = [...activities];
+      nextActivities[existingIndex] = {
+        ...nextActivities[existingIndex],
+        detail: activity.detail ?? nextActivities[existingIndex].detail,
+        label: activity.label,
+        status: activity.status,
+      };
+      next = { ...next, activities: nextActivities };
+      continue;
+    }
+
+    if (part.text) {
+      next = {
+        ...next,
+        content: event.partial ? next.content + part.text : part.text,
+      };
+    }
+  }
+
+  return next;
+}
 
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -231,138 +355,9 @@ export function useAgent() {
             try {
               const event = JSON.parse(jsonStr);
 
-              if (event.error) {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === assistantId
-                      ? { ...m, content: `Error: ${event.error}` }
-                      : m
-                  )
-                );
-                continue;
-              }
-
-              if (event.modelVersion) {
-                updateAssistant((message) => ({
-                  ...message,
-                  modelVersion: event.modelVersion,
-                }));
-              }
-
-              const stateDelta = event.actions?.stateDelta ?? event.actions?.state_delta;
-              if (stateDelta && typeof stateDelta === "object") {
-                const nextTurnId = (stateDelta as Record<string, unknown>)._turnId;
-                if (typeof nextTurnId === "string") {
-                  updateAssistant((message) => ({
-                    ...message,
-                    turnId: nextTurnId,
-                  }));
-                }
-              }
-
-              const parts = event.content?.parts;
-              if (!parts) continue;
-
-              for (const part of parts) {
-                if (part.functionCall) {
-                  const tool = part.functionCall as ToolCallPart;
-                  const activity = formatToolCall(tool);
-                  const key = String(tool.id ?? tool.name ?? nextId());
-
-                  updateAssistant((message) => {
-                    const activities = message.activities ?? [];
-                    if (
-                      activities.some(
-                        (existing) =>
-                          existing.id === key && existing.status === "running"
-                      )
-                    ) {
-                      return message;
-                    }
-
-                    return {
-                      ...message,
-                      activities: [
-                        ...activities,
-                        {
-                          detail: activity.detail,
-                          id: key,
-                          label: activity.label,
-                          status: "running",
-                          timestamp: Date.now(),
-                        },
-                      ].slice(-MAX_ACTIVITY_ITEMS),
-                    };
-                  });
-                  continue;
-                }
-
-                if (part.functionResponse) {
-                  const tool = part.functionResponse as ToolResponsePart;
-                  const activity = formatToolResponse(tool);
-                  const key = String(tool.id ?? tool.name ?? nextId());
-
-                  updateAssistant((message) => {
-                    const activities = message.activities ?? [];
-                    const existingIndex = activities.findIndex(
-                      (existing) =>
-                        existing.id === key ||
-                        (tool.name &&
-                          existing.status === "running" &&
-                          existing.label
-                            .toLowerCase()
-                            .includes(humanizeToolName(tool.name)))
-                    );
-
-                    if (existingIndex === -1) {
-                      return {
-                        ...message,
-                        activities: [
-                          ...activities,
-                          {
-                            detail: activity.detail,
-                            id: key,
-                            label: activity.label,
-                            status: activity.status,
-                            timestamp: Date.now(),
-                          },
-                        ].slice(-MAX_ACTIVITY_ITEMS),
-                      };
-                    }
-
-                    const nextActivities = [...activities];
-                    nextActivities[existingIndex] = {
-                      ...nextActivities[existingIndex],
-                      detail:
-                        activity.detail ?? nextActivities[existingIndex].detail,
-                      label: activity.label,
-                      status: activity.status,
-                    };
-
-                    return {
-                      ...message,
-                      activities: nextActivities,
-                    };
-                  });
-                  continue;
-                }
-
-                if (part.text) {
-                  if (event.partial) {
-                    // Streaming chunk: append to existing content
-                    updateAssistant((message) => ({
-                      ...message,
-                      content: message.content + part.text,
-                    }));
-                  } else {
-                    // Complete event: replace with final content
-                    updateAssistant((message) => ({
-                      ...message,
-                      content: part.text,
-                    }));
-                  }
-                }
-              }
+              updateAssistant((message) =>
+                applyAgentEventToMessage(message, event, nextId)
+              );
             } catch {
               // skip malformed JSON lines
             }

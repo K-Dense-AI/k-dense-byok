@@ -9,10 +9,15 @@ from dotenv import load_dotenv
 from google.adk.agents import LlmAgent
 from google.adk.models.lite_llm import LiteLlm
 from litellm.integrations.custom_logger import CustomLogger
-from .cost_ledger import extract_cost_tags, record_cost, update_cost_entry
+from .cost_ledger import record_cost, update_cost_entry
 from .mcps import all_mcps
 from .manifest import close_turn, open_turn
 from . import projects
+from .tracking import (
+    build_tracking_headers,
+    build_tracking_metadata,
+    extract_tags_from_litellm_kwargs,
+)
 
 from .tools.gemini_cli import delegate_task
 from .utils import (
@@ -115,20 +120,21 @@ def _inject_tracking_headers(callback_context):
     in ``costs.jsonl``.
     """
     state = callback_context.state
-    merged = dict(EXTRA_HEADERS)
-    merged["X-Kady-Role"] = "orchestrator"
     session_id = state.get("_sessionId")
     turn_id = state.get("_turnId")
-    if session_id:
-        merged["X-Kady-Session-Id"] = session_id
-    if turn_id:
-        merged["X-Kady-Turn-Id"] = turn_id
     try:
         project_id = projects.current_project_id()
     except LookupError:
         project_id = None
-    if project_id:
-        merged["X-Kady-Project"] = project_id
+    merged = {
+        **EXTRA_HEADERS,
+        **build_tracking_headers(
+            role="orchestrator",
+            project_id=project_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        ),
+    }
 
     # ``_additional_args`` is the LiteLlm-owned kwargs bag that gets
     # forwarded verbatim into ``litellm.acompletion``. Mutating it here
@@ -141,13 +147,14 @@ def _inject_tracking_headers(callback_context):
     # ``kwargs["litellm_params"]["metadata"]`` verbatim.
     existing_meta = _LITELLM_MODEL._additional_args.get("metadata")
     meta = dict(existing_meta) if isinstance(existing_meta, dict) else {}
-    meta["kady_role"] = "orchestrator"
-    if session_id:
-        meta["kady_session_id"] = session_id
-    if turn_id:
-        meta["kady_turn_id"] = turn_id
-    if project_id:
-        meta["kady_project"] = project_id
+    meta.update(
+        build_tracking_metadata(
+            role="orchestrator",
+            project_id=project_id,
+            session_id=session_id,
+            turn_id=turn_id,
+        )
+    )
     _LITELLM_MODEL._additional_args["metadata"] = meta
 
     # Ask OpenRouter to include native usage accounting (token counts +
@@ -265,29 +272,8 @@ class _OrchestratorCostLogger(CustomLogger):
 
     @staticmethod
     def _extract_tags_from_kwargs(kwargs: dict) -> dict | None:
-        """Pull the X-Kady-* correlation IDs out of the callback kwargs.
-
-        Prefers ``litellm_params.metadata`` (where we stash our tags) and
-        falls back to the ``extra_headers`` carried on optional_params or
-        litellm_params on provider paths that keep them.
-        """
-        lparams = kwargs.get("litellm_params") or {}
-        meta = lparams.get("metadata") if isinstance(lparams, dict) else None
-        if isinstance(meta, dict) and any(
-            k.startswith("kady_") for k in meta.keys()
-        ):
-            return {
-                "role": meta.get("kady_role"),
-                "session_id": meta.get("kady_session_id"),
-                "turn_id": meta.get("kady_turn_id"),
-                "delegation_id": meta.get("kady_delegation_id"),
-                "project_id": meta.get("kady_project"),
-            }
-        optional = kwargs.get("optional_params") or {}
-        headers = optional.get("extra_headers") or (
-            lparams.get("extra_headers") if isinstance(lparams, dict) else None
-        )
-        return extract_cost_tags(headers) if headers else None
+        """Pull Kady correlation IDs out of LiteLLM callback kwargs."""
+        return extract_tags_from_litellm_kwargs(kwargs)
 
     def _extract_cost_and_gen_id(
         self, kwargs: dict, response_obj: Any

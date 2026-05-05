@@ -25,38 +25,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .projects import resolve_paths
+from .tracking import extract_tags_from_headers
 
 logger = logging.getLogger(__name__)
-
-
-_HEADER_PREFIX = "x-kady-"
-_HEADER_SESSION = "x-kady-session-id"
-_HEADER_TURN = "x-kady-turn-id"
-_HEADER_ROLE = "x-kady-role"
-_HEADER_DELEGATION = "x-kady-delegation-id"
-_HEADER_PROJECT = "x-kady-project"
-
-
-def _normalize_headers(headers: Any) -> dict[str, str]:
-    """Return a lower-cased ``{name: value}`` view of arbitrary header shapes.
-
-    LiteLLM passes headers as plain dicts (direct-call path) or as the request
-    mapping recorded by the proxy. Both cases land here; anything we can't
-    reason about (None, unexpected types) yields an empty dict.
-    """
-    if not headers:
-        return {}
-    if isinstance(headers, dict):
-        return {str(k).lower(): str(v) for k, v in headers.items() if v is not None}
-    try:
-        return {
-            str(k).lower(): str(v)
-            for k, v in headers.items()  # type: ignore[attr-defined]
-            if v is not None
-        }
-    except AttributeError:
-        return {}
-
 
 def extract_cost_tags(headers: Any) -> Optional[dict[str, Optional[str]]]:
     """Pull the correlation tags out of an extra_headers mapping.
@@ -64,19 +35,7 @@ def extract_cost_tags(headers: Any) -> Optional[dict[str, Optional[str]]]:
     Returns ``None`` when the mandatory session/turn/role triplet is absent —
     callers should treat that as "not a Kady-orchestrated call" and skip.
     """
-    hmap = _normalize_headers(headers)
-    session_id = hmap.get(_HEADER_SESSION)
-    turn_id = hmap.get(_HEADER_TURN)
-    role = hmap.get(_HEADER_ROLE)
-    if not (session_id and turn_id and role):
-        return None
-    return {
-        "session_id": session_id,
-        "turn_id": turn_id,
-        "role": role,
-        "delegation_id": hmap.get(_HEADER_DELEGATION),
-        "project_id": hmap.get(_HEADER_PROJECT),
-    }
+    return extract_tags_from_headers(headers)
 
 
 def _coerce_usage_dict(usage: Any) -> dict[str, Any]:

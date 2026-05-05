@@ -9,12 +9,8 @@ import {
   WandSparklesIcon,
   ChromeIcon,
   GlobeIcon,
-  FileIcon,
-  FileCodeIcon,
-  FileJsonIcon,
-  FileTextIcon,
-  FileImageIcon,
 } from "lucide-react";
+import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import type { Database } from "@/components/database-selector";
@@ -53,19 +49,6 @@ const TIER_BADGE: Record<string, string> = {
   high: "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-500/20",
   flagship: "text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-500/20",
 };
-
-function iconForFile(name: string) {
-  const n = name.toLowerCase();
-  if (/\.(ts|tsx|js|jsx|py|rb|go|rs|java|c|cpp|cs|php|swift|kt|scala)$/.test(n))
-    return <FileCodeIcon className="size-3 text-sky-500" />;
-  if (/\.(json|yaml|yml|toml|xml)$/.test(n))
-    return <FileJsonIcon className="size-3 text-amber-500" />;
-  if (/\.(md|mdx|txt|log|rst)$/.test(n))
-    return <FileTextIcon className="size-3 text-muted-foreground" />;
-  if (/\.(png|jpg|jpeg|gif|webp|svg|ico|avif)$/.test(n))
-    return <FileImageIcon className="size-3 text-emerald-500" />;
-  return <FileIcon className="size-3 text-muted-foreground" />;
-}
 
 function Chip({
   children,
@@ -168,7 +151,7 @@ export function ContextChipsBar({
               </>
             }
           >
-            {iconForFile(name)}
+            <KadyFileIcon name={name} className="size-3" />
             <span className="max-w-[140px] truncate">{name}</span>
           </Chip>
         );

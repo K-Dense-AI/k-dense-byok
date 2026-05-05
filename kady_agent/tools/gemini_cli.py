@@ -15,6 +15,7 @@ from ..manifest import (
     session_seed,
 )
 from ..projects import active_paths, ensure_gemini_trust_file, get_project
+from ..tracking import build_tracking_headers
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -126,6 +127,90 @@ def _collect_expert_artifacts(kady_dir: Path, delegation_id: str) -> tuple[str |
     return env_lock, deliverables
 
 
+def _base_cli_env() -> dict[str, str]:
+    """Build the subprocess environment shared by every expert invocation."""
+    env = os.environ.copy()
+    for var in _VERTEX_AI_ENV_VARS:
+        env.pop(var, None)
+    env["GEMINI_CLI_TRUSTED_FOLDERS_PATH"] = str(ensure_gemini_trust_file())
+    return env
+
+
+def _budget_block_response(paths_id: str) -> dict | None:
+    """Return a user-facing tool result when project spend blocks delegation."""
+    project_meta = get_project(paths_id)
+    if project_meta is None or project_meta.spendLimitUsd is None:
+        return None
+    budget = check_project_budget(paths_id, project_meta.spendLimitUsd)
+    if budget["state"] != "exceeded":
+        return None
+    limit = float(budget["limitUsd"] or 0.0)
+    spent = float(budget["totalUsd"] or 0.0)
+    return {
+        "result": (
+            f"Delegation blocked: project '{project_meta.name}' has "
+            f"reached its spend limit (${spent:.2f} / ${limit:.2f}). "
+            f"Raise the limit in the project settings and retry."
+        ),
+        "skills_used": [],
+        "tools_used": {},
+        "budgetBlocked": True,
+        "projectId": paths_id,
+        "totalUsd": spent,
+        "limitUsd": limit,
+    }
+
+
+def _resolve_working_directory(working_directory: Optional[str], sandbox: Path) -> Path:
+    """Resolve requested working directories safely inside the sandbox."""
+    if working_directory is None or not working_directory.strip():
+        return sandbox
+    wd = Path(working_directory)
+    cwd = (sandbox / wd).resolve() if not wd.is_absolute() else wd.resolve()
+    return cwd if cwd.is_relative_to(sandbox) else sandbox
+
+
+def _apply_sandbox_venv(env: dict[str, str], cwd: Path) -> None:
+    """Prefer a sandbox-local virtualenv without leaking the parent venv first."""
+    sandbox_venv = cwd / ".venv"
+    if not sandbox_venv.is_dir():
+        return
+    venv_bin = str(sandbox_venv / "bin")
+    env["VIRTUAL_ENV"] = str(sandbox_venv)
+    path_parts = env.get("PATH", "").split(os.pathsep)
+    old_venv = os.environ.get("VIRTUAL_ENV")
+    if old_venv:
+        old_bin = os.path.join(old_venv, "bin")
+        path_parts = [p for p in path_parts if p != old_bin]
+    env["PATH"] = os.pathsep.join([venv_bin] + path_parts)
+
+
+def _build_cli_args(prompt: str, selected_model: Optional[str]) -> list[str]:
+    cli_args: list[str] = ["gemini", "-p", prompt, "--yolo", "--output-format", "stream-json"]
+    if selected_model and _cli_can_route(selected_model):
+        cli_args.extend(["-m", selected_model])
+    return cli_args
+
+
+async def _run_gemini_cli(cli_args: list[str], cwd: Path, env: dict[str, str]) -> tuple[str, int]:
+    """Execute Gemini CLI and return raw stdout plus duration in milliseconds."""
+    started_at = time.time()
+    proc = await asyncio.create_subprocess_exec(
+        *cli_args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=env,
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    duration_ms = int((time.time() - started_at) * 1000)
+    if proc.returncode != 0:
+        raise RuntimeError(
+            stderr_bytes.decode(errors="replace").strip() or "gemini command failed"
+        )
+    return stdout_bytes.decode(errors="replace"), duration_ms
+
+
 async def delegate_task(
     prompt: str,
     working_directory: Optional[str] = None,
@@ -143,19 +228,7 @@ async def delegate_task(
         activated Gemini CLI skill names), and ``tools_used`` (tool call
         counts).
     """
-    env = os.environ.copy()
-    for var in _VERTEX_AI_ENV_VARS:
-        env.pop(var, None)
-
-    # Point Gemini CLI at our own trust file (instead of the default
-    # ``~/.gemini/trustedFolders.json``) so the project sandbox is treated as
-    # trusted and the workspace ``settings.json`` -- which selects
-    # ``gemini-api-key`` and our LiteLLM proxy -- is actually loaded. Without
-    # this, the user's global ``~/.gemini/settings.json`` (often left on
-    # ``vertex-ai`` from a previous gcloud login) wins and the CLI bails out
-    # demanding GOOGLE_CLOUD_PROJECT/_LOCATION env vars.
-    env["GEMINI_CLI_TRUSTED_FOLDERS_PATH"] = str(ensure_gemini_trust_file())
-
+    env = _base_cli_env()
     prev_headers = env.get("GEMINI_CLI_CUSTOM_HEADERS", "").strip()
 
     paths = active_paths()
@@ -165,42 +238,16 @@ async def delegate_task(
     # the expert. Returning a tool result (rather than raising) lets the
     # orchestrator surface a clean, user-facing explanation and still close
     # the turn normally.
-    project_meta = get_project(paths.id)
-    if project_meta is not None and project_meta.spendLimitUsd is not None:
-        budget = check_project_budget(paths.id, project_meta.spendLimitUsd)
-        if budget["state"] == "exceeded":
-            limit = float(budget["limitUsd"] or 0.0)
-            spent = float(budget["totalUsd"] or 0.0)
-            return {
-                "result": (
-                    f"Delegation blocked: project '{project_meta.name}' has "
-                    f"reached its spend limit (${spent:.2f} / ${limit:.2f}). "
-                    f"Raise the limit in the project settings and retry."
-                ),
-                "skills_used": [],
-                "tools_used": {},
-                "budgetBlocked": True,
-                "projectId": paths.id,
-                "totalUsd": spent,
-                "limitUsd": limit,
-            }
+    budget_block = _budget_block_response(paths.id)
+    if budget_block is not None:
+        return budget_block
 
     # Some models (e.g. GPT-5.4 Nano) pass `working_directory="."` or other
     # relative paths when they shouldn't. Treat any relative path as being
     # relative to the project's sandbox, not the repo root — the sandbox IS
     # the working directory. Absolute paths that fall inside the sandbox are
     # honored as-is; otherwise we refuse and fall back to the sandbox.
-    if working_directory is None or not working_directory.strip():
-        cwd = paths.sandbox
-    else:
-        wd = Path(working_directory)
-        if not wd.is_absolute():
-            cwd = (paths.sandbox / wd).resolve()
-        else:
-            cwd = wd.resolve()
-        if not cwd.is_relative_to(paths.sandbox):
-            cwd = paths.sandbox
-
+    cwd = _resolve_working_directory(working_directory, paths.sandbox)
     cwd.mkdir(parents=True, exist_ok=True)
 
     # Reproducibility: stamp turn + delegation identifiers into the env so the
@@ -245,15 +292,15 @@ async def delegate_task(
     # off the inbound HTTP request and writes one ledger entry per expert
     # completion, tagged back to the right session/turn/delegation.
     kady_header_parts = [
-        f"X-Kady-Role: expert",
-        f"X-Kady-Project: {paths.id}",
+        f"{name}: {value}"
+        for name, value in build_tracking_headers(
+            role="expert",
+            project_id=paths.id,
+            session_id=session_id,
+            turn_id=turn_id,
+            delegation_id=delegation_id,
+        ).items()
     ]
-    if session_id:
-        kady_header_parts.append(f"X-Kady-Session-Id: {session_id}")
-    if turn_id:
-        kady_header_parts.append(f"X-Kady-Turn-Id: {turn_id}")
-    if delegation_id:
-        kady_header_parts.append(f"X-Kady-Delegation-Id: {delegation_id}")
     header_segments: list[str] = []
     if prev_headers:
         header_segments.append(prev_headers)
@@ -261,26 +308,14 @@ async def delegate_task(
     header_segments.extend(kady_header_parts)
     env["GEMINI_CLI_CUSTOM_HEADERS"] = ", ".join(header_segments)
 
-    sandbox_venv = cwd / ".venv"
-    if sandbox_venv.is_dir():
-        venv_bin = str(sandbox_venv / "bin")
-        env["VIRTUAL_ENV"] = str(sandbox_venv)
-        path_parts = env.get("PATH", "").split(os.pathsep)
-        old_venv = os.environ.get("VIRTUAL_ENV")
-        if old_venv:
-            old_bin = os.path.join(old_venv, "bin")
-            path_parts = [p for p in path_parts if p != old_bin]
-        env["PATH"] = os.pathsep.join([venv_bin] + path_parts)
+    _apply_sandbox_venv(env, cwd)
 
     # Forward the orchestrator-selected model to the expert so local Ollama
     # (or direct LiteLLM-registered Gemini) is used end-to-end. The CLI
     # only routes via the LiteLLM proxy, so anything that isn't a model
     # the proxy knows about (gemini-*, ollama/*) would hang or 404 — in
     # that case fall back to the CLI default (a gemini-* model).
-    cli_args: list[str] = ["gemini", "-p", prompt, "--yolo",
-                           "--output-format", "stream-json"]
-    if selected_model and _cli_can_route(selected_model):
-        cli_args.extend(["-m", selected_model])
+    cli_args = _build_cli_args(prompt, selected_model)
 
     # Refresh any near-expiry MCP OAuth tokens, then re-materialize
     # ``<sandbox>/.gemini/settings.json`` so its ``Authorization`` headers
@@ -290,23 +325,7 @@ async def delegate_task(
     await refresh_oauth_tokens()
     write_merged_settings(paths.gemini_settings_dir)
 
-    started_at = time.time()
-    proc = await asyncio.create_subprocess_exec(
-        *cli_args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=cwd,
-        env=env,
-    )
-    stdout_bytes, stderr_bytes = await proc.communicate()
-    duration_ms = int((time.time() - started_at) * 1000)
-
-    if proc.returncode != 0:
-        raise RuntimeError(
-            stderr_bytes.decode(errors="replace").strip() or "gemini command failed"
-        )
-
-    raw = stdout_bytes.decode(errors="replace")
+    raw, duration_ms = await _run_gemini_cli(cli_args, cwd, env)
     result = _parse_stream_json(raw)
 
     # Persist delegation into the manifest (best-effort).

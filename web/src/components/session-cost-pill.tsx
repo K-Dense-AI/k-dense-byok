@@ -9,6 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import { formatCompactTokens, formatUsd } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ProjectCostSummary } from "@/lib/use-project-cost";
 import type {
@@ -25,18 +26,9 @@ interface SessionCostPillProps {
   className?: string;
 }
 
-function formatCost(usd: number): string {
-  if (!Number.isFinite(usd) || usd <= 0) return "$0.00";
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(2)}`;
-}
-
 function formatTokens(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "0";
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-  return n.toString();
+  return formatCompactTokens(n);
 }
 
 function shortModel(model: string): string {
@@ -99,8 +91,8 @@ export function SessionCostPill({
           )}
           aria-label={
             limitUsd !== null
-              ? `Project cost ${formatCost(projectTotal)} of ${formatCost(limitUsd)}, session cost ${formatCost(sessionTotal)}`
-              : `Project cost ${formatCost(projectTotal)}, session cost ${formatCost(sessionTotal)}`
+              ? `Project cost ${formatUsd(projectTotal)} of ${formatUsd(limitUsd)}, session cost ${formatUsd(sessionTotal)}`
+              : `Project cost ${formatUsd(projectTotal)}, session cost ${formatUsd(sessionTotal)}`
           }
         >
           <div className="flex items-center gap-2">
@@ -111,16 +103,16 @@ export function SessionCostPill({
             <div className="flex flex-col items-end leading-tight">
               <span className="flex items-baseline gap-1">
                 <span className="text-muted-foreground">proj</span>
-                <span className="font-semibold">{formatCost(projectTotal)}</span>
+                <span className="font-semibold">{formatUsd(projectTotal)}</span>
                 {limitUsd !== null && (
                   <span className="text-muted-foreground">
-                    / {formatCost(limitUsd)}
+                    / {formatUsd(limitUsd)}
                   </span>
                 )}
               </span>
               <span className="flex items-baseline gap-1">
                 <span className="text-muted-foreground">sess</span>
-                <span className="font-semibold">{formatCost(sessionTotal)}</span>
+                <span className="font-semibold">{formatUsd(sessionTotal)}</span>
               </span>
             </div>
           </div>
@@ -155,11 +147,11 @@ export function SessionCostPill({
             </div>
             <div className="mt-1 flex items-baseline gap-2">
               <div className="font-mono text-2xl font-semibold tabular-nums">
-                {formatCost(projectTotal)}
+                {formatUsd(projectTotal)}
               </div>
               {limitUsd !== null && (
                 <div className="text-muted-foreground font-mono text-sm tabular-nums">
-                  / {formatCost(limitUsd)}
+                  / {formatUsd(limitUsd)}
                 </div>
               )}
             </div>
@@ -202,7 +194,7 @@ export function SessionCostPill({
             This session
           </div>
           <div className="mt-1 font-mono text-xl font-semibold tabular-nums">
-            {formatCost(sessionTotal)}
+            {formatUsd(sessionTotal)}
           </div>
           <div className="text-muted-foreground mt-0.5 text-xs">
             {formatTokens(summary.totalTokens)} tokens across{" "}
@@ -255,7 +247,7 @@ function CostRow({
         <span className="text-muted-foreground text-xs">
           {formatTokens(tokens)} tok
         </span>
-        <span>{formatCost(costUsd)}</span>
+        <span>{formatUsd(costUsd)}</span>
       </span>
     </div>
   );
@@ -269,7 +261,7 @@ function TurnBlock({ bucket }: { bucket: CostTurnBucket }) {
           {bucket.turnId}
         </span>
         <span className="font-mono tabular-nums">
-          {formatCost(bucket.totalUsd)}
+          {formatUsd(bucket.totalUsd)}
         </span>
       </div>
       <ul className="mt-1 space-y-0.5">
@@ -298,7 +290,7 @@ function EntryRow({ entry }: { entry: CostEntry }) {
         <span className="truncate">{shortModel(entry.model)}</span>
       </span>
       <span className="shrink-0 font-mono tabular-nums">
-        {formatTokens(entry.totalTokens)} · {formatCost(entry.costUsd)}
+        {formatTokens(entry.totalTokens)} · {formatUsd(entry.costUsd)}
       </span>
     </li>
   );

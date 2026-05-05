@@ -7,6 +7,7 @@ import {
   MarkdownRevisePopover,
   RevisePill,
 } from "@/components/markdown-revise-popover";
+import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
 import {
   fileCategory,
@@ -21,16 +22,6 @@ import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-lang
 import { githubLight } from "@uiw/codemirror-theme-github";
 import { keymap } from "@codemirror/view";
 import {
-  FileIcon,
-  FileTextIcon,
-  FileCodeIcon,
-  FileJsonIcon,
-  FileSpreadsheetIcon,
-  FileArchiveIcon,
-  FileVideoIcon,
-  FileAudioIcon,
-  FileImageIcon,
-  FileTerminalIcon,
   FilesIcon,
   DownloadIcon,
   PencilIcon,
@@ -54,46 +45,11 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function iconForFile(name: string, iconSize = "size-4"): ReactNode {
-  const ext = name.split(".").pop()?.toLowerCase() ?? "";
-  const codeExts = ["py","ts","tsx","js","jsx","rs","go","java","c","cpp","h","rb","css","scss","html","xml","yaml","yml","toml","graphql","sql"];
-  const shellExts = ["sh","bash","zsh","fish","ps1","cmd","bat"];
-  const imageExts = ["png","jpg","jpeg","gif","svg","webp","bmp","ico","tiff","heic"];
-  const videoExts = ["mp4","mov","avi","mkv","webm","flv","wmv","m4v"];
-  const audioExts = ["mp3","wav","ogg","flac","m4a","aac","opus","wma"];
-  const archiveExts = ["zip","tar","gz","bz2","xz","7z","rar","tgz"];
-  const spreadsheetExts = ["csv","xlsx","xls","ods"];
-  const docExts = ["doc","docx","odt","rtf"];
-  const fastaExts = ["fasta","fa","faa","fna","ffn","fastq","fq"];
-  const biotableExts = ["vcf","bed","gff","gtf","gff3","sam","bcf","tsv"];
-
-  if (name.toLowerCase().endsWith(".h5ad") || name.toLowerCase().endsWith(".h5ad.gz")) {
-    return <DatabaseIcon className={`${iconSize} text-indigo-500`} />;
-  }
-  if (ext === "json" || ext === "jsonl") return <FileJsonIcon className={`${iconSize} text-amber-600`} />;
-  if (ext === "pdf") return <FileTextIcon className={`${iconSize} text-red-500`} />;
-  if (ext === "ipynb") return <BookOpenIcon className={`${iconSize} text-orange-500`} />;
-  if (ext === "tex" || ext === "latex" || ext === "bib") return <FileCodeIcon className={`${iconSize} text-teal-500`} />;
-  if (codeExts.includes(ext)) return <FileCodeIcon className={`${iconSize} text-violet-500`} />;
-  if (shellExts.includes(ext)) return <FileTerminalIcon className={`${iconSize} text-slate-500`} />;
-  if (imageExts.includes(ext)) return <FileImageIcon className={`${iconSize} text-rose-500`} />;
-  if (videoExts.includes(ext)) return <FileVideoIcon className={`${iconSize} text-blue-500`} />;
-  if (audioExts.includes(ext)) return <FileAudioIcon className={`${iconSize} text-purple-500`} />;
-  if (archiveExts.includes(ext)) return <FileArchiveIcon className={`${iconSize} text-orange-500`} />;
-  if (spreadsheetExts.includes(ext)) return <FileSpreadsheetIcon className={`${iconSize} text-emerald-600`} />;
-  if (fastaExts.includes(ext)) return <ActivityIcon className={`${iconSize} text-cyan-600`} />;
-  if (biotableExts.includes(ext)) return <TableIcon className={`${iconSize} text-indigo-500`} />;
-  if (["md","mdx","txt","log","rst"].includes(ext)) return <FileTextIcon className={`${iconSize} text-emerald-600`} />;
-  if (docExts.includes(ext)) return <FileTextIcon className={`${iconSize} text-blue-600`} />;
-  return <FileIcon className={`${iconSize} text-muted-foreground`} />;
-}
 
 function langForFile(name: string): string {
   const ext = name.split(".").pop()?.toLowerCase() ?? "";
@@ -229,7 +185,7 @@ function TabBar({
               {tab.loading ? (
                 <div className="size-3.5 animate-spin rounded-full border border-muted-foreground/30 border-t-muted-foreground" />
               ) : (
-                iconForFile(name, "size-3.5")
+                <KadyFileIcon name={name} className="size-3.5" />
               )}
             </span>
 
@@ -769,7 +725,6 @@ function nbText(v: string | string[] | undefined): string {
 }
 
 function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
   return s.replace(/\x1b\[[0-9;]*[mGKHF]/g, "");
 }
 
@@ -2118,7 +2073,7 @@ export function FilePreviewPanel({
 
   const header = selectedPath && (
     <div className="flex shrink-0 items-center gap-1.5 border-b px-3 py-2">
-      {selectedName && iconForFile(selectedName)}
+      {selectedName && <KadyFileIcon name={selectedName} />}
       <span className="flex-1 truncate font-mono text-xs text-foreground/70" title={selectedPath}>
         {selectedPath}
       </span>
