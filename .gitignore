@@ -48,7 +48,6 @@ vertex_ai_credentials.json
 # AI / Agent
 .adk/
 .gemini/
-AGENTS.md
 
 # Testing
 coverage/
