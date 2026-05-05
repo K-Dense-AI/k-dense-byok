@@ -9,8 +9,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
-import { formatCompactTokens, formatUsd } from "@/lib/format";
-import { cn } from "@/lib/utils";
+import { cn, formatCompactTokens, formatUsd } from "@/lib/utils";
 import type { ProjectCostSummary } from "@/lib/use-project-cost";
 import type {
   CostEntry,

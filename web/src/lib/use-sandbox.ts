@@ -72,6 +72,17 @@ export function anndataEmbeddingUrl(
   return `${API_BASE}/sandbox/anndata-embedding.png?${params.toString()}`;
 }
 
+export function flattenFiles(node: TreeNode | null): string[] {
+  if (!node) return [];
+  const paths: string[] = [];
+  function walk(current: TreeNode) {
+    if (current.type === "file") paths.push(current.path);
+    for (const child of current.children ?? []) walk(child);
+  }
+  walk(node);
+  return paths;
+}
+
 export interface Tab {
   path: string;
   content: string | null;

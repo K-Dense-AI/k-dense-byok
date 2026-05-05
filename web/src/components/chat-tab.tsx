@@ -36,11 +36,9 @@ import { buildBrowserContext } from "@/components/browser-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
-import { BudgetBanner } from "@/components/chat/budget-banner";
 import { KadyFileIcon } from "@/components/file-icon";
 import { useBrowserUseSettings, useChromeProfiles } from "@/lib/use-settings";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
-import { formatUsd } from "@/lib/format";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
 import type { TurnMeta } from "@/lib/provenance";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
@@ -57,7 +55,7 @@ import {
   SparklesIcon,
   XIcon,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatUsd } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   forwardRef,
@@ -82,6 +80,46 @@ interface QueuedMessage {
   skills: Skill[];
   files: string[];
   timestamp: number;
+}
+
+function BudgetBanner({
+  state,
+  totalUsd,
+  limitUsd,
+}: {
+  state: "warn" | "exceeded";
+  totalUsd: number;
+  limitUsd: number | null;
+}) {
+  const blocked = state === "exceeded";
+  return (
+    <div
+      role="alert"
+      className={cn(
+        "mb-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs",
+        blocked
+          ? "border-destructive/40 bg-destructive/10 text-destructive"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+      )}
+    >
+      <span className="flex-1">
+        {blocked ? (
+          <>
+            <b>Project spend limit reached</b> ({formatUsd(totalUsd)}
+            {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). New
+            delegations are blocked. Raise the limit in the project settings to
+            continue.
+          </>
+        ) : (
+          <>
+            <b>Approaching spend limit</b> ({formatUsd(totalUsd)}
+            {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). You&apos;re
+            over 80% of the project&apos;s cap.
+          </>
+        )}
+      </span>
+    </div>
+  );
 }
 
 const FILE_DRAG_TYPE = "application/x-kady-filepath";
@@ -219,12 +257,15 @@ function AssistantActivity({
 
   useEffect(() => {
     const el = contentRef.current;
-    if (!el || expanded) { setIsOverflowing(false); return; }
+    if (!el || expanded) return;
     const check = () => setIsOverflowing(el.scrollHeight > el.clientHeight);
-    check();
+    const frame = requestAnimationFrame(check);
     const ro = new ResizeObserver(check);
     ro.observe(el);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(frame);
+      ro.disconnect();
+    };
   }, [items, expanded]);
 
   if (items.length === 0 && !isStreaming) return null;
@@ -519,15 +560,16 @@ function ChatInput({
     return [...nameHits, ...pathOnly].slice(0, 8);
   }, [allFiles, mentionQuery]);
 
-  useEffect(() => {
-    if (mentionSelIdx >= filteredFiles.length) setMentionSelIdx(0);
-  }, [filteredFiles.length, mentionSelIdx]);
+  const safeMentionSelIdx =
+    filteredFiles.length === 0
+      ? 0
+      : Math.min(mentionSelIdx, filteredFiles.length - 1);
 
   useEffect(() => {
     listRef.current
-      ?.children[mentionSelIdx]
+      ?.children[safeMentionSelIdx]
       ?.scrollIntoView({ block: "nearest" });
-  }, [mentionSelIdx]);
+  }, [safeMentionSelIdx]);
 
   const closeMention = useCallback(() => setMentionQuery(null), []);
 
@@ -567,12 +609,12 @@ function ChatInput({
       setMentionSelIdx(i => Math.max(i - 1, 0));
     } else if (e.key === "Enter" || e.key === "Tab") {
       e.preventDefault();
-      applyMention(filteredFiles[mentionSelIdx]);
+      applyMention(filteredFiles[safeMentionSelIdx]);
     } else if (e.key === "Escape") {
       e.preventDefault();
       closeMention();
     }
-  }, [mentionQuery, filteredFiles, mentionSelIdx, applyMention, closeMention]);
+  }, [mentionQuery, filteredFiles, safeMentionSelIdx, applyMention, closeMention]);
 
   const handleTranscription = useCallback((text: string) => {
     const current = controller.textInput.value;
@@ -613,7 +655,7 @@ function ChatInput({
                     onClick={() => applyMention(path)}
                     className={cn(
                       "flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors",
-                      i === mentionSelIdx ? "bg-muted" : "hover:bg-muted/50"
+                      i === safeMentionSelIdx ? "bg-muted" : "hover:bg-muted/50"
                     )}
                   >
                     <span className="shrink-0">{mentionIconForFile(name)}</span>
@@ -627,7 +669,7 @@ function ChatInput({
                         </span>
                       )}
                     </span>
-                    {i === mentionSelIdx && (
+                    {i === safeMentionSelIdx && (
                       <kbd className="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 text-[9px] font-mono text-muted-foreground">↵</kbd>
                     )}
                   </div>
@@ -911,26 +953,29 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   useEffect(() => {
     if (status !== "ready" || messageQueue.length === 0) return;
     const [next, ...rest] = messageQueue;
-    setMessageQueue(rest);
-    send(next.text, next.model.id, {
-      expertModel: next.expertModel.id,
-      attachments: next.files,
-      skills: next.skills.map((s) => s.name),
-      databases: next.databases.map((db) => db.name),
-      compute: next.compute?.label ?? null,
-    }).then((msgId) => {
-      if (msgId) {
-        recordTurnMeta(msgId, {
-          model: next.model.label,
-          expertModel: next.expertModel.label,
-          databases: next.databases.map((db) => db.name),
-          compute: next.compute?.label ?? null,
-          skills: next.skills.map((s) => s.name),
-          filesAttached: [...next.files],
-          timestamp: next.timestamp,
-        });
-      }
-    });
+    const id = window.setTimeout(() => {
+      setMessageQueue(rest);
+      send(next.text, next.model.id, {
+        expertModel: next.expertModel.id,
+        attachments: next.files,
+        skills: next.skills.map((s) => s.name),
+        databases: next.databases.map((db) => db.name),
+        compute: next.compute?.label ?? null,
+      }).then((msgId) => {
+        if (msgId) {
+          recordTurnMeta(msgId, {
+            model: next.model.label,
+            expertModel: next.expertModel.label,
+            databases: next.databases.map((db) => db.name),
+            compute: next.compute?.label ?? null,
+            skills: next.skills.map((s) => s.name),
+            filesAttached: [...next.files],
+            timestamp: next.timestamp,
+          });
+        }
+      });
+    }, 0);
+    return () => window.clearTimeout(id);
   }, [status, messageQueue, send, recordTurnMeta]);
 
   // Bubble meta up to parent so the page can drive the cost pill,
