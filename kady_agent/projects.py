@@ -30,7 +30,11 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PROJECTS_ROOT = (REPO_ROOT / "projects").resolve()
+PROJECTS_ROOT = (
+    Path(os.environ["KADY_PROJECTS_ROOT"])
+    if os.environ.get("KADY_PROJECTS_ROOT")
+    else REPO_ROOT / "projects"
+).resolve()
 INDEX_PATH = PROJECTS_ROOT / "index.json"
 DEFAULT_PROJECT_ID = "default"
 

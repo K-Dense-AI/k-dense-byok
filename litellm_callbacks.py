@@ -165,8 +165,14 @@ class OpenRouterPrefixFix(CustomLogger):
             if not isinstance(model, str):
                 return
             # OpenRouter is the only provider the proxy routes to that
-            # reports a real cost. Skip ollama/* silently.
-            if not model.startswith("openrouter/") and not model.startswith(
+            # reports a real cost. The Gemini CLI can reach it through either
+            # an openrouter/* wildcard or the proxy's gemini-* aliases.
+            # Skip local ollama/* silently.
+            if model.startswith("ollama/"):
+                return
+            if model.startswith("gemini-"):
+                pass
+            elif not model.startswith("openrouter/") and not model.startswith(
                 "google/"
             ):
                 # The proxy resolves ``openrouter/*`` wildcards to the bare
