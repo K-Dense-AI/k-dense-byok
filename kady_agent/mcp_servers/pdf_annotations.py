@@ -8,7 +8,7 @@ the expert's label.
 
 Wire-up:
   - Registered as a built-in MCP server in
-    :func:`kady_agent.gemini_settings.build_default_settings`.
+    :func:`kady_agent.mcp.build_default_settings`.
   - Launched via stdio by the Gemini CLI; the host passes
     ``KADY_PROJECT_ID`` (and, optionally, ``KADY_EXPERT_ID`` /
     ``KADY_EXPERT_LABEL``) in the environment so the server knows

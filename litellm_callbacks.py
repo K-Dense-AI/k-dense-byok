@@ -35,8 +35,8 @@ _REPO_ROOT = Path(__file__).resolve().parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from kady_agent.cost_ledger import record_cost  # noqa: E402
-from kady_agent.tracking import extract_tags_from_headers  # noqa: E402
+from kady_agent.runtime import record_cost  # noqa: E402
+from kady_agent.runtime import extract_tags_from_headers  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

@@ -623,7 +623,7 @@ def init_project_sandbox(
     """
     # Local imports avoid a circular import with gemini_settings / utils, both
     # of which import from this module to resolve paths.
-    from .gemini_settings import write_merged_settings
+    from .mcp import write_merged_settings
 
     paths = resolve_paths(project_id)
     paths.sandbox.mkdir(parents=True, exist_ok=True)
@@ -704,7 +704,7 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
     # ``GEMINI_CLI_TRUSTED_FOLDERS_PATH`` so this protocol actually holds.
     workspace_settings = paths.gemini_settings_dir / "settings.json"
     if not workspace_settings.is_file():
-        from .gemini_settings import write_merged_settings
+        from .mcp import write_merged_settings
 
         token = set_active_project(project_id)
         try:
@@ -717,6 +717,308 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
     return paths
 
 
+
+# ---------------------------------------------------------------------------
+# ADK session service
+# ---------------------------------------------------------------------------
+
+import asyncio
+import logging
+
+from google.adk.events.event import Event
+from google.adk.sessions.base_session_service import (
+    BaseSessionService,
+    GetSessionConfig,
+    ListSessionsResponse,
+)
+from google.adk.sessions.database_session_service import DatabaseSessionService
+from google.adk.sessions.session import Session
+
+class ProjectSessionService(BaseSessionService):
+    """Fan out ADK session calls to per-project DatabaseSessionService instances."""
+
+    def __init__(self) -> None:
+        self._services: dict[str, DatabaseSessionService] = {}
+        self._lock = asyncio.Lock()
+
+    async def _service_for(self, project_id: str) -> DatabaseSessionService:
+        svc = self._services.get(project_id)
+        if svc is not None:
+            return svc
+        async with self._lock:
+            svc = self._services.get(project_id)
+            if svc is not None:
+                return svc
+            paths = ensure_project_exists(project_id)
+            # ADK's DatabaseSessionService uses SQLAlchemy's async engine, so
+            # the URL needs an async-capable driver. Plain `sqlite://` loads
+            # the sync `pysqlite` driver which raises
+            # `InvalidRequestError: The asyncio extension requires an async
+            # driver`. `sqlite+aiosqlite://` routes to the aiosqlite driver
+            # (already pulled in transitively via google-adk).
+            db_url = f"sqlite+aiosqlite:///{paths.sessions_db_path}"
+            svc = DatabaseSessionService(db_url)
+            self._services[project_id] = svc
+            return svc
+
+    async def _active(self) -> DatabaseSessionService:
+        return await self._service_for(current_project_id())
+
+    async def create_session(
+        self,
+        *,
+        app_name: str,
+        user_id: str,
+        state: Optional[dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+    ) -> Session:
+        svc = await self._active()
+        return await svc.create_session(
+            app_name=app_name,
+            user_id=user_id,
+            state=state,
+            session_id=session_id,
+        )
+
+    async def get_session(
+        self,
+        *,
+        app_name: str,
+        user_id: str,
+        session_id: str,
+        config: Optional[GetSessionConfig] = None,
+    ) -> Optional[Session]:
+        svc = await self._active()
+        return await svc.get_session(
+            app_name=app_name,
+            user_id=user_id,
+            session_id=session_id,
+            config=config,
+        )
+
+    async def list_sessions(
+        self, *, app_name: str, user_id: Optional[str] = None
+    ) -> ListSessionsResponse:
+        svc = await self._active()
+        return await svc.list_sessions(app_name=app_name, user_id=user_id)
+
+    async def delete_session(
+        self, *, app_name: str, user_id: str, session_id: str
+    ) -> None:
+        svc = await self._active()
+        await svc.delete_session(
+            app_name=app_name, user_id=user_id, session_id=session_id
+        )
+
+    async def append_event(self, session: Session, event: Event) -> Event:
+        svc = await self._active()
+        return await svc.append_event(session, event)
+
+
+# ---------------------------------------------------------------------------
+# Project HTTP API
+# ---------------------------------------------------------------------------
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+
+def _bootstrap_sandbox_sync(project_id: str) -> None:
+    """Run the lightweight, synchronous half of the sandbox bootstrap.
+
+    Copies ``GEMINI.md``, writes merged MCP settings, seeds ``pyproject.toml``
+    in the sandbox, and copies the scientific-skills catalogue from any
+    sibling project that already has it. The GitHub fallback is suppressed
+    here so POST /projects stays fast even when no sibling exists - the
+    background task picks that case up.
+
+    Doing this work synchronously protects against ``uvicorn --reload`` (or
+    any other process restart) killing the background task before skills
+    are seeded, which previously left ``sandbox/.gemini/skills`` empty for
+    newly created projects.
+    """
+    try:
+        init_project_sandbox(
+            project_id,
+            sync_venv=False,
+            download_skills=True,
+            allow_remote_skills=False,
+        )
+    except Exception:
+        logger.exception(
+            "Synchronous sandbox bootstrap failed for project %s", project_id
+        )
+
+
+def _bootstrap_sandbox_bg(
+    project_id: str, *, sync_venv: bool = True, download_skills: bool = True
+) -> None:
+    """Run the heavy sandbox bootstrap, swallowing errors into the log.
+
+    Executed via FastAPI ``BackgroundTasks`` so ``POST /projects`` can return
+    the new project record immediately while ``uv sync`` and the GitHub
+    skills fallback run out-of-band. Any exception is logged but never
+    re-raised - the task has already detached from the request.
+    """
+    try:
+        init_project_sandbox(
+            project_id, sync_venv=sync_venv, download_skills=download_skills
+        )
+    except Exception:
+        logger.exception("Sandbox bootstrap failed for project %s", project_id)
+
+
+projects_router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+class ProjectCreateBody(BaseModel):
+    name: str
+    description: Optional[str] = ""
+    tags: Optional[list[str]] = Field(default_factory=list)
+    id: Optional[str] = None  # let callers pin a slug, otherwise we mint one
+    spendLimitUsd: Optional[float] = None
+
+
+class ProjectPatchBody(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    tags: Optional[list[str]] = None
+    archived: Optional[bool] = None
+    # ``None`` means "clear the cap" (unlimited). We rely on Pydantic's
+    # ``model_fields_set`` to distinguish "field omitted" from "field = null"
+    # when forwarding the patch to update_project.
+    spendLimitUsd: Optional[float] = None
+
+
+class SandboxInitBody(BaseModel):
+    sync_venv: bool = True
+    download_skills: bool = True
+
+
+@projects_router.get("")
+def get_projects():
+    """Return every known project (archived projects sorted last)."""
+    return [m.to_dict() for m in list_projects()]
+
+
+@projects_router.post("", status_code=201)
+def post_project(body: ProjectCreateBody, background_tasks: BackgroundTasks):
+    """Create a new project and schedule its sandbox bootstrap.
+
+    Returns the project record immediately after writing the on-disk
+    skeleton. The heavy bootstrap (GEMINI.md, merged ``.gemini/settings.json``,
+    ``pyproject.toml``, ``uv sync``, scientific-skills catalogue) runs as a
+    background task so the HTTP response isn't blocked on ``uv sync``.
+    """
+    try:
+        meta = create_project(
+            name=body.name,
+            description=body.description or "",
+            tags=body.tags or [],
+            project_id=body.id,
+            spend_limit_usd=body.spendLimitUsd,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    # Touch the on-disk skeleton so subsequent GET /sandbox/tree etc. work
+    # without requiring an explicit init call.
+    ensure_project_exists(meta.id)
+    # Run the lightweight bootstrap (GEMINI.md, settings, pyproject, sibling
+    # skill copy) inline so those artefacts are guaranteed to land before
+    # the request returns. The slow ``uv sync`` (and the GitHub skill
+    # fallback if no sibling existed) stays in the background task.
+    _bootstrap_sandbox_sync(meta.id)
+    background_tasks.add_task(_bootstrap_sandbox_bg, meta.id)
+    return meta.to_dict()
+
+
+@projects_router.get("/{project_id}")
+def get_one_project(project_id: str):
+    meta = get_project(project_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return meta.to_dict()
+
+
+@projects_router.patch("/{project_id}")
+def patch_project(project_id: str, body: ProjectPatchBody):
+    # Pass through spendLimitUsd only if the caller actually included it in the
+    # payload (vs Pydantic filling in the default None). update_project uses a
+    # sentinel to distinguish "omit" from "clear to unlimited".
+    kwargs: dict = {
+        "name": body.name,
+        "description": body.description,
+        "tags": body.tags,
+        "archived": body.archived,
+    }
+    if "spendLimitUsd" in body.model_fields_set:
+        kwargs["spend_limit_usd"] = body.spendLimitUsd
+    try:
+        meta = update_project(project_id, **kwargs)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Project not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return meta.to_dict()
+
+
+@projects_router.delete("/{project_id}", status_code=204)
+def delete_one_project(project_id: str):
+    if project_id == DEFAULT_PROJECT_ID:
+        raise HTTPException(
+            status_code=400, detail="The default project cannot be deleted"
+        )
+    meta = get_project(project_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    try:
+        delete_project(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return None
+
+
+@projects_router.get("/{project_id}/costs")
+def get_project_cost_summary(project_id: str):
+    """Return cumulative cost across every session in a project.
+
+    Also echoes the project's current ``spendLimitUsd`` and a pre-classified
+    budget ``state`` (ok / warn / exceeded) so the UI can render both the
+    number and the progress bar in a single request.
+    """
+    meta = get_project(project_id)
+    if meta is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    from .runtime import check_project_budget, read_project_costs
+
+    summary = read_project_costs(project_id)
+    budget = check_project_budget(project_id, meta.spendLimitUsd)
+    summary["limitUsd"] = meta.spendLimitUsd
+    summary["budget"] = budget
+    return summary
+
+
+@projects_router.post("/{project_id}/sandbox/init")
+def post_init_sandbox(project_id: str, body: SandboxInitBody | None = None):
+    """Run (or re-run) the heavy sandbox bootstrap for a project.
+
+    Creates GEMINI.md, merged ``.gemini/settings.json``, pyproject.toml,
+    runs ``uv sync``, and downloads the scientific skills catalogue.
+    Idempotent.
+    """
+    if get_project(project_id) is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    body = body or SandboxInitBody()
+    init_project_sandbox(
+        project_id,
+        sync_venv=body.sync_venv,
+        download_skills=body.download_skills,
+    )
+    return {"ok": True}
+
+
 __all__ = [
     "ACTIVE_PROJECT",
     "DEFAULT_PROJECT_ID",
@@ -724,6 +1026,7 @@ __all__ = [
     "PROJECTS_ROOT",
     "ProjectMeta",
     "ProjectPaths",
+    "ProjectSessionService",
     "active_paths",
     "create_project",
     "current_project_id",
@@ -735,6 +1038,7 @@ __all__ = [
     "init_project_sandbox",
     "list_projects",
     "project_exists",
+    "projects_router",
     "resolve_paths",
     "seed_project_skills",
     "set_active_project",

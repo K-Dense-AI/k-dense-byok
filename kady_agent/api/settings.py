@@ -8,8 +8,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
-from kady_agent import mcp_oauth
-from kady_agent.gemini_settings import (
+from kady_agent import mcp as mcp_oauth
+from kady_agent.mcp import (
     build_default_settings,
     load_browser_use_config,
     load_custom_mcps,
@@ -231,7 +231,7 @@ def get_browser_use_settings():
 @router.get("/system/chrome-profiles")
 def get_chrome_profiles():
     """Return Chrome profiles detected on this machine."""
-    from kady_agent.chrome_profiles import detect_chrome_profiles
+    from kady_agent.mcp import detect_chrome_profiles
 
     return {"profiles": [p.to_dict() for p in detect_chrome_profiles()]}
 

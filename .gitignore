@@ -5,6 +5,8 @@ __pycache__/
 *$py.class
 *.so
 .venv
+.pytest_cache/
+.coverage
 
 # UV
 /uv.lock
