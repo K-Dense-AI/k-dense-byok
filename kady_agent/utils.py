@@ -161,6 +161,7 @@ def download_scientific_skills(
 def fetch_openrouter_models(
     api_key: str | None = None,
     max_age_days: int | None = None,
+    supported_parameters: str | None = None,
 ) -> list[dict]:
     """
     Fetch all available models from OpenRouter using the official SDK.
@@ -168,6 +169,8 @@ def fetch_openrouter_models(
     Args:
         api_key: OpenRouter API key (falls back to OPENROUTER_API_KEY env var).
         max_age_days: If set, only return models created within this many days.
+        supported_parameters: Comma-separated OpenRouter parameters to require
+            (for example, "tools" to return only tool-calling models).
 
     Returns a list of dicts, each with:
         id, name, provider, context_length, modality, created,
@@ -183,7 +186,7 @@ def fetch_openrouter_models(
         )
 
     with OpenRouter(api_key=key) as client:
-        res = client.models.list()
+        res = client.models.list(supported_parameters=supported_parameters)
 
     if not res or not res.data:
         return []
@@ -235,6 +238,7 @@ def search_openrouter_models(
     max_prompt_price: float | None = None,
     modality: str | None = None,
     max_age_days: int | None = None,
+    supported_parameters: str | None = None,
     api_key: str | None = None,
 ) -> list[dict]:
     """
@@ -247,9 +251,15 @@ def search_openrouter_models(
         max_prompt_price: Maximum prompt price per 1M tokens.
         modality: Filter by modality string (e.g. "text->text").
         max_age_days: Only include models added within this many days (e.g. 90).
+        supported_parameters: Comma-separated OpenRouter parameters to require
+            (for example, "tools" to return only tool-calling models).
         api_key: OpenRouter API key (falls back to OPENROUTER_API_KEY env var).
     """
-    all_models = fetch_openrouter_models(api_key=api_key, max_age_days=max_age_days)
+    all_models = fetch_openrouter_models(
+        api_key=api_key,
+        max_age_days=max_age_days,
+        supported_parameters=supported_parameters,
+    )
     results = all_models
 
     if query:
@@ -342,7 +352,10 @@ def _pricing_tier(prompt_price: float) -> str:
 def update_models_json(
     output_path: str = "web/src/data/models.json",
     default_model_id: str = "anthropic/claude-opus-4.7",
-    max_age_days: int = 90,
+    expert_default_model_id: str = "google/gemini-3.1-pro-preview",
+    max_age_days: int | None = None,
+    supported_parameters: str | None = "tools",
+    excluded_model_ids: set[str] | None = None,
     api_key: str | None = None,
 ) -> None:
     """Fetch models from OpenRouter and overwrite the frontend models.json.
@@ -350,18 +363,29 @@ def update_models_json(
     Args:
         output_path: Path to the output JSON file.
         default_model_id: The OpenRouter model ID to mark as the default.
+        expert_default_model_id: The OpenRouter model ID to mark as the expert
+            default in the frontend picker.
         max_age_days: Only include models added within this many days.
-            Pass 0 or None to include all models.
+            Pass None to include all models.
+        supported_parameters: Comma-separated OpenRouter parameters to require.
+            Defaults to "tools" because Kady sends tool definitions.
+        excluded_model_ids: OpenRouter model IDs to omit even if the API
+            returns them.
         api_key: OpenRouter API key (falls back to OPENROUTER_API_KEY env var).
     """
+    excluded_model_ids = excluded_model_ids or {"openai/gpt-5.4", "openai/gpt-5.4-pro"}
     raw_models = fetch_openrouter_models(
         api_key=api_key,
-        max_age_days=max_age_days or None,
+        max_age_days=max_age_days,
+        supported_parameters=supported_parameters,
     )
     out = Path(output_path)
 
     entries = []
     for m in raw_models:
+        if m["id"] in excluded_model_ids:
+            continue
+
         p_in = m["pricing"]["prompt_per_1m"]
         p_out = m["pricing"]["completion_per_1m"]
         if p_in < 0 or p_out < 0:
@@ -380,6 +404,8 @@ def update_models_json(
         }
         if m["id"] == default_model_id:
             entry["default"] = True
+        if m["id"] == expert_default_model_id:
+            entry["expertDefault"] = True
         entries.append(entry)
 
     tier_order = {"flagship": 0, "high": 1, "mid": 2, "budget": 3}

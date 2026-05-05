@@ -21,13 +21,13 @@ You can run Kady and the expert agent entirely against local models served by [O
 
 3. **(Optional) Custom Ollama host.** If your Ollama server lives somewhere other than `http://localhost:11434`, set `OLLAMA_BASE_URL` in `kady_agent/.env`.
 
-4. **Pick the model in the app.** Open the model dropdown in the chat input. Pulled models appear under the **Local (Ollama)** section at the bottom. Picking one routes both Kady and the Gemini-CLI-backed expert through your local daemon.
+4. **Pick the model in the app.** Open the model dropdown in the chat input. Pulled models appear under the **Local (Ollama)** section at the bottom. Picking one routes Kady, and optionally the Gemini-CLI-backed expert, through your local daemon.
 
 The list is populated live from Ollama's `GET /api/tags` endpoint, so pulling a new model and re-opening the dropdown is enough - no app restart needed.
 
 ## Caveats
 
-Local models amplify the limitations of the Gemini CLI tooling (see [Known limitations](./limitations.md)):
+Local models amplify the limitations of the Gemini CLI tooling and model tool-calling quality (see [Known limitations](./limitations.md)):
 
 - **Tool-calling fidelity is noticeably weaker** on sub-frontier models.
 - **Skills that rely on multi-tool choreography** (browsing, running scripts, producing structured output) are the most fragile.
