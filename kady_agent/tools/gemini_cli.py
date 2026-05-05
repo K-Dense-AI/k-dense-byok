@@ -33,6 +33,10 @@ _VERTEX_AI_ENV_VARS = ("GOOGLE_GENAI_USE_VERTEXAI", "GOOGLE_APPLICATION_CREDENTI
 _CLI_OPENROUTER_HEADERS = (
     "X-Title: Kady-Expert, HTTP-Referer: https://www.k-dense.ai"
 )
+DEFAULT_EXPERT_MODEL = (
+    os.getenv("DEFAULT_EXPERT_MODEL")
+    or "openrouter/google/gemini-3.1-pro-preview"
+)
 
 
 def _cli_can_route(model: str) -> bool:
@@ -192,6 +196,25 @@ def _build_cli_args(prompt: str, selected_model: Optional[str]) -> list[str]:
     return cli_args
 
 
+def _cli_failure_response(error: Exception, selected_model: Optional[str]) -> dict:
+    """Return a tool result instead of letting a CLI crash break ADK streaming."""
+    model_hint = f" using `{selected_model}`" if selected_model else ""
+    message = str(error).strip() or error.__class__.__name__
+    return {
+        "result": (
+            f"Delegated expert task failed{model_hint}. The Gemini CLI subprocess "
+            f"reported:\n\n{message}\n\n"
+            "Try again with the recommended expert model "
+            f"`{DEFAULT_EXPERT_MODEL}` if this was caused by a model-specific "
+            "OpenRouter/provider request rejection."
+        ),
+        "skills_used": [],
+        "tools_used": {},
+        "error": True,
+        "model": selected_model,
+    }
+
+
 async def _run_gemini_cli(cli_args: list[str], cwd: Path, env: dict[str, str]) -> tuple[str, int]:
     """Execute Gemini CLI and return raw stdout plus duration in milliseconds."""
     started_at = time.time()
@@ -261,12 +284,11 @@ async def delegate_task(
     if state is not None:
         turn_id = state.get("_turnId")
         session_id = state.get("_sessionId")
-        # Prefer the explicit expert model; fall back to the orchestrator
-        # model for backwards compat with older clients that only send
-        # `_model` and for programmatic callers.
-        raw_model = state.get("_expertModel") or state.get("_model")
+        raw_model = state.get("_expertModel")
         if isinstance(raw_model, str) and raw_model.strip():
             selected_model = raw_model.strip()
+    if not selected_model:
+        selected_model = DEFAULT_EXPERT_MODEL
     if session_id and turn_id:
         env["KADY_SEED"] = session_seed(session_id)
         env["KADY_TURN_ID"] = turn_id
@@ -310,11 +332,9 @@ async def delegate_task(
 
     _apply_sandbox_venv(env, cwd)
 
-    # Forward the orchestrator-selected model to the expert so local Ollama
-    # (or direct LiteLLM-registered Gemini) is used end-to-end. The CLI
-    # only routes via the LiteLLM proxy, so anything that isn't a model
-    # the proxy knows about (gemini-*, ollama/*) would hang or 404 — in
-    # that case fall back to the CLI default (a gemini-* model).
+    # Forward the expert-selected model through the LiteLLM proxy. If the
+    # caller did not provide one, use the expert default rather than the
+    # orchestrator model; the Gemini CLI path is more tool-heavy.
     cli_args = _build_cli_args(prompt, selected_model)
 
     # Refresh any near-expiry MCP OAuth tokens, then re-materialize
@@ -325,7 +345,10 @@ async def delegate_task(
     await refresh_oauth_tokens()
     write_merged_settings(paths.gemini_settings_dir)
 
-    raw, duration_ms = await _run_gemini_cli(cli_args, cwd, env)
+    try:
+        raw, duration_ms = await _run_gemini_cli(cli_args, cwd, env)
+    except RuntimeError as exc:
+        return _cli_failure_response(exc, selected_model)
     result = _parse_stream_json(raw)
 
     # Persist delegation into the manifest (best-effort).

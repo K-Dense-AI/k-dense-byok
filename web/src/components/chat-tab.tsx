@@ -1064,12 +1064,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       stop,
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
-        await send(prompt, selectedModel.id);
+        await send(prompt, selectedModel.id, {
+          expertModel: selectedExpertModel.id,
+        });
       },
       launchWorkflow: async (prompt, model, compute, suggestedSkills, uploadedFiles) => {
         if (budgetState === "exceeded") return;
         setSelectedModel(model);
-        setSelectedExpertModel(model);
+        setSelectedExpertModel(DEFAULT_EXPERT_MODEL);
         setSelectedCompute(compute);
         const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
         const computeCtx = buildComputeContext(compute);
@@ -1078,7 +1080,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           : "";
         const fullPrompt = prompt + fileRefs + computeCtx + skillsCtx;
         const msgId = await send(fullPrompt, model.id, {
-          expertModel: model.id,
+          expertModel: DEFAULT_EXPERT_MODEL.id,
           attachments: uploadedFiles,
           skills: suggestedSkills,
           databases: [],
@@ -1087,7 +1089,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         if (msgId) {
           recordTurnMeta(msgId, {
             model: model.label,
-            expertModel: model.label,
+            expertModel: DEFAULT_EXPERT_MODEL.label,
             databases: [],
             compute: compute?.label ?? null,
             skills: suggestedSkills,
@@ -1097,7 +1099,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         }
       },
     }),
-    [send, stop, budgetState, selectedModel.id, recordTurnMeta],
+    [send, stop, budgetState, selectedModel.id, selectedExpertModel.id, recordTurnMeta],
   );
 
   // Background tabs stay mounted (so streaming + queue auto-send continue,

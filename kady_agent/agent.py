@@ -197,7 +197,6 @@ async def _open_turn_manifest(callback_context):
         model = state.get("_model") or DEFAULT_MODEL
         expert_model = (
             state.get("_expertModel")
-            or state.get("_model")
             or DEFAULT_EXPERT_MODEL
         )
         skills = state.get("_skills") or []
