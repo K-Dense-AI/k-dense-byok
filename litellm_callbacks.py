@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,74 @@ def _strip_openrouter_prefix(model: str) -> str:
     return model
 
 
+def _next_unique_tool_id(tool_id: str, used_ids: set[str], occurrence: int) -> str:
+    candidate = f"{tool_id}-{occurrence}"
+    suffix = occurrence
+    while candidate in used_ids:
+        suffix += 1
+        candidate = f"{tool_id}-{suffix}"
+    return candidate
+
+
+def _dedupe_openrouter_tool_use_ids(messages: list[Any]) -> list[Any]:
+    """Ensure each OpenRouter tool_use/tool_call id is unique.
+
+    Some upstream SDK paths can replay multiple tool-use blocks with the same
+    id. OpenRouter may route those payloads to providers that validate the
+    Anthropic invariant globally, so normalize once at the proxy boundary and
+    update following tool_result/tool_call_id references in the same order.
+    """
+    normalized = deepcopy(messages)
+    used_ids: set[str] = set()
+    occurrences: dict[str, int] = {}
+    pending_results: dict[str, list[str]] = {}
+
+    def assign_unique(original_id: str) -> str:
+        occurrence = occurrences.get(original_id, 0) + 1
+        occurrences[original_id] = occurrence
+        if original_id not in used_ids:
+            unique_id = original_id
+        else:
+            unique_id = _next_unique_tool_id(original_id, used_ids, occurrence)
+        used_ids.add(unique_id)
+        pending_results.setdefault(original_id, []).append(unique_id)
+        return unique_id
+
+    def consume_result_id(original_id: str) -> str:
+        pending = pending_results.get(original_id)
+        if pending:
+            return pending.pop(0)
+        return original_id
+
+    for message in normalized:
+        if not isinstance(message, dict):
+            continue
+
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for tool_call in tool_calls:
+                if isinstance(tool_call, dict) and isinstance(tool_call.get("id"), str):
+                    tool_call["id"] = assign_unique(tool_call["id"])
+
+        if isinstance(message.get("tool_call_id"), str):
+            message["tool_call_id"] = consume_result_id(message["tool_call_id"])
+
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "tool_use" and isinstance(block.get("id"), str):
+                block["id"] = assign_unique(block["id"])
+            elif block.get("type") == "tool_result" and isinstance(
+                block.get("tool_use_id"), str
+            ):
+                block["tool_use_id"] = consume_result_id(block["tool_use_id"])
+
+    return normalized
+
+
 def _patched_transform_request(  # type: ignore[no-untyped-def]
     self,
     model,
@@ -65,6 +134,7 @@ def _patched_transform_request(  # type: ignore[no-untyped-def]
     headers,
 ):
     model = _strip_openrouter_prefix(model)
+    messages = _dedupe_openrouter_tool_use_ids(messages)
     return _ORIG_OR_TRANSFORM_REQUEST(
         self, model, messages, optional_params, litellm_params, headers
     )
