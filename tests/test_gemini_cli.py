@@ -50,6 +50,30 @@ def test_parse_stream_json_extracts_text_skills_and_tools() -> None:
     }
 
 
+def test_expert_prompt_lists_only_user_visible_sandbox_paths(active_project: str) -> None:
+    from kady_agent import projects
+    from kady_agent.tools import gemini_cli
+
+    sandbox = projects.active_paths().sandbox
+    (sandbox / "visible.txt").write_text("visible", encoding="utf-8")
+    (sandbox / "notes").mkdir()
+    (sandbox / "notes" / "paper.md").write_text("paper", encoding="utf-8")
+    (sandbox / ".kady").mkdir(exist_ok=True)
+    (sandbox / ".kady" / "internal.json").write_text("{}", encoding="utf-8")
+    (sandbox / "GEMINI.md").write_text("hidden", encoding="utf-8")
+    (sandbox / "visible.txt.annotations.json").write_text("{}", encoding="utf-8")
+
+    prompt = gemini_cli._build_expert_prompt("Summarize files", sandbox)
+
+    assert "visible.txt" in prompt
+    assert "notes/" in prompt
+    assert "notes/paper.md" in prompt
+    assert ".kady/internal.json" not in prompt
+    assert "- GEMINI.md" not in prompt
+    assert "visible.txt.annotations.json" not in prompt
+    assert "Summarize files" in prompt
+
+
 async def test_delegate_task_sets_env_and_attaches_manifest(
     active_project: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -97,6 +121,8 @@ async def test_delegate_task_sets_env_and_attaches_manifest(
     assert result["result"] == "done"
     assert result["skills_used"] == ["analysis"]
     assert captured["refreshed"] is True
+    assert "Current user-visible sandbox contents" in captured["cli_args"][2]
+    assert "Do expert work" in captured["cli_args"][2]
     assert captured["cli_args"][-2:] == ["-m", "openrouter/vendor/expert"]
     assert captured["env"]["KADY_SESSION_ID"] == "session-gemini"
     assert captured["env"]["KADY_TURN_ID"] == turn_id

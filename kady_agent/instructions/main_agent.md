@@ -7,7 +7,7 @@ Choose the lightest reliable path:
 - Use built-in MCP tools yourself for narrow web lookup, URL retrieval, or document conversion/extraction.
 - Use `delegate_task` when the task needs domain expertise, multi-step research, code execution, file creation/modification, or long-form synthesis.
 - If the work splits into independent parts, delegate in parallel and then combine the results.
-- Always begin by running `delegate_task` with the prompt to explore the current working directory, create summaries of all user files, convert files such as pdf, pptx, docx...etc. to .md markdown files.
+- Always begin by running `delegate_task` with the prompt to explore only the user-visible sandbox working directory, create summaries of all user-visible files, and convert user-visible files such as pdf, pptx, docx...etc. to .md markdown files.
 
 ## Before using tools
 
@@ -28,6 +28,7 @@ You do **NOT** have the ability to activate or execute skills. Skills are capabi
 ## Using `delegate_task`
 
 - The expert already runs inside the sandbox directory. **Never** tell the expert to create a `sandbox/` folder or save files under a `sandbox/` path — doing so creates a nested `sandbox/sandbox/` directory. Instead, instruct the expert to save files in the current working directory (`.`) or named subdirectories like `sources/`, `figures/`, etc.
+- When asking the expert to inspect files, explicitly limit inspection to the user-visible sandbox tree. Hidden/system entries such as `.kady/`, `.gemini/`, `.venv/`, `GEMINI.md`, `uv.lock`, and annotation sidecars are implementation details and should not be treated as user files unless the user names them.
 - In `prompt`, pass the user's request, the expert's role/objective/constraints, relevant context, file paths, URLs, and explicit success criteria.
 - Do not prescribe implementation approaches, libraries, or fallback methods unless the user explicitly requires them.
 - **Skills passthrough (MANDATORY):** If the user's message names specific skills (e.g. "use the parallel-web skill" or "use the skills: 'writing', 'literature-review'"), you MUST include an explicit instruction in the delegate prompt telling the expert to activate those skills. Use the format: `"You MUST activate and follow these skills: 'skill-name-1', 'skill-name-2'."` Do not paraphrase, omit, reorder, or summarize the skill list. The expert relies on exact names to activate the correct skills.

@@ -16,6 +16,7 @@ from ..runtime import (
 )
 from ..projects import active_paths, ensure_gemini_trust_file, get_project
 from ..runtime import build_tracking_headers
+from ..sandbox_visibility import iter_user_visible_paths
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -196,6 +197,33 @@ def _build_cli_args(prompt: str, selected_model: Optional[str]) -> list[str]:
     return cli_args
 
 
+def _build_expert_prompt(prompt: str, sandbox: Path) -> str:
+    """Constrain expert file inspection to the same sandbox tree the UI shows."""
+    visible_paths, truncated = iter_user_visible_paths(sandbox)
+    if visible_paths:
+        listing = "\n".join(f"- {path}" for path in visible_paths)
+        truncation_note = (
+            "\n- ... list truncated; use the same visibility rules for any further traversal."
+            if truncated
+            else ""
+        )
+    else:
+        listing = "- (no user-visible files)"
+        truncation_note = ""
+
+    return (
+        "You are already running in the project sandbox. When inspecting the "
+        "working directory, only consider files and folders visible to the user "
+        "in the sandbox file tree. Ignore hidden/system entries such as .kady/, "
+        ".gemini/, .venv/, GEMINI.md, uv.lock, and *.annotations.json unless the "
+        "user explicitly names one of them.\n\n"
+        "Current user-visible sandbox contents:\n"
+        f"{listing}{truncation_note}\n\n"
+        "User task:\n"
+        f"{prompt}"
+    )
+
+
 def _cli_failure_response(error: Exception, selected_model: Optional[str]) -> dict:
     """Return a tool result instead of letting a CLI crash break ADK streaming."""
     model_hint = f" using `{selected_model}`" if selected_model else ""
@@ -335,7 +363,8 @@ async def delegate_task(
     # Forward the expert-selected model through the LiteLLM proxy. If the
     # caller did not provide one, use the expert default rather than the
     # orchestrator model; the Gemini CLI path is more tool-heavy.
-    cli_args = _build_cli_args(prompt, selected_model)
+    expert_prompt = _build_expert_prompt(prompt, paths.sandbox)
+    cli_args = _build_cli_args(expert_prompt, selected_model)
 
     # Refresh any near-expiry MCP OAuth tokens, then re-materialize
     # ``<sandbox>/.gemini/settings.json`` so its ``Authorization`` headers
@@ -367,7 +396,7 @@ async def delegate_task(
                 session_id=session_id,
                 turn_id=turn_id,
                 delegation_id=delegation_id,
-                prompt=prompt,
+                prompt=expert_prompt,
                 cwd=str(cwd.relative_to(REPO_ROOT)) if cwd.is_relative_to(REPO_ROOT) else str(cwd),
                 result=result,
                 duration_ms=duration_ms,

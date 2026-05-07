@@ -18,10 +18,11 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from kady_agent.anndata_preview import AnnDataDepsMissing, render_embedding_png, summarize_h5ad
 from kady_agent.projects import ACTIVE_PROJECT, active_paths, touch_project
+from kady_agent.sandbox_visibility import USER_HIDDEN_NAMES, is_user_visible_path
 
 router = APIRouter()
 
-_ZIP_EXCLUDED_NAMES = {"GEMINI.md", "uv.lock"}
+_ZIP_EXCLUDED_NAMES = USER_HIDDEN_NAMES
 
 
 def _safe_path(rel: str) -> Path:
@@ -49,13 +50,7 @@ def sandbox_tree():
             return node
 
         for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            if entry.name in _ZIP_EXCLUDED_NAMES:
-                continue
-            # Hide annotation sidecars; they are managed metadata, not
-            # user-visible files. See /sandbox/annotations.
-            if entry.is_file() and entry.name.endswith(".annotations.json"):
+            if not is_user_visible_path(entry, sandbox_root):
                 continue
             rel = str(entry.relative_to(sandbox_root))
             if entry.is_dir():
