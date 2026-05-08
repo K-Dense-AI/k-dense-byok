@@ -610,17 +610,24 @@ def write_merged_settings(target_dir: str | Path) -> None:
     settings = build_merged_settings()
     payload = json.dumps(settings, indent=2) + "\n"
     out = target_dir / "settings.json"
-    with tempfile.NamedTemporaryFile(
+    tmp = tempfile.NamedTemporaryFile(
         "w",
         encoding="utf-8",
         dir=target_dir,
         prefix=".settings.",
         suffix=".tmp",
         delete=False,
-    ) as tmp:
-        tmp.write(payload)
-        tmp_path = Path(tmp.name)
-    os.replace(tmp_path, out)
+    )
+    tmp_path = Path(tmp.name)
+    try:
+        try:
+            tmp.write(payload)
+        finally:
+            tmp.close()
+        os.replace(tmp_path, out)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 async def refresh_oauth_tokens() -> None:
