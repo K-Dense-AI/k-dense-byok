@@ -179,3 +179,73 @@ async def test_dynamic_custom_mcp_rebuilds_on_config_change(
     mcp.save_custom_mcps({"two": {"command": "tool"}})
     assert await toolset.get_tools() == ["two"]
     assert closed == ["one"]
+
+
+# ---------------------------------------------------------------------------
+# Materialization: round-trip, concurrency, first-run ordering
+# ---------------------------------------------------------------------------
+
+
+async def test_materialize_round_trip_after_setting_change(active_project: str) -> None:
+    """Changing custom MCP settings then materializing must yield the new content on disk."""
+
+    import json
+    from kady_agent import mcp, projects
+
+    paths = projects.resolve_paths(active_project)
+    settings_file = paths.gemini_settings_dir / "settings.json"
+    if settings_file.exists():
+        settings_file.unlink()
+
+    mcp.save_custom_mcps({"my-server": {"command": "echo"}})
+    await paths.materialize_gemini_settings()
+
+    assert settings_file.is_file()
+    parsed = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert "my-server" in parsed.get("mcpServers", {})
+
+
+async def test_concurrent_materialization_yields_valid_json(active_project: str) -> None:
+    """AC11: asyncio.gather two materialize calls on the same project must not produce a torn settings.json."""
+
+    import asyncio
+    import json
+    from kady_agent import projects
+
+    paths = projects.resolve_paths(active_project)
+
+    await asyncio.gather(
+        paths.materialize_gemini_settings(),
+        paths.materialize_gemini_settings(),
+        paths.materialize_gemini_settings(),
+    )
+
+    settings_file = paths.gemini_settings_dir / "settings.json"
+    assert settings_file.is_file()
+    # Must be valid JSON — torn writes would surface as JSONDecodeError.
+    parsed = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert isinstance(parsed, dict)
+    assert "mcpServers" in parsed
+
+
+def test_first_run_materialization_writes_settings(tmp_path, monkeypatch) -> None:
+    """AC12: init_project_sandbox must produce a valid settings.json before any spawn could read it."""
+
+    import json
+    from kady_agent import projects
+
+    monkeypatch.setattr(projects, "PROJECTS_ROOT", tmp_path)
+    monkeypatch.setattr(projects, "INDEX_PATH", tmp_path / "index.json")
+
+    paths = projects.init_project_sandbox(
+        "first-run-test",
+        sync_venv=False,
+        download_skills=False,
+        allow_remote_skills=False,
+    )
+
+    settings_file = paths.gemini_settings_dir / "settings.json"
+    assert settings_file.is_file(), "init_project_sandbox must materialize settings.json"
+    parsed = json.loads(settings_file.read_text(encoding="utf-8"))
+    assert isinstance(parsed, dict)
+    assert "mcpServers" in parsed

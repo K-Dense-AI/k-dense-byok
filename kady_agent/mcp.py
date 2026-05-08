@@ -597,13 +597,30 @@ def write_merged_settings(target_dir: str | Path) -> None:
     config includes any OAuth bearer tokens currently on disk (see
     :func:`_inject_oauth_bearers`) so the Gemini CLI subprocess
     authenticates against signed-in HTTP MCPs out of the box.
+
+    Atomic via ``tempfile`` + ``os.replace`` so concurrent writes never leave
+    a torn file visible to a freshly-spawned Gemini CLI.
     """
+    import os
+    import tempfile
+
     target_dir = Path(target_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
 
     settings = build_merged_settings()
+    payload = json.dumps(settings, indent=2) + "\n"
     out = target_dir / "settings.json"
-    out.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+    with tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=target_dir,
+        prefix=".settings.",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp:
+        tmp.write(payload)
+        tmp_path = Path(tmp.name)
+    os.replace(tmp_path, out)
 
 
 async def refresh_oauth_tokens() -> None:

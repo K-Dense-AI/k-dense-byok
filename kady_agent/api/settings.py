@@ -15,9 +15,8 @@ from kady_agent.mcp import (
     load_custom_mcps,
     save_browser_use_config,
     save_custom_mcps,
-    write_merged_settings,
 )
-from kady_agent.projects import ACTIVE_PROJECT, active_paths, touch_project
+from kady_agent.projects import ACTIVE_PROJECT, touch_project
 
 router = APIRouter()
 
@@ -38,7 +37,8 @@ async def put_custom_mcps(request: Request):
     if not isinstance(data, dict):
         raise HTTPException(status_code=400, detail="Expected a JSON object")
     save_custom_mcps(data)
-    write_merged_settings(active_paths().gemini_settings_dir)
+    # NOTE: settings.json on disk is rematerialized at expert-spawn time via
+    # ProjectPaths.materialize_gemini_settings; no need to write it here.
     touch_project(ACTIVE_PROJECT.get())
     return {"ok": True}
 
@@ -259,6 +259,6 @@ async def put_browser_use_settings(request: Request):
         cfg["session"] = (str(session).strip() or None) if session is not None else None
 
     save_browser_use_config(cfg)
-    write_merged_settings(active_paths().gemini_settings_dir)
+    # settings.json on disk is rematerialized at expert-spawn time.
     touch_project(ACTIVE_PROJECT.get())
     return {"ok": True, "config": load_browser_use_config()}

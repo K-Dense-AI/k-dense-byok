@@ -4,59 +4,79 @@ import json
 
 
 def test_tracking_headers_and_metadata_round_trip() -> None:
-    from kady_agent import runtime
+    from kady_agent.tracking import (
+        TrackingTags,
+        from_headers,
+        from_metadata,
+        to_headers,
+        to_metadata,
+    )
 
-    headers = runtime.build_tracking_headers(
+    headers = to_headers(
+        TrackingTags(
+            role="expert",
+            project_id="proj",
+            session_id="sess",
+            turn_id="turn",
+            delegation_id="001",
+        )
+    )
+    assert from_headers(headers) == TrackingTags(
         role="expert",
-        project_id="proj",
         session_id="sess",
         turn_id="turn",
         delegation_id="001",
-    )
-    assert runtime.extract_tags_from_headers(headers) == {
-        "session_id": "sess",
-        "turn_id": "turn",
-        "role": "expert",
-        "delegation_id": "001",
-        "project_id": "proj",
-    }
-
-    metadata = runtime.build_tracking_metadata(
-        role="orchestrator",
         project_id="proj",
+    )
+
+    metadata = to_metadata(
+        TrackingTags(
+            role="orchestrator",
+            project_id="proj",
+            session_id="sess",
+            turn_id="turn",
+        )
+    )
+    assert from_metadata(metadata) == TrackingTags(
+        role="orchestrator",
         session_id="sess",
         turn_id="turn",
+        delegation_id=None,
+        project_id="proj",
     )
-    assert runtime.extract_tags_from_metadata(metadata) == {
-        "session_id": "sess",
-        "turn_id": "turn",
-        "role": "orchestrator",
-        "delegation_id": None,
-        "project_id": "proj",
-    }
 
 
 def test_litellm_kwargs_prefers_metadata_over_headers() -> None:
-    from kady_agent import runtime
+    from kady_agent.tracking import (
+        TrackingTags,
+        from_litellm_kwargs,
+        to_headers,
+        to_metadata,
+    )
 
     kwargs = {
         "litellm_params": {
-            "metadata": runtime.build_tracking_metadata(
-                role="orchestrator",
-                project_id="meta-proj",
-                session_id="meta-session",
-                turn_id="meta-turn",
+            "metadata": to_metadata(
+                TrackingTags(
+                    role="orchestrator",
+                    project_id="meta-proj",
+                    session_id="meta-session",
+                    turn_id="meta-turn",
+                )
             ),
-            "extra_headers": runtime.build_tracking_headers(
-                role="expert",
-                project_id="header-proj",
-                session_id="header-session",
-                turn_id="header-turn",
+            "extra_headers": to_headers(
+                TrackingTags(
+                    role="expert",
+                    project_id="header-proj",
+                    session_id="header-session",
+                    turn_id="header-turn",
+                )
             ),
         }
     }
 
-    assert runtime.extract_tags_from_litellm_kwargs(kwargs)["project_id"] == "meta-proj"
+    tags = from_litellm_kwargs(kwargs)
+    assert tags is not None and tags.project_id == "meta-proj"
 
 
 def test_cost_ledger_records_updates_and_aggregates(active_project: str) -> None:

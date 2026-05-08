@@ -151,7 +151,7 @@ _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---", re.DOTALL)
 @router.get("/skills")
 def list_skills():
     """Return metadata for all installed Gemini skills in the active project."""
-    skills_dir = active_paths().gemini_settings_dir / "skills"
+    skills_dir = active_paths().gemini_skills_dir()
     if not skills_dir.is_dir():
         return []
 

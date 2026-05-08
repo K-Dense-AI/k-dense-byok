@@ -67,12 +67,16 @@ async def test_open_and_close_turn_manifest_callbacks(
 def test_orchestrator_cost_logger_filters_and_records(active_project: str) -> None:
     from kady_agent import agent, runtime
 
+    from kady_agent.tracking import TrackingTags, to_metadata
+
     logger = agent._OrchestratorCostLogger()
-    tags = runtime.build_tracking_metadata(
-        role="orchestrator",
-        project_id=active_project,
-        session_id="session-cost",
-        turn_id="turn-cost",
+    tags = to_metadata(
+        TrackingTags(
+            role="orchestrator",
+            project_id=active_project,
+            session_id="session-cost",
+            turn_id="turn-cost",
+        )
     )
     metadata = {
         **tags,
@@ -100,17 +104,20 @@ def test_orchestrator_cost_logger_filters_and_records(active_project: str) -> No
 
 def test_orchestrator_cost_logger_ignores_non_openrouter(active_project: str) -> None:
     from kady_agent import agent, runtime
+    from kady_agent.tracking import TrackingTags, to_metadata
 
     logger = agent._OrchestratorCostLogger()
     kwargs = {
         "custom_llm_provider": "ollama",
         "model": "ollama/local",
         "litellm_params": {
-            "metadata": runtime.build_tracking_metadata(
-                role="orchestrator",
-                project_id=active_project,
-                session_id="session-ignore",
-                turn_id="turn-ignore",
+            "metadata": to_metadata(
+                TrackingTags(
+                    role="orchestrator",
+                    project_id=active_project,
+                    session_id="session-ignore",
+                    turn_id="turn-ignore",
+                )
             )
         },
     }

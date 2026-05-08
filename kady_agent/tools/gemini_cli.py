@@ -9,14 +9,14 @@ from dotenv import load_dotenv
 from google.adk.tools.tool_context import ToolContext
 
 from ..runtime import check_project_budget
-from ..mcp import refresh_oauth_tokens, write_merged_settings
+from ..mcp import refresh_oauth_tokens
 from ..runtime import (
     attach_delegation,
     session_seed,
 )
 from ..projects import active_paths, ensure_gemini_trust_file, get_project
-from ..runtime import build_tracking_headers
-from ..sandbox_visibility import iter_user_visible_paths
+from ..tracking import TrackingTags, to_headers
+from ..sandbox_visibility import user_visible_entries
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -197,9 +197,20 @@ def _build_cli_args(prompt: str, selected_model: Optional[str]) -> list[str]:
     return cli_args
 
 
+_MAX_VISIBLE_PROMPT_ENTRIES = 300
+
+
 def _build_expert_prompt(prompt: str, sandbox: Path) -> str:
     """Constrain expert file inspection to the same sandbox tree the UI shows."""
-    visible_paths, truncated = iter_user_visible_paths(sandbox)
+    visible_paths: list[str] = []
+    truncated = False
+    for entry in user_visible_entries(sandbox):
+        rel = entry.relative_to(sandbox).as_posix()
+        visible_paths.append(f"{rel}/" if entry.is_dir() else rel)
+        if len(visible_paths) >= _MAX_VISIBLE_PROMPT_ENTRIES:
+            truncated = True
+            break
+
     if visible_paths:
         listing = "\n".join(f"- {path}" for path in visible_paths)
         truncation_note = (
@@ -343,12 +354,14 @@ async def delegate_task(
     # completion, tagged back to the right session/turn/delegation.
     kady_header_parts = [
         f"{name}: {value}"
-        for name, value in build_tracking_headers(
-            role="expert",
-            project_id=paths.id,
-            session_id=session_id,
-            turn_id=turn_id,
-            delegation_id=delegation_id,
+        for name, value in to_headers(
+            TrackingTags(
+                role="expert",
+                project_id=paths.id,
+                session_id=session_id,
+                turn_id=turn_id,
+                delegation_id=delegation_id,
+            )
         ).items()
     ]
     header_segments: list[str] = []
@@ -372,7 +385,7 @@ async def delegate_task(
     # the user never sees a 401 from a signed-in MCP just because its
     # access_token rolled over between turns.
     await refresh_oauth_tokens()
-    write_merged_settings(paths.gemini_settings_dir)
+    await paths.materialize_gemini_settings()
 
     try:
         raw, duration_ms = await _run_gemini_cli(cli_args, cwd, env)

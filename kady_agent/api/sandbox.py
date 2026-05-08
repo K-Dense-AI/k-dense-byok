@@ -18,7 +18,7 @@ from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from kady_agent.anndata_preview import AnnDataDepsMissing, render_embedding_png, summarize_h5ad
 from kady_agent.projects import ACTIVE_PROJECT, active_paths, touch_project
-from kady_agent.sandbox_visibility import USER_HIDDEN_NAMES, is_user_visible_path
+from kady_agent.sandbox_visibility import USER_HIDDEN_NAMES, user_visible_entries
 
 router = APIRouter()
 
@@ -40,35 +40,37 @@ def sandbox_tree():
     if not sandbox_root.exists():
         return {"name": "sandbox", "type": "directory", "children": []}
 
-    def build_tree(directory: Path, depth: int = 0) -> dict:
-        node: dict = {"name": directory.name, "type": "directory", "children": []}
-        if depth > 8:
-            return node
-        try:
-            entries = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-        except PermissionError:
-            return node
+    root_node: dict = {
+        "name": sandbox_root.name,
+        "type": "directory",
+        "children": [],
+        "path": "",
+    }
+    nodes_by_path: dict[Path, dict] = {sandbox_root: root_node}
 
-        for entry in entries:
-            if not is_user_visible_path(entry, sandbox_root):
-                continue
-            rel = str(entry.relative_to(sandbox_root))
-            if entry.is_dir():
-                child = build_tree(entry, depth + 1)
-                child["path"] = rel
-                node["children"].append(child)
-            elif entry.is_file():
-                node["children"].append({
-                    "name": entry.name,
-                    "type": "file",
-                    "path": rel,
-                    "size": entry.stat().st_size,
-                })
-        return node
+    for entry in user_visible_entries(sandbox_root, max_depth=8):
+        parent_node = nodes_by_path.get(entry.parent)
+        if parent_node is None:
+            continue
+        rel = str(entry.relative_to(sandbox_root))
+        if entry.is_dir():
+            child: dict = {
+                "name": entry.name,
+                "type": "directory",
+                "children": [],
+                "path": rel,
+            }
+            nodes_by_path[entry] = child
+            parent_node["children"].append(child)
+        elif entry.is_file():
+            parent_node["children"].append({
+                "name": entry.name,
+                "type": "file",
+                "path": rel,
+                "size": entry.stat().st_size,
+            })
 
-    tree = build_tree(sandbox_root)
-    tree["path"] = ""
-    return tree
+    return root_node
 
 
 @router.post("/sandbox/upload")

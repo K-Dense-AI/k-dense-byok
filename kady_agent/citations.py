@@ -16,7 +16,6 @@ dependency-light: it only uses httpx (already present via FastAPI).
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import re
 import time
@@ -33,13 +32,6 @@ from .projects import active_paths
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CACHE_TTL_SECONDS = 30 * 24 * 3600
 
-
-def _cache_path() -> Path:
-    return active_paths().citation_cache
-
-
-def _sandbox_root() -> Path:
-    return active_paths().sandbox
 
 _DOI_RE = re.compile(r"\b10\.\d{4,9}/[^\s\"<>)\]}]+", re.IGNORECASE)
 _ARXIV_NEW_RE = re.compile(r"arXiv:(\d{4}\.\d{4,5})(v\d+)?", re.IGNORECASE)
@@ -129,28 +121,6 @@ def extract_citations(text: str) -> list[CitationEntry]:
                 _add("url", url, url)
 
     return list(found.values())
-
-
-def _load_cache() -> dict[str, dict]:
-    cache_path = _cache_path()
-    if not cache_path.is_file():
-        return {}
-    try:
-        data = json.loads(cache_path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return {}
-        return data
-    except (OSError, json.JSONDecodeError):
-        return {}
-
-
-def _save_cache(cache: dict[str, dict]) -> None:
-    cache_path = _cache_path()
-    try:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
-    except OSError:
-        pass
 
 
 def _cache_key(entry: CitationEntry) -> str:
@@ -328,7 +298,8 @@ async def verify_entries(entries: list[CitationEntry]) -> list[CitationEntry]:
     if not entries:
         return entries
 
-    cache = _load_cache()
+    paths = active_paths()
+    cache = paths.load_citation_cache()
     to_resolve: list[CitationEntry] = []
     for entry in entries:
         if _from_cache(entry, cache):
@@ -353,7 +324,7 @@ async def verify_entries(entries: list[CitationEntry]) -> list[CitationEntry]:
                     _to_cache(entry, cache)
 
             await asyncio.gather(*(_run(e) for e in to_resolve))
-        _save_cache(cache)
+        paths.save_citation_cache(cache)
 
     return entries
 
@@ -381,7 +352,7 @@ async def verify_text_and_files(
     deliverables for citations.
     """
     combined = text or ""
-    sandbox_root = _sandbox_root()
+    sandbox_root = active_paths().sandbox
 
     for rel in files:
         if not rel:

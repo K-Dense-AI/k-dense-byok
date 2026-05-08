@@ -91,8 +91,8 @@ async def test_delegate_task_sets_env_and_attaches_manifest(
     async def fake_refresh() -> None:
         captured["refreshed"] = True
 
-    def fake_write(target_dir):
-        captured["settings_dir"] = str(target_dir)
+    async def fake_materialize(self) -> None:
+        captured["settings_dir"] = str(self.gemini_settings_dir)
 
     async def fake_run(cli_args, cwd, env):
         captured["cli_args"] = cli_args
@@ -110,8 +110,9 @@ async def test_delegate_task_sets_env_and_attaches_manifest(
 
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
     monkeypatch.setenv("GEMINI_CLI_CUSTOM_HEADERS", "Existing: header")
+    from kady_agent import projects
     monkeypatch.setattr(gemini_cli, "refresh_oauth_tokens", fake_refresh)
-    monkeypatch.setattr(gemini_cli, "write_merged_settings", fake_write)
+    monkeypatch.setattr(projects.ProjectPaths, "materialize_gemini_settings", fake_materialize)
     monkeypatch.setattr(gemini_cli, "_run_gemini_cli", fake_run)
 
     result = await gemini_cli.delegate_task(
@@ -176,7 +177,12 @@ async def test_delegate_task_defaults_to_expert_model(
         captured["cli_args"] = cli_args
         return ('{"type":"message","role":"assistant","content":"done"}\n', 123)
 
-    monkeypatch.setattr(gemini_cli, "write_merged_settings", lambda target_dir: None)
+    from kady_agent import projects
+
+    async def noop_materialize(self) -> None:
+        return None
+
+    monkeypatch.setattr(projects.ProjectPaths, "materialize_gemini_settings", noop_materialize)
 
     async def fake_refresh() -> None:
         return None
@@ -211,8 +217,13 @@ async def test_delegate_task_returns_cli_failures(
     async def fake_run(cli_args, cwd, env):
         raise RuntimeError("TypeError: terminated")
 
+    from kady_agent import projects
+
+    async def noop_materialize(self) -> None:
+        return None
+
     monkeypatch.setattr(gemini_cli, "refresh_oauth_tokens", fake_refresh)
-    monkeypatch.setattr(gemini_cli, "write_merged_settings", lambda target_dir: None)
+    monkeypatch.setattr(projects.ProjectPaths, "materialize_gemini_settings", noop_materialize)
     monkeypatch.setattr(gemini_cli, "_run_gemini_cli", fake_run)
 
     result = await gemini_cli.delegate_task(

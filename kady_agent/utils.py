@@ -28,7 +28,7 @@ def list_skill_summaries(skills_dir: str | None = None) -> list[dict]:
     """
     if skills_dir is None:
         from .projects import active_paths
-        skills_path = active_paths().gemini_settings_dir / "skills"
+        skills_path = active_paths().gemini_skills_dir()
     else:
         skills_path = Path(skills_dir)
     if not skills_path.is_dir():
@@ -105,7 +105,7 @@ def download_scientific_skills(
     """
     if target_dir is None:
         from .projects import active_paths
-        target_path = active_paths().gemini_settings_dir / "skills"
+        target_path = active_paths().gemini_skills_dir()
     else:
         target_path = Path(target_dir)
     target_path.mkdir(parents=True, exist_ok=True)

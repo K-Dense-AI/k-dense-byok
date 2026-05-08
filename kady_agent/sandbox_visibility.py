@@ -1,15 +1,23 @@
+"""User-visible sandbox traversal.
+
+Single source of truth for the rules that hide implementation files (dot-files,
+``GEMINI.md``, ``uv.lock``, ``*.annotations.json``) from the file tree the
+expert and UI see. Callers that want a flat list of visible paths consume
+``user_visible_entries``; callers that want to use the same exclusion list in
+other contexts (e.g. zip exports) read ``USER_HIDDEN_NAMES``.
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Iterator
 
-USER_HIDDEN_NAMES = {"GEMINI.md", "uv.lock"}
-_MAX_VISIBLE_CONTEXT_ENTRIES = 300
+USER_HIDDEN_NAMES: frozenset[str] = frozenset({"GEMINI.md", "uv.lock"})
 
 
-def is_user_visible_path(path: Path, sandbox_root: Path) -> bool:
-    """Return whether *path* is shown in the sandbox file tree."""
+def _is_visible(path: Path, root: Path) -> bool:
     try:
-        rel = path.relative_to(sandbox_root)
+        rel = path.relative_to(root)
     except ValueError:
         return False
     if not rel.parts:
@@ -18,44 +26,43 @@ def is_user_visible_path(path: Path, sandbox_root: Path) -> bool:
         return False
     if path.name in USER_HIDDEN_NAMES:
         return False
-    if path.is_file() and path.name.endswith(".annotations.json"):
+    if path.name.endswith(".annotations.json"):
         return False
     return True
 
 
-def iter_user_visible_paths(sandbox_root: Path, *, max_entries: int = _MAX_VISIBLE_CONTEXT_ENTRIES) -> tuple[list[str], bool]:
-    """List user-visible sandbox paths in stable order.
+def user_visible_entries(
+    root: Path,
+    *,
+    max_depth: int | None = None,
+) -> Iterator[Path]:
+    """Yield user-visible paths under *root* in depth-first, sorted order.
 
-    Returns ``(paths, truncated)``. Directories are suffixed with ``/`` so the
-    expert can distinguish folders from files without inspecting hidden state.
+    Owns *both* recursion and filtering — callers must not re-implement either.
+    Yields directories before their contents (pre-order). The root itself is
+    not yielded. ``max_depth`` is measured from the root: ``max_depth=0`` yields
+    only direct children, ``max_depth=1`` includes their children, etc.
     """
-    if not sandbox_root.exists():
-        return [], False
 
-    visible: list[str] = []
-    truncated = False
+    if not root.exists():
+        return
 
-    def walk(directory: Path) -> None:
-        nonlocal truncated
-        if truncated:
-            return
+    def walk(directory: Path, depth: int) -> Iterator[Path]:
         try:
-            entries = sorted(directory.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-        except PermissionError:
+            entries = sorted(
+                directory.iterdir(),
+                key=lambda p: (p.is_file(), p.name.lower()),
+            )
+        except (PermissionError, OSError):
             return
-
         for entry in entries:
-            if not is_user_visible_path(entry, sandbox_root):
+            if not _is_visible(entry, root):
                 continue
-            rel = entry.relative_to(sandbox_root).as_posix()
-            visible.append(f"{rel}/" if entry.is_dir() else rel)
-            if len(visible) >= max_entries:
-                truncated = True
-                return
-            if entry.is_dir():
-                walk(entry)
-                if truncated:
-                    return
+            yield entry
+            if entry.is_dir() and (max_depth is None or depth < max_depth):
+                yield from walk(entry, depth + 1)
 
-    walk(sandbox_root)
-    return visible, truncated
+    yield from walk(root, 0)
+
+
+__all__ = ["USER_HIDDEN_NAMES", "user_visible_entries"]

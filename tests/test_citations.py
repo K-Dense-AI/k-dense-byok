@@ -22,7 +22,7 @@ def test_extract_citations_deduplicates_and_classifies() -> None:
 
 
 async def test_verify_entries_uses_cache(active_project: str) -> None:
-    from kady_agent import citations
+    from kady_agent import citations, projects
 
     entry = citations.CitationEntry(
         raw="10.1000/xyz",
@@ -38,7 +38,7 @@ async def test_verify_entries_uses_cache(active_project: str) -> None:
             "resolvedAt": time.time(),
         }
     }
-    citations._save_cache(cache)
+    projects.active_paths().save_citation_cache(cache)
 
     verified = await citations.verify_entries([entry])
     assert verified[0].status == "verified"

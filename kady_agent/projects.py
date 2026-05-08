@@ -17,17 +17,21 @@ on-disk skeleton to exist should call ``ensure_project_exists()``.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 import secrets
 import shutil
 import subprocess
+import threading
 from contextvars import ContextVar
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Iterator, Optional
+
+from .sandbox_visibility import user_visible_entries
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECTS_ROOT = (
@@ -98,9 +102,34 @@ class ProjectMeta:
         )
 
 
+# Per-project locks for materialize_gemini_settings. Keyed by project id;
+# created lazily because asyncio.Lock requires no running loop at construction
+# time but must be created in the same loop it's awaited from. The threading
+# guard keeps lookups race-free across threads.
+_MATERIALIZE_LOCKS: dict[str, asyncio.Lock] = {}
+_MATERIALIZE_LOCKS_GUARD = threading.Lock()
+
+
+def _materialize_lock(project_id: str) -> asyncio.Lock:
+    with _MATERIALIZE_LOCKS_GUARD:
+        lock = _MATERIALIZE_LOCKS.get(project_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _MATERIALIZE_LOCKS[project_id] = lock
+        return lock
+
+
 @dataclass
 class ProjectPaths:
-    """All on-disk locations owned by one project."""
+    """All on-disk locations owned by one project, plus the I/O bound to those paths.
+
+    Invariant: methods on this class may own *path-bound I/O* — i.e. read or write
+    bytes at a path the class itself computes (``load_citation_cache``,
+    ``materialize_gemini_settings``). They must NOT own *domain logic over the
+    loaded content* — anything that interprets, merges, queries, or transforms
+    cached data belongs in a domain module (e.g. ``citations.py``). Enforced
+    structurally by ``tests/test_project_paths.py``.
+    """
 
     id: str
     root: Path
@@ -115,6 +144,50 @@ class ProjectPaths:
     custom_mcps_path: Path
     browser_use_config_path: Path
     sessions_db_path: Path
+
+    def gemini_skills_dir(self) -> Path:
+        """Skills directory under the project's Gemini CLI settings dir."""
+        return self.gemini_settings_dir / "skills"
+
+    def load_citation_cache(self) -> dict:
+        """Read the citation JSON cache. Returns ``{}`` if missing or malformed."""
+        if not self.citation_cache.is_file():
+            return {}
+        try:
+            data = json.loads(self.citation_cache.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def save_citation_cache(self, data: dict) -> None:
+        """Write the citation JSON cache. Best-effort (silent on OSError)."""
+        try:
+            self.citation_cache.parent.mkdir(parents=True, exist_ok=True)
+            self.citation_cache.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+    async def materialize_gemini_settings(self) -> None:
+        """Write the merged Gemini CLI ``settings.json`` for this project.
+
+        Serialized per-project via an asyncio lock so concurrent
+        ``delegate_task`` calls don't redundantly rewrite the file.
+        ``write_merged_settings`` itself is atomic (tempfile + os.replace), so
+        the read end of any race always sees a valid JSON file.
+        """
+        from .mcp import write_merged_settings
+
+        async with _materialize_lock(self.id):
+            write_merged_settings(self.gemini_settings_dir)
+
+    def iter_user_visible_paths(
+        self, *, max_depth: Optional[int] = None
+    ) -> Iterator[Path]:
+        """Yield user-visible paths under this project's sandbox."""
+        return user_visible_entries(self.sandbox, max_depth=max_depth)
 
 
 # ---------------------------------------------------------------------------
@@ -637,6 +710,11 @@ def init_project_sandbox(
     if gemini_md_src.is_file():
         shutil.copy2(gemini_md_src, gemini_md_dst)
 
+    # First-run materialization. Steady-state writes happen at expert-spawn
+    # time via ProjectPaths.materialize_gemini_settings; this call exists
+    # because init_project_sandbox runs synchronously before any spawn could
+    # request the new project, and downstream code (uv sync, skill seeding)
+    # may inspect gemini_settings_dir during init.
     token = set_active_project(project_id)
     try:
         write_merged_settings(paths.gemini_settings_dir)
@@ -697,25 +775,14 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
     if not paths.custom_mcps_path.is_file():
         paths.custom_mcps_path.write_text("{}\n", encoding="utf-8")
 
-    # Always ensure the Gemini CLI workspace settings exist so the expert
-    # authenticates via our LiteLLM proxy (gemini-api-key) regardless of
-    # what the user has in ~/.gemini/settings.json (which defaults to
-    # `vertex-ai` on machines that were previously logged into gcloud).
-    # Workspace settings only win over user settings when the folder is
-    # *trusted*; recent Gemini CLI versions silently ignore the workspace
-    # settings.json otherwise. ``ensure_gemini_trust_file`` writes the
-    # Kady-owned trust file that ``delegate_task`` points the CLI at via
-    # ``GEMINI_CLI_TRUSTED_FOLDERS_PATH`` so this protocol actually holds.
-    workspace_settings = paths.gemini_settings_dir / "settings.json"
-    if not workspace_settings.is_file():
-        from .mcp import write_merged_settings
-
-        token = set_active_project(project_id)
-        try:
-            write_merged_settings(paths.gemini_settings_dir)
-        finally:
-            ACTIVE_PROJECT.reset(token)
-
+    # The expert subprocess sees a valid ``<sandbox>/.gemini/settings.json``
+    # because every spawn calls ``ProjectPaths.materialize_gemini_settings``
+    # immediately before launching the CLI. ``ensure_gemini_trust_file`` still
+    # has to run here so workspace-trust is in place by the time the CLI
+    # reads its trust file. (Without trust, the CLI silently ignores the
+    # workspace ``settings.json`` and falls back to ``~/.gemini/settings.json``
+    # — often left on ``vertex-ai`` from a prior gcloud login — and exits
+    # demanding GOOGLE_CLOUD_PROJECT/_LOCATION.)
     ensure_gemini_trust_file()
 
     return paths
@@ -726,7 +793,6 @@ def ensure_project_exists(project_id: str) -> ProjectPaths:
 # ADK session service
 # ---------------------------------------------------------------------------
 
-import asyncio
 import logging
 
 from google.adk.events.event import Event

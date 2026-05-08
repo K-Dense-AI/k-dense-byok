@@ -13,10 +13,11 @@ from .runtime import record_cost, update_cost_entry
 from .mcp import all_mcps
 from .runtime import close_turn, open_turn
 from . import projects
-from .runtime import (
-    build_tracking_headers,
-    build_tracking_metadata,
-    extract_tags_from_litellm_kwargs,
+from .tracking import (
+    TrackingTags,
+    from_litellm_kwargs,
+    to_headers,
+    to_metadata,
 )
 
 from .tools.gemini_cli import delegate_task
@@ -126,14 +127,15 @@ def _inject_tracking_headers(callback_context):
         project_id = projects.current_project_id()
     except LookupError:
         project_id = None
+    tags = TrackingTags(
+        role="orchestrator",
+        project_id=project_id,
+        session_id=session_id,
+        turn_id=turn_id,
+    )
     merged = {
         **EXTRA_HEADERS,
-        **build_tracking_headers(
-            role="orchestrator",
-            project_id=project_id,
-            session_id=session_id,
-            turn_id=turn_id,
-        ),
+        **to_headers(tags),
     }
 
     # ``_additional_args`` is the LiteLlm-owned kwargs bag that gets
@@ -147,14 +149,7 @@ def _inject_tracking_headers(callback_context):
     # ``kwargs["litellm_params"]["metadata"]`` verbatim.
     existing_meta = _LITELLM_MODEL._additional_args.get("metadata")
     meta = dict(existing_meta) if isinstance(existing_meta, dict) else {}
-    meta.update(
-        build_tracking_metadata(
-            role="orchestrator",
-            project_id=project_id,
-            session_id=session_id,
-            turn_id=turn_id,
-        )
-    )
+    meta.update(to_metadata(tags))
     _LITELLM_MODEL._additional_args["metadata"] = meta
 
     # Ask OpenRouter to include native usage accounting (token counts +
@@ -270,9 +265,9 @@ class _OrchestratorCostLogger(CustomLogger):
     """
 
     @staticmethod
-    def _extract_tags_from_kwargs(kwargs: dict) -> dict | None:
+    def _extract_tags_from_kwargs(kwargs: dict) -> TrackingTags | None:
         """Pull Kady correlation IDs out of LiteLLM callback kwargs."""
-        return extract_tags_from_litellm_kwargs(kwargs)
+        return from_litellm_kwargs(kwargs)
 
     def _extract_cost_and_gen_id(
         self, kwargs: dict, response_obj: Any
@@ -322,9 +317,9 @@ class _OrchestratorCostLogger(CustomLogger):
         """
         try:
             tags = self._extract_tags_from_kwargs(kwargs)
-            if not tags or tags.get("role") != "orchestrator":
+            if not tags or tags.role != "orchestrator":
                 return (None, None, None)
-            if not tags.get("session_id") or not tags.get("turn_id"):
+            if not tags.session_id or not tags.turn_id:
                 return (None, None, None)
             provider = kwargs.get("custom_llm_provider")
             if provider != "openrouter":
@@ -344,21 +339,21 @@ class _OrchestratorCostLogger(CustomLogger):
                 usage = response_obj.get("usage")
             cost, gen_id = self._extract_cost_and_gen_id(kwargs, response_obj)
             entry_id = record_cost(
-                session_id=tags["session_id"],
-                turn_id=tags["turn_id"],
+                session_id=tags.session_id,
+                turn_id=tags.turn_id,
                 role="orchestrator",
                 model=model,
                 usage_dict=usage,
                 cost_usd=cost,
-                delegation_id=tags.get("delegation_id"),
-                project_id=tags.get("project_id"),
+                delegation_id=tags.delegation_id,
+                project_id=tags.project_id,
             )
             # Stash project so the async backfill can point at the right
             # ledger without re-deriving it.
             return (
                 entry_id,
                 gen_id if cost is None else None,
-                tags.get("project_id"),
+                tags.project_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Orchestrator cost callback failed: %s", exc)
@@ -394,8 +389,8 @@ class _OrchestratorCostLogger(CustomLogger):
         self, kwargs, response_obj, start_time, end_time
     ):
         entry_id, gen_id, project_id = self._record(kwargs, response_obj)
-        tags = self._extract_tags_from_kwargs(kwargs) or {}
-        session_id = tags.get("session_id")
+        tags = self._extract_tags_from_kwargs(kwargs)
+        session_id = tags.session_id if tags else None
         if entry_id and gen_id and session_id:
             # Fire-and-forget: the /generation row is written async by
             # OpenRouter so we poll for up to ~60s without blocking the

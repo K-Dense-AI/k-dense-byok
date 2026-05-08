@@ -86,6 +86,7 @@ def test_merge_header_sources_precedence() -> None:
 def test_proxy_callback_records_expert_cost(active_project: str) -> None:
     import litellm_callbacks
     from kady_agent import runtime
+    from kady_agent.tracking import TrackingTags, to_headers
 
     callback = litellm_callbacks.OpenRouterPrefixFix()
     callback._record(
@@ -93,13 +94,13 @@ def test_proxy_callback_records_expert_cost(active_project: str) -> None:
             "model": "openrouter/vendor/model",
             "response_cost": 0.02,
             "proxy_server_request": {
-                "headers": runtime.build_tracking_headers(
+                "headers": to_headers(TrackingTags(
                     role="expert",
                     project_id=active_project,
                     session_id="session-proxy",
                     turn_id="turn-proxy",
                     delegation_id="001",
-                )
+                ))
             },
         },
         {"usage": {"prompt_tokens": 4, "completion_tokens": 5}},
@@ -113,6 +114,7 @@ def test_proxy_callback_records_expert_cost(active_project: str) -> None:
 def test_proxy_callback_ignores_non_expert(active_project: str) -> None:
     import litellm_callbacks
     from kady_agent import runtime
+    from kady_agent.tracking import TrackingTags, to_headers
 
     callback = litellm_callbacks.OpenRouterPrefixFix()
     callback._record(
@@ -120,12 +122,12 @@ def test_proxy_callback_ignores_non_expert(active_project: str) -> None:
             "model": "openrouter/vendor/model",
             "response_cost": 0.02,
             "proxy_server_request": {
-                "headers": runtime.build_tracking_headers(
+                "headers": to_headers(TrackingTags(
                     role="orchestrator",
                     project_id=active_project,
                     session_id="session-noop",
                     turn_id="turn",
-                )
+                ))
             },
         },
         {"usage": {}},
@@ -137,6 +139,7 @@ def test_proxy_callback_ignores_non_expert(active_project: str) -> None:
 def test_proxy_callback_records_gemini_alias_cost(active_project: str) -> None:
     import litellm_callbacks
     from kady_agent import runtime
+    from kady_agent.tracking import TrackingTags, to_headers
 
     callback = litellm_callbacks.OpenRouterPrefixFix()
     callback._record(
@@ -144,12 +147,12 @@ def test_proxy_callback_records_gemini_alias_cost(active_project: str) -> None:
             "model": "gemini-3-pro-preview",
             "response_cost": 0.01,
             "proxy_server_request": {
-                "headers": runtime.build_tracking_headers(
+                "headers": to_headers(TrackingTags(
                     role="expert",
                     project_id=active_project,
                     session_id="session-gemini-proxy",
                     turn_id="turn",
-                )
+                ))
             },
         },
         {"usage": {"prompt_tokens": 1, "completion_tokens": 1}},

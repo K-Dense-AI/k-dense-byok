@@ -37,7 +37,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from kady_agent.runtime import record_cost  # noqa: E402
-from kady_agent.runtime import extract_tags_from_headers  # noqa: E402
+from kady_agent.tracking import from_headers  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -227,8 +227,8 @@ class OpenRouterPrefixFix(CustomLogger):
     def _record(self, kwargs: dict[str, Any], response_obj: Any) -> None:
         try:
             headers = _merge_header_sources(kwargs)
-            tags = extract_tags_from_headers(headers)
-            if not tags or tags.get("role") != "expert":
+            tags = from_headers(headers)
+            if not tags or tags.role != "expert":
                 return
 
             model = kwargs.get("model")
@@ -259,14 +259,14 @@ class OpenRouterPrefixFix(CustomLogger):
                     usage = response_obj.get("usage")
 
             record_cost(
-                session_id=tags["session_id"],
-                turn_id=tags["turn_id"],
+                session_id=tags.session_id,
+                turn_id=tags.turn_id,
                 role="expert",
                 model=model,
                 usage_dict=usage,
                 cost_usd=cost,
-                delegation_id=tags.get("delegation_id"),
-                project_id=tags.get("project_id"),
+                delegation_id=tags.delegation_id,
+                project_id=tags.project_id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Expert cost callback failed: %s", exc)
