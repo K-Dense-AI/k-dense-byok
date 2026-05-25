@@ -896,6 +896,21 @@ if os.getenv("EXA_API_KEY"):
     )
     all_mcps.append(exa_search_mcp)
 
+if os.getenv("TAVILY_API_KEY"):
+    tavily_search_mcp = ResilientMcpToolset(
+        McpToolset(
+            connection_params=StreamableHTTPConnectionParams(
+                url="https://mcp.tavily.com/mcp",
+                headers={
+                    "Authorization": f"Bearer {os.getenv('TAVILY_API_KEY')}",
+                },
+                timeout=600,
+            ),
+        ),
+        label="Tavily Search MCP",
+    )
+    all_mcps.append(tavily_search_mcp)
+
 if os.getenv("PARALLEL_API_KEY"):
     parallel_search_mcp = ResilientMcpToolset(
         McpToolset(
