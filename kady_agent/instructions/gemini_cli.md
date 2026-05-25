@@ -63,7 +63,7 @@ Some skills correspond directly to MCP tools. **Always activate the skill before
 
 | Task | Activate skill first | Then use tool |
 |---|---|---|
-| Web search or URL retrieval | *parallel-search* (if available) | `web_search`, `web_fetch` |
+| Web search or URL retrieval | *parallel-search* or *tavily-search* (if available) | `web_search`, `web_fetch`, `tavily_search` |
 | Document conversion | *markitdown* or *docling* (if available) | Docling MCP tools |
 | Writing reports, papers, prose | **writing** | — |
 | Literature review | **literature-review** | — |
@@ -85,6 +85,7 @@ Any time Modal is mentioned — in the task description, in activated skill inst
 
 You have access to MCP servers. Use them instead of writing ad hoc code for the same tasks:
 - **Parallel Search** (`web_search`, `web_fetch`): Use for all web searches and URL content retrieval. Do not use `curl`, `requests`, or manual HTTP calls when Parallel can do it.
+- **Tavily Search** (`tavily_search`): Alternative web search provider. Use when Parallel Search is unavailable or when you need a second opinion on search results. Provides web search with built-in content extraction.
 - **Docling** (`convert_document_into_docling_document`, `export_docling_document_to_markdown`, `save_docling_document`): Use for converting documents (PDFs, DOCX, PPTX, etc.) to markdown. Convert the document, export to markdown, and save the `.md` file to the current working directory.
 
 **Tool priority rule:** If both an MCP tool and an activated skill cover the same task, the **skill's instructions take precedence** because the skill wraps the tool with tested parameters, error handling, and output formatting.
