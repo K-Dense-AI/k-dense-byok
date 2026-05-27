@@ -89,11 +89,11 @@ def format_skills_reference(skills: list[dict]) -> str:
 def download_scientific_skills(
     target_dir: str | None = None,
     github_repo: str = "K-Dense-AI/scientific-agent-skills",
-    source_path: str = "scientific-skills",
+    source_path: str = "skills",
     branch: str = "main"
 ) -> None:
     """
-    Download all directories from the scientific-skills folder in the GitHub repository
+    Download all directories from the skills folder in the GitHub repository
     and place them in the target directory using git clone.
     
     Args:
@@ -125,13 +125,13 @@ def download_scientific_skills(
                 text=True
             )
             
-            # Path to the scientific-skills folder in the cloned repo
+            # Path to the skills folder in the cloned repo
             source_dir = temp_path / source_path
             
             if not source_dir.exists():
                 raise FileNotFoundError(f"Source path '{source_path}' not found in repository")
             
-            # Copy all skill directories from scientific-skills to target
+            # Copy all skill directories from skills/ to target
             print(f"\n📂 Copying skills to {target_path}...")
             skill_count = 0
             
