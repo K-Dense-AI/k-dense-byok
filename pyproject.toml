@@ -1,6 +1,6 @@
 [project]
 name = "kady"
-version = "0.4.3"
+version = "0.4.4"
 description = "Kady — K-Dense BYOK Agent"
 readme = "README.md"
 requires-python = ">=3.13"
