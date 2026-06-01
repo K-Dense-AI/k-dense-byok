@@ -708,8 +708,25 @@ def _litellm_config_sha() -> str | None:
     return _sha256_file(REPO_ROOT / "litellm_config.yaml")
 
 
+def _redact_mcp_spec(spec: Any) -> Any:
+    if not isinstance(spec, dict):
+        return spec
+    redacted = dict(spec)
+    headers = redacted.get("headers")
+    if isinstance(headers, dict):
+        redacted["headers"] = {
+            key: (
+                "<redacted>"
+                if str(key).lower() in {"authorization", "x-api-key", "api-key"}
+                else value
+            )
+            for key, value in headers.items()
+        }
+    return redacted
+
+
 def _mcp_servers_snapshot() -> list[dict]:
-    """Capture MCP server specs verbatim (spec-only pin, per plan)."""
+    """Capture MCP server specs with authentication headers redacted."""
     from .mcp import build_default_settings, load_custom_mcps
 
     default_mcps = build_default_settings().get("mcpServers", {})
@@ -718,7 +735,7 @@ def _mcp_servers_snapshot() -> list[dict]:
 
     entries: list[dict] = []
     for name in sorted(merged):
-        entries.append({"name": name, "spec": merged[name]})
+        entries.append({"name": name, "spec": _redact_mcp_spec(merged[name])})
     if os.getenv("EXA_API_KEY"):
         entries.append(
             {

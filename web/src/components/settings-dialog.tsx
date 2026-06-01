@@ -77,6 +77,7 @@ function McpServerRow({
   signOutBusy: boolean;
 }) {
   const isHttp = server.transport === "http";
+  const isStaticAuth = server.authMode === "static";
   const expiresLabel = formatExpiry(server.tokenInfo?.expiresAt ?? null);
 
   return (
@@ -104,7 +105,7 @@ function McpServerRow({
           {server.signedIn === true && (
             <div className="text-[11px] text-emerald-600 dark:text-emerald-400 mt-0.5 flex items-center gap-1">
               <CheckIcon className="size-3" />
-              Signed in
+              {isStaticAuth ? "Configured with API key" : "Signed in"}
               {expiresLabel ? (
                 <span className="text-muted-foreground">
                   · token valid {expiresLabel}
@@ -119,7 +120,7 @@ function McpServerRow({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {isHttp && server.signedIn === true && (
+          {isHttp && server.signedIn === true && !isStaticAuth && (
             <Button
               size="sm"
               variant="ghost"

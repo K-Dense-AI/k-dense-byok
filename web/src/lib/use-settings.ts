@@ -18,6 +18,8 @@ export interface McpServerStatus {
    * stored OAuth token for this server.
    */
   signedIn: boolean | null;
+  /** How the HTTP server is authenticated, if known. */
+  authMode?: "oauth" | "static" | null;
   /**
    * True when the server replied 401 to an unauthenticated probe -- i.e.
    * an OAuth flow is required to make it usable.

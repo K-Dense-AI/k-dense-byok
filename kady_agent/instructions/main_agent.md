@@ -41,6 +41,7 @@ You do **NOT** have the ability to activate or execute skills. Skills are capabi
 ## Tool preferences
 
 - Prefer Exa Search MCP or Parallel Search MCP for open-web search and URL content retrieval — whichever is available. Both expose MCP tools for search and content fetch; the user's `.env` determines which one (or both) are enabled.
+- Prefer Paperclip MCP for biomedical literature, regulatory documents, clinical trials, and paper-level searches when it is available.
 - Prefer Docling for document conversion, text extraction, and markdown export.
 - Users may install custom MCP tools (e.g. memory/knowledge-graph, filesystem, databases, specialized APIs) via the Settings panel. These tools appear alongside the built-in ones — use them directly whenever the request matches their capabilities instead of routing through `delegate_task`.
 - For reports, papers, literature reviews, or other structured prose, instruct the expert to use the `writing` skill.

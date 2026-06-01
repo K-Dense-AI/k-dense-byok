@@ -85,6 +85,7 @@ Any time Modal is mentioned — in the task description, in activated skill inst
 
 You have access to MCP servers. Use them instead of writing ad hoc code for the same tasks:
 - **Parallel Search** (`web_search`, `web_fetch`): Use for all web searches and URL content retrieval. Do not use `curl`, `requests`, or manual HTTP calls when Parallel can do it.
+- **Paperclip**: Use for biomedical literature, regulatory documents, clinical trials, paper search, paper reading, and figure analysis when available.
 - **Docling** (`convert_document_into_docling_document`, `export_docling_document_to_markdown`, `save_docling_document`): Use for converting documents (PDFs, DOCX, PPTX, etc.) to markdown. Convert the document, export to markdown, and save the `.md` file to the current working directory.
 
 **Tool priority rule:** If both an MCP tool and an activated skill cover the same task, the **skill's instructions take precedence** because the skill wraps the tool with tested parameters, error handling, and output formatting.

@@ -46,18 +46,57 @@ def test_merged_settings_injects_oauth_bearer(active_project: str) -> None:
                 "httpUrl": "https://example.test/explicit",
                 "headers": {"authorization": "Basic abc"},
             },
+            "api-key": {
+                "httpUrl": "https://example.test/keyed",
+                "headers": {"X-API-Key": "static"},
+            },
             "stdio": {"command": "tool"},
         }
     )
     mcp.save_token("signed", {"access_token": "token", "token_type": "Bearer"})
     mcp.save_token("explicit", {"access_token": "ignored", "token_type": "Bearer"})
+    mcp.save_token("api-key", {"access_token": "ignored", "token_type": "Bearer"})
 
     settings = mcp.build_merged_settings()
 
     assert settings["mcpServers"]["signed"]["headers"]["Authorization"] == "Bearer token"
     assert settings["mcpServers"]["explicit"]["headers"]["authorization"] == "Basic abc"
+    assert settings["mcpServers"]["api-key"]["headers"] == {"X-API-Key": "static"}
     assert "headers" not in settings["mcpServers"]["stdio"]
     assert "pdf-annotations" in settings["mcpServers"]
+
+
+def test_paperclip_default_settings_are_env_gated(
+    active_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kady_agent import mcp
+
+    monkeypatch.delenv("PAPERCLIP_API_KEY", raising=False)
+    assert mcp.build_paperclip_mcp_spec() is None
+    assert "paperclip" not in mcp.build_default_settings()["mcpServers"]
+
+    monkeypatch.setenv("PAPERCLIP_API_KEY", "gxl_test")
+    spec = mcp.build_paperclip_mcp_spec()
+
+    assert spec == {
+        "httpUrl": "https://paperclip.gxl.ai/mcp",
+        "headers": {"X-API-Key": "gxl_test"},
+    }
+    assert mcp.build_default_settings()["mcpServers"]["paperclip"] == spec
+
+
+def test_runtime_snapshot_redacts_paperclip_api_key(
+    active_project: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kady_agent import runtime
+
+    monkeypatch.setenv("PAPERCLIP_API_KEY", "gxl_test_secret")
+
+    entries = runtime._mcp_servers_snapshot()
+    paperclip = next(entry for entry in entries if entry["name"] == "paperclip")
+
+    assert paperclip["spec"]["headers"]["X-API-Key"] == "<redacted>"
+    assert "gxl_test_secret" not in str(entries)
 
 
 def test_write_merged_settings_and_browser_use_config(active_project: str) -> None:

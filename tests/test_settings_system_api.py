@@ -14,6 +14,7 @@ def test_settings_mcps_crud_status_and_oauth(
     from kady_agent.api import settings
     from kady_agent import mcp
 
+    monkeypatch.delenv("PAPERCLIP_API_KEY", raising=False)
     payload = {
         "custom-http": {"httpUrl": "https://mcp.example/mcp"},
         "custom-stdio": {"command": "tool", "args": ["--mcp"]},
@@ -58,6 +59,33 @@ def test_settings_mcps_crud_status_and_oauth(
     sign_out = client.post("/settings/mcps/custom-http/sign-out", headers=project_headers)
     assert sign_out.status_code == 200
     assert sign_out.json()["ok"] is True
+
+
+def test_paperclip_mcp_status_is_env_gated(
+    client, project_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from kady_agent.api import settings
+
+    async def unexpected_probe(url: str) -> bool:
+        raise AssertionError(f"unexpected auth probe for {url}")
+
+    monkeypatch.delenv("PAPERCLIP_API_KEY", raising=False)
+    without_key = client.get("/settings/mcps/status", headers=project_headers)
+    assert without_key.status_code == 200
+    assert "paperclip" not in {s["name"] for s in without_key.json()["servers"]}
+
+    monkeypatch.setenv("PAPERCLIP_API_KEY", "gxl_test")
+    monkeypatch.setattr(settings, "_probe_needs_auth", unexpected_probe)
+    with_key = client.get("/settings/mcps/status", headers=project_headers)
+    assert with_key.status_code == 200
+    paperclip = next(s for s in with_key.json()["servers"] if s["name"] == "paperclip")
+    assert paperclip["builtin"] is True
+    assert paperclip["transport"] == "http"
+    assert paperclip["url"] == "https://paperclip.gxl.ai/mcp"
+    assert paperclip["signedIn"] is True
+    assert paperclip["needsAuth"] is False
+    assert paperclip["authMode"] == "static"
+    assert paperclip["tokenInfo"] is None
 
 
 def test_browser_use_settings_and_chrome_profiles(

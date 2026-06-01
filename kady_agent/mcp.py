@@ -34,6 +34,7 @@ from .projects import active_paths
 logger = logging.getLogger(__name__)
 
 TOKENS_FILENAME = ".mcp-oauth-tokens.json"
+PAPERCLIP_MCP_URL = "https://paperclip.gxl.ai/mcp"
 
 # How long an in-flight OAuth flow stays valid (state nonce + PKCE verifier).
 # Long enough for a human to read the consent screen and click "approve",
@@ -469,6 +470,17 @@ def build_browser_use_mcp_spec() -> dict | None:
     return {"command": "uvx", "args": args}
 
 
+def build_paperclip_mcp_spec() -> dict | None:
+    """Return the Paperclip MCP spec when API-key auth is configured."""
+    api_key = os.getenv("PAPERCLIP_API_KEY")
+    if not api_key:
+        return None
+    return {
+        "httpUrl": PAPERCLIP_MCP_URL,
+        "headers": {"X-API-Key": api_key},
+    }
+
+
 def build_default_settings() -> dict:
     """Return the base Gemini CLI settings dict with built-in MCP servers."""
     settings: dict = {
@@ -495,21 +507,19 @@ def build_default_settings() -> dict:
                     "kady_agent.mcp_servers.pdf_annotations",
                 ],
             },
-            # Hosted streamable-HTTP MCP. No local install required; the
-            # CLI opens an HTTP connection per session and tears it down
-            # at exit, so adding it here is essentially free for projects
-            # that don't actually use it.
-            #
-            # Schema note: Gemini CLI accepts both ``httpUrl`` (original
-            # form, always works) and ``{url, type: "http"}`` (newer
-            # unified form). 0.40.1 silently drops the newer form on
-            # untyped servers, so we stick with ``httpUrl``. See
-            # https://github.com/google-gemini/gemini-cli/pull/13762.
-            "paperclip": {
-                "httpUrl": "https://paperclip.gxl.ai/mcp",
-            },
         },
     }
+
+    # Hosted streamable-HTTP MCP. No local install required; keep it hidden
+    # unless API-key auth is present so the settings UI does not advertise an
+    # unusable server.
+    #
+    # Schema note: Gemini CLI accepts both ``httpUrl`` (original form, always
+    # works) and ``{url, type: "http"}`` (newer unified form). 0.40.1 silently
+    # drops the newer form on untyped servers, so we stick with ``httpUrl``.
+    paperclip = build_paperclip_mcp_spec()
+    if paperclip is not None:
+        settings["mcpServers"]["paperclip"] = paperclip
 
     bu = build_browser_use_mcp_spec()
     if bu is not None:
@@ -555,9 +565,9 @@ def _inject_oauth_bearers(servers: dict) -> dict:
     :func:`refresh_oauth_tokens` first so spawn-time writes pick up
     freshly rotated tokens.
 
-    User-supplied ``headers.Authorization`` (set in ``custom_mcps.json``)
-    always wins so power users can override our injection with a
-    different scheme (e.g. a static API key).
+    User-supplied auth headers (set in ``custom_mcps.json`` or by built-in
+    API-key MCPs) always win so power users can override our injection with a
+    different scheme.
     """
     tokens = load_tokens()
     if not tokens:
@@ -573,7 +583,9 @@ def _inject_oauth_bearers(servers: dict) -> dict:
             continue
         headers = dict(spec.get("headers") or {})
         # Case-insensitive check: Authorization vs authorization etc.
-        if any(k.lower() == "authorization" for k in headers):
+        if any(
+            k.lower() in {"authorization", "x-api-key", "api-key"} for k in headers
+        ):
             continue
         token_type = entry.get("token_type") or "Bearer"
         headers["Authorization"] = f"{token_type} {entry['access_token']}"
@@ -879,6 +891,20 @@ class DynamicBuiltinBrowserUseToolset(BaseToolset):
 # ---------------------------------------------------------------------------
 
 all_mcps: list[BaseToolset] = []
+
+paperclip_api_key = os.getenv("PAPERCLIP_API_KEY")
+if paperclip_api_key:
+    paperclip_mcp = ResilientMcpToolset(
+        McpToolset(
+            connection_params=StreamableHTTPConnectionParams(
+                url=PAPERCLIP_MCP_URL,
+                headers={"X-API-Key": paperclip_api_key},
+                timeout=600,
+            ),
+        ),
+        label="Paperclip MCP",
+    )
+    all_mcps.append(paperclip_mcp)
 
 if os.getenv("EXA_API_KEY"):
     exa_search_mcp = ResilientMcpToolset(

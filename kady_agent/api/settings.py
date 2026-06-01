@@ -61,6 +61,17 @@ def _is_builtin_server(name: str) -> bool:
     return name in (build_default_settings().get("mcpServers") or {})
 
 
+def _has_static_auth(spec: dict) -> bool:
+    headers = spec.get("headers")
+    if not isinstance(headers, dict):
+        return False
+    return any(
+        str(key).lower() in {"authorization", "x-api-key", "api-key"}
+        and bool(value)
+        for key, value in headers.items()
+    )
+
+
 async def _probe_needs_auth(url: str) -> bool:
     """Return True iff the MCP endpoint replies 401 to an unauthenticated init."""
     try:
@@ -93,7 +104,9 @@ async def get_mcp_status():
         if not isinstance(spec, dict):
             continue
         url = _server_url(spec)
-        signed_in = mcp_oauth.has_token(name)
+        has_static_auth = _has_static_auth(spec)
+        has_oauth_token = mcp_oauth.has_token(name)
+        signed_in = has_static_auth or has_oauth_token
         entry: dict = {
             "name": name,
             "transport": "http" if url else "stdio",
@@ -101,7 +114,10 @@ async def get_mcp_status():
             "builtin": _is_builtin_server(name),
             "signedIn": signed_in if url else None,
             "needsAuth": False,
-            "tokenInfo": mcp_oauth.token_summary(name) if signed_in else None,
+            "tokenInfo": mcp_oauth.token_summary(name) if has_oauth_token else None,
+            "authMode": (
+                "static" if has_static_auth else ("oauth" if has_oauth_token else None)
+            ),
         }
         base.append(entry)
         if url and not signed_in:
