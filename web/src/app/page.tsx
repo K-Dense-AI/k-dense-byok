@@ -49,6 +49,9 @@ interface ChatTabEntry {
 const EMPTY_TURN_META: Map<string, TurnMeta> = new Map();
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
+/** Stable id for the first tab so SSR and hydration match. */
+const INITIAL_TAB_ID = "tab-initial";
+
 function makeTabId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -87,9 +90,7 @@ export default function ChatPage() {
   // stays stable across React's strict-mode double-invocation of
   // useState's lazy initializer (which would otherwise mint two different
   // ids — one for the tabs array and one for activeTabId).
-  const initialTabIdRef = useRef<string | null>(null);
-  if (initialTabIdRef.current === null) initialTabIdRef.current = makeTabId();
-  const initialTabId = initialTabIdRef.current;
+  const initialTabId = INITIAL_TAB_ID;
   const [tabs, setTabs] = useState<ChatTabEntry[]>(() => [
     { id: initialTabId, title: defaultTabTitle(0) },
   ]);

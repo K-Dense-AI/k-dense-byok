@@ -534,7 +534,9 @@ function ChatInput({
       const computeCtx = buildComputeContext(selectedCompute);
       const skillsCtx = buildSkillsContext(selectedSkills);
       const browserCtx = buildBrowserContext(browserUse.config, chromeProfiles.profiles);
-      onSubmit({ ...msg, text: msg.text + refs + dbCtx + computeCtx + skillsCtx + browserCtx }, event);
+      const baseText = msg.text ?? "";
+      if (!baseText.trim() && attachedFiles.length === 0) return;
+      onSubmit({ ...msg, text: baseText + refs + dbCtx + computeCtx + skillsCtx + browserCtx }, event);
       onClearFiles();
     },
     [budgetBlocked, onSubmit, attachedFiles, onClearFiles, selectedDbs, selectedCompute, selectedSkills, browserUse.config, chromeProfiles.profiles]
@@ -1002,15 +1004,17 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const handleSubmit = useCallback(
     async ({ text }: { text: string }) => {
       if (budgetState === "exceeded") return;
+      const trimmed = (text ?? "").trim();
+      if (!trimmed) return;
       if (isStreaming) {
         if (messageQueue.length >= MAX_QUEUE) return;
-        const rawText = text.split("\n")[0];
+        const rawText = trimmed.split("\n")[0];
         setMessageQueue((prev) => [
           ...prev,
           {
             id: String(++queueIdCounter.current),
             rawText,
-            text,
+            text: trimmed,
             model: { id: selectedModel.id, label: selectedModel.label },
             expertModel: { id: selectedExpertModel.id, label: selectedExpertModel.label },
             databases: [...selectedDbs],
@@ -1022,7 +1026,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         ]);
         return;
       }
-      const msgId = await send(text, selectedModel.id, {
+      const msgId = await send(trimmed, selectedModel.id, {
         expertModel: selectedExpertModel.id,
         attachments: attachedFiles,
         skills: selectedSkills.map((s) => s.name),
