@@ -33,10 +33,11 @@ const STATIC_MODELS = models as Model[];
 
 const DEFAULT_MODEL = STATIC_MODELS.find((m) => m.default) ?? STATIC_MODELS[0];
 
-// The Gemini CLI expert is a tool-heavy subprocess. Gemini 3.1 Pro's native
-// tool support and million-token context make it the recommended default,
-// distinct from the orchestrator's Claude Opus default. Falls back to the
-// generic default so callers without an explicit expert pick still work.
+// The Gemini CLI expert is a tool-heavy subprocess. Gemini 3.5 Flash's native
+// tool support, coding strength, and million-token context make it the
+// recommended default, distinct from the orchestrator's Claude Opus default.
+// Falls back to the generic default so callers without an explicit expert pick
+// still work.
 const DEFAULT_EXPERT_MODEL =
   STATIC_MODELS.find((m) => m.expertDefault) ?? DEFAULT_MODEL;
 

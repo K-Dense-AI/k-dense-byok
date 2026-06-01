@@ -71,7 +71,7 @@ def test_live_agent_turn_delegation_mcp_costs_and_replay(live_project, monkeypat
             "streaming": True,
             "state_delta": {
                 "_attachments": ["input.txt"],
-                "_expertModel": "openrouter/google/gemini-3.1-pro-preview",
+                "_expertModel": "openrouter/google/gemini-3.5-flash",
             },
         },
         timeout=300.0,

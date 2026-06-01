@@ -30,15 +30,15 @@ load_dotenv()
 
 DEFAULT_MODEL = (
     os.getenv("DEFAULT_AGENT_MODEL")
-    or "openrouter/anthropic/claude-opus-4.7"
+    or "openrouter/anthropic/claude-opus-4.8"
 )
 # Separate default for the Gemini CLI expert subprocess. The expert is a
-# tool-heavy CLI agent, so we recommend Gemini 3.1 Pro (native tool calling +
+# tool-heavy CLI agent, so we recommend Gemini 3.5 Flash (native tool calling +
 # 1M-token context) rather than the orchestrator's Claude Opus default. Users
 # can still override via DEFAULT_EXPERT_MODEL or per-turn from the UI.
 DEFAULT_EXPERT_MODEL = (
     os.getenv("DEFAULT_EXPERT_MODEL")
-    or "openrouter/google/gemini-3.1-pro-preview"
+    or "openrouter/google/gemini-3.5-flash"
 )
 EXTRA_HEADERS = {"X-Title": "Kady", "HTTP-Referer": "https://www.k-dense.ai"}
 EXA_API_KEY = os.getenv("EXA_API_KEY")

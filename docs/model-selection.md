@@ -35,10 +35,10 @@ By default, this includes all OpenRouter models with `tools` support, preserves 
 
 ## Defaults
 
-- The orchestrator default is `openrouter/anthropic/claude-opus-4.7`.
-- The expert default is `openrouter/google/gemini-3.1-pro-preview`.
+- The orchestrator default is `openrouter/anthropic/claude-opus-4.8`.
+- The expert default is `openrouter/google/gemini-3.5-flash`.
 
-Gemini 3.1 Pro Preview is recommended for expert tasks because expert delegation is tool-heavy and often benefits from a large context window. You can still choose a different tool-capable OpenRouter model per tab.
+Gemini 3.5 Flash is recommended for expert tasks because expert delegation is tool-heavy, coding-heavy, and often benefits from a large context window. You can still choose a different tool-capable OpenRouter model per tab.
 
 ## Local Ollama models
 

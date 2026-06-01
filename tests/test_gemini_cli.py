@@ -168,7 +168,7 @@ async def test_delegate_task_defaults_to_expert_model(
     state = {
         "_sessionId": "session-default",
         "_turnId": turn_id,
-        "_model": "openrouter/anthropic/claude-opus-4.7",
+        "_model": "openrouter/anthropic/claude-opus-4.8",
     }
     captured: dict = {}
 
@@ -202,7 +202,7 @@ async def test_delegate_task_returns_cli_failures(
     state = {
         "_sessionId": "session-failure",
         "_turnId": turn_id,
-        "_expertModel": "openrouter/anthropic/claude-opus-4.7",
+        "_expertModel": "openrouter/anthropic/claude-opus-4.8",
     }
 
     async def fake_refresh() -> None:
@@ -220,7 +220,7 @@ async def test_delegate_task_returns_cli_failures(
     )
 
     assert result["error"] is True
-    assert result["model"] == "openrouter/anthropic/claude-opus-4.7"
+    assert result["model"] == "openrouter/anthropic/claude-opus-4.8"
     assert "TypeError: terminated" in result["result"]
 
 

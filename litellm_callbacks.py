@@ -154,7 +154,7 @@ def _patched_get_llm_provider(  # type: ignore[no-untyped-def]
 
     When the proxy router has already set ``custom_llm_provider='openrouter'``
     and the substituted ``model`` still carries the ``openrouter/`` prefix
-    (e.g. ``openrouter/anthropic/claude-opus-4.7``), the upstream function
+    (e.g. ``openrouter/anthropic/claude-opus-4.8``), the upstream function
     short-circuits and forwards the prefixed id, which OpenRouter rejects.
     Drop the prefix in that narrow window so the dispatch sees the clean
     ``<vendor>/<model>`` string.

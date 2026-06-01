@@ -94,6 +94,6 @@ k-dense-byok/
 
 Kady keeps separate model choices for the orchestrator (the main agent) and the delegated expert in each chat tab. Both OpenRouter-hosted choices are routed through the local LiteLLM proxy, which accepts the `openrouter/*` model ids shown in the picker.
 
-The expert still runs inside the **Gemini CLI** process, but K-Dense routes that CLI through the same LiteLLM proxy, so it can target any OpenRouter model in the picker that supports tool calling. The recommended expert default is Gemini 3.1 Pro Preview because it has strong native tool use and a large context window, but users can override it per tab.
+The expert still runs inside the **Gemini CLI** process, but K-Dense routes that CLI through the same LiteLLM proxy, so it can target any OpenRouter model in the picker that supports tool calling. The recommended expert default is Gemini 3.5 Flash because it has strong native tool use, coding performance, and a large context window, but users can override it per tab.
 
 Local Ollama models are the main exception - if you pick an Ollama model, both Kady and the expert run through your local daemon. See [Local models with Ollama](./local-models-ollama.md) and [Model selection](./model-selection.md).

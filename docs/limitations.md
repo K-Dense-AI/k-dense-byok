@@ -4,7 +4,7 @@ K-Dense BYOK is in beta. The most important rough edges today are on the expert-
 
 ## Expert models and the Gemini CLI with Skills
 
-The expert delegation system relies on the Gemini CLI to execute tasks with our scientific skills. K-Dense routes that CLI through the local LiteLLM proxy, so the expert can use any model in the OpenRouter picker that supports tool calling. Gemini 3.1 Pro Preview remains the recommended expert default because it tends to be strongest for tool-heavy work, but other supported models can be selected per chat tab. While this works well for many workflows, there are some rough edges to be aware of:
+The expert delegation system relies on the Gemini CLI to execute tasks with our scientific skills. K-Dense routes that CLI through the local LiteLLM proxy, so the expert can use any model in the OpenRouter picker that supports tool calling. Gemini 3.5 Flash remains the recommended expert default because it is strong for coding-heavy, tool-heavy work, but other supported models can be selected per chat tab. While this works well for many workflows, there are some rough edges to be aware of:
 
 - **Skill activation is not always reliable.** Models sometimes skip a relevant skill, use it partially, or misinterpret the skill's instructions. This is especially noticeable with complex multi-step skills that require strict adherence to a procedure.
 - **Tool-calling consistency varies.** The Gemini CLI occasionally drops tool calls mid-execution or calls tools with incorrect arguments, which can cause expert tasks to stall or produce incomplete results.
