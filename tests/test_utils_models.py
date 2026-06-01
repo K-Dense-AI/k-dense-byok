@@ -21,6 +21,43 @@ def test_skill_summaries_and_reference_format(tmp_path) -> None:
     assert utils.format_skills_reference([]) == ""
 
 
+def test_skill_summaries_fall_back_when_frontmatter_yaml_invalid(tmp_path) -> None:
+    from kady_agent import utils
+
+    skill = tmp_path / "research-lookup"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text(
+        "---\nname: research-lookup\ndescription: Note: has a colon\n---\n",
+        encoding="utf-8",
+    )
+
+    summaries = utils.list_skill_summaries(str(tmp_path))
+    assert summaries == [{"name": "research-lookup", "description": ""}]
+
+
+def test_copy_skill_catalogue_respects_replace_existing(tmp_path) -> None:
+    from kady_agent import utils
+
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    source.mkdir()
+    target.mkdir()
+    for name in ("alpha", "beta"):
+        (source / name).mkdir()
+        (source / name / "SKILL.md").write_text("---\nname: x\n---\n", encoding="utf-8")
+    (target / "alpha").mkdir()
+    (target / "alpha" / "SKILL.md").write_text("stale", encoding="utf-8")
+
+    added = utils._copy_skill_catalogue(source, target, replace_existing=False)
+    assert added == 1
+    assert (target / "beta" / "SKILL.md").is_file()
+    assert (target / "alpha" / "SKILL.md").read_text(encoding="utf-8") == "stale"
+
+    replaced = utils._copy_skill_catalogue(source, target, replace_existing=True)
+    assert replaced == 2
+    assert "name: x" in (target / "alpha" / "SKILL.md").read_text(encoding="utf-8")
+
+
 def test_search_and_update_models_json(tmp_path, monkeypatch) -> None:
     from kady_agent import utils
 

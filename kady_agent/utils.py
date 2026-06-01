@@ -44,7 +44,10 @@ def list_skill_summaries(skills_dir: str | None = None) -> list[dict]:
             match = _FRONTMATTER_RE.match(text)
             if not match:
                 continue
-            meta = yaml.safe_load(match.group(1)) or {}
+            try:
+                meta = yaml.safe_load(match.group(1)) or {}
+            except yaml.YAMLError:
+                meta = {}
             summaries.append({
                 "name": meta.get("name", child.name),
                 "description": meta.get("description", ""),
@@ -86,76 +89,129 @@ def format_skills_reference(skills: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _resolve_skills_target(target_dir: str | None) -> Path:
+    if target_dir is None:
+        from .projects import active_paths
+        return active_paths().gemini_settings_dir / "skills"
+    return Path(target_dir)
+
+
+def _clone_scientific_skills_repo(
+    *,
+    github_repo: str = "K-Dense-AI/scientific-agent-skills",
+    source_path: str = "skills",
+    branch: str = "main",
+) -> Path:
+    """Shallow-clone the skills repo and return the path to its ``skills/`` folder."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        repo_url = f"https://github.com/{github_repo}.git"
+        print("Cloning Scientific Agent Skills repository (this may take a moment)...")
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_path)],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        source_dir = temp_path / source_path
+        if not source_dir.is_dir():
+            raise FileNotFoundError(
+                f"Source path '{source_path}' not found in repository"
+            )
+        # Copy into a second temp dir so the clone root survives after this
+        # context manager exits.
+        staging = Path(tempfile.mkdtemp(prefix="kady-skills-"))
+        shutil.copytree(source_dir, staging / source_path)
+        return staging / source_path
+
+
+def _copy_skill_catalogue(
+    source_dir: Path,
+    target_path: Path,
+    *,
+    replace_existing: bool,
+) -> int:
+    """Copy skill subdirectories from ``source_dir`` into ``target_path``."""
+    target_path.mkdir(parents=True, exist_ok=True)
+    skill_count = 0
+    for skill_dir in sorted(source_dir.iterdir(), key=lambda p: p.name.lower()):
+        if not skill_dir.is_dir():
+            continue
+        dest_dir = target_path / skill_dir.name
+        if dest_dir.exists():
+            if not replace_existing:
+                continue
+            shutil.rmtree(dest_dir)
+        shutil.copytree(skill_dir, dest_dir)
+        print(f"  ✓ {skill_dir.name}")
+        skill_count += 1
+    return skill_count
+
+
 def download_scientific_skills(
     target_dir: str | None = None,
     github_repo: str = "K-Dense-AI/scientific-agent-skills",
     source_path: str = "skills",
-    branch: str = "main"
+    branch: str = "main",
 ) -> None:
     """
     Download all directories from the skills folder in the GitHub repository
     and place them in the target directory using git clone.
-    
-    Args:
-        target_dir: Local directory to save the skills to. Defaults to
-            ``<active project>/sandbox/.gemini/skills`` when omitted.
-        github_repo: GitHub repository in format "owner/repo"
-        source_path: Path within the repo to download from
-        branch: Git branch to download from
+
+    Existing skill directories are replaced so the local catalogue matches
+    the remote repo.
     """
-    if target_dir is None:
-        from .projects import active_paths
-        target_path = active_paths().gemini_settings_dir / "skills"
-    else:
-        target_path = Path(target_dir)
-    target_path.mkdir(parents=True, exist_ok=True)
-    
-    # Create a temporary directory
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_path = Path(temp_dir)
-        repo_url = f"https://github.com/{github_repo}.git"
-        
-        try:
-            # Clone the repository with depth 1 for faster download
-            print("Cloning Scientific Agent Skills repository (this may take a moment)...")
-            subprocess.run(
-                ["git", "clone", "--depth", "1", "--branch", branch, repo_url, str(temp_path)],
-                check=True,
-                capture_output=True,
-                text=True
+    target_path = _resolve_skills_target(target_dir)
+    staging_root: Path | None = None
+    try:
+        source_dir = _clone_scientific_skills_repo(
+            github_repo=github_repo, source_path=source_path, branch=branch
+        )
+        staging_root = source_dir.parent
+        print(f"\n📂 Copying skills to {target_path}...")
+        skill_count = _copy_skill_catalogue(
+            source_dir, target_path, replace_existing=True
+        )
+        print(
+            f"\n✅ Successfully downloaded {skill_count} scientific skills "
+            f"to {target_path.absolute()}"
+        )
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error cloning repository: {e.stderr}")
+        raise
+    finally:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
+
+
+def sync_missing_scientific_skills(
+    target_dir: str | None = None,
+    github_repo: str = "K-Dense-AI/scientific-agent-skills",
+    source_path: str = "skills",
+    branch: str = "main",
+) -> int:
+    """Clone the skills repo and copy only skill dirs not already present locally."""
+    target_path = _resolve_skills_target(target_dir)
+    staging_root: Path | None = None
+    try:
+        source_dir = _clone_scientific_skills_repo(
+            github_repo=github_repo, source_path=source_path, branch=branch
+        )
+        staging_root = source_dir.parent
+        added = _copy_skill_catalogue(
+            source_dir, target_path, replace_existing=False
+        )
+        if added:
+            print(
+                f"Synced {added} missing scientific skills to {target_path.absolute()}"
             )
-            
-            # Path to the skills folder in the cloned repo
-            source_dir = temp_path / source_path
-            
-            if not source_dir.exists():
-                raise FileNotFoundError(f"Source path '{source_path}' not found in repository")
-            
-            # Copy all skill directories from skills/ to target
-            print(f"\n📂 Copying skills to {target_path}...")
-            skill_count = 0
-            
-            for skill_dir in source_dir.iterdir():
-                if skill_dir.is_dir():
-                    dest_dir = target_path / skill_dir.name
-                    
-                    # Remove existing directory if it exists
-                    if dest_dir.exists():
-                        shutil.rmtree(dest_dir)
-                    
-                    # Copy the skill directory
-                    shutil.copytree(skill_dir, dest_dir)
-                    print(f"  ✓ {skill_dir.name}")
-                    skill_count += 1
-            
-            print(f"\n✅ Successfully downloaded {skill_count} scientific skills to {target_path.absolute()}")
-            
-        except subprocess.CalledProcessError as e:
-            print(f"❌ Error cloning repository: {e.stderr}")
-            raise
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            raise
+        return added
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error cloning repository: {e.stderr}")
+        raise
+    finally:
+        if staging_root is not None:
+            shutil.rmtree(staging_root, ignore_errors=True)
 
 
 def fetch_openrouter_models(

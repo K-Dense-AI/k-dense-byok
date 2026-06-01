@@ -522,13 +522,32 @@ def _find_sibling_skills_dir(exclude_id: str | None = None) -> Optional[Path]:
     return None
 
 
+# Last verified against K-Dense-AI/scientific-agent-skills@main. Bump when the
+# upstream catalogue grows so existing sandboxes pick up new skills on init.
+_MIN_SCIENTIFIC_SKILL_COUNT = 143
+
+
+def _count_project_skills(skills_dir: Path) -> int:
+    if not skills_dir.is_dir():
+        return 0
+    try:
+        return sum(
+            1
+            for d in skills_dir.iterdir()
+            if d.is_dir() and (d / "SKILL.md").is_file()
+        )
+    except OSError:
+        return 0
+
+
 def seed_project_skills(paths: ProjectPaths, *, allow_remote: bool = True) -> None:
     """Populate ``<project>/sandbox/.gemini/skills`` so the expert can use them.
 
-    Fast path: copy every skill from a sibling project that already has the
-    catalogue. Slow path (no siblings): git-clone the scientific-skills repo.
-    Network failures are logged but never raised - a project without skills
-    is still usable, just with a reduced expert catalogue.
+    Fast path: copy missing skills from a sibling project that already has the
+    catalogue. Slow path: git-clone the scientific-skills repo (full download
+    when empty, otherwise only skills missing locally). Network failures are
+    logged but never raised - a project without skills is still usable, just
+    with a reduced expert catalogue.
 
     Pass ``allow_remote=False`` to skip the GitHub fallback. The synchronous
     POST /projects bootstrap uses that flag so the response time stays
@@ -536,18 +555,6 @@ def seed_project_skills(paths: ProjectPaths, *, allow_remote: bool = True) -> No
     round trip).
     """
     skills_dir = paths.gemini_settings_dir / "skills"
-    if skills_dir.is_dir():
-        try:
-            already_populated = any(
-                (d / "SKILL.md").is_file()
-                for d in skills_dir.iterdir()
-                if d.is_dir()
-            )
-        except OSError:
-            already_populated = False
-        if already_populated:
-            return
-
     skills_dir.mkdir(parents=True, exist_ok=True)
 
     source = _find_sibling_skills_dir(exclude_id=paths.id)
@@ -566,19 +573,18 @@ def seed_project_skills(paths: ProjectPaths, *, allow_remote: bool = True) -> No
                 print(f"  warning: failed to copy skill {child.name}: {exc}")
         if copied:
             print(f"Seeded {copied} skills for {paths.id} from {source}")
-            return
 
     if not allow_remote:
-        # Caller is on a latency-sensitive path (e.g. POST /projects). Leave
-        # the empty skills/ directory in place; the background bootstrap or
-        # a later /sandbox/init will fill it in.
         return
 
-    # No sibling catalogue to copy from: fall back to GitHub.
-    from .utils import download_scientific_skills
+    from .utils import download_scientific_skills, sync_missing_scientific_skills
 
     try:
-        download_scientific_skills(target_dir=str(skills_dir))
+        installed = _count_project_skills(skills_dir)
+        if installed == 0:
+            download_scientific_skills(target_dir=str(skills_dir))
+        elif installed < _MIN_SCIENTIFIC_SKILL_COUNT:
+            sync_missing_scientific_skills(target_dir=str(skills_dir))
     except Exception as exc:
         print(f"  warning: skill download failed for {paths.id}: {exc}")
 
