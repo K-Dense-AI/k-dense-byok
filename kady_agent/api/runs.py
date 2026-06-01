@@ -165,7 +165,10 @@ def list_skills():
             match = _FRONTMATTER_RE.match(text)
             if not match:
                 continue
-            meta = yaml.safe_load(match.group(1)) or {}
+            try:
+                meta = yaml.safe_load(match.group(1)) or {}
+            except yaml.YAMLError:
+                meta = {}
             skills.append({
                 "id": child.name,
                 "name": meta.get("name", child.name),

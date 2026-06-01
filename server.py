@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from fastapi import Request
 
 from google.adk.auth.credential_service.in_memory_credential_service import (
@@ -68,8 +70,28 @@ _adk_web_server = AdkWebServer(
     auto_create_session=True,
 )
 
+# Allow any local dev UI port (Next.js picks 3001, 3002, … when 3000 is taken).
+# ADK accepts ``regex:``-prefixed entries; see ``_parse_cors_origins`` in adk_web_server.
+_DEFAULT_CORS_ORIGINS = [
+    "regex:http://localhost:\\d+",
+    "regex:http://127\\.0\\.0\\.1:\\d+",
+    "regex:http://\\[::1\\]:\\d+",
+    # Next.js "Network" URL (e.g. http://10.x.x.x:3001)
+    "regex:http://10\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}:\\d+",
+    "regex:http://192\\.168\\.\\d{1,3}\\.\\d{1,3}:\\d+",
+    "regex:http://172\\.(1[6-9]|2[0-9]|3[0-1])\\.\\d{1,3}\\.\\d{1,3}:\\d+",
+]
+
+
+def _cors_allow_origins() -> list[str]:
+    extra = os.environ.get("KADY_CORS_ORIGINS", "").strip()
+    if not extra:
+        return _DEFAULT_CORS_ORIGINS
+    return [part.strip() for part in extra.split(",") if part.strip()]
+
+
 app = _adk_web_server.get_fast_api_app(
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_allow_origins(),
 )
 
 
