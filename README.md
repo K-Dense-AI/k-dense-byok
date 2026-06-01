@@ -15,8 +15,6 @@ K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you an 
 
 It is built for scientists, analysts, and curious people who want a powerful AI workspace without being locked into a single provider.
 
-[![Watch the video](https://img.youtube.com/vi/BVG50mgw6-4/maxresdefault.jpg)](https://youtu.be/BVG50mgw6-4?si=pbEUdpuQJJfGiKjw)
-
 > **Stay up to date:** Follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), and [YouTube](https://www.youtube.com/@K-Dense-Inc) for release notes, tutorial videos, and workflow demos.
 
 > **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop.
