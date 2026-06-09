@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyAgentEventToMessage, type ChatMessage } from "@/lib/use-agent";
+import { applyFrameToMessage, type ChatMessage } from "@/lib/use-agent";
 
 const baseMessage = (): ChatMessage => ({
   id: "assistant",
@@ -9,79 +9,53 @@ const baseMessage = (): ChatMessage => ({
   timestamp: 1,
 });
 
-describe("applyAgentEventToMessage", () => {
-  it("appends partial text and replaces final text", () => {
-    const partial = applyAgentEventToMessage(
-      baseMessage(),
-      { partial: true, content: { parts: [{ text: "hel" }] } },
-      () => "generated",
-      10
-    );
-
-    expect(partial.content).toBe("hel");
-
-    const final = applyAgentEventToMessage(
-      partial,
-      { partial: false, content: { parts: [{ text: "hello" }] } },
-      () => "generated",
-      11
-    );
-
-    expect(final.content).toBe("hello");
+describe("applyFrameToMessage", () => {
+  it("appends text deltas", () => {
+    let m = applyFrameToMessage(baseMessage(), { type: "text_delta", delta: "hel" }, 10);
+    m = applyFrameToMessage(m, { type: "text_delta", delta: "lo" }, 11);
+    expect(m.content).toBe("hello");
   });
 
-  it("records turn id and model version from event metadata", () => {
-    const next = applyAgentEventToMessage(
-      baseMessage(),
-      {
-        modelVersion: "openrouter/example",
-        actions: { stateDelta: { _turnId: "turn-123" } },
-      },
-      () => "generated",
-      10
-    );
-
-    expect(next.modelVersion).toBe("openrouter/example");
-    expect(next.turnId).toBe("turn-123");
+  it("accumulates thinking deltas separately", () => {
+    const m = applyFrameToMessage(baseMessage(), { type: "thinking_delta", delta: "hmm" }, 10);
+    expect(m.reasoning).toBe("hmm");
+    expect(m.content).toBe("");
   });
 
-  it("pairs tool responses with running tool calls", () => {
-    const running = applyAgentEventToMessage(
+  it("tracks a tool call from start to completion", () => {
+    const running = applyFrameToMessage(
       baseMessage(),
-      {
-        content: {
-          parts: [{ functionCall: { id: "tool-1", name: "delegate_task" } }],
-        },
-      },
-      () => "generated",
-      10
+      { type: "tool_start", toolCallId: "t1", toolName: "bash" },
+      10,
     );
+    expect(running.activities).toHaveLength(1);
+    expect(running.activities?.[0]).toMatchObject({ id: "t1", status: "running" });
 
-    const complete = applyAgentEventToMessage(
+    const done = applyFrameToMessage(
       running,
-      {
-        content: {
-          parts: [
-            {
-              functionResponse: {
-                id: "tool-1",
-                name: "delegate_task",
-                response: { result: "done", skills_used: ["analysis"] },
-              },
-            },
-          ],
-        },
-      },
-      () => "generated",
-      20
+      { type: "tool_end", toolCallId: "t1", toolName: "bash", isError: false },
+      20,
     );
+    expect(done.activities?.[0]).toMatchObject({ id: "t1", status: "complete" });
+  });
 
-    expect(complete.activities).toHaveLength(1);
-    expect(complete.activities?.[0]).toMatchObject({
-      id: "tool-1",
-      label: "Specialist finished",
-      status: "complete",
-      detail: "Used 'analysis' skills",
-    });
+  it("labels the subagent tool specially and marks errors", () => {
+    const running = applyFrameToMessage(
+      baseMessage(),
+      { type: "tool_start", toolCallId: "s1", toolName: "spawn_subagent" },
+      10,
+    );
+    expect(running.activities?.[0].label).toBe("Spawning a subagent");
+    const errored = applyFrameToMessage(
+      running,
+      { type: "tool_end", toolCallId: "s1", toolName: "spawn_subagent", isError: true },
+      20,
+    );
+    expect(errored.activities?.[0].status).toBe("error");
+  });
+
+  it("surfaces an error frame into content when empty", () => {
+    const m = applyFrameToMessage(baseMessage(), { type: "error", message: "boom" }, 10);
+    expect(m.content).toContain("boom");
   });
 });

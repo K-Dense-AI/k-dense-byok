@@ -4,91 +4,80 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-K-Dense BYOK is a local AI research-assistant app ("Kady") that brings the user's own API keys. It is one repo with three runtime services started together by `./start.sh`:
+K-Dense BYOK is a local AI research-assistant app ("Kady") that brings the user's own API keys. It is one repo with **two** runtime services started together by `./start.sh`:
 
 | Service | Port | Code |
 |---|---|---|
 | Frontend (Next.js 16 / React 19) | 3000 | `web/` |
-| Backend (FastAPI + Google ADK agent) | 8000 | `server.py`, `kady_agent/` |
-| LiteLLM proxy (routes LLM calls) | 4000 | `litellm_config.yaml`, `litellm_callbacks.py` |
+| Backend (TypeScript + Pi coding-agent SDK) | 8000 | `server/` |
 
-Everything runs locally; user data lives in `projects/` and the Python venv in `.venv/`.
+The backend embeds the **Pi SDK** (`@earendil-works/pi-coding-agent`) and runs a **single flat agent** with built-in tools (`read`/`bash`/`edit`/`write`/`grep`/`find`/`ls`) plus a custom `spawn_subagent` tool for parallel/heavy subtasks. There is no orchestrator/expert split, no Gemini CLI, and no LiteLLM proxy (all removed in the Pi migration). Models go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local). Everything runs locally; user data lives in `projects/`.
 
 ## Commands
 
-Backend / agent (Python, uv-managed, requires Python ≥ 3.13):
+Backend (`cd server` first; Node ≥ 22.19 recommended):
 
 ```bash
-uv sync                              # install / refresh deps
-uv run pytest                        # run all backend tests (matches CI)
-uv run pytest tests/test_agent_callbacks.py::test_name -v    # single test
-uv run pytest -m integration         # run only the FastAPI/multi-module integration tests
-uv run pytest --cov                  # coverage report (fails under 70%)
-uv run python prep_sandbox.py        # init/refresh the project sandbox (skills download)
+npm install                 # install deps
+npm run dev                 # tsx watch on port 8000
+npm run start               # run backend (tsx)
+npm run prep                # ensure default project + seed scientific skills
+npm run typecheck           # tsc --noEmit
+npm test                    # vitest
 ```
 
 Frontend (`cd web` first):
 
 ```bash
 npm install
-npm run dev                          # Next.js dev server (port 3000)
-npm run build                        # production build
-npm run lint                         # eslint
-npm run test                         # vitest run
-npm run test:watch                   # vitest watch mode
+npm run dev                 # Next.js dev server (port 3000)
+npm run build               # production build
+npm run test                # vitest
 ```
 
-Full app (all three services together):
+Full app (both services):
 
 ```bash
-./start.sh                           # bootstraps deps, starts litellm + backend + frontend
+./start.sh                  # installs deps, seeds skills, starts backend + frontend
 ```
-
-`start.sh` runs `uvicorn` with `--reload-dir kady_agent` only — **edits to `server.py` require restarting `start.sh` manually**, but edits inside `kady_agent/` hot-reload. The reload watcher is intentionally scoped this way so that writes inside `projects/<project>/sandbox/` (made by the Gemini CLI subprocess during `delegate_task`) do not bounce uvicorn mid-stream.
 
 ## Architecture: how a turn flows
 
-1. **UI → backend.** A chat tab posts to the ADK web server inside `server.py`. Each tab carries its own `sessionId`; up to 10 tabs share the same project sandbox.
-2. **Project session service.** `kady_agent/project_session_service.py` overrides ADK's default in-memory session store so messages persist to `projects/<project>/sessions.db` (one row per chat tab).
-3. **Orchestrator (Kady).** `kady_agent/agent.py` builds the `LlmAgent` (`root_agent`) using `LiteLlm` pointed at the LiteLLM proxy. Instructions come from `kady_agent/instructions/main_agent.md` plus the skills catalogue (`utils.list_skill_summaries`).
-4. **Per-turn callbacks.** Before each turn `_open_turn_manifest` writes `manifest.json` under `projects/<p>/sandbox/.kady/runs/<sessionId>/<turnId>/` for reproducibility; `_inject_tracking_headers` stamps `X-Kady-*` headers + LiteLLM metadata so the cost callback can correlate streamed responses back to a session/turn/project.
-5. **Delegation.** For heavier work the orchestrator calls the `delegate_task` tool (`kady_agent/tools/gemini_cli.py`), which spawns the Gemini CLI as a subprocess in the project sandbox. The CLI talks to OpenRouter (or local Ollama) **through the same LiteLLM proxy** — workspace `settings.json` is generated from `kady_agent/gemini_settings.py` and only honored when the folder is in `GEMINI_CLI_TRUSTED_FOLDERS_PATH`.
-6. **Cost ledger.** `_OrchestratorCostLogger` (a LiteLLM `CustomLogger`) writes one row per LLM call to `projects/<p>/sandbox/.kady/runs/<sessionId>/costs.jsonl`. For streaming OpenRouter responses cost arrives later, so the logger fires an async backfill that polls `https://openrouter.ai/api/v1/generation?id=<gen_id>` for ~60s and rewrites the row in place via `cost_ledger.update_cost_entry`.
-7. **MCPs.** `kady_agent/mcps.py` builds the orchestrator's MCP toolset (built-in servers in `kady_agent/mcp_servers/` plus per-project entries from `projects/<p>/custom_mcps.json`). OAuth-flow servers are handled by `kady_agent/mcp_oauth.py`; tokens are injected into the workspace settings before each Gemini CLI run via `gemini_settings.refresh_oauth_tokens` + `write_merged_settings`.
-
-## LiteLLM proxy gotchas (`litellm_config.yaml`)
-
-- The repo pins `litellm<=1.82.6` (transitively via `google-adk`). That version has the #24234 regression where the proxy forwards a literal `openrouter/<vendor>/<model>` to OpenRouter and fails. **`litellm_callbacks.py` backports the fix from PR #24282** and is registered via `litellm_settings.callbacks`. Don't drop the import — it patches by side effect.
-- The `openrouter/*` model entry intentionally does NOT merge the `*openrouter_shared` YAML alias. That alias would set `custom_llm_provider: openai`, breaking the prefix-stripping; the wildcard relies on LiteLLM's native `openrouter/` provider instead.
-- `model_group_alias` re-maps Gemini CLI's hard-coded internal model IDs (`gemini-2.5-pro`, `gemini-3-pro-preview`, `*-customtools` suffix from ADK) onto the actual deployments — touch with care.
-- `_cli_can_route` in `tools/gemini_cli.py` enforces the same set: only `gemini-*`, `ollama/*`, `openrouter/*` are passed via `-m`; anything else makes the CLI hang on a 404 from the proxy, so the flag is dropped.
-
-## Testing notes
-
-- `pytest.ini_options` (in `pyproject.toml`) sets `asyncio_mode = "auto"` — async test functions don't need `@pytest.mark.asyncio`.
-- `integration` is a custom marker for end-to-end FastAPI/multi-module tests (e.g. `tests/test_server_integration.py`). They run by default; use `-m "not integration"` to skip.
-- Coverage source is `kady_agent`, `server`, `litellm_callbacks`, `prep_sandbox` (see `tool.coverage.run`); MCP server stubs in `kady_agent/mcp_servers/` are excluded.
-- CI (`.github/workflows/tests.yml`) runs `uv run pytest` on Python 3.13. The frontend has its own vitest suite but is not run in CI.
+1. **UI → backend.** A chat tab posts to the TS backend. Each tab carries its own `sessionId` (a Pi JSONL session); requests are scoped to a project via the `X-Project-Id` header (→ `?project` → `kady-project` cookie → `default`), resolved in an `onRequest` hook using `AsyncLocalStorage` (`server/src/scope.ts`).
+2. **Sessions.** `server/src/agent/session-registry.ts` holds live Pi `AgentSession` objects (one per tab, ≤10 per project) and persists each as a JSONL file under `projects/<id>/sandbox/.pi/sessions/`. `AuthStorage` + `ModelRegistry` are process singletons (shared OpenRouter key).
+3. **Models.** `server/src/agent/models.ts` resolves a model ref (`openrouter/<vendor>/<model>` or `ollama/<name>`) to a Pi `Model`, synthesizing OpenRouter models from `web/src/data/models.json` pricing when not built in.
+4. **Streaming.** `POST /sessions/:id/run` calls `session.prompt()` and streams an SSE schema mapped from Pi's `AgentSessionEvent` (`server/src/agent/events.ts`): `text_delta`, `thinking_delta`, `tool_start/update/end`, `turn_start/end`, `error`, a terminal `cost` frame, and `done`.
+5. **Cost ledger + budgets.** Pi reports `usage.cost` inline (no async backfill). `server/src/cost/ledger.ts` snapshots `getSessionStats()` before/after each run and appends a row to `projects/<id>/sandbox/.kady/runs/<sessionId>/costs.jsonl` (role `agent`|`subagent`). A project `spendLimitUsd` blocks runs once cumulative spend reaches it.
+6. **Skills.** Seeded per-project into `sandbox/.pi/skills/` from `K-Dense-AI/scientific-agent-skills` (`server/src/agent/skills.ts`); Pi's `DefaultResourceLoader` (cwd = sandbox) auto-discovers and the agent activates them. `SKILL.md` frontmatter is unchanged.
+7. **Sandbox API.** `server/src/api/sandbox.ts` ports all file ops (tree/read/write/move/upload/zip/raw/download), annotation sidecars, LaTeX compile, and `.h5ad` previews (the last via a small standalone Python helper, `server/src/helpers/anndata_helper.py` — the only Python left).
 
 ## Project / sandbox layout
 
 ```
 projects/
-├── index.json                        # project registry (names, tags, archived flag)
+├── index.json                        # registry
 └── <projectId>/
-    ├── project.json                  # metadata
-    ├── custom_mcps.json              # per-project MCP servers (UI-edited)
-    ├── sessions.db                   # SQLite, one row per chat tab
-    └── sandbox/                      # files visible to all tabs in the project
-        └── .kady/runs/<sessionId>/
-            ├── costs.jsonl           # cost ledger (one row per LLM call)
-            └── <turnId>/manifest.json   # reproducibility manifest per turn
+    ├── project.json                  # metadata (ProjectMeta)
+    └── sandbox/                       # Pi agent cwd; files visible to all tabs
+        ├── user_data/                # uploads
+        ├── .pi/skills/               # per-project skills (Pi-discovered)
+        ├── .pi/sessions/             # Pi JSONL session files (one per tab)
+        └── .kady/runs/<sessionId>/costs.jsonl   # cost ledger
 ```
 
-Project state in `kady_agent/projects.py` is the source of truth for "which project is active"; `active_paths()` / `current_project_id()` are how other modules find the right `sandbox/` and ledger.
+## Configuration
+
+- API keys come from `process.env`, auto-loaded by `server/src/env.ts` from (in order) repo-root `.env`, the legacy `kady_agent/.env` if present, and `server/.env`. Set `OPENROUTER_API_KEY` (required) and optionally `OLLAMA_BASE_URL`, `DEFAULT_MODEL_ID`, `KADY_PORT`, `KADY_PROJECTS_ROOT`.
+- A full credentials Settings UI, MCP servers, Modal compute, provenance/manifests, citation verification, and first-party web search (Exa/Parallel/Paperclip) / document conversion are **deferred** in this migration. Web search etc. will return as native Pi custom tools.
+
+## Testing notes
+
+- Backend tests: `cd server && npm test` (vitest, in `server/test/`). `KADY_PROJECTS_ROOT` is pointed at a temp dir via `vitest.config.ts`.
+- Frontend tests: `cd web && npm test` (vitest). Strict `tsc` is not a CI gate for the frontend (a pre-existing markdown-components type cast in `web/src/components/ai-elements/message.tsx` is known and unrelated).
 
 ## Caveats worth knowing
 
-- **Expert (delegated) tasks always run via the Gemini CLI**, even when the orchestrator dropdown is set to a non-Gemini model. The exception is Ollama: if the dropdown picks an `ollama/*` model, both orchestrator and expert use Ollama. See `docs/limitations.md` for known rough edges of the Gemini CLI path (skill activation drift, tool-calling fidelity).
-- **Don't bypass the cost-tracking headers.** The whole cost ledger depends on `_inject_tracking_headers` running before every orchestrator LLM call. New code paths that call `litellm.acompletion` directly (instead of going through the ADK `LlmAgent`) need to stamp the same `X-Kady-*` headers + metadata or their cost won't be recorded.
-- **OAuth MCPs need token refresh before delegation.** `gemini_settings.refresh_oauth_tokens` must be called before writing the merged workspace `settings.json`, otherwise the spawned Gemini CLI sees stale tokens.
+- **One flat agent.** No delegation tier. For independent/parallel subtasks the agent calls the `spawn_subagent` tool (`server/src/agent/tools.ts`), which runs a fresh in-memory Pi session in the same sandbox.
+- **OpenRouter cost** is read from Pi's `usage.cost` (computed from `model.cost`). For synthesized OpenRouter models the pricing comes from `web/src/data/models.json`; keep that catalogue current for accurate cost.
+- **Node ≥ 22.19** is what Pi targets; lower 22.x usually works but emits an `EBADENGINE` warning.
+- **Don't run our source through `tsc` for emit** — both dev and prod run via `tsx`; `tsconfig.json` is `noEmit` for typechecking only.

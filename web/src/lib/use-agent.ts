@@ -4,8 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch, onProjectChange } from "@/lib/projects";
 
-const APP_NAME = "kady_agent";
-const USER_ID = "user";
 const MAX_ACTIVITY_ITEMS = 8;
 
 export interface ActivityItem {
@@ -16,9 +14,10 @@ export interface ActivityItem {
   timestamp: number;
 }
 
+// Retained for backwards-compatible imports; citation verification is deferred
+// in the Pi migration and these are no longer populated.
 export type CitationKind = "doi" | "arxiv" | "pubmed" | "url";
 export type CitationStatus = "verified" | "unresolved" | "skipped";
-
 export interface CitationEntry {
   raw: string;
   kind: CitationKind;
@@ -29,7 +28,6 @@ export interface CitationEntry {
   resolvedAt?: number | null;
   error?: string | null;
 }
-
 export interface CitationReport {
   total: number;
   verified: number;
@@ -43,205 +41,74 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   activities?: ActivityItem[];
+  reasoning?: string;
   modelVersion?: string;
   timestamp: number;
+  /** Retained for compatibility; no longer populated under the Pi backend. */
   turnId?: string;
   citations?: CitationReport;
 }
 
 type Status = "ready" | "submitted" | "streaming" | "error";
 
-type ToolCallPart = {
-  id?: string;
-  name?: string;
-  args?: Record<string, unknown>;
-};
-
-type ToolResponsePart = {
-  id?: string;
-  name?: string;
-  response?: Record<string, unknown>;
-};
-
-type AgentEvent = {
-  error?: unknown;
-  modelVersion?: string;
-  partial?: boolean;
-  actions?: {
-    stateDelta?: Record<string, unknown>;
-    state_delta?: Record<string, unknown>;
-  };
-  content?: {
-    parts?: Array<{
-      functionCall?: ToolCallPart;
-      functionResponse?: ToolResponsePart;
-      text?: string;
-    }>;
-  };
-};
-
-const truncateText = (value: unknown, max = 120) => {
-  if (typeof value !== "string") return undefined;
-  const compact = value.replace(/\s+/g, " ").trim();
-  if (!compact) return undefined;
-  return compact.length <= max ? compact : `${compact.slice(0, max - 1)}...`;
-};
+/** A frame from the backend SSE stream (see server/src/agent/events.ts). */
+export interface AgentFrame {
+  type: string;
+  delta?: string;
+  toolName?: string;
+  toolCallId?: string;
+  isError?: boolean;
+  message?: string;
+  [k: string]: unknown;
+}
 
 const humanizeToolName = (name: string) => name.replace(/_/g, " ");
 
-const formatToolCall = (tool: ToolCallPart) => {
-  const name = tool.name ?? "tool";
-  const prompt = truncateText(tool.args?.prompt);
-
-  if (name === "delegate_task") {
-    return {
-      detail: prompt,
-      label: "Delegating to a specialist",
-    };
-  }
-
-  return {
-    detail: prompt,
-    label: `Running ${humanizeToolName(name)}`,
-  };
-};
-
-const formatSkillsList = (skills: unknown): string | undefined => {
-  if (!Array.isArray(skills) || skills.length === 0) return undefined;
-  const names = skills.filter((s): s is string => typeof s === "string");
-  if (names.length === 0) return undefined;
-  return names.map((s) => `'${s}'`).join(", ");
-};
-
-const formatToolResponse = (tool: ToolResponsePart) => {
-  const name = tool.name ?? "tool";
-  const result =
-    truncateText(tool.response?.result) ??
-    truncateText(tool.response?.message) ??
-    truncateText(tool.response?.error);
-  const status = tool.response?.error ? "error" : "complete";
-
-  if (name === "delegate_task") {
-    const skills = formatSkillsList(tool.response?.skills_used);
-    return {
-      detail: skills ? `Used ${skills} skills` : result,
-      label: "Specialist finished",
-      status,
-    } as const;
-  }
-
-  return {
-    detail: result,
-    label: `Finished ${humanizeToolName(name)}`,
-    status,
-  } as const;
-};
-
-export function applyAgentEventToMessage(
+/** Apply one SSE frame to the in-progress assistant message. */
+export function applyFrameToMessage(
   message: ChatMessage,
-  event: AgentEvent,
-  nextActivityId: () => string,
-  now = Date.now()
+  frame: AgentFrame,
+  now = Date.now(),
 ): ChatMessage {
-  let next = message;
-  if (event.error) {
-    next = { ...next, content: `Error: ${event.error}` };
-  }
-
-  if (event.modelVersion) {
-    next = { ...next, modelVersion: event.modelVersion };
-  }
-
-  const stateDelta = event.actions?.stateDelta ?? event.actions?.state_delta;
-  if (stateDelta && typeof stateDelta === "object") {
-    const nextTurnId = stateDelta._turnId;
-    if (typeof nextTurnId === "string") {
-      next = { ...next, turnId: nextTurnId };
-    }
-  }
-
-  const parts = event.content?.parts;
-  if (!parts) return next;
-
-  for (const part of parts) {
-    if (part.functionCall) {
-      const tool = part.functionCall;
-      const activity = formatToolCall(tool);
-      const key = String(tool.id ?? tool.name ?? nextActivityId());
-      const activities = next.activities ?? [];
-      if (
-        activities.some(
-          (existing) => existing.id === key && existing.status === "running"
-        )
-      ) {
-        continue;
-      }
-      next = {
-        ...next,
+  switch (frame.type) {
+    case "text_delta":
+      return { ...message, content: message.content + (frame.delta ?? "") };
+    case "thinking_delta":
+      return { ...message, reasoning: (message.reasoning ?? "") + (frame.delta ?? "") };
+    case "tool_start": {
+      const id = String(frame.toolCallId ?? frame.toolName ?? now);
+      const label =
+        frame.toolName === "spawn_subagent"
+          ? "Spawning a subagent"
+          : `Running ${humanizeToolName(String(frame.toolName ?? "tool"))}`;
+      const activities = message.activities ?? [];
+      if (activities.some((a) => a.id === id && a.status === "running")) return message;
+      return {
+        ...message,
         activities: [
           ...activities,
-          {
-            detail: activity.detail,
-            id: key,
-            label: activity.label,
-            status: "running" as const,
-            timestamp: now,
-          },
+          { id, label, status: "running" as const, timestamp: now },
         ].slice(-MAX_ACTIVITY_ITEMS),
       };
-      continue;
     }
-
-    if (part.functionResponse) {
-      const tool = part.functionResponse;
-      const activity = formatToolResponse(tool);
-      const key = String(tool.id ?? tool.name ?? nextActivityId());
-      const activities = next.activities ?? [];
-      const existingIndex = activities.findIndex(
-        (existing) =>
-          existing.id === key ||
-          (tool.name &&
-            existing.status === "running" &&
-            existing.label.toLowerCase().includes(humanizeToolName(tool.name)))
-      );
-
-      if (existingIndex === -1) {
-        next = {
-          ...next,
-          activities: [
-            ...activities,
-            {
-              detail: activity.detail,
-              id: key,
-              label: activity.label,
-              status: activity.status as ActivityItem["status"],
-              timestamp: now,
-            },
-          ].slice(-MAX_ACTIVITY_ITEMS),
-        };
-        continue;
-      }
-
-      const nextActivities = [...activities];
-      nextActivities[existingIndex] = {
-        ...nextActivities[existingIndex],
-        detail: activity.detail ?? nextActivities[existingIndex].detail,
-        label: activity.label,
-        status: activity.status,
+    case "tool_end": {
+      const id = String(frame.toolCallId ?? frame.toolName ?? now);
+      const activities = message.activities ?? [];
+      const idx = activities.findIndex((a) => a.id === id);
+      const status: ActivityItem["status"] = frame.isError ? "error" : "complete";
+      if (idx === -1) return message;
+      const next = [...activities];
+      next[idx] = { ...next[idx], status };
+      return { ...message, activities: next };
+    }
+    case "error":
+      return {
+        ...message,
+        content: message.content || `Error: ${frame.message ?? "request failed"}`,
       };
-      next = { ...next, activities: nextActivities };
-      continue;
-    }
-
-    if (part.text) {
-      next = {
-        ...next,
-        content: event.partial ? next.content + part.text : part.text,
-      };
-    }
+    default:
+      return message;
   }
-
-  return next;
 }
 
 export function useAgent() {
@@ -255,11 +122,10 @@ export function useAgent() {
 
   const ensureSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
-
-    const res = await apiFetch(
-      `/apps/${APP_NAME}/users/${USER_ID}/sessions`,
-      { method: "POST", headers: { "Content-Type": "application/json" } }
-    );
+    const res = await apiFetch(`/sessions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
     if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
     const session = await res.json();
     sessionIdRef.current = session.id;
@@ -267,22 +133,18 @@ export function useAgent() {
   }, []);
 
   const send = useCallback(
-    async (
-      text: string,
-      model?: string,
-      meta?: {
-        expertModel?: string;
-        attachments?: string[];
-        skills?: string[];
-        databases?: string[];
-        compute?: string | null;
-      }
-    ): Promise<string | undefined> => {
+    // The optional third arg (expert model / attachments / skills / databases /
+    // compute) is accepted for call-site compatibility but no longer used: the
+    // Pi backend runs a single flat agent. Skill/database hints are still
+    // injected into the prompt text by the caller.
+    async (text: string, model?: string, _legacyMeta?: unknown): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
 
       const userMsgId = nextId();
-      const userMsg: ChatMessage = { id: userMsgId, role: "user", content: text, timestamp: Date.now() };
-      setMessages((prev) => [...prev, userMsg]);
+      setMessages((prev) => [
+        ...prev,
+        { id: userMsgId, role: "user", content: text, timestamp: Date.now() },
+      ]);
       setStatus("submitted");
 
       const assistantId = nextId();
@@ -291,213 +153,80 @@ export function useAgent() {
         { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
       ]);
 
+      const updateAssistant = (updater: (m: ChatMessage) => ChatMessage) => {
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? updater(m) : m)),
+        );
+      };
+
       try {
         const sessionId = await ensureSession();
         const controller = new AbortController();
         abortRef.current = controller;
-        const updateAssistant = (
-          updater: (message: ChatMessage) => ChatMessage
-        ) => {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId ? updater(message) : message
-            )
-          );
-        };
 
-        const stateDelta: Record<string, unknown> = {};
-        if (model) stateDelta._model = model;
-        if (meta?.expertModel) stateDelta._expertModel = meta.expertModel;
-        if (meta?.attachments?.length) stateDelta._attachments = meta.attachments;
-        if (meta?.skills?.length) stateDelta._skills = meta.skills;
-        if (meta?.databases?.length) stateDelta._databases = meta.databases;
-        if (meta?.compute) stateDelta._compute = meta.compute;
-
-        const res = await apiFetch(`/run_sse`, {
+        const res = await apiFetch(`/sessions/${sessionId}/run`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            appName: APP_NAME,
-            userId: USER_ID,
-            sessionId,
-            newMessage: {
-              role: "user",
-              parts: [{ text }],
-            },
-            streaming: true,
-            ...(Object.keys(stateDelta).length > 0 ? { state_delta: stateDelta } : {}),
-          }),
+          body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
           signal: controller.signal,
         });
-
-        if (!res.ok) throw new Error(`SSE request failed: ${res.status}`);
+        if (!res.ok) throw new Error(`run failed: ${res.status}`);
         setStatus("streaming");
 
         const reader = res.body?.getReader();
         if (!reader) throw new Error("No response body");
-
         const decoder = new TextDecoder();
         let buffer = "";
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split("\n");
           buffer = lines.pop() ?? "";
-
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
             const jsonStr = line.slice(6).trim();
             if (!jsonStr) continue;
-
             try {
-              const event = JSON.parse(jsonStr);
-
-              updateAssistant((message) =>
-                applyAgentEventToMessage(message, event, nextId)
-              );
+              const frame = JSON.parse(jsonStr) as AgentFrame;
+              updateAssistant((m) => applyFrameToMessage(m, frame));
             } catch {
-              // skip malformed JSON lines
+              /* skip malformed line */
             }
           }
         }
 
-        updateAssistant((message) => ({
-          ...message,
-          activities: (message.activities ?? []).map((activity) =>
-            activity.status === "running"
-              ? { ...activity, status: "complete" }
-              : activity
+        updateAssistant((m) => ({
+          ...m,
+          activities: (m.activities ?? []).map((a) =>
+            a.status === "running" ? { ...a, status: "complete" } : a,
           ),
         }));
         setStatus("ready");
-
-        // Fire-and-forget deterministic citation verification on the final
-        // assistant text plus any deliverable files the expert produced.
-        // The badge hydrates asynchronously; unresolved citations reveal
-        // themselves in the popover.
-        void (async () => {
-          const finalMessage = await new Promise<ChatMessage | undefined>(
-            (resolve) =>
-              setMessages((prev) => {
-                resolve(prev.find((m) => m.id === assistantId));
-                return prev;
-              })
-          );
-          const text = finalMessage?.content ?? "";
-          const turnId = finalMessage?.turnId;
-          if (!text.trim()) return;
-
-          updateAssistant((message) => ({
-            ...message,
-            citations: {
-              total: 0,
-              verified: 0,
-              unresolved: 0,
-              entries: [],
-              loading: true,
-            },
-          }));
-
-          let deliverables: string[] = [];
-          if (turnId && sessionIdRef.current) {
-            try {
-              const mResp = await apiFetch(
-                `/turns/${sessionIdRef.current}/${turnId}/manifest`
-              );
-              if (mResp.ok) {
-                const manifest = await mResp.json();
-                if (Array.isArray(manifest?.output?.deliverables)) {
-                  deliverables = manifest.output.deliverables;
-                }
-              }
-            } catch {
-              // best-effort
-            }
-          }
-
-          try {
-            const resp = await apiFetch(`/verify-citations`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ text, files: deliverables }),
-            });
-            if (!resp.ok) throw new Error(`verify-citations ${resp.status}`);
-            const report = (await resp.json()) as CitationReport;
-            updateAssistant((message) => ({
-              ...message,
-              citations: { ...report, loading: false },
-            }));
-
-            if (turnId && sessionIdRef.current) {
-              void apiFetch(
-                `/turns/${sessionIdRef.current}/${turnId}/citations`,
-                {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    total: report.total,
-                    verified: report.verified,
-                    unresolved: report.unresolved,
-                  }),
-                }
-              ).catch(() => {});
-            }
-          } catch {
-            updateAssistant((message) => ({
-              ...message,
-              citations: undefined,
-            }));
-          }
-        })();
       } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === "AbortError") {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? {
-                    ...message,
-                    activities: (message.activities ?? []).map((activity) =>
-                      activity.status === "running"
-                        ? { ...activity, status: "error" }
-                        : activity
-                    ),
-                  }
-                : message
-            )
-          );
-          setStatus("ready");
-          return;
-        }
-        setStatus("error");
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId
-              ? {
-                  ...m,
-                  activities: (m.activities ?? []).map((activity) =>
-                    activity.status === "running"
-                      ? { ...activity, status: "error" }
-                      : activity
-                  ),
-                  content: "Something went wrong. Please try again.",
-                }
-              : m
-          )
-        );
+        const aborted = err instanceof DOMException && err.name === "AbortError";
+        updateAssistant((m) => ({
+          ...m,
+          content: aborted ? m.content : m.content || "Something went wrong. Please try again.",
+          activities: (m.activities ?? []).map((a) =>
+            a.status === "running" ? { ...a, status: aborted ? "complete" : "error" } : a,
+          ),
+        }));
+        setStatus(aborted ? "ready" : "error");
       } finally {
         abortRef.current = null;
       }
 
       return userMsgId;
     },
-    [status, ensureSession]
+    [status, ensureSession],
   );
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
+    const id = sessionIdRef.current;
+    if (id) void apiFetch(`/sessions/${id}/abort`, { method: "POST" }).catch(() => {});
     setStatus("ready");
   }, []);
 
@@ -508,8 +237,6 @@ export function useAgent() {
     sessionIdRef.current = null;
   }, []);
 
-  // Switching projects must drop the current ADK session (it lives in a
-  // different per-project SQLite DB) and start fresh.
   useEffect(() => onProjectChange(() => reset()), [reset]);
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);

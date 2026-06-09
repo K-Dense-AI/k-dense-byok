@@ -4,22 +4,23 @@ This page explains how K-Dense BYOK runs on your computer. You do not need to re
 
 ![K-Dense BYOK Architecture](k-dense-byok-architecture.png)
 
-## The three services
+## The two services
 
-The `start.sh` script launches three local services that work together:
+The `start.sh` script launches two local services that work together:
 
 | Service | Port | What it does |
 |---------|------|--------------|
-| **Frontend** | 3000 | The web interface in your browser - chat, file browser, and file previews |
-| **Backend** | 8000 | The "brain" - runs Kady, coordinates expert agents, manages your sandbox and files |
-| **LiteLLM proxy** | 4000 | A translator that routes AI requests to the model you picked (via OpenRouter, Ollama, etc.) |
+| **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
+| **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
+
+The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `spawn_subagent` tool. Model calls go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local) — there is no separate proxy.
 
 When you send a message:
 
-1. The frontend passes it to the backend, tagged with the project id and the chat tab's session id.
-2. Kady (on the backend) decides whether to answer directly or delegate to an expert agent.
-3. Any AI calls go through the LiteLLM proxy to the correct provider.
-4. Responses stream back to your browser in real time.
+1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
+2. The backend runs the Pi agent for that session; the agent uses its tools and may spawn subagents.
+3. Model calls go straight to OpenRouter or Ollama.
+4. Events (text, tool calls, cost) stream back to your browser over SSE in real time.
 
 ## Chat tabs and sessions
 
@@ -31,8 +32,8 @@ project.
 
 What a tab owns (per-tab):
 
-- Message history (one session row in `projects/<project>/sessions.db`).
-- Selected orchestrator and expert models.
+- Message history (a Pi JSONL session file under `projects/<project>/sandbox/.pi/sessions/`).
+- The selected model.
 - Attached files for the next message and the queued-message buffer.
 - Cost ledger (`projects/<project>/sandbox/.kady/runs/<sessionId>/costs.jsonl`).
 - The streaming connection — closing a tab aborts the in-flight turn for
@@ -57,43 +58,42 @@ tab.
 
 The first time you run `./start.sh`, it will automatically:
 
-- Create a Python virtual environment in `.venv/`
-- Install all Python dependencies
-- Install Node.js dependencies for the frontend
-- Install the Gemini CLI
-- Download the scientific skills catalogue
-- Run `uvx browser-use install` once to download a headless Chromium (used for browser automation)
+- Install backend dependencies (`server/`) and frontend dependencies (`web/`)
+- Download the scientific skills catalogue into each project's `sandbox/.pi/skills/`
 
-Subsequent starts skip these steps via marker files and are much faster.
+Subsequent starts are much faster.
 
 ## Project layout
 
 ```
 k-dense-byok/
 ├── start.sh              ← The one script that starts everything
-├── server.py             ← Backend server
-├── kady_agent/           ← Kady's brain: instructions, tools, and config
-│   ├── env.example       ← Template for your API keys (copy to .env)
-│   ├── .env              ← Your API keys (created from env.example)
-│   ├── agent.py          ← Main agent definition
-│   └── tools/            ← Tools Kady can use (web search, delegation, etc.)
+├── .env                  ← Your API keys (copy from .env.example; gitignored)
+├── server/               ← Backend (TypeScript, Pi SDK)
+│   └── src/
+│       ├── index.ts          ← Fastify app, CORS, project-scope hook
+│       ├── projects.ts       ← Project registry + path resolution
+│       ├── agent/            ← Pi wiring: models, sessions, tools, events, skills
+│       ├── api/              ← Routes: projects, sessions (SSE), sandbox, system
+│       └── cost/ledger.ts    ← Cost ledger + budget caps
 ├── web/                  ← Frontend (the UI you see in your browser)
 ├── docs/                 ← Extended documentation (this folder)
 └── projects/             ← All user work, one subdirectory per named project
     ├── index.json        ← Project registry (names, tags, archived flag)
     └── default/          ← The "Default" project
         ├── project.json      ← Project metadata
-        ├── sandbox/          ← Workspace for files and expert tasks
-        │   └── .kady/
-        │       └── runs/<sessionId>/  ← Per-tab cost ledger and turn artifacts
-        ├── custom_mcps.json  ← Per-project custom MCP servers
-        └── sessions.db       ← Chat history (SQLite, one session per chat tab)
+        └── sandbox/          ← Workspace (the Pi agent's cwd)
+            ├── .pi/skills/        ← Per-project scientific skills
+            ├── .pi/sessions/      ← Pi JSONL session files (one per chat tab)
+            └── .kady/runs/<sessionId>/costs.jsonl  ← Per-session cost ledger
 ```
 
 ## Model selection and routing
 
-Kady keeps separate model choices for the orchestrator (the main agent) and the delegated expert in each chat tab. Both OpenRouter-hosted choices are routed through the local LiteLLM proxy, which accepts the `openrouter/*` model ids shown in the picker.
-
-The expert still runs inside the **Gemini CLI** process, but K-Dense routes that CLI through the same LiteLLM proxy, so it can target any OpenRouter model in the picker that supports tool calling. The recommended expert default is Gemini 3.5 Flash because it has strong native tool use, coding performance, and a large context window, but users can override it per tab.
-
-Local Ollama models are the main exception - if you pick an Ollama model, both Kady and the expert run through your local daemon. See [Local models with Ollama](./local-models-ollama.md) and [Model selection](./model-selection.md).
+Each chat tab picks one model. Model refs from the picker look like
+`openrouter/<vendor>/<model>` or `ollama/<name>`. The backend resolves these to
+Pi `Model` objects (`server/src/agent/models.ts`): OpenRouter is a built-in Pi
+provider (key from `OPENROUTER_API_KEY`), and Ollama points at your local daemon
+(`OLLAMA_BASE_URL`). There is no proxy — Pi calls the provider directly. See
+[Local models with Ollama](./local-models-ollama.md) and
+[Model selection](./model-selection.md).

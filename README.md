@@ -11,7 +11,7 @@
 
 **Your own AI research assistant, running on your computer, powered by your API keys.**
 
-K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you an AI research assistant called **Kady**. Ask Kady a question or give it a task, and it figures out the best way to handle it - sometimes answering directly, sometimes spinning up specialized AI "experts" that work behind the scenes to get you a thorough result.
+K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you an AI research assistant called **Kady**. Ask Kady a question or give it a task, and it works in a full coding/research environment - reading and writing files, running code, and spinning up subagents for heavy or parallel work - to get you a thorough result. Kady is powered by the [Pi coding-agent SDK](https://pi.dev).
 
 It is built for scientists, analysts, and curious people who want a powerful AI workspace without being locked into a single provider.
 
@@ -21,20 +21,19 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 
 ## What can it do?
 
-- **Answer questions and take on tasks.** Chat with Kady like any AI assistant. For bigger work, Kady delegates to a specialist "expert" agent that runs with a full Python environment and scientific tools.
+- **Answer questions and take on tasks.** Chat with Kady like any AI assistant. For bigger work, Kady uses its file and shell tools directly - and can spawn subagents for independent or parallel subtasks - in a full working environment.
 - **Run up to 10 chats in parallel.** Open a new tab for each thread of work — every tab keeps its own message history, model, attached files, and cost meter, but all tabs share the project's sandbox so files written in one tab are immediately available in the others. Tabs keep streaming in the background while you switch between them.
-- **Pick any tool-capable AI model, any time.** Choose from the full set of OpenRouter models that support tool calling (OpenAI, Anthropic, Google, xAI, Qwen, and more) with a simple dropdown. Switch the orchestrator and expert models per chat tab. You can also use free local models through [Ollama](./docs/local-models-ollama.md).
-- **140+ scientific skills, pre-installed.** Covers genomics, proteomics, drug discovery, materials science, and more. Kady passes the right skills to the expert automatically for each task.
+- **Pick any tool-capable AI model, any time.** Choose from the full set of OpenRouter models that support tool calling (OpenAI, Anthropic, Google, xAI, Qwen, and more) with a simple dropdown, per chat tab. You can also use free local models through [Ollama](./docs/local-models-ollama.md).
+- **140+ scientific skills, pre-installed.** Covers genomics, proteomics, drug discovery, materials science, and more. Kady activates the right skills automatically for each task.
 - **326 ready-to-run workflow templates.** Browse a built-in library across 22 disciplines - genomics, drug discovery, finance, astrophysics, and more. Pick one, fill in the blanks, and launch.
 - **229 scientific and financial databases.** Connect to databases in 18 categories - Biomedical & Health, Chemistry & Materials, Scholarly Publications, Stock Market, Earth & Climate, Astronomy & Space, and more.
 - **Organise your work in projects.** Each project has its own files, chat history, and settings. Upload files, browse folders, preview documents, and download results - all from inside the app.
 - **Rich file previews.** Built-in viewers for code, Markdown (with math and diagrams), CSVs, PDFs, images, Jupyter notebooks, and bioinformatics formats (FASTA, FASTQ, VCF, BED, GFF, SAM, BCF).
 - **LaTeX editor.** Split-pane editor with live PDF compilation (pdfLaTeX, XeLaTeX, LuaLaTeX).
-- **Web search, literature search, and document conversion.** Kady can search the web (via [Exa](https://exa.ai/) or [Parallel](https://parallel.ai/)), query biomedical literature, regulatory documents, and clinical trials (via [Paperclip](https://paperclip.gxl.ai/) when configured), and convert documents between formats (PDF, DOCX, HTML, etc.) with no extra setup.
 - **Voice input, drag-and-drop attachments, `@` file mentions,** and a **message queue** for batching up to 5 messages while the agent is working.
-- **Publication-ready provenance.** A timeline of every step in your session, plus a one-click "Copy as Methods" button that exports a paragraph ready to paste into a paper.
-- **Optional remote compute.** Plug in [Modal](https://modal.com/) to run heavy jobs on cloud GPUs (T4, L4, A10G, A100, H100) or serverless CPUs - selected right from the input bar.
-- **Extensible.** Add your own [MCP](https://modelcontextprotocol.io/) servers to give experts access to custom tools. Enable browser automation to let Kady drive a real browser.
+- **Cost & budget tracking.** Per-session and per-project cost meters, plus an optional hard spend cap per project.
+
+> Web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), custom MCP servers, browser automation, and the provenance/"Copy as Methods" export are being re-added as native Pi tools in upcoming releases.
 
 ## What you'll need before starting
 
@@ -62,9 +61,9 @@ cd k-dense-byok
 
 ### Step 2 - Add your API keys
 
-Inside the `kady_agent` folder you'll find a file called `env.example`. Make a copy and rename the copy to `.env` (note the dot at the start). Open `.env` in any text editor and paste your **OpenRouter API key** on the first line - that's the only key you need to get started.
+In the project's top folder you'll find a file called `.env.example`. Make a copy and rename it to `.env` (note the dot at the start). Open `.env` in any text editor and paste your **OpenRouter API key** - that's the only key you need to get started.
 
-The file also has sections for other optional keys (Exa or Parallel for web search, Paperclip for literature and clinical trials, Modal for remote compute, and many scientific and government database keys). Leave blank anything you don't need.
+Optionally set `OLLAMA_BASE_URL` to use local models. (Other integrations such as web search and document conversion are being re-added as native tools in a later release.)
 
 ### Step 3 - Start the app
 
@@ -72,7 +71,7 @@ The file also has sections for other optional keys (Exa or Parallel for web sear
 ./start.sh
 ```
 
-The first time you run this, it will automatically install Python packages, Node.js, the Gemini CLI, and the scientific skills. This may take a few minutes. Future starts are much faster.
+The first time you run this, it will automatically install the backend and frontend packages and the scientific skills. This may take a few minutes. Future starts are much faster. (You'll need Node.js ≥ 22.19 installed.)
 
 Once everything is running, your browser will open to **[http://localhost:3000](http://localhost:3000)**. That's the app.
 
@@ -82,36 +81,32 @@ Press **Ctrl+C** in the terminal.
 
 ## Using the app day to day
 
-- **Send a message.** Type a question or task and hit enter. Kady will either answer directly or hand off to an expert for bigger work.
+- **Send a message.** Type a question or task and hit enter. Kady answers directly, runs tools (read/write files, run code), and can spawn a subagent for heavy or parallel subtasks.
 - **Open multiple chats.** Click `+` in the chat tab strip to start a new chat in the same project (up to 10). Double-click a tab title or use the pencil icon to rename it. Closing a tab cancels any turn it had running. The cost pill in the header shows both the active tab's session cost (`sess`) and the project total across every tab (`proj`).
-- **Switch models.** Use the model dropdown in the input bar - any message can use any supported model. Each tab keeps its own orchestrator and expert model selections.
+- **Switch models.** Use the model dropdown in the input bar - any message can use any tool-capable OpenRouter model, or a local Ollama model.
 - **Upload files.** Drag files into the file browser or directly onto the input bar. Use `@filename` in your message to reference files.
 - **Launch a workflow.** Open the workflows panel, pick one, fill in the blanks, and click Launch. Workflows run in whichever chat tab is currently active.
-- **Open Settings** (the gear icon in the top-right) for API keys, MCP servers, browser automation, and appearance.
-- **Copy as Methods.** When you're done, export a publication-ready Methods paragraph summarising the session.
+- **Open Settings** (the gear icon in the top-right) for API keys and appearance.
 
 ## Learn more
 
 These guides live in the [`docs/`](./docs) folder:
 
-- **[Architecture](./docs/architecture.md)** - how the three local services fit together and what each folder in the project is for.
-- **[Model selection](./docs/model-selection.md)** - how Kady builds the OpenRouter model list and routes orchestrator vs expert calls.
-- **[Custom MCP servers](./docs/custom-mcp-servers.md)** - add your own tools to Kady's expert agents.
-- **[Browser automation](./docs/browser-automation.md)** - let Kady drive a real browser.
+- **[Architecture](./docs/architecture.md)** - how the two local services fit together and what each folder in the project is for.
+- **[Model selection](./docs/model-selection.md)** - how Kady builds the OpenRouter model list.
 - **[Local models with Ollama](./docs/local-models-ollama.md)** - run everything with local models, no API keys required.
 - **[Contributing workflows](./docs/contributing-workflows.md)** - add new workflow templates to the library.
 - **[Known limitations](./docs/limitations.md)** - rough edges to be aware of, especially around the expert system.
 
 ## Features in the works
 
-- Better utilization of skills
-- Choice between Claude Code or Gemini CLI as the delegation expert
+- Re-adding web search, document conversion, custom MCP servers, and remote compute as native Pi tools
+- Provenance / "Copy as Methods" export on top of Pi sessions
+- A full credentials & settings UI
 - Better UI experience tailored to scientific workflows
-- Faster PDF parsing
-- AutoResearch integration
 - And much more
 
-Recently completed: Paperclip MCP for biomedical literature and clinical trials, updated default models (Claude Opus 4.8 orchestrator, Gemini 3.5 Flash expert), tabbed chats (up to 10 parallel sessions per project), Ollama local model support, and MCP server configuration in the UI.
+Recently completed: migrated the backend to the [Pi coding-agent SDK](https://pi.dev) (single flat agent + subagents, replacing the orchestrator/expert/Gemini-CLI/LiteLLM stack), native OpenRouter + Ollama, per-project Pi sessions, and cost/budget tracking from Pi usage.
 
 ## Want more?
 
