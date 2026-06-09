@@ -14,30 +14,25 @@ function makeSummary(overrides: Partial<SessionCostSummary> = {}): SessionCostSu
   return {
     sessionId: "sess",
     totalUsd: 0,
-    orchestratorUsd: 0,
-    expertUsd: 0,
     totalTokens: 0,
-    orchestratorTokens: 0,
-    expertTokens: 0,
+    agentUsd: 0,
+    subagentUsd: 0,
     entries: [],
-    byTurn: {},
     ...overrides,
   };
 }
 
 function makeEntry(overrides: Partial<CostEntry> = {}): CostEntry {
   return {
+    entryId: "e1",
     ts: 1,
     sessionId: "sess",
-    turnId: "t1",
-    role: "orchestrator",
-    delegationId: null,
+    role: "agent",
     model: "openrouter/anthropic/claude-opus",
     promptTokens: 100,
     completionTokens: 50,
     totalTokens: 150,
     cachedTokens: 0,
-    reasoningTokens: 0,
     costUsd: 0.01,
     ...overrides,
   };
@@ -60,14 +55,8 @@ function makeProjectSummary(
   return {
     projectId: "proj",
     totalUsd,
-    orchestratorUsd: 0,
-    expertUsd: 0,
     totalTokens: 0,
-    orchestratorTokens: 0,
-    expertTokens: 0,
     sessionCount: 1,
-    hasPending: false,
-    bySession: {},
     limitUsd,
     budget: {
       totalUsd,
@@ -89,19 +78,8 @@ describe("SessionCostPill", () => {
     const summary = makeSummary({
       totalUsd: 1.234,
       totalTokens: 1500,
+      agentUsd: 1.234,
       entries: [makeEntry({ costUsd: 1.234, totalTokens: 1500 })],
-      byTurn: {
-        t1: {
-          turnId: "t1",
-          totalUsd: 1.234,
-          orchestratorUsd: 1.234,
-          expertUsd: 0,
-          totalTokens: 1500,
-          entries: [makeEntry({ costUsd: 1.234, totalTokens: 1500 })],
-        },
-      },
-      orchestratorUsd: 1.234,
-      orchestratorTokens: 1500,
     });
 
     render(<SessionCostPill summary={summary} />);
@@ -112,6 +90,7 @@ describe("SessionCostPill", () => {
     const summary = makeSummary({
       totalUsd: 0.00123,
       totalTokens: 100,
+      agentUsd: 0.00123,
       entries: [makeEntry({ costUsd: 0.00123, totalTokens: 100 })],
     });
     render(<SessionCostPill summary={summary} />);
@@ -122,6 +101,7 @@ describe("SessionCostPill", () => {
     const project = makeProjectSummary({ totalUsd: 2.5, sessionCount: 3 });
     const session = makeSummary({
       totalUsd: 1.0,
+      agentUsd: 1.0,
       entries: [makeEntry({ costUsd: 1.0, totalTokens: 10 })],
     });
     render(<SessionCostPill summary={session} projectSummary={project} />);
@@ -137,6 +117,7 @@ describe("SessionCostPill", () => {
     const project = makeProjectSummary({ totalUsd: 3.0, limitUsd: 10.0 });
     const session = makeSummary({
       totalUsd: 0.25,
+      agentUsd: 0.25,
       entries: [makeEntry({ costUsd: 0.25, totalTokens: 10 })],
     });
     render(
@@ -163,6 +144,7 @@ describe("SessionCostPill", () => {
     const project = makeProjectSummary({ totalUsd: 8.5, limitUsd: 10.0 });
     const session = makeSummary({
       totalUsd: 0.5,
+      agentUsd: 0.5,
       entries: [makeEntry({ costUsd: 0.5, totalTokens: 10 })],
     });
     render(
@@ -180,6 +162,7 @@ describe("SessionCostPill", () => {
     const project = makeProjectSummary({ totalUsd: 12.0, limitUsd: 10.0 });
     const session = makeSummary({
       totalUsd: 0.5,
+      agentUsd: 0.5,
       entries: [makeEntry({ costUsd: 0.5, totalTokens: 10 })],
     });
     render(

@@ -19,13 +19,19 @@ import { Type } from "typebox";
 
 export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
+export interface SubagentStats {
+  cost: number;
+  tokens: { input: number; output: number; cacheRead: number; total: number };
+}
+
 export interface SubagentDeps {
   cwd: string;
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
-  model: Model<Api>;
-  /** Called with the subagent's cumulative cost so the caller can ledger it. */
-  onCost?: (usd: number) => void;
+  /** Resolved lazily so the subagent uses the parent session's CURRENT model. */
+  getModel: () => Model<Api>;
+  /** Called with the subagent's final usage so the caller can ledger it. */
+  onStats?: (stats: SubagentStats, modelId: string) => void;
 }
 
 export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
@@ -45,9 +51,10 @@ export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
       }),
     }),
     execute: async (_toolCallId, params) => {
+      const model = deps.getModel();
       const { session } = await createAgentSession({
         cwd: deps.cwd,
-        model: deps.model,
+        model,
         authStorage: deps.authStorage,
         modelRegistry: deps.modelRegistry,
         sessionManager: SessionManager.inMemory(deps.cwd),
@@ -57,7 +64,18 @@ export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
         await session.prompt(params.prompt);
         const text = session.getLastAssistantText() ?? "";
         const stats = session.getSessionStats();
-        if (deps.onCost && stats.cost) deps.onCost(stats.cost);
+        deps.onStats?.(
+          {
+            cost: stats.cost,
+            tokens: {
+              input: stats.tokens.input,
+              output: stats.tokens.output,
+              cacheRead: stats.tokens.cacheRead,
+              total: stats.tokens.total,
+            },
+          },
+          model.id,
+        );
         return {
           content: [{ type: "text", text: text || "(subagent returned no text)" }],
           details: { cost: stats.cost, tokens: stats.tokens.total },

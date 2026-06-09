@@ -73,6 +73,34 @@ export function recordRun(args: {
   return entry;
 }
 
+/**
+ * Ledger a subagent's spend against its parent session. The subagent runs in a
+ * separate in-memory Pi session, so its cost is NOT in the parent's stats — we
+ * record it here as a `subagent` row so budgets and totals stay accurate.
+ */
+export function recordSubagentRun(
+  projectId: string,
+  sessionId: string,
+  model: string,
+  stats: { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } },
+): CostEntry | null {
+  if (!sessionId) return null;
+  return recordRun({
+    sessionId,
+    projectId,
+    model,
+    role: "subagent",
+    before: { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 },
+    after: {
+      costUsd: stats.cost,
+      input: stats.tokens.input,
+      output: stats.tokens.output,
+      cacheRead: stats.tokens.cacheRead,
+      total: stats.tokens.total,
+    },
+  });
+}
+
 function readEntries(sessionId: string, projectId?: string): CostEntry[] {
   const file = costsPath(sessionId, projectId);
   try {
@@ -138,8 +166,10 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
   } catch {
     /* no runs yet */
   }
-  const limitUsd = getProject(projectId)?.spendLimitUsd ?? null;
-  const ratio = limitUsd && limitUsd > 0 ? totalUsd / limitUsd : null;
+  // A null or non-positive limit means "unlimited" (0 is not a hard block).
+  const rawLimit = getProject(projectId)?.spendLimitUsd ?? null;
+  const limitUsd = rawLimit !== null && rawLimit > 0 ? rawLimit : null;
+  const ratio = limitUsd ? totalUsd / limitUsd : null;
   let state: BudgetState = "ok";
   if (ratio !== null) state = ratio >= 1 ? "exceeded" : ratio >= 0.8 ? "warn" : "ok";
   return {
@@ -155,9 +185,10 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
 /** True when the project has a cap and cumulative spend has reached it. */
 export function isBudgetExceeded(projectId: string): { exceeded: boolean; totalUsd: number; limitUsd: number | null } {
   const summary = projectCostSummary(projectId);
+  // summary.limitUsd is already normalized: null when unlimited (incl. a 0 cap).
   const limit = summary.limitUsd;
   return {
-    exceeded: limit !== null && limit >= 0 && summary.totalUsd >= limit,
+    exceeded: limit !== null && summary.totalUsd >= limit,
     totalUsd: summary.totalUsd,
     limitUsd: limit,
   };

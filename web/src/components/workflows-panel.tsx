@@ -100,7 +100,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ModelSelector, type Model, DEFAULT_MODEL } from "@/components/model-selector";
-import { ComputeSelector, type ModalInstance } from "@/components/compute-selector";
 import workflowsData from "@/data/workflows.json";
 
 export type Workflow = {
@@ -286,19 +285,16 @@ function LaunchDialog({
   onOpenChange,
   onLaunch,
   onUploadFiles,
-  modalConfigured,
   budgetBlocked = false,
 }: {
   workflow: Workflow;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onLaunch: (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[], uploadedFiles: string[]) => void;
+  onLaunch: (prompt: string, model: Model, suggestedSkills: string[], uploadedFiles: string[]) => void;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
-  modalConfigured: boolean;
   budgetBlocked?: boolean;
 }) {
   const [model, setModel] = useState<Model>(DEFAULT_MODEL);
-  const [compute, setCompute] = useState<ModalInstance | null>(null);
   const [placeholderValues, setPlaceholderValues] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
@@ -340,13 +336,13 @@ function LaunchDialog({
   const finalPrompt = editedPrompt ?? assembledPrompt;
 
   const handleLaunch = useCallback(() => {
-    onLaunch(finalPrompt, model, compute, workflow.suggestedSkills, uploadedFiles);
+    onLaunch(finalPrompt, model, workflow.suggestedSkills, uploadedFiles);
     onOpenChange(false);
     setPlaceholderValues({});
     setUploadedFiles([]);
     setEditedPrompt(null);
     setIsEditingPrompt(false);
-  }, [finalPrompt, model, compute, workflow.suggestedSkills, uploadedFiles, onLaunch, onOpenChange]);
+  }, [finalPrompt, model, workflow.suggestedSkills, uploadedFiles, onLaunch, onOpenChange]);
 
   const iconColor = CATEGORY_ICON_COLOR[workflow.category] ?? "text-muted-foreground";
 
@@ -498,7 +494,6 @@ function LaunchDialog({
 
           <div className="flex items-center gap-2">
             <ModelSelector selected={model} onChange={setModel} />
-            <ComputeSelector selected={compute} onChange={setCompute} modalConfigured={modalConfigured} />
           </div>
         </div>
 
@@ -528,12 +523,10 @@ function LaunchDialog({
 export function WorkflowsPanel({
   onLaunch,
   onUploadFiles,
-  modalConfigured,
   budgetBlocked = false,
 }: {
-  onLaunch: (prompt: string, model: Model, compute: ModalInstance | null, suggestedSkills: string[], uploadedFiles: string[]) => void;
+  onLaunch: (prompt: string, model: Model, suggestedSkills: string[], uploadedFiles: string[]) => void;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
-  modalConfigured: boolean;
   budgetBlocked?: boolean;
 }) {
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
@@ -667,7 +660,6 @@ export function WorkflowsPanel({
           }}
           onLaunch={onLaunch}
           onUploadFiles={onUploadFiles}
-          modalConfigured={modalConfigured}
           budgetBlocked={budgetBlocked}
         />
       )}

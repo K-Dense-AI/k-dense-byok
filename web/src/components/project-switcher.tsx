@@ -182,7 +182,7 @@ export function ProjectSwitcher() {
     async (project: Project) => {
       if (project.id === DEFAULT_PROJECT_ID) return;
       const confirmed = window.confirm(
-        `Delete project "${project.name}"? Its sandbox, chats, and MCPs will be permanently removed. This cannot be undone.`
+        `Delete project "${project.name}"? Its sandbox and chats will be permanently removed. This cannot be undone.`
       );
       if (!confirmed) return;
       try {
@@ -207,9 +207,8 @@ export function ProjectSwitcher() {
             <>
               <b>Project: {activeProject?.name ?? formatProjectId(activeProjectId)}</b>
               <br />
-              Projects isolate sandbox files, chat history, MCP servers, and
-              provenance. Switch projects to work on a different experiment
-              without crosstalk.
+              Projects isolate sandbox files and chat history. Switch projects
+              to work on a different experiment without crosstalk.
             </>
           }
         >
@@ -298,8 +297,7 @@ export function ProjectSwitcher() {
               {form.mode === "create" ? "New project" : "Edit project"}
             </DialogTitle>
             <DialogDescription>
-              Each project has its own sandbox, chat history, MCPs, and
-              provenance.
+              Each project has its own sandbox and chat history.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

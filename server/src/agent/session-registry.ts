@@ -17,6 +17,7 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
+import { recordSubagentRun } from "../cost/ledger.ts";
 import { defaultModel, setupAuth } from "./models.ts";
 import { BUILTIN_TOOLS, makeSpawnSubagentTool } from "./tools.ts";
 
@@ -31,25 +32,56 @@ export function getModelRegistry(): ModelRegistry {
   return modelRegistry;
 }
 
+/** Max live (in-memory) sessions kept per project; oldest idle ones are evicted. */
+const MAX_LIVE_PER_PROJECT = 10;
+
+// Insertion-ordered Map doubles as an LRU: we delete+re-set an entry on access
+// so the first matching key for a project is always the least-recently-used.
 const live = new Map<string, AgentSession>();
 const keyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
+/** Dispose the least-recently-used idle sessions for a project over the cap. */
+function evictOverCap(projectId: string): void {
+  const prefix = `${projectId}:`;
+  const keys = [...live.keys()].filter((k) => k.startsWith(prefix));
+  for (const k of keys) {
+    if (keys.length <= MAX_LIVE_PER_PROJECT) break;
+    const s = live.get(k);
+    if (s && s.isStreaming) continue; // never evict an in-flight session
+    s?.dispose();
+    live.delete(k);
+    keys.splice(keys.indexOf(k), 1);
+  }
+}
+
 async function build(
+  projectId: string,
   paths: ProjectPaths,
   sessionManager: SessionManager,
 ): Promise<AgentSession> {
-  const model = defaultModel(modelRegistry);
+  const fallbackModel = defaultModel(modelRegistry);
+  // The spawn_subagent tool is created before the session exists, so it reads
+  // the live model + sessionId through this holder (set right after creation).
+  const holder: { session?: AgentSession } = {};
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
-    model,
+    model: fallbackModel,
     authStorage,
     modelRegistry,
     sessionManager,
     tools: [...BUILTIN_TOOLS, "spawn_subagent"],
     customTools: [
-      makeSpawnSubagentTool({ cwd: paths.sandbox, authStorage, modelRegistry, model }),
+      makeSpawnSubagentTool({
+        cwd: paths.sandbox,
+        authStorage,
+        modelRegistry,
+        getModel: () => holder.session?.model ?? fallbackModel,
+        onStats: (stats, modelId) =>
+          recordSubagentRun(projectId, holder.session?.sessionId ?? "", modelId, stats),
+      }),
     ],
   });
+  holder.session = session;
   return session;
 }
 
@@ -60,8 +92,9 @@ export async function createSession(
 ): Promise<AgentSession> {
   fs.mkdirSync(paths.sessionsDir, { recursive: true });
   const sm = SessionManager.create(paths.sandbox, paths.sessionsDir);
-  const session = await build(paths, sm);
+  const session = await build(projectId, paths, sm);
   live.set(keyFor(projectId, session.sessionId), session);
+  evictOverCap(projectId);
   return session;
 }
 
@@ -73,14 +106,19 @@ export async function getSession(
 ): Promise<AgentSession | null> {
   const k = keyFor(projectId, sessionId);
   const existing = live.get(k);
-  if (existing) return existing;
+  if (existing) {
+    live.delete(k); // re-insert to mark most-recently-used
+    live.set(k, existing);
+    return existing;
+  }
 
   const infos = await SessionManager.list(paths.sandbox, paths.sessionsDir);
   const info = infos.find((i) => i.id === sessionId);
   if (!info) return null;
   const sm = SessionManager.open(info.path, paths.sessionsDir, paths.sandbox);
-  const session = await build(paths, sm);
+  const session = await build(projectId, paths, sm);
   live.set(k, session);
+  evictOverCap(projectId);
   return session;
 }
 

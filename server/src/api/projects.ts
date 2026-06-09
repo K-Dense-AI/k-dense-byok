@@ -10,9 +10,11 @@ import {
   listProjects,
   updateProject,
   UNSET,
+  resolvePaths,
   type UpdateProjectInput,
 } from "../projects.ts";
 import { projectCostSummary } from "../cost/ledger.ts";
+import { seedProjectSkills } from "../agent/skills.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
   app.get("/projects", async () => listProjects());
@@ -69,6 +71,17 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
   app.get<{ Params: { projectId: string } }>("/projects/:projectId/costs", async (req) => {
     return projectCostSummary(req.params.projectId);
   });
+
+  // Heavier per-project bootstrap (seed scientific skills). The frontend posts
+  // here with the project in the path; also available unprefixed at /sandbox/init.
+  app.post<{ Params: { projectId: string }; Body: { sync_venv?: boolean; download_skills?: boolean } }>(
+    "/projects/:projectId/sandbox/init",
+    async (req) => {
+      const allowRemote = (req.body ?? {}).download_skills !== false;
+      const count = seedProjectSkills(resolvePaths(req.params.projectId), allowRemote);
+      return { ok: true, skills: count };
+    },
+  );
 
   app.delete<{ Params: { projectId: string } }>("/projects/:projectId", async (req, reply) => {
     try {

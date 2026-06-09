@@ -4,9 +4,7 @@ import { useRef, useState, type ChangeEvent } from "react";
 import {
   PaperclipIcon,
   DatabaseIcon,
-  ZapIcon,
   WandSparklesIcon,
-  GlobeIcon,
   PlusIcon,
   UploadIcon,
 } from "lucide-react";
@@ -24,13 +22,10 @@ import {
 } from "@/components/ui/tooltip";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { DatabasePickerBody, type Database } from "@/components/database-selector";
-import { ComputePickerBody, type ModalInstance } from "@/components/compute-selector";
 import { SkillsPickerBody } from "@/components/skills-selector";
-import { BrowserPickerBody } from "@/components/browser-selector";
 import type { Skill } from "@/lib/use-skills";
-import { useBrowserUseSettings } from "@/lib/use-settings";
 
-type TabId = "files" | "data" | "compute" | "skills" | "browser";
+type TabId = "files" | "data" | "skills";
 
 interface TabDescriptor {
   id: TabId;
@@ -67,19 +62,6 @@ const TABS: TabDescriptor[] = [
     ),
   },
   {
-    id: "compute",
-    label: "Compute",
-    icon: ZapIcon,
-    hint: (
-      <>
-        <b>Compute</b>
-        <br />
-        Promote heavy code (GPU training, simulations) to a remote Modal
-        instance. Default <b>Local</b> keeps work in the built-in sandbox.
-      </>
-    ),
-  },
-  {
     id: "skills",
     label: "Skills",
     icon: WandSparklesIcon,
@@ -87,22 +69,9 @@ const TABS: TabDescriptor[] = [
       <>
         <b>Skills</b>
         <br />
-        Opt-in expert playbooks for specific tasks (e.g. <i>modal</i>,{" "}
-        <i>graphify</i>, <i>best-of-n</i>). The expert loads and follows them
+        Opt-in playbooks for specific tasks (e.g. <i>modal</i>,{" "}
+        <i>graphify</i>, <i>best-of-n</i>). The agent loads and follows them
         for the next message.
-      </>
-    ),
-  },
-  {
-    id: "browser",
-    label: "Browser",
-    icon: GlobeIcon,
-    hint: (
-      <>
-        <b>Browser</b>
-        <br />
-        Give the agent a real web browser — headless Chromium, a headed window,
-        or your own Chrome profile with logins and cookies.
       </>
     ),
   },
@@ -111,9 +80,6 @@ const TABS: TabDescriptor[] = [
 export interface AddContextMenuProps {
   selectedDbs: Database[];
   onDbsChange: (dbs: Database[]) => void;
-  selectedCompute: ModalInstance | null;
-  onComputeChange: (instance: ModalInstance | null) => void;
-  modalConfigured: boolean;
   allSkills: Skill[];
   selectedSkills: Skill[];
   onSkillsChange: (skills: Skill[]) => void;
@@ -122,7 +88,7 @@ export interface AddContextMenuProps {
 
 /**
  * Unified "+" menu for all chat context:
- *   Files | Data | Compute | Skills | Browser
+ *   Files | Data | Skills
  *
  * One trigger, one popover, tabbed content. Shows per-tab counts so users can
  * tell at a glance what's active without opening each picker individually.
@@ -130,9 +96,6 @@ export interface AddContextMenuProps {
 export function AddContextMenu({
   selectedDbs,
   onDbsChange,
-  selectedCompute,
-  onComputeChange,
-  modalConfigured,
   allSkills,
   selectedSkills,
   onSkillsChange,
@@ -141,18 +104,14 @@ export function AddContextMenu({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<TabId>("files");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const bu = useBrowserUseSettings();
 
   const counts: Record<TabId, number> = {
     files: 0,
     data: selectedDbs.length,
-    compute: selectedCompute ? 1 : 0,
     skills: selectedSkills.length,
-    browser: bu.config.enabled ? 1 : 0,
   };
 
-  const totalActive =
-    counts.data + counts.compute + counts.skills + counts.browser;
+  const totalActive = counts.data + counts.skills;
 
   const handleFilePick = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -190,8 +149,8 @@ export function AddContextMenu({
           <TooltipContent side="top" className="max-w-xs whitespace-normal text-xs leading-relaxed">
             <b className="font-semibold">Add context</b>
             <br />
-            Attach files, pin scientific databases, pick remote compute, enable
-            skills, or turn on browser automation for the next message.
+            Attach files, pin scientific databases, or enable skills for the
+            next message.
           </TooltipContent>
         </Tooltip>
 
@@ -263,14 +222,6 @@ export function AddContextMenu({
                 autoFocus
               />
             )}
-            {active === "compute" && (
-              <ComputePickerBody
-                selected={selectedCompute}
-                onChange={onComputeChange}
-                modalConfigured={modalConfigured}
-                onSelected={() => setOpen(false)}
-              />
-            )}
             {active === "skills" && (
               <SkillsPickerBody
                 skills={allSkills}
@@ -279,7 +230,6 @@ export function AddContextMenu({
                 autoFocus
               />
             )}
-            {active === "browser" && <BrowserPickerBody />}
           </div>
         </PopoverContent>
       </Popover>

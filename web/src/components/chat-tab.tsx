@@ -24,30 +24,24 @@ import {
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { buildDatabaseContext, type Database } from "@/components/database-selector";
-import { buildComputeContext, type ModalInstance } from "@/components/compute-selector";
 import {
-  PairedModelSelector,
+  ModelSelector,
   DEFAULT_MODEL,
-  DEFAULT_EXPERT_MODEL,
   type Model,
 } from "@/components/model-selector";
 import { buildSkillsContext, type Skill } from "@/components/skills-selector";
-import { buildBrowserContext } from "@/components/browser-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
 import { KadyFileIcon } from "@/components/file-icon";
-import { useBrowserUseSettings, useChromeProfiles } from "@/lib/use-settings";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
-import type { TurnMeta } from "@/lib/provenance";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   ActivityIcon,
   CheckIcon,
   ChevronDownIcon,
   CopyIcon,
-  CpuIcon,
   DatabaseIcon,
   ListOrderedIcon,
   LoaderCircleIcon,
@@ -74,9 +68,7 @@ interface QueuedMessage {
   rawText: string;
   text: string;
   model: { id: string; label: string };
-  expertModel: { id: string; label: string };
   databases: Database[];
-  compute: ModalInstance | null;
   skills: Skill[];
   files: string[];
   timestamp: number;
@@ -402,12 +394,6 @@ function MessageQueueDisplay({
                 <div className="mt-0.5 flex flex-wrap gap-1">
                   <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                     {item.model.label}
-                    {item.expertModel.id !== item.model.id && (
-                      <>
-                        <span className="mx-0.5 text-muted-foreground/50">·</span>
-                        {item.expertModel.label}
-                      </>
-                    )}
                   </span>
                   {item.files.length > 0 && (
                     <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -419,12 +405,6 @@ function MessageQueueDisplay({
                     <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                       <DatabaseIcon className="size-2.5" />
                       {item.databases.length}
-                    </span>
-                  )}
-                  {item.compute && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <CpuIcon className="size-2.5" />
-                      {item.compute.label}
                     </span>
                   )}
                   {item.skills.length > 0 && (
@@ -467,14 +447,9 @@ function ChatInput({
   onStop,
   selectedDbs,
   onDbsChange,
-  selectedCompute,
-  onComputeChange,
   selectedModel,
   onModelChange,
-  selectedExpertModel,
-  onExpertModelChange,
   onUploadFiles,
-  modalConfigured,
   allSkills,
   selectedSkills,
   onSkillsChange,
@@ -495,14 +470,9 @@ function ChatInput({
   onStop: () => void;
   selectedDbs: Database[];
   onDbsChange: (dbs: Database[]) => void;
-  selectedCompute: ModalInstance | null;
-  onComputeChange: (instance: ModalInstance | null) => void;
   selectedModel: Model;
   onModelChange: (model: Model) => void;
-  selectedExpertModel: Model;
-  onExpertModelChange: (model: Model) => void;
   onUploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
-  modalConfigured: boolean;
   allSkills: Skill[];
   selectedSkills: Skill[];
   onSkillsChange: (skills: Skill[]) => void;
@@ -514,15 +484,14 @@ function ChatInput({
 }) {
   const budgetBlocked = budgetState === "exceeded";
   const controller = usePromptInputController();
-  const browserUse = useBrowserUseSettings();
-  const chromeProfiles = useChromeProfiles();
 
   const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
     const uploaded = await onUploadFiles(files, paths);
     for (const p of uploaded) onAddFile(p);
   }, [onUploadFiles, onAddFile]);
 
-  // Wrap onSubmit to append attached file paths and database context, then clear chips
+  // Wrap onSubmit to append attached file paths and database/skills context,
+  // then clear chips.
   const handleSubmit = useCallback<Parameters<typeof PromptInput>[0]["onSubmit"]>(
     (msg, event) => {
       if (budgetBlocked) {
@@ -531,15 +500,13 @@ function ChatInput({
       }
       const refs = attachedFiles.length > 0 ? "\n" + attachedFiles.join("\n") : "";
       const dbCtx = buildDatabaseContext(selectedDbs);
-      const computeCtx = buildComputeContext(selectedCompute);
       const skillsCtx = buildSkillsContext(selectedSkills);
-      const browserCtx = buildBrowserContext(browserUse.config, chromeProfiles.profiles);
       const baseText = msg.text ?? "";
       if (!baseText.trim() && attachedFiles.length === 0) return;
-      onSubmit({ ...msg, text: baseText + refs + dbCtx + computeCtx + skillsCtx + browserCtx }, event);
+      onSubmit({ ...msg, text: baseText + refs + dbCtx + skillsCtx }, event);
       onClearFiles();
     },
-    [budgetBlocked, onSubmit, attachedFiles, onClearFiles, selectedDbs, selectedCompute, selectedSkills, browserUse.config, chromeProfiles.profiles]
+    [budgetBlocked, onSubmit, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
   );
 
   // @ mention state
@@ -699,8 +666,6 @@ function ChatInput({
             onRemoveFile={onRemoveFile}
             selectedDbs={selectedDbs}
             onDbsChange={onDbsChange}
-            selectedCompute={selectedCompute}
-            onComputeChange={onComputeChange}
             selectedSkills={selectedSkills}
             onSkillsChange={onSkillsChange}
           />
@@ -720,19 +685,14 @@ function ChatInput({
               <AddContextMenu
                 selectedDbs={selectedDbs}
                 onDbsChange={onDbsChange}
-                selectedCompute={selectedCompute}
-                onComputeChange={onComputeChange}
-                modalConfigured={modalConfigured}
                 allSkills={allSkills}
                 selectedSkills={selectedSkills}
                 onSkillsChange={onSkillsChange}
                 onUploadFiles={handleFilesUpload}
               />
-              <PairedModelSelector
-                orchestrator={selectedModel}
-                expert={selectedExpertModel}
-                onChangeOrchestrator={onModelChange}
-                onChangeExpert={onExpertModelChange}
+              <ModelSelector
+                selected={selectedModel}
+                onChange={onModelChange}
               />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -829,7 +789,6 @@ export interface ChatTabMeta {
   status: "ready" | "submitted" | "streaming" | "error";
   isStreaming: boolean;
   messages: ChatMessage[];
-  turnMeta: Map<string, TurnMeta>;
   userMessageCount: number;
 }
 
@@ -841,7 +800,6 @@ export interface ChatTabHandle {
   launchWorkflow: (
     prompt: string,
     model: Model,
-    compute: ModalInstance | null,
     suggestedSkills: string[],
     uploadedFiles: string[],
   ) => Promise<void>;
@@ -866,7 +824,6 @@ export interface ChatTabProps {
   uploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   onSandboxRefresh: () => void;
   onTurnComplete: () => void;
-  modalConfigured: boolean;
   allSkills: Skill[];
   budgetState: "ok" | "warn" | "exceeded";
   budgetTotalUsd: number;
@@ -882,7 +839,6 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     uploadFiles,
     onSandboxRefresh,
     onTurnComplete,
-    modalConfigured,
     allSkills,
     budgetState,
     budgetTotalUsd,
@@ -894,23 +850,12 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const { messages, status, send, stop, getSessionId } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
 
-  const turnMetaRef = useRef<Map<string, TurnMeta>>(new Map());
-  // Bumped whenever a new entry is recorded on turnMetaRef, so the
-  // onMetaChange effect refires and the parent's provenance panel sees
-  // the new turn metadata even if no other state changed afterwards.
-  const [turnMetaVersion, setTurnMetaVersion] = useState(0);
-  const recordTurnMeta = useCallback((msgId: string, meta: TurnMeta) => {
-    turnMetaRef.current.set(msgId, meta);
-    setTurnMetaVersion((v) => v + 1);
-  }, []);
   const prevMessageCount = useRef(0);
 
   // Per-tab settings
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL);
-  const [selectedExpertModel, setSelectedExpertModel] = useState<Model>(DEFAULT_EXPERT_MODEL);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [selectedDbs, setSelectedDbs] = useState<Database[]>([]);
-  const [selectedCompute, setSelectedCompute] = useState<ModalInstance | null>(null);
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const queueIdCounter = useRef(0);
@@ -957,31 +902,17 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     const [next, ...rest] = messageQueue;
     const id = window.setTimeout(() => {
       setMessageQueue(rest);
-      send(next.text, next.model.id, {
-        expertModel: next.expertModel.id,
+      void send(next.text, next.model.id, {
         attachments: next.files,
         skills: next.skills.map((s) => s.name),
         databases: next.databases.map((db) => db.name),
-        compute: next.compute?.label ?? null,
-      }).then((msgId) => {
-        if (msgId) {
-          recordTurnMeta(msgId, {
-            model: next.model.label,
-            expertModel: next.expertModel.label,
-            databases: next.databases.map((db) => db.name),
-            compute: next.compute?.label ?? null,
-            skills: next.skills.map((s) => s.name),
-            filesAttached: [...next.files],
-            timestamp: next.timestamp,
-          });
-        }
       });
     }, 0);
     return () => window.clearTimeout(id);
-  }, [status, messageQueue, send, recordTurnMeta]);
+  }, [status, messageQueue, send]);
 
-  // Bubble meta up to parent so the page can drive the cost pill,
-  // provenance panel, and tab strip badges from the active tab.
+  // Bubble meta up to parent so the page can drive the cost pill and tab
+  // strip badges from the active tab.
   const sessionId = getSessionId();
   const userMessageCount = useMemo(
     () => messages.filter((m) => m.role === "user").length,
@@ -993,13 +924,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       status,
       isStreaming,
       messages,
-      turnMeta: turnMetaRef.current,
       userMessageCount,
     });
-    // turnMetaVersion is intentionally a dep — it bumps when we set a new
-    // entry in turnMetaRef so the parent's provenance panel sees the
-    // latest turn metadata even if no other state changed.
-  }, [tabId, sessionId, status, isStreaming, messages, userMessageCount, onMetaChange, turnMetaVersion]);
+  }, [tabId, sessionId, status, isStreaming, messages, userMessageCount, onMetaChange]);
 
   const handleSubmit = useCallback(
     async ({ text }: { text: string }) => {
@@ -1016,9 +943,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             rawText,
             text: trimmed,
             model: { id: selectedModel.id, label: selectedModel.label },
-            expertModel: { id: selectedExpertModel.id, label: selectedExpertModel.label },
             databases: [...selectedDbs],
-            compute: selectedCompute,
             skills: [...selectedSkills],
             files: [...attachedFiles],
             timestamp: Date.now(),
@@ -1026,37 +951,21 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         ]);
         return;
       }
-      const msgId = await send(trimmed, selectedModel.id, {
-        expertModel: selectedExpertModel.id,
+      await send(trimmed, selectedModel.id, {
         attachments: attachedFiles,
         skills: selectedSkills.map((s) => s.name),
         databases: selectedDbs.map((db) => db.name),
-        compute: selectedCompute?.label ?? null,
       });
-      if (msgId) {
-        recordTurnMeta(msgId, {
-          model: selectedModel.label,
-          expertModel: selectedExpertModel.label,
-          databases: selectedDbs.map((db) => db.name),
-          compute: selectedCompute?.label ?? null,
-          skills: selectedSkills.map((s) => s.name),
-          filesAttached: [...attachedFiles],
-          timestamp: Date.now(),
-        });
-      }
     },
     [
       send,
       selectedModel,
-      selectedExpertModel,
       selectedDbs,
-      selectedCompute,
       selectedSkills,
       attachedFiles,
       isStreaming,
       messageQueue.length,
       budgetState,
-      recordTurnMeta,
     ],
   );
 
@@ -1068,42 +977,24 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       stop,
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
-        await send(prompt, selectedModel.id, {
-          expertModel: selectedExpertModel.id,
-        });
+        await send(prompt, selectedModel.id);
       },
-      launchWorkflow: async (prompt, model, compute, suggestedSkills, uploadedFiles) => {
+      launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
         if (budgetState === "exceeded") return;
         setSelectedModel(model);
-        setSelectedExpertModel(DEFAULT_EXPERT_MODEL);
-        setSelectedCompute(compute);
         const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
-        const computeCtx = buildComputeContext(compute);
         const skillsCtx = suggestedSkills.length > 0
-          ? `\n\nMake sure to instruct the delegated expert to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
+          ? `\n\nMake sure to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
           : "";
-        const fullPrompt = prompt + fileRefs + computeCtx + skillsCtx;
-        const msgId = await send(fullPrompt, model.id, {
-          expertModel: DEFAULT_EXPERT_MODEL.id,
+        const fullPrompt = prompt + fileRefs + skillsCtx;
+        await send(fullPrompt, model.id, {
           attachments: uploadedFiles,
           skills: suggestedSkills,
           databases: [],
-          compute: compute?.label ?? null,
         });
-        if (msgId) {
-          recordTurnMeta(msgId, {
-            model: model.label,
-            expertModel: DEFAULT_EXPERT_MODEL.label,
-            databases: [],
-            compute: compute?.label ?? null,
-            skills: suggestedSkills,
-            filesAttached: [...uploadedFiles],
-            timestamp: Date.now(),
-          });
-        }
       },
     }),
-    [send, stop, budgetState, selectedModel.id, selectedExpertModel.id, recordTurnMeta],
+    [send, stop, budgetState, selectedModel.id],
   );
 
   // Background tabs stay mounted (so streaming + queue auto-send continue,
@@ -1191,14 +1082,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onStop={stop}
             selectedDbs={selectedDbs}
             onDbsChange={setSelectedDbs}
-            selectedCompute={selectedCompute}
-            onComputeChange={setSelectedCompute}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
-            selectedExpertModel={selectedExpertModel}
-            onExpertModelChange={setSelectedExpertModel}
             onUploadFiles={uploadFiles}
-            modalConfigured={modalConfigured}
             allSkills={allSkills}
             selectedSkills={selectedSkills}
             onSkillsChange={setSelectedSkills}

@@ -80,8 +80,20 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "No such session" };
       }
+      // One run at a time per session. The frontend blocks sending while a tab
+      // is streaming, so this is a guard against races/double-submits rather
+      // than a normal path. (Pi's followUp queueing returns immediately, which
+      // would orphan the SSE stream and abort the live turn — so we reject.)
+      if (session.isStreaming) {
+        reply.code(409);
+        return { detail: "Session is already streaming a response" };
+      }
 
       const body = req.body ?? {};
+      if (!body.message || !body.message.trim()) {
+        reply.code(400);
+        return { detail: "message is required" };
+      }
       if (body.model) {
         try {
           await session.setModel(resolveModel(body.model, getModelRegistry()));
@@ -122,7 +134,6 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         return;
       }
 
-      const wasStreaming = session.isStreaming;
       const unsub = session.subscribe((ev) => {
         const frame = toClientFrame(ev);
         if (frame) write(frame);
@@ -132,16 +143,17 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         if (session.isStreaming) session.abort().catch(() => {});
       });
 
+      // errorMessage is sticky on the session; only report it if THIS run set it.
+      const priorError = session.state.errorMessage;
       const before = snapshot(session);
       try {
-        await session.prompt(
-          body.message ?? "",
-          wasStreaming ? { streamingBehavior: "followUp" } : undefined,
-        );
+        await session.prompt(body.message ?? "");
         // Surface a provider/agent error that didn't already stream as a frame
         // (e.g. an auth failure that produced an empty assistant turn).
         const errorMessage = session.state.errorMessage;
-        if (errorMessage) write({ type: "error", message: errorMessage });
+        if (errorMessage && errorMessage !== priorError) {
+          write({ type: "error", message: errorMessage });
+        }
         recordRun({
           sessionId: req.params.id,
           projectId,

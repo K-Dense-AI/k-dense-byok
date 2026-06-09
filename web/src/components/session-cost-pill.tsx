@@ -1,7 +1,6 @@
 "use client";
 
 import { AlertTriangleIcon, LockIcon } from "lucide-react";
-import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,11 +10,7 @@ import {
 } from "@/components/ui/hover-card";
 import { cn, formatCompactTokens, formatUsd } from "@/lib/utils";
 import type { ProjectCostSummary } from "@/lib/use-project-cost";
-import type {
-  CostEntry,
-  CostTurnBucket,
-  SessionCostSummary,
-} from "@/lib/use-session-cost";
+import type { CostEntry, SessionCostSummary } from "@/lib/use-session-cost";
 
 interface SessionCostPillProps {
   summary: SessionCostSummary;
@@ -59,12 +54,6 @@ export function SessionCostPill({
     sessionTotal > 0 ||
     projectTotal > 0 ||
     (projectSummary?.sessionCount ?? 0) > 0;
-
-  const orderedTurns = useMemo<CostTurnBucket[]>(() => {
-    const buckets = Object.values(summary.byTurn);
-    buckets.sort((a, b) => (a.turnId < b.turnId ? -1 : a.turnId > b.turnId ? 1 : 0));
-    return buckets;
-  }, [summary]);
 
   if (!hasData) {
     return null;
@@ -176,8 +165,8 @@ export function SessionCostPill({
             )}
             {blockedTone && (
               <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-                Spend limit reached. Delegations are blocked until the limit
-                is raised.
+                Spend limit reached. New work is blocked until the limit is
+                raised.
               </div>
             )}
             {warnTone && (
@@ -201,28 +190,22 @@ export function SessionCostPill({
             {summary.entries.length === 1 ? "" : "s"}
           </div>
           <div className="mt-2">
-            <CostRow
-              label="Orchestrator"
-              costUsd={summary.orchestratorUsd}
-              tokens={summary.orchestratorTokens}
-            />
-            <CostRow
-              label="Expert"
-              costUsd={summary.expertUsd}
-              tokens={summary.expertTokens}
-            />
+            <CostRow label="Agent" costUsd={summary.agentUsd} />
+            <CostRow label="Subagents" costUsd={summary.subagentUsd} />
           </div>
         </div>
 
         <div className="max-h-60 overflow-y-auto p-2">
-          {orderedTurns.length === 0 ? (
+          {summary.entries.length === 0 ? (
             <div className="text-muted-foreground px-2 py-1 text-xs">
-              No turn-level breakdown yet.
+              No call-level breakdown yet.
             </div>
           ) : (
-            orderedTurns.map((bucket) => (
-              <TurnBlock key={bucket.turnId} bucket={bucket} />
-            ))
+            <ul className="space-y-0.5">
+              {summary.entries.map((entry, idx) => (
+                <EntryRow key={entry.entryId ?? idx} entry={entry} />
+              ))}
+            </ul>
           )}
         </div>
       </HoverCardContent>
@@ -230,51 +213,18 @@ export function SessionCostPill({
   );
 }
 
-function CostRow({
-  label,
-  costUsd,
-  tokens,
-}: {
-  label: string;
-  costUsd: number;
-  tokens: number;
-}) {
+function CostRow({ label, costUsd }: { label: string; costUsd: number }) {
   return (
     <div className="flex items-baseline justify-between py-1 text-sm">
       <span className="text-muted-foreground">{label}</span>
-      <span className="flex items-baseline gap-2 font-mono tabular-nums">
-        <span className="text-muted-foreground text-xs">
-          {formatTokens(tokens)} tok
-        </span>
-        <span>{formatUsd(costUsd)}</span>
-      </span>
-    </div>
-  );
-}
-
-function TurnBlock({ bucket }: { bucket: CostTurnBucket }) {
-  return (
-    <div className="px-2 py-2">
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground truncate" title={bucket.turnId}>
-          {bucket.turnId}
-        </span>
-        <span className="font-mono tabular-nums">
-          {formatUsd(bucket.totalUsd)}
-        </span>
-      </div>
-      <ul className="mt-1 space-y-0.5">
-        {bucket.entries.map((entry, idx) => (
-          <EntryRow key={`${bucket.turnId}-${idx}`} entry={entry} />
-        ))}
-      </ul>
+      <span className="font-mono tabular-nums">{formatUsd(costUsd)}</span>
     </div>
   );
 }
 
 function EntryRow({ entry }: { entry: CostEntry }) {
   return (
-    <li className="text-muted-foreground flex items-center justify-between gap-2 text-[11px]">
+    <li className="text-muted-foreground flex items-center justify-between gap-2 px-2 py-1 text-[11px]">
       <span
         className="flex min-w-0 items-center gap-1 truncate"
         title={`${entry.role} · ${entry.model}`}
@@ -282,7 +232,7 @@ function EntryRow({ entry }: { entry: CostEntry }) {
         <span
           className={cn(
             "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-            entry.role === "orchestrator" ? "bg-sky-500" : "bg-amber-500",
+            entry.role === "agent" ? "bg-sky-500" : "bg-amber-500",
           )}
           aria-hidden
         />

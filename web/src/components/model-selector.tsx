@@ -7,12 +7,9 @@ import {
   ChevronDownIcon,
   SearchIcon,
   HardDriveIcon,
-  CpuIcon,
-  UsersIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { InfoTooltip } from "@/components/ui/info-tooltip";
 import models from "@/data/models.json";
 import { useModels } from "@/lib/use-models";
 
@@ -32,14 +29,6 @@ export type Model = {
 const STATIC_MODELS = models as Model[];
 
 const DEFAULT_MODEL = STATIC_MODELS.find((m) => m.default) ?? STATIC_MODELS[0];
-
-// The Gemini CLI expert is a tool-heavy subprocess. Gemini 3.5 Flash's native
-// tool support, coding strength, and million-token context make it the
-// recommended default, distinct from the orchestrator's Claude Opus default.
-// Falls back to the generic default so callers without an explicit expert pick
-// still work.
-const DEFAULT_EXPERT_MODEL =
-  STATIC_MODELS.find((m) => m.expertDefault) ?? DEFAULT_MODEL;
 
 const TIER_STYLES: Record<string, { dot: string; badge: string }> = {
   budget:   { dot: "bg-slate-400",  badge: "text-slate-500 dark:text-slate-400" },
@@ -72,28 +61,19 @@ function formatContext(tokens: number): string {
   return `${tokens} ctx`;
 }
 
-export { DEFAULT_MODEL, DEFAULT_EXPERT_MODEL };
-
-// Roles the picker can render for. Controls which model wears the
-// "recommended" badge (orchestrator=default, expert=expertDefault).
-export type ModelRole = "orchestrator" | "expert";
+export { DEFAULT_MODEL };
 
 // ---------------------------------------------------------------------------
-// Reusable interior: search input + remote/local list. Used by both the
-// single ModelSelector and the paired orchestrator/expert selector.
+// Reusable interior: search input + remote/local model list.
 // ---------------------------------------------------------------------------
 
 interface ModelPickerListProps {
   selected: Model;
   onSelect: (model: Model) => void;
   compact?: boolean;
-  // Which role is being configured. Drives the "recommended" badge —
-  // orchestrator surfaces `default`, expert surfaces `expertDefault`
-  // (falling back to `default`).
-  role?: ModelRole;
 }
 
-function ModelPickerList({ selected, onSelect, compact, role = "orchestrator" }: ModelPickerListProps) {
+function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) {
   const [search, setSearch] = useState("");
   const { models: allModels, ollamaAvailable, ollamaModels, refresh } = useModels();
 
@@ -121,10 +101,7 @@ function ModelPickerList({ selected, onSelect, compact, role = "orchestrator" }:
     return { remoteFiltered: remote, localFiltered: local, totalCount: remote.length + local.length };
   }, [allModels, search]);
 
-  const isRecommended = (m: Model): boolean =>
-    role === "expert"
-      ? Boolean(m.expertDefault) || (!STATIC_MODELS.some((x) => x.expertDefault) && Boolean(m.default))
-      : Boolean(m.default);
+  const isRecommended = (m: Model): boolean => Boolean(m.default);
 
   const renderModelRow = (model: Model) => {
     const isSelected = selected.id === model.id;
@@ -303,153 +280,6 @@ export function ModelSelector({
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         <ModelPickerList selected={selected} onSelect={handleSelect} />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Paired selector: one trigger pill, popover with two tabs for the
-// orchestrator (ADK agent) and the expert (Gemini CLI) models.
-// ---------------------------------------------------------------------------
-
-type PairedTab = "orchestrator" | "expert";
-
-const TAB_META: Record<PairedTab, { label: string; icon: typeof UsersIcon; hint: string }> = {
-  orchestrator: {
-    label: "Orchestrator",
-    icon: BrainCircuitIcon,
-    hint: "Plans the turn and delegates tasks.",
-  },
-  expert: {
-    label: "Expert",
-    icon: CpuIcon,
-    hint: "Runs delegated tasks in the Gemini CLI subprocess.",
-  },
-};
-
-export function PairedModelSelector({
-  orchestrator,
-  expert,
-  onChangeOrchestrator,
-  onChangeExpert,
-}: {
-  orchestrator: Model;
-  expert: Model;
-  onChangeOrchestrator: (model: Model) => void;
-  onChangeExpert: (model: Model) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<PairedTab>("orchestrator");
-
-  const current = tab === "orchestrator" ? orchestrator : expert;
-  const handleSelect = (model: Model) => {
-    if (tab === "orchestrator") onChangeOrchestrator(model);
-    else onChangeExpert(model);
-  };
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <InfoTooltip
-        disabled={open}
-        content={
-          <>
-            <b>Models</b>
-            <br />
-            <span className="opacity-80">Orchestrator</span>:{" "}
-            <b>{orchestrator.label}</b> plans the turn and decides when to
-            delegate.
-            <br />
-            <span className="opacity-80">Expert</span>: <b>{expert.label}</b>{" "}
-            runs delegated tasks (long-context reads, tool-heavy work) in the
-            Gemini CLI subprocess.
-            <br />
-            Click to change either.
-          </>
-        }
-      >
-        <PopoverTrigger asChild>
-          <div
-            className={cn(
-              "flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors text-xs select-none",
-              open
-                ? "border-border bg-muted/60"
-                : "border-transparent hover:border-border hover:bg-muted/40"
-            )}
-            role="button"
-            tabIndex={0}
-          >
-            <BrainCircuitIcon className="size-3 shrink-0 text-muted-foreground" />
-            <TierDot tier={orchestrator.tier} />
-            <span className="min-w-0 truncate font-medium text-foreground">
-              {orchestrator.label}
-            </span>
-            <span className="text-muted-foreground/60">·</span>
-            <CpuIcon className="size-3 shrink-0 text-muted-foreground" />
-            <TierDot tier={expert.tier} />
-            <span className="min-w-0 truncate font-medium text-foreground">
-              {expert.label}
-            </span>
-            <ChevronDownIcon
-              className={cn(
-                "size-3 shrink-0 text-muted-foreground transition-transform ml-0.5",
-                open && "rotate-180"
-              )}
-            />
-          </div>
-        </PopoverTrigger>
-      </InfoTooltip>
-
-      <PopoverContent
-        side="top"
-        align="start"
-        sideOffset={8}
-        className="w-96 p-0 overflow-hidden rounded-xl shadow-xl"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        <div className="flex items-stretch border-b">
-          {(["orchestrator", "expert"] as const).map((t) => {
-            const meta = TAB_META[t];
-            const active = t === tab;
-            const picked = t === "orchestrator" ? orchestrator : expert;
-            const Icon = meta.icon;
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={cn(
-                  "flex flex-1 min-w-0 flex-col gap-0.5 px-3 py-2 text-left transition-colors border-b-2",
-                  active
-                    ? "border-primary bg-muted/40"
-                    : "border-transparent text-muted-foreground hover:bg-muted/30 hover:text-foreground"
-                )}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Icon className="size-3 shrink-0" />
-                  <span className="text-[11px] font-semibold">{meta.label}</span>
-                </div>
-                <div className="flex items-center gap-1 min-w-0">
-                  <TierDot tier={picked.tier} />
-                  <span className="truncate text-[11px] text-foreground/90">
-                    {picked.label}
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="px-3 py-1.5 text-[10px] text-muted-foreground/80">
-          {TAB_META[tab].hint}
-        </div>
-
-        <ModelPickerList
-          selected={current}
-          onSelect={handleSelect}
-          compact
-          role={tab}
-        />
       </PopoverContent>
     </Popover>
   );

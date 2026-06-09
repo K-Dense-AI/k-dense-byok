@@ -3,10 +3,6 @@
 import { MessageResponse } from "@/components/ai-elements/message";
 import { LatexEditor } from "@/components/latex-editor";
 import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
-import {
-  MarkdownRevisePopover,
-  RevisePill,
-} from "@/components/markdown-revise-popover";
 import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
 import {
@@ -404,208 +400,19 @@ function FileLoadError({
 }
 
 // ---------------------------------------------------------------------------
-// Markdown "Ask Kady to revise" — source-mapping helper and viewer component
+// Markdown viewer
 // ---------------------------------------------------------------------------
-
-/**
- * Map a selection string (as seen in the rendered markdown) back to a
- * `{from, to}` range in the raw source. First tries a unique exact match;
- * otherwise collapses consecutive whitespace on both sides so that wrapping
- * / indentation differences don't block the match. Returns `null` when no
- * unambiguous range can be found.
- */
-function findSelectionInSource(
-  source: string,
-  selected: string,
-): { from: number; to: number } | null {
-  if (!selected.trim()) return null;
-
-  // Unique exact match wins.
-  const first = source.indexOf(selected);
-  if (first !== -1) {
-    const second = source.indexOf(selected, first + 1);
-    if (second === -1) return { from: first, to: first + selected.length };
-  }
-
-  // Normalize both source and needle by collapsing runs of whitespace to a
-  // single space, while keeping a map from normalized index back to source
-  // index so we can recover the precise range.
-  const map: number[] = [];
-  let normalized = "";
-  let prevSpace = false;
-  for (let i = 0; i < source.length; i++) {
-    const c = source[i];
-    if (/\s/.test(c)) {
-      if (!prevSpace && normalized.length > 0) {
-        normalized += " ";
-        map.push(i);
-      }
-      prevSpace = true;
-    } else {
-      normalized += c;
-      map.push(i);
-      prevSpace = false;
-    }
-  }
-
-  const needle = selected.replace(/\s+/g, " ").trim();
-  if (!needle) return null;
-
-  // Collect all occurrences; bail if zero or if too ambiguous (>5 hits).
-  const hits: number[] = [];
-  let idx = normalized.indexOf(needle);
-  while (idx !== -1) {
-    hits.push(idx);
-    idx = normalized.indexOf(needle, idx + 1);
-    if (hits.length > 5) return null;
-  }
-  if (hits.length === 0) return null;
-
-  // Multiple hits → prefer the first one (stable, predictable). This is a
-  // pragmatic choice; the typical case is prose that appears uniquely.
-  const startNorm = hits[0];
-  const endNorm = startNorm + needle.length - 1;
-  if (endNorm >= map.length) return null;
-  return { from: map[startNorm], to: map[endNorm] + 1 };
-}
-
-interface ReviseTarget {
-  anchorRect: DOMRect;
-  selection: string;
-  from: number;
-  to: number;
-  before: string;
-  after: string;
-}
 
 function MarkdownViewer({
   path,
   content,
-  onSave,
 }: {
   path: string;
   content: string;
-  onSave: (content: string) => Promise<boolean>;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [pendingSelection, setPendingSelection] = useState<{
-    text: string;
-    rect: DOMRect;
-  } | null>(null);
-  const [target, setTarget] = useState<ReviseTarget | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
-
-  // Track selection changes whose range is entirely inside the rendered
-  // markdown container. Show a floating pill near the selection end; when
-  // the user collapses the selection the pill disappears.
-  useEffect(() => {
-    const handle = () => {
-      if (target) return; // popover open — don't re-track
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-        setPendingSelection(null);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      const container = containerRef.current;
-      if (!container) {
-        setPendingSelection(null);
-        return;
-      }
-      if (
-        !container.contains(range.startContainer) ||
-        !container.contains(range.endContainer)
-      ) {
-        setPendingSelection(null);
-        return;
-      }
-      const text = sel.toString();
-      if (!text.trim()) {
-        setPendingSelection(null);
-        return;
-      }
-      const rect = range.getBoundingClientRect();
-      // Zero-sized rects happen mid-drag; ignore until the selection settles.
-      if (rect.width === 0 && rect.height === 0) return;
-      setPendingSelection({ text, rect });
-    };
-
-    document.addEventListener("selectionchange", handle);
-    return () => document.removeEventListener("selectionchange", handle);
-  }, [target]);
-
-  const openPopover = useCallback(() => {
-    if (!pendingSelection) return;
-    const range = findSelectionInSource(content, pendingSelection.text);
-    if (!range) {
-      setToast(
-        "Couldn't locate that selection in the source. Switch to Edit mode to revise it.",
-      );
-      setPendingSelection(null);
-      setTimeout(() => setToast(null), 4000);
-      return;
-    }
-    setTarget({
-      anchorRect: pendingSelection.rect,
-      selection: content.slice(range.from, range.to),
-      from: range.from,
-      to: range.to,
-      before: content.slice(Math.max(0, range.from - 800), range.from),
-      after: content.slice(range.to, range.to + 800),
-    });
-    setPendingSelection(null);
-  }, [pendingSelection, content]);
-
-  const closePopover = useCallback(() => {
-    setTarget(null);
-  }, []);
-
-  const acceptRevision = useCallback(
-    async (revised: string) => {
-      if (!target) return;
-      const next =
-        content.slice(0, target.from) + revised + content.slice(target.to);
-      setTarget(null);
-      const ok = await onSave(next);
-      if (!ok) {
-        setToast("Failed to save revision to disk.");
-        setTimeout(() => setToast(null), 4000);
-      }
-    },
-    [target, content, onSave],
-  );
-
   return (
-    <div
-      ref={containerRef}
-      className="h-full overflow-auto p-6 text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-    >
+    <div className="h-full overflow-auto p-6 text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <MessageResponse>{resolveMarkdownImageUrls(content, path)}</MessageResponse>
-
-      {pendingSelection && !target && (
-        <RevisePill anchorRect={pendingSelection.rect} onClick={openPopover} />
-      )}
-
-      {target && (
-        <MarkdownRevisePopover
-          anchorRect={target.anchorRect}
-          selection={target.selection}
-          before={target.before}
-          after={target.after}
-          filePath={path}
-          onAccept={acceptRevision}
-          onClose={closePopover}
-        />
-      )}
-
-      {toast && (
-        <div
-          className="fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-md border bg-background px-3 py-2 text-xs text-foreground shadow-lg"
-          role="status"
-        >
-          {toast}
-        </div>
-      )}
     </div>
   );
 }
@@ -650,16 +457,7 @@ function FileViewer({
   }
   if (content === null) return null;
   if (cat === "markdown") {
-    if (onSave) {
-      return <MarkdownViewer path={path} content={content} onSave={onSave} />;
-    }
-    // Fallback when no save handler was plumbed through (shouldn't happen in
-    // practice, but keeps the renderer pure if the panel is used read-only).
-    return (
-      <div className="h-full overflow-auto p-6 text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-        <MessageResponse>{resolveMarkdownImageUrls(content, path)}</MessageResponse>
-      </div>
-    );
+    return <MarkdownViewer path={path} content={content} />;
   }
   if (cat === "csv") return <CsvViewer content={content} />;
   if (cat === "notebook") return (
@@ -1243,25 +1041,10 @@ function TextEditor({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const isDirty = content !== initialContent;
-  const isMarkdown = fileCategory(name) === "markdown";
 
   // Use a ref so the keymap closure never goes stale
   const handleSaveRef = useRef<() => void>(() => {});
   const viewRef = useRef<EditorView | null>(null);
-
-  // Revise-popover plumbing (only meaningful for markdown files). `pending`
-  // tracks the live selection that should show the pill; `target` is the
-  // snapshot captured when the pill is clicked, frozen while the popover
-  // is open so the CodeMirror selection can collapse freely.
-  const [pending, setPending] = useState<
-    { text: string; rect: DOMRect; from: number; to: number } | null
-  >(null);
-  const [target, setTarget] = useState<ReviseTarget | null>(null);
-
-  const isMarkdownRef = useRef(isMarkdown);
-  isMarkdownRef.current = isMarkdown;
-  const targetActiveRef = useRef(false);
-  targetActiveRef.current = target !== null;
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -1272,88 +1055,14 @@ function TextEditor({
 
   handleSaveRef.current = handleSave;
 
-  // Selection listener: fires on every CodeMirror update but we only react
-  // when the selection moved or the doc changed, and only for markdown docs.
-  // Stored in a memo so it doesn't re-attach on each render (which would
-  // reset the editor state).
-  const selectionListener = useMemo(
-    () =>
-      EditorView.updateListener.of((update) => {
-        if (!isMarkdownRef.current) return;
-        if (targetActiveRef.current) return;
-        if (!update.selectionSet && !update.docChanged) return;
-
-        const view = update.view;
-        const sel = view.state.selection.main;
-        if (sel.empty) {
-          setPending(null);
-          return;
-        }
-        const text = view.state.doc.sliceString(sel.from, sel.to);
-        if (!text.trim()) {
-          setPending(null);
-          return;
-        }
-        const startCoords = view.coordsAtPos(sel.from);
-        const endCoords = view.coordsAtPos(sel.to);
-        if (!startCoords || !endCoords) {
-          setPending(null);
-          return;
-        }
-        const left = Math.min(startCoords.left, endCoords.left);
-        const right = Math.max(startCoords.right, endCoords.right);
-        const top = Math.min(startCoords.top, endCoords.top);
-        const bottom = Math.max(startCoords.bottom, endCoords.bottom);
-        const rect = new DOMRect(left, top, right - left, bottom - top);
-        setPending({ text, rect, from: sel.from, to: sel.to });
-      }),
-    [],
-  );
-
   const extensions = useMemo(() => {
     const lang = langExtension(name);
     return [
       ...(lang ? [lang] : []),
       EditorView.lineWrapping,
-      selectionListener,
       keymap.of([{ key: "Mod-s", run: () => { handleSaveRef.current(); return true; } }]),
     ];
-  }, [name, selectionListener]);
-
-  const openPopover = useCallback(() => {
-    if (!pending) return;
-    setTarget({
-      anchorRect: pending.rect,
-      selection: pending.text,
-      from: pending.from,
-      to: pending.to,
-      before: content.slice(Math.max(0, pending.from - 800), pending.from),
-      after: content.slice(pending.to, pending.to + 800),
-    });
-    setPending(null);
-  }, [pending, content]);
-
-  const closePopover = useCallback(() => setTarget(null), []);
-
-  const acceptRevision = useCallback(
-    (revised: string) => {
-      if (!target) return;
-      const view = viewRef.current;
-      if (view) {
-        view.dispatch({
-          changes: { from: target.from, to: target.to, insert: revised },
-          selection: { anchor: target.from + revised.length },
-        });
-      } else {
-        // Fallback if the view ref hasn't attached yet (shouldn't happen).
-        setContent(
-          (prev) => prev.slice(0, target.from) + revised + prev.slice(target.to),
-        );
-      }
-      setTarget(null);
-    },
-    [target],
-  );
+  }, [name]);
 
   return (
     <div className="flex h-full flex-col">
@@ -1403,21 +1112,6 @@ function TextEditor({
           />
         </div>
       </div>
-
-      {isMarkdown && pending && !target && (
-        <RevisePill anchorRect={pending.rect} onClick={openPopover} />
-      )}
-      {isMarkdown && target && (
-        <MarkdownRevisePopover
-          anchorRect={target.anchorRect}
-          selection={target.selection}
-          before={target.before}
-          after={target.after}
-          filePath={path}
-          onAccept={acceptRevision}
-          onClose={closePopover}
-        />
-      )}
     </div>
   );
 }

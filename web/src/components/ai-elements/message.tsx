@@ -363,7 +363,9 @@ const SafeParagraph = memo(
 );
 SafeParagraph.displayName = "SafeParagraph";
 
-const streamdownComponents = { p: SafeParagraph } as ComponentProps<typeof Streamdown>["components"];
+const streamdownComponents = { p: SafeParagraph } as unknown as ComponentProps<
+  typeof Streamdown
+>["components"];
 
 export const MessageResponse = memo(
   ({ className, ...props }: MessageResponseProps) => (

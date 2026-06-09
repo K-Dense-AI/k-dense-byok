@@ -2,28 +2,22 @@
 
 import { FileTreePanel } from "@/components/sandbox-panel";
 import { FilePreviewPanel } from "@/components/file-preview-panel";
-import type { ModalInstance } from "@/components/compute-selector";
 import type { Model } from "@/components/model-selector";
 import { ChatTab, type ChatTabHandle, type ChatTabMeta } from "@/components/chat-tab";
 import { ChatTabsBar, type ChatTabDescriptor } from "@/components/chat-tabs-bar";
-import { ProvenancePanel } from "@/components/provenance-panel";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { SessionCostPill } from "@/components/session-cost-pill";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
-import type { ChatMessage } from "@/lib/use-agent";
 import { APP_VERSION, useUpdateCheck } from "@/lib/version";
-import { useConfig } from "@/lib/use-config";
 import { useSkills } from "@/lib/use-skills";
-import type { TurnMeta } from "@/lib/provenance";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
 import { onProjectChange } from "@/lib/projects";
 import {
   PanelLeftCloseIcon,
   PanelLeftIcon,
-  ScrollTextIcon,
   SettingsIcon,
   SunIcon,
   MoonIcon,
@@ -45,9 +39,6 @@ interface ChatTabEntry {
   id: string;
   title: string;
 }
-
-const EMPTY_TURN_META: Map<string, TurnMeta> = new Map();
-const EMPTY_MESSAGES: ChatMessage[] = [];
 
 /** Stable id for the first tab so SSR and hydration match. */
 const INITIAL_TAB_ID = "tab-initial";
@@ -77,13 +68,11 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
 
 export default function ChatPage() {
   const sandbox = useSandbox(false);
-  const config = useConfig();
   const { updateAvailable } = useUpdateCheck();
   const { skills: allSkills } = useSkills();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
-  const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Chat tab management. We allocate the initial id once via useRef so it
@@ -105,7 +94,7 @@ export default function ChatPage() {
   }, [tabs]);
 
   // Per-tab agent meta, populated by each <ChatTab> via onMetaChange. We
-  // read from this to drive the cost pill, provenance panel, and tab
+  // read from this to drive the cost pill and tab
   // strip badges (streaming spinner, message count) for the active tab.
   const [tabsMeta, setTabsMeta] = useState<Record<string, ChatTabMeta>>({});
   const tabHandles = useRef<Map<string, ChatTabHandle | null>>(new Map());
@@ -147,8 +136,7 @@ export default function ChatPage() {
           existing.status === meta.status &&
           existing.isStreaming === meta.isStreaming &&
           existing.userMessageCount === meta.userMessageCount &&
-          existing.messages === meta.messages &&
-          existing.turnMeta === meta.turnMeta
+          existing.messages === meta.messages
         ) {
           return prev;
         }
@@ -320,7 +308,6 @@ export default function ChatPage() {
     async (
       prompt: string,
       model: Model,
-      compute: ModalInstance | null,
       suggestedSkills: string[],
       uploadedFiles: string[],
     ) => {
@@ -330,7 +317,6 @@ export default function ChatPage() {
       await handle.launchWorkflow(
         prompt,
         model,
-        compute,
         suggestedSkills,
         uploadedFiles,
       );
@@ -343,12 +329,10 @@ export default function ChatPage() {
   }, [sandbox]);
 
   // ------------------------------------------------------------------
-  // Header pieces — cost pill, provenance — read from the active tab.
+  // Header pieces — cost pill — read from the active tab.
   // ------------------------------------------------------------------
 
   const activeSessionId = activeMeta?.sessionId ?? null;
-  const activeMessages = activeMeta?.messages ?? EMPTY_MESSAGES;
-  const activeTurnMeta = activeMeta?.turnMeta ?? EMPTY_TURN_META;
 
   const { summary: costSummary, loading: costLoading } = useSessionCost(
     activeSessionId,
@@ -423,27 +407,6 @@ export default function ChatPage() {
             limitUsd={projectCost.limitUsd}
             loading={costLoading || projectCostLoading}
           />
-          {activeMessages.length > 0 && (
-            <InfoTooltip
-              content={
-                <>
-                  <b>Session provenance</b>
-                  <br />
-                  Full record of every turn in the active chat tab: prompts,
-                  model, expert, datasets, compute, skills, and attached
-                  files. Exportable for your methods section.
-                </>
-              }
-            >
-              <button
-                onClick={() => setProvenanceOpen(true)}
-                aria-label="Open session provenance"
-                className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <ScrollTextIcon className="size-4" />
-              </button>
-            </InfoTooltip>
-          )}
           <InfoTooltip
             content={
               panelOpen ? (
@@ -479,8 +442,7 @@ export default function ChatPage() {
               <>
                 <b>Settings</b>
                 <br />
-                Configure API keys, MCP servers, browser automation, Chrome
-                profiles, and speech-to-text.
+                View API-key configuration and switch the appearance theme.
               </>
             }
           >
@@ -603,7 +565,6 @@ export default function ChatPage() {
               uploadFiles={sandbox.uploadFiles}
               onSandboxRefresh={handleSandboxRefresh}
               onTurnComplete={handleTurnComplete}
-              modalConfigured={config.modalConfigured}
               allSkills={allSkills}
               budgetState={projectCost.budget.state}
               budgetTotalUsd={projectCost.budget.totalUsd}
@@ -618,7 +579,6 @@ export default function ChatPage() {
               <WorkflowsPanel
                 onLaunch={handleWorkflowLaunch}
                 onUploadFiles={sandbox.uploadFiles}
-                modalConfigured={config.modalConfigured}
                 budgetBlocked={projectCost.budget.state === "exceeded"}
               />
             </div>
@@ -626,15 +586,6 @@ export default function ChatPage() {
         </div>
 
       </div>
-
-      {provenanceOpen && (
-        <ProvenancePanel
-          messages={activeMessages}
-          turnMeta={activeTurnMeta}
-          sessionId={activeSessionId}
-          onClose={() => setProvenanceOpen(false)}
-        />
-      )}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>

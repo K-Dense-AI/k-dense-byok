@@ -15,6 +15,7 @@ import {
   isBudgetExceeded,
   projectCostSummary,
   recordRun,
+  recordSubagentRun,
   sessionCostSummary,
 } from "../src/cost/ledger.ts";
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
@@ -97,6 +98,32 @@ describe("cost ledger + budget", () => {
     const b = isBudgetExceeded("capped");
     expect(b.exceeded).toBe(true);
     expect(b.limitUsd).toBe(0.005);
+  });
+
+  it("treats a 0 spend limit as unlimited (not a hard block)", () => {
+    createProject({ name: "Zero", projectId: "zero", spendLimitUsd: 0 });
+    recordRun({
+      sessionId: "s1",
+      projectId: "zero",
+      model: "m",
+      before: { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 },
+      after: { costUsd: 1, input: 10, output: 5, cacheRead: 0, total: 15 },
+    });
+    const b = isBudgetExceeded("zero");
+    expect(b.exceeded).toBe(false);
+    expect(b.limitUsd).toBeNull();
+  });
+
+  it("ledgers subagent spend as a subagent row", () => {
+    ensureProjectExists("default");
+    recordSubagentRun("default", "s9", "openai/gpt-4o-mini", {
+      cost: 0.02,
+      tokens: { input: 50, output: 10, cacheRead: 0, total: 60 },
+    });
+    const sess = sessionCostSummary("s9", "default");
+    expect(sess.subagentUsd).toBeCloseTo(0.02);
+    expect(sess.agentUsd).toBe(0);
+    expect(sess.entries[0].role).toBe("subagent");
   });
 });
 
