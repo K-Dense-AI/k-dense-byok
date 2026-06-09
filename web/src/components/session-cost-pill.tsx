@@ -191,7 +191,6 @@ export function SessionCostPill({
           </div>
           <div className="mt-2">
             <CostRow label="Agent" costUsd={summary.agentUsd} />
-            <CostRow label="Subagents" costUsd={summary.subagentUsd} />
           </div>
         </div>
 

@@ -260,9 +260,9 @@ export function SkillsSelector({
   );
 }
 
-/** Build a prompt suffix instructing the expert to use selected skills */
+/** Build a prompt suffix instructing the agent to use selected skills */
 export function buildSkillsContext(selected: Skill[]): string {
   if (selected.length === 0) return "";
   const names = selected.map((s) => `'${s.name}'`).join(", ");
-  return `\n\nMake sure to instruct the delegated expert to use the skills: ${names}`;
+  return `\n\nMake sure to use the skills: ${names}`;
 }

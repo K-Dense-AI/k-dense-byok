@@ -6,27 +6,17 @@
  * ?project query / kady-project cookie), and registers the route plugins.
  */
 import "./env.ts";
-import cors from "@fastify/cors";
+import fastifyCors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyRequest } from "fastify";
 import { DEFAULT_PROJECT_ID, HOST, PORT, modalConfigured } from "./config.ts";
+import { isCorsOriginAllowed } from "./cors.ts";
 import { ensureProjectExists } from "./projects.ts";
 import { withActiveProject } from "./scope.ts";
 import { registerProjectRoutes } from "./api/projects.ts";
 import { registerSessionRoutes } from "./api/sessions.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
 import { registerSystemRoutes } from "./api/system.ts";
-
-// Allow any local dev UI port plus common LAN ranges (Next.js picks 3001+ when
-// 3000 is taken). Ported from server.py's CORS allow-list.
-const CORS_ALLOW = [
-  /^http:\/\/localhost:\d+$/,
-  /^http:\/\/127\.0\.0\.1:\d+$/,
-  /^http:\/\/\[::1\]:\d+$/,
-  /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+$/,
-  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:\d+$/,
-  /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d{1,3}\.\d{1,3}:\d+$/,
-];
 
 function readCookie(req: FastifyRequest, name: string): string | undefined {
   const raw = req.headers.cookie;
@@ -59,12 +49,9 @@ function resolveProjectId(req: FastifyRequest): string {
 export async function buildApp() {
   const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
 
-  await app.register(cors, {
+  await app.register(fastifyCors, {
     origin: (origin, cb) => {
-      // Non-browser clients (curl, same-origin) send no Origin → allow.
-      if (!origin) return cb(null, true);
-      const ok = CORS_ALLOW.some((re) => re.test(origin));
-      cb(null, ok);
+      cb(null, isCorsOriginAllowed(origin));
     },
     credentials: true,
   });

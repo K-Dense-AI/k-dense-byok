@@ -35,16 +35,13 @@ import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
 import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
-import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
+import { useAgent, type ChatMessage } from "@/lib/use-agent";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
-  ActivityIcon,
   CheckIcon,
-  ChevronDownIcon,
   CopyIcon,
   DatabaseIcon,
   ListOrderedIcon,
-  LoaderCircleIcon,
   PaperclipIcon,
   SparklesIcon,
   XIcon,
@@ -98,9 +95,8 @@ function BudgetBanner({
         {blocked ? (
           <>
             <b>Project spend limit reached</b> ({formatUsd(totalUsd)}
-            {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). New
-            delegations are blocked. Raise the limit in the project settings to
-            continue.
+            {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). New runs
+            are blocked. Raise the limit in the project settings to continue.
           </>
         ) : (
           <>
@@ -233,127 +229,6 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
       <span className="font-semibold text-foreground">{text.slice(idx, idx + query.length)}</span>
       {text.slice(idx + query.length)}
     </>
-  );
-}
-
-function AssistantActivity({
-  items,
-  isStreaming,
-}: {
-  items: ActivityItem[];
-  isStreaming: boolean;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el || expanded) return;
-    const check = () => setIsOverflowing(el.scrollHeight > el.clientHeight);
-    const frame = requestAnimationFrame(check);
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => {
-      cancelAnimationFrame(frame);
-      ro.disconnect();
-    };
-  }, [items, expanded]);
-
-  if (items.length === 0 && !isStreaming) return null;
-
-  const toggle = () => setExpanded((v) => !v);
-
-  return (
-    <div className="mb-3 rounded-xl border border-border/70 bg-muted/30 px-3 py-2">
-      <button
-        type="button"
-        onClick={toggle}
-        className="flex w-full items-center gap-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-      >
-        <ActivityIcon className="size-3.5 shrink-0" />
-        {isStreaming ? (
-          <Shimmer as="span" className="text-xs" duration={1.2}>
-            Working...
-          </Shimmer>
-        ) : (
-          <span>Activity</span>
-        )}
-        {items.length > 1 && (
-          <span className="text-[10px] tabular-nums text-muted-foreground/70">
-            {items.length}
-          </span>
-        )}
-        <ChevronDownIcon
-          className={cn(
-            "ml-auto size-3.5 shrink-0 transition-transform duration-200",
-            expanded && "rotate-180"
-          )}
-        />
-      </button>
-      {items.length > 0 ? (
-        <div className="mt-2">
-          <div
-            ref={contentRef}
-            className={cn(
-              "overflow-hidden transition-all duration-200",
-              expanded ? "max-h-[2000px]" : "max-h-24"
-            )}
-          >
-            <div className="space-y-2">
-              {items.map((item) => (
-                <div key={item.id} className="flex items-start gap-2 text-xs">
-                  {item.status === "running" ? (
-                    <LoaderCircleIcon className="mt-0.5 size-3.5 shrink-0 animate-spin text-muted-foreground" />
-                  ) : item.status === "error" ? (
-                    <XIcon className="mt-0.5 size-3.5 shrink-0 text-destructive" />
-                  ) : (
-                    <CheckIcon className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-foreground">{item.label}</div>
-                    {item.detail && (
-                      <div
-                        className={cn(
-                          "mt-0.5 text-muted-foreground",
-                          !expanded && "line-clamp-2"
-                        )}
-                      >
-                        {item.detail}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          {!expanded && isOverflowing && (
-            <button
-              type="button"
-              onClick={toggle}
-              className="flex w-full items-center justify-center gap-1 mt-1.5 text-[11px] font-medium text-primary/70 hover:text-primary transition-colors cursor-pointer"
-            >
-              <span>Show all {items.length} items</span>
-              <ChevronDownIcon className="size-3" />
-            </button>
-          )}
-          {expanded && items.length > 3 && (
-            <button
-              type="button"
-              onClick={toggle}
-              className="flex w-full items-center justify-center gap-1 mt-1.5 text-[11px] font-medium text-primary/70 hover:text-primary transition-colors cursor-pointer"
-            >
-              <span>Show less</span>
-              <ChevronDownIcon className="size-3 rotate-180" />
-            </button>
-          )}
-        </div>
-      ) : (
-        <p className="mt-2 text-xs text-muted-foreground">
-          Waiting for the delegated task to report progress...
-        </p>
-      )}
-    </div>
   );
 }
 
@@ -880,9 +755,6 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     setTimeout(() => setCopiedId(null), 2000);
   }, []);
 
-  const activeAssistantId =
-    [...messages].reverse().find((message) => message.role === "assistant")?.id ?? null;
-
   // Auto-refresh sandbox tree when this tab finishes a turn
   useEffect(() => {
     if (
@@ -1013,23 +885,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           {messages.length === 0 ? (
             <ConversationEmptyState
               title="What can I help you with?"
-              description="I can research topics, write code, analyze data, and delegate tasks to specialized agents."
+              description="I can research topics, write code, and analyze data."
             />
           ) : (
             messages.map((message) => (
               <Message from={message.role} key={message.id}>
                 <MessageContent>
-                  {message.role === "assistant" && (
-                    <AssistantActivity
-                      items={message.activities ?? []}
-                      isStreaming={
-                        isStreaming && message.id === activeAssistantId
-                      }
-                    />
-                  )}
                   {message.role === "assistant" &&
                   !message.content &&
-                  !(message.activities && message.activities.length > 0) &&
                   isStreaming ? (
                     <Shimmer className="text-sm" duration={1.5}>
                       Thinking...

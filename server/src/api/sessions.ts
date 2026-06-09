@@ -9,6 +9,7 @@
 import type { FastifyInstance } from "fastify";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { activePaths } from "../projects.ts";
+import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
 import { resolveModel } from "../agent/models.ts";
@@ -113,6 +114,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         "Cache-Control": "no-cache, no-transform",
         Connection: "keep-alive",
         "X-Accel-Buffering": "no",
+        ...corsResponseHeaders(req.headers.origin),
       });
       const write = (frame: ClientFrame) => {
         if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(frame)}\n\n`);

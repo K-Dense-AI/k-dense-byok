@@ -355,9 +355,8 @@ export function ProjectSwitcher() {
                 placeholder="Leave empty for no limit"
               />
               <p className="mt-1 text-[11px] text-muted-foreground">
-                Cumulative cost across every session. New delegations are
-                blocked once the total reaches this cap; a warning shows at
-                80%.
+                Cumulative cost across every session. New runs are blocked once
+                the total reaches this cap; a warning shows at 80%.
               </p>
             </div>
             {formError && (

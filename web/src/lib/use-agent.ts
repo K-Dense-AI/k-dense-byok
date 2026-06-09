@@ -124,7 +124,6 @@ export function useAgent() {
     if (sessionIdRef.current) return sessionIdRef.current;
     const res = await apiFetch(`/sessions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
     });
     if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
     const session = await res.json();
