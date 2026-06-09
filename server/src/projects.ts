@@ -205,10 +205,6 @@ export function getProject(projectId: string): ProjectMeta | null {
   return readProjectJson(resolvePaths(projectId));
 }
 
-export function projectExists(projectId: string): boolean {
-  return getProject(projectId) !== null;
-}
-
 export interface CreateProjectInput {
   name: string;
   description?: string;

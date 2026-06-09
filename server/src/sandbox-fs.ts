@@ -63,5 +63,3 @@ const MIME: Record<string, string> = {
 export function guessMime(name: string): string {
   return MIME[path.extname(name).toLowerCase()] ?? "application/octet-stream";
 }
-
-export { fs, path };

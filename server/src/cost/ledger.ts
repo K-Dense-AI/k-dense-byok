@@ -12,7 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { activePaths, getProject, listProjects, resolvePaths } from "../projects.ts";
+import { activePaths, getProject, resolvePaths } from "../projects.ts";
 
 export interface CostSnapshot {
   costUsd: number;
@@ -193,5 +193,3 @@ export function isBudgetExceeded(projectId: string): { exceeded: boolean; totalU
     limitUsd: limit,
   };
 }
-
-export { listProjects };
