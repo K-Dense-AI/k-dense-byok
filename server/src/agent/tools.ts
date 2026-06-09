@@ -16,6 +16,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { isBudgetExceeded } from "../cost/ledger.ts";
 
 export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
@@ -25,6 +26,8 @@ export interface SubagentStats {
 }
 
 export interface SubagentDeps {
+  /** Project whose spend cap gates each delegation. */
+  projectId: string;
   cwd: string;
   authStorage: AuthStorage;
   modelRegistry: ModelRegistry;
@@ -51,6 +54,24 @@ export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
       }),
     }),
     execute: async (_toolCallId, params) => {
+      // The per-run budget check happens before the turn starts; re-check here
+      // so one turn can't fan out unbounded subagent spend past the cap.
+      const budget = isBudgetExceeded(deps.projectId);
+      if (budget.exceeded) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Delegation blocked: the project has reached its spend limit ` +
+                `($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}). ` +
+                `Finish the task without subagents or ask the user to raise the limit.`,
+            },
+          ],
+          isError: true,
+          details: undefined,
+        };
+      }
       const model = deps.getModel();
       const { session } = await createAgentSession({
         cwd: deps.cwd,

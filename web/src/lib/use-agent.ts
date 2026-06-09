@@ -101,11 +101,15 @@ export function applyFrameToMessage(
       next[idx] = { ...next[idx], status };
       return { ...message, activities: next };
     }
-    case "error":
+    case "error": {
+      // Append rather than replace: an error after partial output (mid-stream
+      // provider failure) must not be silently dropped.
+      const errorText = `Error: ${frame.message ?? "request failed"}`;
       return {
         ...message,
-        content: message.content || `Error: ${frame.message ?? "request failed"}`,
+        content: message.content ? `${message.content}\n\n${errorText}` : errorText,
       };
+    }
     default:
       return message;
   }
@@ -163,12 +167,21 @@ export function useAgent() {
         const controller = new AbortController();
         abortRef.current = controller;
 
-        const res = await apiFetch(`/sessions/${sessionId}/run`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
-          signal: controller.signal,
-        });
+        const startRun = () =>
+          apiFetch(`/sessions/${sessionId}/run`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
+            signal: controller.signal,
+          });
+        let res = await startRun();
+        // 409 = previous run still unwinding server-side (e.g. right after
+        // Stop, whose abort completes asynchronously). Retry briefly instead
+        // of losing the message.
+        for (let attempt = 0; res.status === 409 && attempt < 4; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          res = await startRun();
+        }
         if (!res.ok) throw new Error(`run failed: ${res.status}`);
         setStatus("streaming");
 

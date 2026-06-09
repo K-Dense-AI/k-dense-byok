@@ -177,6 +177,7 @@ export function listProjects(): ProjectMeta[] {
   const index = loadIndex();
   const known = new Set(Object.keys(index.projects));
 
+  let adopted = false;
   if (fs.existsSync(PROJECTS_ROOT)) {
     for (const child of fs.readdirSync(PROJECTS_ROOT, { withFileTypes: true })) {
       if (!child.isDirectory() || known.has(child.name)) continue;
@@ -184,9 +185,10 @@ export function listProjects(): ProjectMeta[] {
       if (!meta) continue;
       index.projects[meta.id] = meta as unknown as Record<string, unknown>;
       known.add(meta.id);
+      adopted = true;
     }
   }
-  saveIndex(index);
+  if (adopted) saveIndex(index);
 
   const out = Object.values(index.projects).map(metaFromDict);
   // non-archived first, then by updatedAt desc

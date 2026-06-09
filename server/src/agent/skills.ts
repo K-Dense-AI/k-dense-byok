@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { loadSkillsFromDir, type Skill } from "@earendil-works/pi-coding-agent";
 import { PROJECTS_ROOT } from "../config.ts";
-import { resolvePaths, type ProjectPaths } from "../projects.ts";
+import type { ProjectPaths } from "../projects.ts";
 
 const SKILLS_REPO = process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
 const SKILLS_SUBPATH = "skills";
@@ -57,17 +57,20 @@ function copySkillDirs(srcDir: string, destDir: string): number {
   return copied;
 }
 
-/** Shallow-clone the catalogue repo and return the path to its skills dir. */
-function cloneCatalogue(): string | null {
+/** Shallow-clone the catalogue repo; returns its skills dir + the tmp root to delete. */
+function cloneCatalogue(): { skillsDir: string; tmpRoot: string } | null {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kady-skills-"));
   const res = spawnSync(
     "git",
     ["clone", "--depth", "1", "--branch", SKILLS_BRANCH, `https://github.com/${SKILLS_REPO}.git`, tmp],
     { encoding: "utf-8", stdio: "pipe" },
   );
-  if (res.status !== 0) return null;
   const skillsDir = path.join(tmp, SKILLS_SUBPATH);
-  return fs.existsSync(skillsDir) ? skillsDir : null;
+  if (res.status !== 0 || !fs.existsSync(skillsDir)) {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    return null;
+  }
+  return { skillsDir, tmpRoot: tmp };
 }
 
 /**
@@ -84,8 +87,14 @@ export function seedProjectSkills(paths: ProjectPaths, allowRemote = true): numb
     if (countSkillDirs(dest) > 0) return countSkillDirs(dest);
   }
   if (allowRemote) {
-    const cataloguePath = cloneCatalogue();
-    if (cataloguePath) copySkillDirs(cataloguePath, dest);
+    const catalogue = cloneCatalogue();
+    if (catalogue) {
+      try {
+        copySkillDirs(catalogue.skillsDir, dest);
+      } finally {
+        fs.rmSync(catalogue.tmpRoot, { recursive: true, force: true });
+      }
+    }
   }
   return countSkillDirs(dest);
 }
@@ -95,5 +104,3 @@ export function listProjectSkills(paths: ProjectPaths): Skill[] {
   if (!fs.existsSync(paths.skillsDir)) return [];
   return loadSkillsFromDir({ dir: paths.skillsDir, source: "project" }).skills;
 }
-
-export { resolvePaths };

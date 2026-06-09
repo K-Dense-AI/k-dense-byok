@@ -43,6 +43,12 @@ interface RunBody {
   thinkingLevel?: string;
 }
 
+// Sessions with a run in flight, claimed synchronously. `session.isStreaming`
+// flips true only after awaits inside prompt(), so concurrent POSTs could
+// otherwise both pass the guard and the loser's close handler would abort the
+// winner's live turn.
+const activeRuns = new Set<string>();
+
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
   app.post("/sessions", async () => {
     const session = await createSession(currentProjectId(), activePaths());
@@ -61,8 +67,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     }));
   });
 
-  app.get<{ Params: { id: string } }>("/sessions/:id/costs", async (req) => {
-    return sessionCostSummary(req.params.id, currentProjectId());
+  app.get<{ Params: { id: string } }>("/sessions/:id/costs", async (req, reply) => {
+    try {
+      return sessionCostSummary(req.params.id, currentProjectId());
+    } catch (err) {
+      reply.code(400);
+      return { detail: (err as Error).message };
+    }
   });
 
   app.post<{ Params: { id: string } }>("/sessions/:id/abort", async (req) => {
@@ -85,7 +96,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // is streaming, so this is a guard against races/double-submits rather
       // than a normal path. (Pi's followUp queueing returns immediately, which
       // would orphan the SSE stream and abort the live turn — so we reject.)
-      if (session.isStreaming) {
+      const runKey = `${projectId}:${req.params.id}`;
+      if (session.isStreaming || activeRuns.has(runKey)) {
         reply.code(409);
         return { detail: "Session is already streaming a response" };
       }
@@ -95,82 +107,88 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "message is required" };
       }
-      if (body.model) {
-        try {
-          await session.setModel(resolveModel(body.model, getModelRegistry()));
-        } catch (err) {
-          req.log.warn({ err }, "setModel failed; keeping current model");
-        }
-      }
-      if (body.thinkingLevel) {
-        session.setThinkingLevel(body.thinkingLevel as ThinkingLevel);
-      }
-
-      // Take over the socket for Server-Sent Events.
-      reply.hijack();
-      const raw = reply.raw;
-      raw.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-        ...corsResponseHeaders(req.headers.origin),
-      });
-      const write = (frame: ClientFrame) => {
-        if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(frame)}\n\n`);
-      };
-
-      // Hard budget cap: refuse to run if the project has reached its limit.
-      const budget = isBudgetExceeded(projectId);
-      if (budget.exceeded) {
-        write({
-          type: "error",
-          kind: "budget",
-          message:
-            `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
-            `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project ` +
-            `settings and retry.`,
-        });
-        write({ type: "done" });
-        raw.end();
-        return;
-      }
-
-      const unsub = session.subscribe((ev) => {
-        const frame = toClientFrame(ev);
-        if (frame) write(frame);
-      });
-
-      req.raw.on("close", () => {
-        if (session.isStreaming) session.abort().catch(() => {});
-      });
-
-      // errorMessage is sticky on the session; only report it if THIS run set it.
-      const priorError = session.state.errorMessage;
-      const before = snapshot(session);
+      // No awaits between the guard above and this claim, so it is atomic.
+      activeRuns.add(runKey);
       try {
-        await session.prompt(body.message ?? "");
-        // Surface a provider/agent error that didn't already stream as a frame
-        // (e.g. an auth failure that produced an empty assistant turn).
-        const errorMessage = session.state.errorMessage;
-        if (errorMessage && errorMessage !== priorError) {
-          write({ type: "error", message: errorMessage });
+        if (body.model) {
+          try {
+            await session.setModel(resolveModel(body.model, getModelRegistry()));
+          } catch (err) {
+            req.log.warn({ err }, "setModel failed; keeping current model");
+          }
         }
-        recordRun({
-          sessionId: req.params.id,
-          projectId,
-          model: session.model?.id ?? "unknown",
-          before,
-          after: snapshot(session),
+        if (body.thinkingLevel) {
+          session.setThinkingLevel(body.thinkingLevel as ThinkingLevel);
+        }
+
+        // Take over the socket for Server-Sent Events.
+        reply.hijack();
+        const raw = reply.raw;
+        raw.writeHead(200, {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+          ...corsResponseHeaders(req.headers.origin),
         });
-        const stats = session.getSessionStats();
-        write({ type: "cost", cost: stats.cost, tokens: stats.tokens });
-        write({ type: "done" });
-      } catch (err) {
-        write({ type: "error", message: (err as Error).message });
+        const write = (frame: ClientFrame) => {
+          if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(frame)}\n\n`);
+        };
+
+        // Hard budget cap: refuse to run if the project has reached its limit.
+        const budget = isBudgetExceeded(projectId);
+        if (budget.exceeded) {
+          write({
+            type: "error",
+            kind: "budget",
+            message:
+              `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+              `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project ` +
+              `settings and retry.`,
+          });
+          write({ type: "done" });
+          raw.end();
+          return;
+        }
+
+        const unsub = session.subscribe((ev) => {
+          const frame = toClientFrame(ev);
+          if (frame) write(frame);
+        });
+
+        req.raw.on("close", () => {
+          if (session.isStreaming) session.abort().catch(() => {});
+        });
+
+        // errorMessage is sticky on the session; only report it if THIS run set it.
+        const priorError = session.state.errorMessage;
+        const before = snapshot(session);
+        try {
+          await session.prompt(body.message ?? "");
+          // Surface a provider/agent error that didn't already stream as a frame
+          // (e.g. an auth failure that produced an empty assistant turn).
+          const errorMessage = session.state.errorMessage;
+          if (errorMessage && errorMessage !== priorError) {
+            write({ type: "error", message: errorMessage });
+          }
+          recordRun({
+            sessionId: req.params.id,
+            projectId,
+            model: session.model?.id ?? "unknown",
+            before,
+            after: snapshot(session),
+          });
+          const stats = session.getSessionStats();
+          write({ type: "cost", cost: stats.cost, tokens: stats.tokens });
+          write({ type: "done" });
+        } catch (err) {
+          write({ type: "error", message: (err as Error).message });
+        } finally {
+          unsub();
+          if (!raw.writableEnded) raw.end();
+        }
       } finally {
-        unsub();
-        if (!raw.writableEnded) raw.end();
+        activeRuns.delete(runKey);
       }
     },
   );

@@ -34,7 +34,7 @@ export function SkillsPickerBody({
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.description.toLowerCase().includes(q) ||
-        s.author.toLowerCase().includes(q)
+        s.author?.toLowerCase().includes(q)
     );
   }, [skills, search]);
 

@@ -8,9 +8,10 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
-  author: string;
-  license: string;
-  compatibility: string;
+  // Optional: the backend's /skills response only includes id/name/description.
+  author?: string;
+  license?: string;
+  compatibility?: string;
 }
 
 export function useSkills(): { skills: Skill[]; loading: boolean } {

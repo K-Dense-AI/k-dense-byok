@@ -36,6 +36,11 @@ export interface CostEntry {
 }
 
 function costsPath(sessionId: string, projectId?: string): string {
+  // The session id becomes a path segment under runsDir; it arrives raw from
+  // the URL (Fastify decodes %2F), so reject anything that could traverse.
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sessionId)) {
+    throw new Error(`Invalid session id: ${sessionId}`);
+  }
   const paths = projectId ? resolvePaths(projectId) : activePaths();
   return path.join(paths.runsDir, sessionId, "costs.jsonl");
 }

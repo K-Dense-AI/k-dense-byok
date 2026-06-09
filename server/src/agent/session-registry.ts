@@ -44,13 +44,14 @@ const keyFor = (projectId: string, sessionId: string) => `${projectId}:${session
 function evictOverCap(projectId: string): void {
   const prefix = `${projectId}:`;
   const keys = [...live.keys()].filter((k) => k.startsWith(prefix));
+  let remaining = keys.length;
   for (const k of keys) {
-    if (keys.length <= MAX_LIVE_PER_PROJECT) break;
+    if (remaining <= MAX_LIVE_PER_PROJECT) break;
     const s = live.get(k);
     if (s && s.isStreaming) continue; // never evict an in-flight session
     s?.dispose();
     live.delete(k);
-    keys.splice(keys.indexOf(k), 1);
+    remaining--;
   }
 }
 
@@ -72,6 +73,7 @@ async function build(
     tools: [...BUILTIN_TOOLS, "spawn_subagent"],
     customTools: [
       makeSpawnSubagentTool({
+        projectId,
         cwd: paths.sandbox,
         authStorage,
         modelRegistry,

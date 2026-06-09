@@ -15,13 +15,7 @@ import AdmZip from "adm-zip";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, touchProject } from "../projects.ts";
 import { currentProjectId } from "../scope.ts";
-import {
-  guessMime,
-  isUserVisible,
-  safePath,
-  SandboxError,
-  USER_HIDDEN_NAMES,
-} from "../sandbox-fs.ts";
+import { guessMime, isUserVisible, safePath, SandboxError } from "../sandbox-fs.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
@@ -81,11 +75,9 @@ function zipDir(root: string, base: string): Buffer {
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
-      const rel = path.relative(base, abs);
-      if (rel.split(path.sep).some((p) => p.startsWith("."))) continue;
-      if (USER_HIDDEN_NAMES.has(entry.name)) continue;
+      if (!isUserVisible(abs, base)) continue;
       if (entry.isDirectory()) walk(abs);
-      else if (entry.isFile()) zip.addLocalFile(abs, path.dirname(rel));
+      else if (entry.isFile()) zip.addLocalFile(abs, path.dirname(path.relative(base, abs)));
     }
   };
   walk(root);
@@ -138,19 +130,39 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.post("/sandbox/upload", async (req, reply) => {
     const paths = activePaths();
     fs.mkdirSync(paths.uploadDir, { recursive: true });
-    const saved: string[] = [];
+    // The client sends parallel `files`/`paths` parts: paths[i] is the i-th
+    // file's relative subpath for folder uploads (may be empty for flat files).
+    const files: { filename: string; buf: Buffer }[] = [];
+    const relPaths: string[] = [];
     const parts = (req as FastifyRequest & { parts: () => AsyncIterable<any> }).parts();
     for await (const part of parts) {
-      if (part.type !== "file" || !part.filename) continue;
-      const safeName = path.basename(part.filename);
-      if (!safeName || safeName.startsWith(".")) {
-        part.file.resume();
-        continue;
+      if (part.type === "file") {
+        if (!part.filename) {
+          part.file.resume();
+          continue;
+        }
+        files.push({ filename: part.filename, buf: await part.toBuffer() });
+      } else if (part.fieldname === "paths") {
+        relPaths.push(String(part.value ?? ""));
       }
-      const dest = path.join(paths.uploadDir, safeName);
+    }
+    const saved: string[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const rel = (relPaths[i] ?? "").trim();
+      let dest: string;
+      if (rel) {
+        const safeParts = rel
+          .split(/[\\/]+/)
+          .filter((p) => p && p !== "." && p !== ".." && !p.startsWith("."));
+        if (!safeParts.length) continue;
+        dest = path.join(paths.uploadDir, ...safeParts);
+      } else {
+        const safeName = path.basename(files[i].filename);
+        if (!safeName || safeName.startsWith(".")) continue;
+        dest = path.join(paths.uploadDir, safeName);
+      }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      const buf = await part.toBuffer();
-      fs.writeFileSync(dest, buf);
+      fs.writeFileSync(dest, files[i].buf);
       saved.push(path.relative(paths.sandbox, dest));
     }
     touchProject(currentProjectId());
@@ -241,6 +253,13 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       if (!fs.existsSync(path.dirname(destPath))) {
         reply.code(404);
         return { detail: "Destination parent directory not found" };
+      }
+      if (
+        fs.statSync(srcPath).isDirectory() &&
+        (destPath === srcPath || destPath.startsWith(srcPath + path.sep))
+      ) {
+        reply.code(400);
+        return { detail: "Cannot move a directory into itself" };
       }
       fs.renameSync(srcPath, destPath);
       const srcSidecar = srcPath + ".annotations.json";

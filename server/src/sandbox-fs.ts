@@ -17,12 +17,34 @@ export class SandboxError extends Error {
   }
 }
 
+function isWithin(root: string, target: string): boolean {
+  return target === root || target.startsWith(root + path.sep);
+}
+
 /** Resolve a sandbox-relative path, refusing traversal outside the sandbox. */
 export function safePath(rel: string): string {
   const sandbox = activePaths().sandbox;
   const target = path.resolve(sandbox, rel);
-  if (target !== sandbox && !target.startsWith(sandbox + path.sep)) {
+  if (!isWithin(sandbox, target)) {
     throw new SandboxError(403, "Path traversal denied");
+  }
+  // path.resolve() is purely lexical — a symlink inside the sandbox can still
+  // point outside it. Canonicalize the deepest existing ancestor and re-check.
+  let existing = target;
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) break;
+    existing = parent;
+  }
+  try {
+    const realSandbox = fs.realpathSync(sandbox);
+    const realTarget = fs.realpathSync(existing);
+    if (!isWithin(realSandbox, realTarget)) {
+      throw new SandboxError(403, "Path traversal denied");
+    }
+  } catch (err) {
+    if (err instanceof SandboxError) throw err;
+    /* sandbox not created yet → nothing on disk to escape through */
   }
   return target;
 }

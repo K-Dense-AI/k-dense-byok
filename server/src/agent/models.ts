@@ -15,7 +15,12 @@ import fs from "node:fs";
 import path from "node:path";
 import type { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
-import { DEFAULT_MODEL_ID, OLLAMA_BASE_URL, REPO_ROOT } from "../config.ts";
+import {
+  DEFAULT_MODEL_ID,
+  DEFAULT_MODEL_PROVIDER,
+  OLLAMA_BASE_URL,
+  REPO_ROOT,
+} from "../config.ts";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const CATALOGUE_PATH = path.join(REPO_ROOT, "web", "src", "data", "models.json");
@@ -59,8 +64,14 @@ function loadCatalogue(): Map<string, CatalogueEntry> {
         label: String(m.label ?? id),
       });
     }
-  } catch {
-    /* catalogue missing → synthesize with defaults */
+  } catch (err) {
+    // Synthesized models fall back to $0 pricing, which silently disables the
+    // project spend caps — make the misconfiguration visible.
+    console.warn(
+      `[models] Failed to load model catalogue at ${CATALOGUE_PATH}: ` +
+        `${(err as Error).message}. Unknown models will be priced at $0, ` +
+        `so spend limits will not accrue.`,
+    );
   }
   catalogue = map;
   return map;
@@ -118,9 +129,15 @@ export function resolveModel(
   ref: string | undefined,
   registry: ModelRegistry,
 ): Model<Api> {
-  const r = (ref || DEFAULT_MODEL_ID).trim();
+  const usingDefault = !ref || !ref.trim();
+  const r = usingDefault ? DEFAULT_MODEL_ID.trim() : ref.trim();
   if (r.startsWith("ollama/")) {
     return buildOllamaModel(r.slice("ollama/".length));
+  }
+  // .env.example documents a bare DEFAULT_MODEL_ID (e.g. "llama3") routed by
+  // DEFAULT_MODEL_PROVIDER; honor that instead of misrouting to OpenRouter.
+  if (usingDefault && DEFAULT_MODEL_PROVIDER.toLowerCase() === "ollama") {
+    return buildOllamaModel(r);
   }
   const orId = stripOpenRouter(r);
   return registry.find("openrouter", orId) ?? buildOpenRouterModel(orId);
