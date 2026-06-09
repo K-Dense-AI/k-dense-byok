@@ -1,7 +1,7 @@
 # K-Dense BYOK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.4.5-blue.svg)](pyproject.toml)
+[![Version](https://img.shields.io/badge/Version-0.5.0-blue.svg)](server/package.json)
 [![Skills](https://img.shields.io/badge/Skills-140%2B-brightgreen.svg)](#what-can-it-do)
 [![Databases](https://img.shields.io/badge/Databases-229-orange.svg)](#what-can-it-do)
 [![Tests](https://github.com/K-Dense-AI/k-dense-byok/actions/workflows/tests.yml/badge.svg)](https://github.com/K-Dense-AI/k-dense-byok/actions/workflows/tests.yml)
@@ -96,7 +96,7 @@ These guides live in the [`docs/`](./docs) folder:
 - **[Model selection](./docs/model-selection.md)** - how Kady builds the OpenRouter model list.
 - **[Local models with Ollama](./docs/local-models-ollama.md)** - run everything with local models, no API keys required.
 - **[Contributing workflows](./docs/contributing-workflows.md)** - add new workflow templates to the library.
-- **[Known limitations](./docs/limitations.md)** - rough edges to be aware of, especially around the expert system.
+- **[Known limitations](./docs/limitations.md)** - rough edges to be aware of in the current beta.
 
 ## Features in the works
 

@@ -73,7 +73,7 @@ projects/
 ## Testing notes
 
 - Backend tests: `cd server && npm test` (vitest, in `server/test/`). `KADY_PROJECTS_ROOT` is pointed at a temp dir via `vitest.config.ts`.
-- Frontend tests: `cd web && npm test` (vitest). Strict `tsc` is not a CI gate for the frontend (a pre-existing markdown-components type cast in `web/src/components/ai-elements/message.tsx` is known and unrelated).
+- Frontend tests: `cd web && npm test` (vitest). `npx tsc --noEmit` currently passes clean for the frontend too.
 
 ## Caveats worth knowing
 

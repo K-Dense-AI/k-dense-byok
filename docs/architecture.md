@@ -43,10 +43,9 @@ What every tab in a project shares:
 
 - The sandbox (`projects/<project>/sandbox/`) — files written by one tab are
   immediately visible to the others.
-- Project settings: budget cap, custom MCP servers (`custom_mcps.json`),
-  browser-automation toggle, and the project-level cost total shown in the
-  header pill.
-- API keys and global preferences from `kady_agent/.env`.
+- Project settings: the budget cap (`spendLimitUsd`) and the project-level
+  cost total shown in the header pill.
+- API keys and global preferences from the repo-root `.env`.
 
 Switching tabs in the UI is purely client-side; the backend doesn't need to
 know which tab is "active" because each request already carries its own

@@ -1,47 +1,23 @@
 # Model Selection
 
-Kady uses two model choices in each chat tab:
+Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `spawn_subagent` tool inherit the parent tab's current model.
 
-- **Orchestrator model:** the main Kady agent that reads your message, decides what to do, and streams the response.
-- **Expert model:** the model used by delegated expert tasks that run inside the Gemini CLI process.
-
-Both choices are stored per tab, so different chats in the same project can use different orchestrator and expert models.
+The choice is stored per tab, so different chats in the same project can use different models, and you can switch models between messages within a tab.
 
 ## OpenRouter models
 
-The OpenRouter model picker is generated from models that advertise tool-calling support. Kady sends tool definitions to the orchestrator and expert, so models that do not support the `tools` parameter are excluded from the dropdown.
+The model picker is generated from OpenRouter models that advertise tool-calling support. Kady sends tool definitions with every turn, so models that do not support the `tools` parameter are excluded from the dropdown.
 
-The generator calls the OpenRouter SDK with:
-
-```python
-client.models.list(supported_parameters="tools")
-```
-
-The resulting entries are written to `web/src/data/models.json` with ids prefixed as `openrouter/<provider>/<model>`. The LiteLLM proxy has an `openrouter/*` wildcard route, so both the orchestrator and the Gemini CLI-backed expert can use any generated OpenRouter id.
-
-To refresh the checked-in model list:
-
-```bash
-uv run python - <<'PY'
-from dotenv import load_dotenv
-load_dotenv("kady_agent/.env")
-
-from kady_agent.utils import update_models_json
-update_models_json()
-PY
-```
-
-By default, this includes all OpenRouter models with `tools` support, preserves the orchestrator and expert recommended defaults, and omits retired GPT-5.4 base/pro entries.
+The checked-in list lives at `web/src/data/models.json`, with ids prefixed as `openrouter/<vendor>/<model>`. The backend (`server/src/agent/models.ts`) resolves a picked id to a Pi `Model`: it prefers Pi's built-in OpenRouter entry, and otherwise synthesizes one using the context window, capabilities, and per-1M-token pricing from this catalogue. Pi computes the cost shown in the session/project meters from that pricing, so keeping `models.json` current keeps cost tracking (and the project spend cap) accurate. If the catalogue can't be loaded, the backend logs a startup warning and unknown models fall back to $0 pricing.
 
 ## Defaults
 
-- The orchestrator default is `openrouter/anthropic/claude-opus-4.8`.
-- The expert default is `openrouter/google/gemini-3.5-flash`.
-
-Gemini 3.5 Flash is recommended for expert tasks because expert delegation is tool-heavy, coding-heavy, and often benefits from a large context window. You can still choose a different tool-capable OpenRouter model per tab.
+- The default model is `openrouter/anthropic/claude-opus-4.8`.
+- Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-4.8`, routed by `DEFAULT_MODEL_PROVIDER`).
+- To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
 
 ## Local Ollama models
 
-Pulled Ollama models are discovered live from the local Ollama daemon and appear under the **Local (Ollama)** section in the picker. Selecting an Ollama model routes through the local LiteLLM `ollama/*` wildcard instead of OpenRouter.
+Pulled Ollama models are discovered live: the backend's `/ollama/models` endpoint queries your local daemon (`OLLAMA_BASE_URL/api/tags`), and the results appear under the **Local (Ollama)** section of the picker as `ollama/<name>`. Selecting one makes Pi call your local daemon directly — no OpenRouter key required for those models.
 
-Local models are useful for privacy and cost control, but tool-calling quality varies widely. For complex delegated expert tasks, frontier OpenRouter models are usually more reliable.
+Local models are useful for privacy and cost control, but tool-calling quality varies widely. For complex, tool-heavy tasks, frontier OpenRouter models are usually more reliable. See [Local models with Ollama](./local-models-ollama.md).
