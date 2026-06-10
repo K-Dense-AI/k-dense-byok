@@ -70,6 +70,11 @@ projects/
 - API keys come from `process.env`, auto-loaded by `server/src/env.ts` from (in order) repo-root `.env`, the legacy `kady_agent/.env` if present, and `server/.env`. Set `OPENROUTER_API_KEY` (required) and optionally `OLLAMA_BASE_URL`, `DEFAULT_MODEL_ID`, `KADY_PORT`, `KADY_PROJECTS_ROOT`.
 - A full credentials Settings UI, MCP servers, Modal compute, provenance/manifests, citation verification, and first-party web search (Exa/Parallel/Paperclip) / document conversion are **deferred** in this migration. Web search etc. will return as native Pi custom tools.
 
+## Releases
+
+- `server/package.json` `version` is the single source of truth for the app version. The web build reads it at build time (`web/next.config.ts` injects `NEXT_PUBLIC_APP_VERSION`); `web/package.json` deliberately has no `version` field.
+- Releasing = bump `server/package.json` version and push/merge to `main`. The `Release` workflow (`.github/workflows/release.yml`) runs on every push to `main`, and if the tag `v<version>` doesn't exist yet it creates it plus a GitHub release with auto-generated notes. No manual tagging.
+
 ## Testing notes
 
 - Backend tests: `cd server && npm test` (vitest, in `server/test/`). `KADY_PROJECTS_ROOT` is pointed at a temp dir via `vitest.config.ts`.
