@@ -3,12 +3,16 @@
  *
  * `spawn_subagent` is the one concession to the old orchestrator/expert split:
  * the main agent can fan a self-contained subtask out to a fresh in-memory Pi
- * session (same cwd, model, and built-in tools) and get back its final text.
+ * session (same cwd, model, built-in + MCP tools) and get back its final text.
+ * An optional `agent_type` selects a specialist persona from subagents.ts
+ * (code-reviewer, citation-checker, ...) applied via appendSystemPrompt.
  * Subagents do NOT get the spawn tool themselves (no recursion).
  */
 import {
   createAgentSession,
+  DefaultResourceLoader,
   defineTool,
+  getAgentDir,
   SessionManager,
   type AuthStorage,
   type ModelRegistry,
@@ -17,6 +21,7 @@ import {
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { isBudgetExceeded } from "../cost/ledger.ts";
+import { getSubagentType, subagentRosterText } from "./subagents.ts";
 
 export const BUILTIN_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
@@ -35,6 +40,8 @@ export interface SubagentDeps {
   getModel: () => Model<Api>;
   /** Called with the subagent's final usage so the caller can ledger it. */
   onStats?: (stats: SubagentStats, modelId: string) => void;
+  /** Project MCP tools, forwarded so subagents get them too (but never spawn). */
+  mcpTools?: ToolDefinition[];
 }
 
 export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
@@ -45,13 +52,23 @@ export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
       "Delegate a self-contained subtask to an independent agent with its own " +
       "context window and the same file/bash tools. Use for heavy or parallel " +
       "work (e.g. independent analyses) so the main thread stays focused. " +
-      "Returns the subagent's final answer as text.",
+      "Returns the subagent's final answer as text.\n\n" +
+      "Set agent_type to use a specialist persona:\n" +
+      subagentRosterText(),
     parameters: Type.Object({
       prompt: Type.String({
         description:
           "Full instructions for the subagent: the objective, relevant file " +
           "paths, constraints, and explicit success criteria.",
       }),
+      agent_type: Type.Optional(
+        Type.String({
+          description:
+            "Specialist persona from the roster in the tool description " +
+            "(e.g. 'code-reviewer', 'citation-checker'). Omit for a " +
+            "general-purpose subagent.",
+        }),
+      ),
     }),
     execute: async (_toolCallId, params) => {
       // The per-run budget check happens before the turn starts; re-check here
@@ -72,14 +89,44 @@ export function makeSpawnSubagentTool(deps: SubagentDeps): ToolDefinition {
           details: undefined,
         };
       }
+      const agentType = params.agent_type ? getSubagentType(params.agent_type) : undefined;
+      if (params.agent_type && !agentType) {
+        return {
+          content: [
+            {
+              type: "text",
+              text:
+                `Unknown agent_type "${params.agent_type}". Use one of the ` +
+                `types listed in the tool description, or omit agent_type ` +
+                `for a general-purpose subagent.`,
+            },
+          ],
+          isError: true,
+          details: undefined,
+        };
+      }
       const model = deps.getModel();
+      const mcpTools = deps.mcpTools ?? [];
+      // The persona rides in via appendSystemPrompt so the subagent still gets
+      // the normal sandbox context (AGENTS.md, skills) from the loader.
+      let resourceLoader: DefaultResourceLoader | undefined;
+      if (agentType) {
+        resourceLoader = new DefaultResourceLoader({
+          cwd: deps.cwd,
+          agentDir: getAgentDir(),
+          appendSystemPrompt: [agentType.systemPrompt],
+        });
+        await resourceLoader.reload();
+      }
       const { session } = await createAgentSession({
         cwd: deps.cwd,
         model,
         authStorage: deps.authStorage,
         modelRegistry: deps.modelRegistry,
         sessionManager: SessionManager.inMemory(deps.cwd),
-        tools: BUILTIN_TOOLS,
+        tools: [...BUILTIN_TOOLS, ...mcpTools.map((t) => t.name)],
+        customTools: mcpTools.length > 0 ? mcpTools : undefined,
+        resourceLoader,
       });
       try {
         await session.prompt(params.prompt);

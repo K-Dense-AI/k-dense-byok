@@ -10,6 +10,9 @@
  *     <id>/
  *       project.json                     metadata (ProjectMeta)
  *       sandbox/                          working dir (Pi agent cwd)
+ *         pyproject.toml                  uv-managed Python env (deps via `uv add`)
+ *         AGENTS.md                       user-editable system-prompt extension
+ *         .venv/                          sandbox venv (created by `uv run`/`uv sync`)
  *         user_data/                      uploads
  *         .pi/skills/                     per-project Pi skills
  *         .pi/sessions/                   Pi JSONL session files
@@ -20,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { DEFAULT_PROJECT_ID, PROJECTS_ROOT } from "./config.ts";
 import { currentProjectId } from "./scope.ts";
+import { seedSandboxFiles } from "./sandbox-seed.ts";
 
 const INDEX_PATH = path.join(PROJECTS_ROOT, "index.json");
 const RESERVED_IDS = new Set(["new", "index", "archive", "..", "."]);
@@ -245,6 +249,7 @@ export function createProject(input: CreateProjectInput): ProjectMeta {
     spendLimitUsd: limit,
   };
   fs.mkdirSync(paths.sandbox, { recursive: true });
+  seedSandboxFiles(paths);
   writeProjectJson(paths, meta);
 
   const index = loadIndex();
@@ -330,6 +335,8 @@ export function ensureProjectExists(projectId: string): ProjectPaths {
   fs.mkdirSync(paths.root, { recursive: true });
   fs.mkdirSync(paths.sandbox, { recursive: true });
   fs.mkdirSync(paths.kadyDir, { recursive: true });
+  // Covers projects that predate sandbox seeding; no-op once the files exist.
+  seedSandboxFiles(paths);
 
   if (!fs.existsSync(paths.projectJson)) {
     const now = nowIso();

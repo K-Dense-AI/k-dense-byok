@@ -14,7 +14,9 @@ import {
   type UpdateProjectInput,
 } from "../projects.ts";
 import { projectCostSummary } from "../cost/ledger.ts";
+import { disposeMcpClients } from "../agent/mcp.ts";
 import { seedProjectSkills } from "../agent/skills.ts";
+import { syncSandboxVenv } from "../sandbox-seed.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
   app.get("/projects", async () => listProjects());
@@ -77,14 +79,18 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
   app.post<{ Params: { projectId: string }; Body: { sync_venv?: boolean; download_skills?: boolean } }>(
     "/projects/:projectId/sandbox/init",
     async (req) => {
-      const allowRemote = (req.body ?? {}).download_skills !== false;
-      const count = seedProjectSkills(resolvePaths(req.params.projectId), allowRemote);
-      return { ok: true, skills: count };
+      const body = req.body ?? {};
+      const paths = resolvePaths(req.params.projectId);
+      const allowRemote = body.download_skills !== false;
+      const count = seedProjectSkills(paths, allowRemote);
+      const venvSynced = body.sync_venv ? syncSandboxVenv(paths) : false;
+      return { ok: true, skills: count, venvSynced };
     },
   );
 
   app.delete<{ Params: { projectId: string } }>("/projects/:projectId", async (req, reply) => {
     try {
+      await disposeMcpClients(req.params.projectId);
       deleteProject(req.params.projectId);
       reply.code(204);
       return null;

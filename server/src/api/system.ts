@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { OLLAMA_BASE_URL } from "../config.ts";
 import { activePaths } from "../projects.ts";
 import { listProjectSkills, seedProjectSkills } from "../agent/skills.ts";
+import { syncSandboxVenv } from "../sandbox-seed.ts";
 
 const GITHUB_REPO = "K-Dense-AI/k-dense-byok";
 const VERSION_CACHE_TTL_MS = 60 * 60 * 1000; // re-check at most once per hour
@@ -61,10 +62,12 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
 
   // Seed the project's skills (network clone allowed). Used by first-run / a
   // "populate skills" action. Cheap no-op once skills exist.
-  app.post<{ Querystring: { remote?: string } }>("/sandbox/init", async (req) => {
+  app.post<{ Querystring: { remote?: string; venv?: string } }>("/sandbox/init", async (req) => {
+    const paths = activePaths();
     const allowRemote = req.query.remote !== "false";
-    const count = seedProjectSkills(activePaths(), allowRemote);
-    return { ok: true, skills: count };
+    const count = seedProjectSkills(paths, allowRemote);
+    const venvSynced = req.query.venv === "true" ? syncSandboxVenv(paths) : false;
+    return { ok: true, skills: count, venvSynced };
   });
 
   // Proxy local Ollama tags → the UI Model shape. Returns available:false if

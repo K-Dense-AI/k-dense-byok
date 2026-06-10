@@ -18,6 +18,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
 import { recordSubagentRun } from "../cost/ledger.ts";
+import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
 import { BUILTIN_TOOLS, makeSpawnSubagentTool } from "./tools.ts";
 
@@ -61,6 +62,7 @@ async function build(
   sessionManager: SessionManager,
 ): Promise<AgentSession> {
   const fallbackModel = defaultModel(modelRegistry);
+  const mcpTools = await getMcpTools(projectId, paths);
   // The spawn_subagent tool is created before the session exists, so it reads
   // the live model + sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -70,7 +72,7 @@ async function build(
     authStorage,
     modelRegistry,
     sessionManager,
-    tools: [...BUILTIN_TOOLS, "spawn_subagent"],
+    tools: [...BUILTIN_TOOLS, "spawn_subagent", ...mcpTools.map((t) => t.name)],
     customTools: [
       makeSpawnSubagentTool({
         projectId,
@@ -80,7 +82,9 @@ async function build(
         getModel: () => holder.session?.model ?? fallbackModel,
         onStats: (stats, modelId) =>
           recordSubagentRun(projectId, holder.session?.sessionId ?? "", modelId, stats),
+        mcpTools,
       }),
+      ...mcpTools,
     ],
   });
   holder.session = session;

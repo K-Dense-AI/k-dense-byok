@@ -92,6 +92,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const create = useCallback(
     async (input: ProjectCreateInput) => {
       const project = await apiCreateProject(input);
+      // Seed the new project's sandbox (scientific skills + Python venv) so
+      // they're ready immediately. Best-effort: a failed seed shouldn't block
+      // project creation — the user can re-trigger it from the sandbox UI.
+      try {
+        await apiInitSandbox(project.id, { download_skills: true, sync_venv: true });
+      } catch {
+        /* non-fatal: skills can be seeded later */
+      }
       await refresh();
       return project;
     },

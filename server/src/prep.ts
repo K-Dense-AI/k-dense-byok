@@ -7,6 +7,7 @@
 import "./env.ts";
 import { ensureProjectExists, listProjects, resolvePaths } from "./projects.ts";
 import { seedProjectSkills } from "./agent/skills.ts";
+import { seedSandboxFiles, syncSandboxVenv } from "./sandbox-seed.ts";
 import { DEFAULT_PROJECT_ID } from "./config.ts";
 
 async function main(): Promise<void> {
@@ -16,8 +17,11 @@ async function main(): Promise<void> {
     if (meta.archived) continue;
     process.stdout.write(`== Initializing project: ${meta.id} (${meta.name}) ==\n`);
     const paths = resolvePaths(meta.id);
+    seedSandboxFiles(paths);
     const count = seedProjectSkills(paths, true);
     process.stdout.write(`   skills: ${count}\n`);
+    const synced = syncSandboxVenv(paths);
+    process.stdout.write(`   venv: ${synced ? "synced" : "skipped (uv unavailable or sync failed)"}\n`);
   }
   process.stdout.write("Done.\n");
 }
