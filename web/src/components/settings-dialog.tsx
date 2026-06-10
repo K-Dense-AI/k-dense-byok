@@ -26,7 +26,9 @@ import {
   Trash2Icon,
   GlobeIcon,
   TerminalIcon,
+  BotIcon,
 } from "lucide-react";
+import { SubagentsPanel } from "@/components/subagents-panel";
 import { useProjects } from "@/lib/use-projects";
 import { apiFetch } from "@/lib/projects";
 import {
@@ -698,6 +700,13 @@ export function SettingsDialog({
               MCP servers
             </TabsTrigger>
             <TabsTrigger
+              value="agents"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <BotIcon className="size-3.5" />
+              Sub-agents
+            </TabsTrigger>
+            <TabsTrigger
               value="appearance"
               className="justify-start gap-2 px-3 text-xs w-full"
             >
@@ -711,6 +720,9 @@ export function SettingsDialog({
           </TabsContent>
           <TabsContent value="mcp" className="flex-1 min-h-0 p-5 overflow-y-auto">
             <McpServersPanel />
+          </TabsContent>
+          <TabsContent value="agents" className="flex-1 min-h-0 p-5 overflow-y-auto">
+            <SubagentsPanel />
           </TabsContent>
           <TabsContent value="appearance" className="flex-1 min-h-0 p-5">
             <AppearancePanel />

@@ -22,11 +22,8 @@ import {
 import type { ProjectPaths } from "../projects.ts";
 import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
-import {
-  makeSubagentLedgerExtension,
-  seedAgentFiles,
-  subagentsExtensionPath,
-} from "./subagent-bridge.ts";
+import { seedAgentFiles } from "./agent-files.ts";
+import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary

@@ -13,17 +13,14 @@
  *     `subagent` calls once the project's spend cap is hit, and (b) ledgers
  *     each child run's usage (child processes have their own sessions, so
  *     their spend would otherwise be invisible to the project budget).
- *  3. `seedAgentFiles()` — writes the scientific agent roster (subagents.ts)
- *     into `sandbox/.pi/agents/*.md` where the package discovers project
- *     agents. Write-if-missing, so user edits win.
+ * Agent definition files themselves (seeding, parsing, CRUD) live in
+ * agent-files.ts; the seeding call happens in session-registry before each
+ * session build.
  */
-import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { ProjectPaths } from "../projects.ts";
 import { isBudgetExceeded, recordSubagentRun } from "../cost/ledger.ts";
-import { SUBAGENT_TYPES } from "./subagents.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -97,40 +94,3 @@ export function makeSubagentLedgerExtension(
   };
 }
 
-/** YAML-safe single-line string (summaries contain colons). */
-function yamlQuote(s: string): string {
-  return JSON.stringify(s.replace(/\s+/g, " ").trim());
-}
-
-function agentMarkdown(type: { name: string; summary: string; systemPrompt: string }): string {
-  return [
-    "---",
-    `name: ${type.name}`,
-    `description: ${yamlQuote(type.summary)}`,
-    "systemPromptMode: append",
-    "inheritProjectContext: true",
-    "inheritSkills: true",
-    "---",
-    "",
-    type.systemPrompt.trim(),
-    "",
-  ].join("\n");
-}
-
-/**
- * Seed the scientific agent roster into `sandbox/.pi/agents/`. Files are only
- * written when missing so users can tune or replace any agent from the file
- * panel. Returns the number of files written.
- */
-export function seedAgentFiles(paths: ProjectPaths): number {
-  const agentsDir = path.join(paths.sandbox, ".pi", "agents");
-  fs.mkdirSync(agentsDir, { recursive: true });
-  let written = 0;
-  for (const type of SUBAGENT_TYPES) {
-    const file = path.join(agentsDir, `${type.name}.md`);
-    if (fs.existsSync(file)) continue;
-    fs.writeFileSync(file, agentMarkdown(type), "utf-8");
-    written++;
-  }
-  return written;
-}
