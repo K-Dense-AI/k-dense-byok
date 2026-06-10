@@ -62,6 +62,13 @@ else
     echo "  ⚠ python3 not found — .h5ad previews in the file panel won't work."
 fi
 
+# curl — used for the Ollama check and the startup health checks below.
+if command -v curl &>/dev/null; then
+    echo "  curl ✓"
+else
+    echo "  ⚠ curl not found — skipping the Ollama check and startup health checks."
+fi
+
 # Pi itself needs no separate install: it's an npm dependency of server/
 # (@earendil-works/pi-coding-agent), installed/updated by npm install below.
 echo "  Pi agent ✓ (bundled with backend packages — no global install needed)"
@@ -72,11 +79,22 @@ echo
 # npm install is idempotent: first run installs everything (including the Pi
 # SDK), later runs pick up dependency changes after a git pull.
 
-echo "Installing backend packages..."
-(cd server && npm install --silent)
+install_packages() {
+    local dir=$1 label=$2
+    echo "Installing $label packages..."
+    if ! (cd "$dir" && npm install --no-audit --no-fund --loglevel=error); then
+        echo
+        echo "  ✗ Installing the $label packages failed (see the error above)."
+        echo "    The most common cause is a network problem — check your internet"
+        echo "    connection and run ./start.sh again. If it keeps failing, run"
+        echo "    'cd $dir && npm install' to see the full error, or report it at"
+        echo "    https://github.com/K-Dense-AI/k-dense-byok/issues"
+        exit 1
+    fi
+}
 
-echo "Installing frontend packages..."
-(cd web && npm install --silent)
+install_packages server "backend"
+install_packages web "frontend"
 
 echo
 
@@ -114,41 +132,128 @@ if [ -z "$OPENROUTER_API_KEY" ]; then
     fi
 fi
 
-# ---- Step 4: Prepare projects + skills ----
+# ---- Step 4: Make sure the ports are free ----
+# A previous run that didn't shut down cleanly can leave processes holding the
+# ports, and the services would otherwise crash confusingly later. Leftovers
+# from this project are stopped automatically; anything else gets a clear
+# message naming the program in the way.
+
+BACKEND_PORT="${KADY_PORT:-8000}"
+FRONTEND_PORT=3000
+
+free_port() {
+    local port=$1 label=$2
+    command -v lsof &>/dev/null || return 0
+    local pids pid cwd cmd
+    pids=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u) || true
+    [ -z "$pids" ] && return 0
+    for pid in $pids; do
+        # If the process was started from inside this project folder, it's a
+        # leftover from a previous run — safe to stop.
+        cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1)
+        if [ -n "$cwd" ] && [[ "$cwd" == "$PWD"* ]]; then
+            echo "  Stopping a leftover Kady process on port $port (PID $pid)..."
+            kill "$pid" 2>/dev/null || true
+            for _ in 1 2 3 4 5; do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 1
+            done
+            kill -9 "$pid" 2>/dev/null || true
+        else
+            cmd=$(ps -o comm= -p "$pid" 2>/dev/null || true)
+            echo
+            echo "  ✗ Port $port is already in use by: ${cmd:-another program} (PID $pid)."
+            echo "    The $label needs this port. Quit that program, then run"
+            echo "    ./start.sh again. (Restarting your computer also clears it.)"
+            exit 1
+        fi
+    done
+}
+
+free_port "$BACKEND_PORT" "backend"
+free_port "$FRONTEND_PORT" "app UI"
+
+# ---- Step 5: Prepare projects + skills ----
 
 echo "Preparing projects (ensures default project, downloads scientific skills from K-Dense)..."
 (cd server && npm run prep --silent) || echo "  (skills download skipped/failed — continuing)"
 
 echo
 
-# ---- Step 5: Start services ----
+# ---- Step 6: Start services ----
 
 echo "Starting services..."
 echo
 
-echo "  → Backend on port 8000 (Pi agent, TypeScript)"
+echo "  → Backend on port $BACKEND_PORT (Pi agent, TypeScript)"
 (cd server && npm run start) &
 BACKEND_PID=$!
 
-echo "  → Frontend on port 3000 (Next.js UI)"
+echo "  → Frontend on port $FRONTEND_PORT (Next.js UI)"
 (cd web && npm run dev) &
 FRONTEND_PID=$!
+
+cleanup() {
+    # Ignore the signal we're about to send to our own process group.
+    trap '' INT TERM
+    echo
+    echo "Shutting down..."
+    # Kill the whole process group — the services and every child they
+    # spawned — so nothing is left holding the ports for the next start.
+    # Fall back to the direct PIDs if we're not the group leader.
+    if ! kill -- -$$ 2>/dev/null; then
+        command -v pkill &>/dev/null && {
+            pkill -TERM -P "$BACKEND_PID" 2>/dev/null || true
+            pkill -TERM -P "$FRONTEND_PID" 2>/dev/null || true
+        }
+        kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+    fi
+    wait 2>/dev/null || true
+    exit "${1:-0}"
+}
+trap cleanup INT TERM
+
+# Wait until a service actually answers before declaring success. Any HTTP
+# response counts — we only care that it's up and listening.
+wait_for() {
+    local url=$1 pid=$2 label=$3 timeout=$4
+    command -v curl &>/dev/null || { sleep 3; return 0; }
+    local i=0
+    while [ "$i" -lt "$timeout" ]; do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            echo
+            echo "  ✗ The $label stopped unexpectedly while starting."
+            echo "    Scroll up for its error message, then run ./start.sh again."
+            echo "    If you're stuck, report the error at"
+            echo "    https://github.com/K-Dense-AI/k-dense-byok/issues"
+            cleanup 1
+        fi
+        if curl -s -o /dev/null --max-time 2 "$url"; then
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    echo "  ⚠ The $label is taking longer than expected — it may still be starting."
+    return 0
+}
+
+echo
+echo "Waiting for services to come up (the first run can take a minute)..."
+wait_for "http://localhost:$BACKEND_PORT/" "$BACKEND_PID" "backend" 120
+wait_for "http://localhost:$FRONTEND_PORT/" "$FRONTEND_PID" "app UI" 180
 
 echo
 echo "============================================"
 echo "  All services running!"
-echo "  UI: http://localhost:3000"
+echo "  UI: http://localhost:$FRONTEND_PORT"
 echo "  Press Ctrl+C to stop everything"
 echo "============================================"
 
-(
-  sleep 3
-  if command -v open &>/dev/null; then
-    open "http://localhost:3000"
-  elif command -v xdg-open &>/dev/null; then
-    xdg-open "http://localhost:3000" &>/dev/null
-  fi
-) &
+if command -v open &>/dev/null; then
+    open "http://localhost:$FRONTEND_PORT"
+elif command -v xdg-open &>/dev/null; then
+    xdg-open "http://localhost:$FRONTEND_PORT" &>/dev/null || true
+fi
 
-trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit 0" INT TERM
 wait

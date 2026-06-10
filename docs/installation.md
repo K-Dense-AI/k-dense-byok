@@ -96,5 +96,5 @@ The startup script picks up any new packages and skills automatically.
 - **`./start.sh: Permission denied`** — run `chmod +x start.sh` once, then try again.
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
 - **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), or paste it in **Settings → API keys** inside the app.
-- **Port already in use** — another program is using port 3000 or 8000. Stop it, or set `KADY_PORT` in `.env` to change the backend port.
+- **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and run `./start.sh` again.
 - **Something else?** — [Open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues); we read every one.
