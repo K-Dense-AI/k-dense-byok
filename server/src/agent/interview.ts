@@ -25,6 +25,9 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 /** Mirrors pi-interview's defaults. */
 const DEFAULT_TIMEOUT_S = 600;
 const MAX_TIMEOUT_S = 3600;
+// Floor the wait so a model can't set a near-instant timeout (e.g. 1s) that
+// expires the form before a human could plausibly read and answer it.
+export const MIN_TIMEOUT_S = 60;
 export const MAX_IMAGES = 12;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -266,7 +269,7 @@ export function makeInterviewTool(
       if (invalid) throw new Error(invalid);
       const sessionId = getSessionId();
       const timeoutS = Math.min(
-        Math.max(params.timeout ?? DEFAULT_TIMEOUT_S, 1),
+        Math.max(params.timeout ?? DEFAULT_TIMEOUT_S, MIN_TIMEOUT_S),
         MAX_TIMEOUT_S,
       );
 
@@ -280,8 +283,10 @@ export function makeInterviewTool(
           cleanup();
           reject(
             new Error(
-              `Interview timed out after ${timeoutS}s with no user response. ` +
-                "Proceed with your recommended options and say which assumptions you made.",
+              `Interview timed out after ${timeoutS}s. The user did NOT answer any of these questions. ` +
+                "Do not claim or imply that the user chose, provided, confirmed, or approved any option — they did not respond at all. " +
+                "Tell the user plainly that you received no answer, then proceed using your own recommended defaults, " +
+                "explicitly labelling them as assumptions the user can correct.",
             ),
           );
         }, timeoutS * 1000);
@@ -307,9 +312,10 @@ export function makeInterviewTool(
             {
               type: "text" as const,
               text:
-                "The user dismissed the interview without answering. Proceed with your " +
-                "recommended options, state the assumptions you made, and do not re-open " +
-                "the same interview.",
+                "The user dismissed the interview without answering any question. " +
+                "Do not claim or imply that the user chose, provided, confirmed, or approved any option. " +
+                "Proceed with your recommended options, explicitly state the assumptions you made, " +
+                "and do not re-open the same interview.",
             },
           ],
           details: { cancelled: true },

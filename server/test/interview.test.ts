@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MAX_IMAGES,
+  MIN_TIMEOUT_S,
   makeInterviewTool,
   pendingInterviewFor,
   resolveInterview,
@@ -98,18 +99,32 @@ describe("interview tool", () => {
     expect(pendingInterviewFor("proj", "sess")).toBeNull();
   });
 
-  it("times out with an actionable error", async () => {
-    const t = tool();
-    const run = t.execute(
-      "call-4",
-      { ...QUESTIONS, timeout: 1 },
-      undefined,
-      undefined,
-      noCtx,
-    );
-    await expect(run).rejects.toThrow(/timed out/);
-    expect(pendingInterviewFor("proj", "sess")).toBeNull();
-  }, 5000);
+  it("floors a too-short timeout and times out without implying the user answered", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = tool();
+      const run = t.execute(
+        "call-4",
+        { ...QUESTIONS, timeout: 1 },
+        undefined,
+        undefined,
+        noCtx,
+      );
+      run.catch(() => {}); // avoid an unhandled rejection while we advance timers
+      // A model-supplied 1s timeout is floored to MIN_TIMEOUT_S, so the form is
+      // still pending well past the requested 1s — a human gets time to answer.
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(pendingInterviewFor("proj", "sess")?.toolCallId).toBe("call-4");
+      // It only fires once the floored wait elapses.
+      await vi.advanceTimersByTimeAsync(MIN_TIMEOUT_S * 1000);
+      await expect(run).rejects.toThrow(/timed out/i);
+      // The error must not let the model pretend the user responded.
+      await expect(run).rejects.toThrow(/did NOT answer/i);
+      expect(pendingInterviewFor("proj", "sess")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 
   it("validates question shape up front", async () => {
     const t = tool();
