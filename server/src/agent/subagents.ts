@@ -1,11 +1,14 @@
 /**
  * Specialized sub-agent roster for scientific work.
  *
- * Each entry is a persona the main agent can delegate to via `spawn_subagent`
- * (`agent_type` parameter). The persona text is appended to the subagent's
- * system prompt on top of the normal sandbox context (AGENTS.md etc.), so
- * every sub-agent keeps the same tools and working directory — only its
- * focus, standards, and output contract change.
+ * This is the seed source for the per-project agent files consumed by the
+ * `pi-subagents` package: subagent-bridge.ts renders each entry into
+ * `sandbox/.pi/agents/<name>.md` (YAML frontmatter + system prompt) where the
+ * package's project-agent discovery picks them up. Files are written only
+ * when missing, so users can tune or replace any agent from the file panel.
+ * The persona is appended to the subagent's system prompt on top of the
+ * normal sandbox context (AGENTS.md etc.), so every sub-agent keeps the same
+ * working directory — only its focus, standards, and output contract change.
  *
  * Personas share a few conventions:
  * - Reviewers report findings ordered by severity and cite file:line or the
@@ -17,7 +20,7 @@
 
 export interface SubagentType {
   name: string;
-  /** One-line summary surfaced in the spawn_subagent tool description. */
+  /** One-line summary; becomes the agent file's frontmatter `description`. */
   summary: string;
   /** Persona + operating instructions appended to the subagent's system prompt. */
   systemPrompt: string;
@@ -259,13 +262,3 @@ Distinguish "must fix before publication/deployment" from "should address".`,
   },
 ];
 
-const byName = new Map(SUBAGENT_TYPES.map((t) => [t.name, t]));
-
-export function getSubagentType(name: string): SubagentType | undefined {
-  return byName.get(name);
-}
-
-/** Roster block for the spawn_subagent tool description. */
-export function subagentRosterText(): string {
-  return SUBAGENT_TYPES.map((t) => `- ${t.name}: ${t.summary}`).join("\n");
-}

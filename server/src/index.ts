@@ -21,6 +21,7 @@ import { registerSessionRoutes } from "./api/sessions.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
 import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
+import { registerCredentialRoutes } from "./api/credentials.ts";
 
 function readCookie(req: FastifyRequest, name: string): string | undefined {
   const raw = req.headers.cookie;
@@ -94,6 +95,7 @@ export async function buildApp() {
   await registerSandboxRoutes(app);
   await registerSystemRoutes(app);
   await registerMcpRoutes(app);
+  await registerCredentialRoutes(app);
 
   return app;
 }

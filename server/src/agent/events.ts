@@ -10,6 +10,39 @@ export interface ClientFrame {
   [k: string]: unknown;
 }
 
+/**
+ * Rewrite absolute sandbox paths to sandbox-relative ones for display.
+ *
+ * Tool args and bash commands from Pi carry the real host path of the project
+ * sandbox (e.g. `/Users/.../projects/<id>/sandbox/de_analysis.py`). Surfacing
+ * that in the UI and in shared exports is noisy and leaks the user's
+ * filesystem layout. We collapse the sandbox root to a relative path:
+ *   - an exact path field `<root>/de_analysis.py` → `de_analysis.py`
+ *   - an embedded occurrence in a command (`cd <root> && …`) → `cd . && …`
+ */
+export function relativizeSandboxPaths<T>(value: T, sandboxRoot: string): T {
+  if (!sandboxRoot) return value;
+  if (typeof value === "string") {
+    let s: string = value;
+    if (s === sandboxRoot) return "." as unknown as T;
+    if (s.startsWith(sandboxRoot + "/")) s = s.slice(sandboxRoot.length + 1);
+    // Embedded references (inside bash commands, multi-path args, etc.).
+    s = s.split(sandboxRoot + "/").join("").split(sandboxRoot).join(".");
+    return s as unknown as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => relativizeSandboxPaths(v, sandboxRoot)) as unknown as T;
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = relativizeSandboxPaths(v, sandboxRoot);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 /** Pull human-readable text out of a Pi tool result before capping it.
  *  Results are usually `[{type:"text", text:"…"}]`; fall back to JSON. */
 function resultText(s: unknown): string {
@@ -36,8 +69,13 @@ function cap(s: unknown, max = 4000): string {
   return str.length > max ? str.slice(0, max) + "…" : str;
 }
 
-/** Returns a client frame for an event, or null to skip it. */
-export function toClientFrame(ev: AgentSessionEvent): ClientFrame | null {
+/** Returns a client frame for an event, or null to skip it.
+ *  `sandboxRoot` (when provided) relativizes absolute sandbox paths in tool
+ *  args so the UI shows `de_analysis.py` rather than the full host path. */
+export function toClientFrame(
+  ev: AgentSessionEvent,
+  sandboxRoot = "",
+): ClientFrame | null {
   switch (ev.type) {
     case "agent_start":
       return { type: "agent_start" };
@@ -67,7 +105,7 @@ export function toClientFrame(ev: AgentSessionEvent): ClientFrame | null {
         type: "tool_start",
         toolCallId: ev.toolCallId,
         toolName: ev.toolName,
-        args: ev.args,
+        args: relativizeSandboxPaths(ev.args, sandboxRoot),
       };
     case "tool_execution_update":
       return { type: "tool_update", toolCallId: ev.toolCallId, toolName: ev.toolName };

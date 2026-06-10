@@ -460,18 +460,32 @@ export function useSandbox(isActive = false) {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
 
-    const poll = async () => {
+    // The fast, live refresh during a run is driven elsewhere (page.tsx polls
+    // at 1.5s while any tab streams, and refreshes once on turn completion).
+    // This base loop is just a slow safety net for changes made outside the
+    // app (e.g. the user editing files on disk). Polling hard every 3s while
+    // idle — and especially while the tab is hidden — was pure waste, so we
+    // back off to 15s and skip entirely when the tab isn't visible. The
+    // visibilitychange handler below does an immediate catch-up on return.
+    const IDLE_MS = 15000;
+    const tick = async () => {
       if (cancelled) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        timer = setTimeout(tick, IDLE_MS);
+        return;
+      }
       await fetchTree();
       if (isActive && !cancelled) await refreshOpenTabs();
-      if (!cancelled) {
-        setTimeout(poll, isActive ? 1500 : 3000);
-      }
+      if (!cancelled) timer = setTimeout(tick, isActive ? 1500 : IDLE_MS);
     };
 
-    poll();
-    return () => { cancelled = true; };
+    tick();
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [isActive, fetchTree, refreshOpenTabs]);
 
   useEffect(() => {

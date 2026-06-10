@@ -83,6 +83,7 @@ export function ProjectSwitcher() {
   } = useProjects();
 
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [search, setSearch] = useState("");
   const [form, setForm] = useState<ProjectFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -96,8 +97,8 @@ export function ProjectSwitcher() {
     return { visibleProjects: visible, archivedProjects: archived };
   }, [projects]);
 
-  const openCreate = useCallback(() => {
-    setForm({ ...EMPTY_FORM, open: true, mode: "create" });
+  const openCreate = useCallback((initialName = "") => {
+    setForm({ ...EMPTY_FORM, open: true, mode: "create", name: initialName });
     setFormError(null);
     setPopoverOpen(false);
   }, []);
@@ -195,7 +196,10 @@ export function ProjectSwitcher() {
   );
 
   useEffect(() => {
-    if (!popoverOpen) setFormError(null);
+    if (!popoverOpen) {
+      setFormError(null);
+      setSearch("");
+    }
   }, [popoverOpen]);
 
   return (
@@ -229,8 +233,14 @@ export function ProjectSwitcher() {
         </InfoTooltip>
         <PopoverContent align="start" className="w-[320px] p-0">
           <Command>
-            <CommandInput placeholder="Search projects…" />
+            <CommandInput
+              placeholder="Search or name a new project…"
+              value={search}
+              onValueChange={setSearch}
+            />
             <CommandList>
+              {/* The create row below always matches (its value tracks the
+                  query), so the empty state is just a never-shown fallback. */}
               <CommandEmpty>No projects found.</CommandEmpty>
               {visibleProjects.length > 0 && (
                 <CommandGroup heading="Projects">
@@ -275,11 +285,21 @@ export function ProjectSwitcher() {
               <CommandSeparator />
               <CommandGroup>
                 <CommandItem
-                  onSelect={openCreate}
+                  // Value tracks the live query so cmdk never filters this row
+                  // out — typing a brand-new name keeps "Create …" reachable
+                  // instead of dead-ending at "No projects found".
+                  value={`__create__ ${search}`}
+                  onSelect={() => openCreate(search.trim())}
                   className="gap-2 text-foreground"
                 >
                   <PlusIcon className="size-4" />
-                  New project…
+                  {search.trim() ? (
+                    <span className="truncate">
+                      Create “<span className="font-medium">{search.trim()}</span>”
+                    </span>
+                  ) : (
+                    "New project…"
+                  )}
                 </CommandItem>
               </CommandGroup>
             </CommandList>

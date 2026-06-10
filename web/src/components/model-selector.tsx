@@ -110,9 +110,19 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     return (
       <div
         key={model.id}
+        role="option"
+        aria-selected={isSelected}
+        aria-label={`${model.label} by ${model.provider}`}
+        tabIndex={0}
         onClick={() => onSelect(model)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onSelect(model);
+          }
+        }}
         className={cn(
-          "flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-muted/60",
+          "flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-muted/60 focus:bg-muted/60 focus:outline-none",
           isSelected && "bg-muted/40"
         )}
       >
@@ -174,7 +184,11 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
         </span>
       </div>
 
-      <div className={cn("overflow-y-auto py-1", compact ? "max-h-72" : "max-h-80")}>
+      <div
+        role="listbox"
+        aria-label="Models"
+        className={cn("overflow-y-auto py-1", compact ? "max-h-72" : "max-h-80")}
+      >
         {remoteFiltered.map(renderModelRow)}
 
         {(localFiltered.length > 0 || !search) && (

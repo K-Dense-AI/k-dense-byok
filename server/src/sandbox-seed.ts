@@ -46,10 +46,12 @@ scientific packages and rejects \`pip install\` (externally managed), so:
 - The environment lives in \`.venv/\`; \`uv run\` creates and syncs it
   automatically. If \`uv\` is not on PATH, try \`~/.local/bin/uv\`.
 
-## Output
+## Files
 
-Save generated files (plots, data, reports) into the sandbox working
-directory so they appear in the file panel.
+- **Uploads from the user live in \`user_data/\`.** When the user refers to
+  "the data I uploaded" / "my file", look there first.
+- **Save your own outputs** (plots, results, reports) into the sandbox working
+  directory (the root) so they appear in the file panel.
 `;
 
 /** Write pyproject.toml + AGENTS.md into the sandbox if missing. Idempotent. */

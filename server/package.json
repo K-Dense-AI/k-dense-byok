@@ -21,6 +21,7 @@
     "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.5.17",
     "fastify": "^5.2.0",
+    "pi-subagents": "^0.28.0",
     "typebox": "^1.1.38"
   },
   "devDependencies": {

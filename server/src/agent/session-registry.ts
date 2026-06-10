@@ -8,19 +8,34 @@
  * singletons (shared OpenRouter key across all projects).
  */
 import fs from "node:fs";
+import path from "node:path";
 import {
   AuthStorage,
+  DefaultResourceLoader,
   ModelRegistry,
   SessionManager,
   createAgentSession,
+  getAgentDir,
   type AgentSession,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
-import { recordSubagentRun } from "../cost/ledger.ts";
 import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
-import { BUILTIN_TOOLS, makeSpawnSubagentTool } from "./tools.ts";
+import {
+  makeSubagentLedgerExtension,
+  seedAgentFiles,
+  subagentsExtensionPath,
+} from "./subagent-bridge.ts";
+import { BUILTIN_TOOLS } from "./tools.ts";
+
+// pi-subagents runs each delegation as a child `pi` CLI process. The binary
+// ships with our pi-coding-agent dependency; make sure spawn("pi") resolves
+// even when the server wasn't started through an npm script.
+const localBin = path.resolve(import.meta.dirname, "..", "..", "node_modules", ".bin");
+if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
+  process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH ?? ""}`;
+}
 
 const authStorage = AuthStorage.create();
 setupAuth(authStorage);
@@ -63,29 +78,30 @@ async function build(
 ): Promise<AgentSession> {
   const fallbackModel = defaultModel(modelRegistry);
   const mcpTools = await getMcpTools(projectId, paths);
-  // The spawn_subagent tool is created before the session exists, so it reads
-  // the live model + sessionId through this holder (set right after creation).
+  // Make the scientific agent roster visible to pi-subagents' project-agent
+  // discovery (sandbox/.pi/agents/) before the session starts.
+  seedAgentFiles(paths);
+  // The ledger extension is created before the session exists, so it reads
+  // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: paths.sandbox,
+    agentDir: getAgentDir(),
+    additionalExtensionPaths: [subagentsExtensionPath()],
+    extensionFactories: [
+      makeSubagentLedgerExtension(projectId, () => holder.session?.sessionId ?? ""),
+    ],
+  });
+  await resourceLoader.reload();
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
     model: fallbackModel,
     authStorage,
     modelRegistry,
     sessionManager,
-    tools: [...BUILTIN_TOOLS, "spawn_subagent", ...mcpTools.map((t) => t.name)],
-    customTools: [
-      makeSpawnSubagentTool({
-        projectId,
-        cwd: paths.sandbox,
-        authStorage,
-        modelRegistry,
-        getModel: () => holder.session?.model ?? fallbackModel,
-        onStats: (stats, modelId) =>
-          recordSubagentRun(projectId, holder.session?.sessionId ?? "", modelId, stats),
-        mcpTools,
-      }),
-      ...mcpTools,
-    ],
+    resourceLoader,
+    tools: [...BUILTIN_TOOLS, "subagent", ...mcpTools.map((t) => t.name)],
+    customTools: mcpTools.length > 0 ? mcpTools : undefined,
   });
   holder.session = session;
   return session;

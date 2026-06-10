@@ -442,12 +442,7 @@ function FileViewer({
   }
   const cat = name ? fileCategory(name) : "text";
   if (cat === "image") {
-    return (
-      <div className="flex h-full items-center justify-center p-6">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={rawFileUrl(path)} alt={name ?? ""} className="max-h-full max-w-full rounded object-contain shadow-sm" />
-      </div>
-    );
+    return <ImageViewer path={path} name={name} />;
   }
   if (cat === "pdf") {
     return <PdfViewer path={path} />;
@@ -1491,6 +1486,33 @@ function KeyChips({ title, keys }: { title: string; keys: string[] }) {
           {k}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** Image preview that fills the panel and toggles between fit-to-panel and
+ *  actual-size (1:1, scrollable) on click — so a scientist can scrutinise a
+ *  plot instead of squinting at a thumbnail. */
+function ImageViewer({ path, name }: { path: string; name?: string | null }) {
+  const [zoomed, setZoomed] = useState(false);
+  return (
+    <div
+      className={cn(
+        "flex h-full w-full bg-[repeating-conic-gradient(theme(colors.muted/0.4)_0_25%,transparent_0_50%)] bg-[length:16px_16px]",
+        zoomed ? "items-start justify-start overflow-auto p-4" : "items-center justify-center p-4",
+      )}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={rawFileUrl(path)}
+        alt={name ?? ""}
+        onClick={() => setZoomed((z) => !z)}
+        title={zoomed ? "Click to fit" : "Click to view actual size"}
+        className={cn(
+          "rounded shadow-sm",
+          zoomed ? "max-w-none cursor-zoom-out" : "max-h-full max-w-full object-contain cursor-zoom-in",
+        )}
+      />
     </div>
   );
 }

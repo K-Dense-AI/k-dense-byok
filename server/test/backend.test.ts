@@ -20,7 +20,7 @@ import {
 } from "../src/cost/ledger.ts";
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
 import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
-import { toClientFrame } from "../src/agent/events.ts";
+import { toClientFrame, relativizeSandboxPaths } from "../src/agent/events.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -180,5 +180,36 @@ describe("events → client frames", () => {
     ).toMatchObject({ type: "tool_start", toolName: "bash" });
     // Unmapped internal event → null
     expect(toClientFrame({ type: "session_info_changed", name: "x" } as never)).toBeNull();
+  });
+
+  it("relativizes absolute sandbox paths in tool args", () => {
+    const root = "/Users/x/projects/p/sandbox";
+    // Exact path field → bare relative path.
+    expect(relativizeSandboxPaths({ path: `${root}/de_analysis.py` }, root)).toEqual({
+      path: "de_analysis.py",
+    });
+    // Nested folder under sandbox stays relative.
+    expect(relativizeSandboxPaths(`${root}/user_data/x.csv`, root)).toBe("user_data/x.csv");
+    // Embedded in a bash command → collapsed to ".".
+    expect(
+      relativizeSandboxPaths(`cd ${root} && uv run python de_analysis.py`, root),
+    ).toBe("cd . && uv run python de_analysis.py");
+    // Paths outside the sandbox are untouched; empty root is a no-op.
+    expect(relativizeSandboxPaths("/etc/hosts", root)).toBe("/etc/hosts");
+    expect(relativizeSandboxPaths(`${root}/a.py`, "")).toBe(`${root}/a.py`);
+  });
+
+  it("strips sandbox paths in the streamed tool_start frame", () => {
+    const root = "/Users/x/projects/p/sandbox";
+    const frame = toClientFrame(
+      {
+        type: "tool_execution_start",
+        toolCallId: "t1",
+        toolName: "write",
+        args: { path: `${root}/notes.md` },
+      } as never,
+      root,
+    );
+    expect(frame).toMatchObject({ type: "tool_start", args: { path: "notes.md" } });
   });
 });

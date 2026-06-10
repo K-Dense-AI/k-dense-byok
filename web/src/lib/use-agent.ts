@@ -94,8 +94,8 @@ export function applyFrameToMessage(
     case "tool_start": {
       const id = String(frame.toolCallId ?? frame.toolName ?? now);
       const label =
-        frame.toolName === "spawn_subagent"
-          ? "Spawning a subagent"
+        frame.toolName === "subagent"
+          ? "Running a subagent"
           : `Running ${humanizeToolName(String(frame.toolName ?? "tool"))}`;
       const activities = message.activities ?? [];
       if (activities.some((a) => a.id === id && a.status === "running")) return message;

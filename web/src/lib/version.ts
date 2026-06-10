@@ -6,6 +6,12 @@ import { apiFetch } from "@/lib/projects";
 
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 
+/** Sentinel used when no build-time version was injected (dev / source checkout).
+ *  We must not nag about updates in this case — `0.0.0` is older than every
+ *  real release, so a naive semver compare would always claim an update. */
+export const UNVERSIONED = "0.0.0";
+export const isVersioned = APP_VERSION !== UNVERSIONED;
+
 const CACHE_KEY = "kdense-update-check";
 const CACHE_TTL_MS = 60 * 60 * 1000; // re-check at most once per hour
 
@@ -35,6 +41,9 @@ export function useUpdateCheck(): UpdateCheckResult {
   });
 
   useEffect(() => {
+    // No injected build version → don't compare against releases (the 0.0.0
+    // sentinel is "older" than everything and would nag forever).
+    if (!isVersioned) return;
     try {
       const raw = localStorage.getItem(CACHE_KEY);
       if (raw) {

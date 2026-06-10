@@ -88,15 +88,16 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     async (req, reply) => {
       try {
         const format = req.query.format === "md" ? "md" : "sh";
-        const file = findSessionFile(activePaths(), req.params.id);
+        const paths = activePaths();
+        const file = findSessionFile(paths, req.params.id);
         if (!file) {
           reply.code(404);
           return { detail: "No such session" };
         }
         const body =
           format === "md"
-            ? toNotebook(file, req.params.id)
-            : toShellScript(file, req.params.id);
+            ? toNotebook(file, req.params.id, paths.sandbox)
+            : toShellScript(file, req.params.id, paths.sandbox);
         const ext = format === "md" ? "md" : "sh";
         reply.type(format === "md" ? "text/markdown" : "text/x-shellscript");
         reply.header(
@@ -186,8 +187,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           return;
         }
 
+        const sandboxRoot = activePaths().sandbox;
         const unsub = session.subscribe((ev) => {
-          const frame = toClientFrame(ev);
+          const frame = toClientFrame(ev, sandboxRoot);
           if (frame) write(frame);
         });
 

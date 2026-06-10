@@ -12,6 +12,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ProjectPaths } from "../projects.ts";
+import { relativizeSandboxPaths } from "./events.ts";
 
 interface ToolCallPart {
   type: "toolCall";
@@ -100,7 +101,8 @@ function asComment(s: string): string {
  * tool calls (read/write/edit) are noted as comments so the script stays a
  * faithful, human-auditable record rather than silently dropping steps.
  */
-export function toShellScript(file: string, sessionId: string): string {
+export function toShellScript(file: string, sessionId: string, sandboxRoot = ""): string {
+  const rel = (s: string) => relativizeSandboxPaths(s, sandboxRoot);
   const rows = readRows(file);
   const out: string[] = [
     "#!/usr/bin/env bash",
@@ -127,9 +129,11 @@ export function toShellScript(file: string, sessionId: string): string {
         const call = part as ToolCallPart;
         if (call.name === "bash" && call.arguments && typeof call.arguments.command === "string") {
           stepCount++;
-          out.push(`# [step ${stepCount}]`, String(call.arguments.command), "");
+          out.push(`# [step ${stepCount}]`, rel(String(call.arguments.command)), "");
         } else {
-          const summary = call.arguments ? JSON.stringify(call.arguments) : "";
+          const summary = call.arguments
+            ? JSON.stringify(relativizeSandboxPaths(call.arguments, sandboxRoot))
+            : "";
           out.push(asComment(`(non-shell tool: ${call.name} ${summary})`), "");
         }
       }
@@ -143,7 +147,8 @@ export function toShellScript(file: string, sessionId: string): string {
 
 /** Build a markdown "lab notebook" of the full session: prompts, reasoning,
  *  commands, outputs, and final answers. */
-export function toNotebook(file: string, sessionId: string): string {
+export function toNotebook(file: string, sessionId: string, sandboxRoot = ""): string {
+  const rel = (s: string) => relativizeSandboxPaths(s, sandboxRoot);
   const rows = readRows(file);
   // Index tool results by call id so we can show output beneath each command.
   const resultsById = new Map<string, ToolResultPart>();
@@ -186,12 +191,12 @@ export function toNotebook(file: string, sessionId: string): string {
         const call = part as ToolCallPart;
         const result = resultsById.get(call.id);
         if (call.name === "bash" && call.arguments?.command) {
-          out.push("**Command**", "", "```bash", String(call.arguments.command), "```", "");
+          out.push("**Command**", "", "```bash", rel(String(call.arguments.command)), "```", "");
         } else {
-          out.push(`**Tool: \`${call.name}\`**`, "", "```json", JSON.stringify(call.arguments ?? {}, null, 2), "```", "");
+          out.push(`**Tool: \`${call.name}\`**`, "", "```json", JSON.stringify(relativizeSandboxPaths(call.arguments ?? {}, sandboxRoot), null, 2), "```", "");
         }
         if (result) {
-          const text = resultText(result.content);
+          const text = rel(resultText(result.content));
           if (text) {
             const label = result.isError ? "Error" : "Output";
             const clipped = text.length > 4000 ? text.slice(0, 4000) + "\n…(truncated)" : text;

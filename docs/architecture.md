@@ -13,7 +13,7 @@ The `start.sh` script launches two local services that work together:
 | **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
 | **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
 
-The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `spawn_subagent` tool. Model calls go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local) — there is no separate proxy.
+The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (pi-subagents extension) and any MCP tools configured in the project's `.pi/mcp.json`. Model calls go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local) — there is no separate proxy.
 
 When you send a message:
 

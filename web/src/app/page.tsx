@@ -11,7 +11,7 @@ import { ProjectSwitcher } from "@/components/project-switcher";
 import { SessionCostPill } from "@/components/session-cost-pill";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
-import { APP_VERSION, useUpdateCheck } from "@/lib/version";
+import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
 import { onProjectChange } from "@/lib/projects";
@@ -368,20 +368,22 @@ export default function ChatPage() {
             />
             <span className="text-sm font-semibold tracking-tight text-foreground/80">BYOK</span>
           </a>
-          <InfoTooltip
-            content={
-              <>
-                <b>K-Dense BYOK v{APP_VERSION}</b>
-                <br />
-                Bring-your-own-key research assistant. All API calls use keys from your{" "}
-                <kbd>.env</kbd> file and run on your machine.
-              </>
-            }
-          >
-            <span className="text-[11px] text-muted-foreground/60 cursor-help">
-              v{APP_VERSION}
-            </span>
-          </InfoTooltip>
+          {isVersioned && (
+            <InfoTooltip
+              content={
+                <>
+                  <b>K-Dense BYOK v{APP_VERSION}</b>
+                  <br />
+                  Bring-your-own-key research assistant. All API calls use keys from your{" "}
+                  <kbd>.env</kbd> file and run on your machine.
+                </>
+              }
+            >
+              <span className="text-[11px] text-muted-foreground/60 cursor-help">
+                v{APP_VERSION}
+              </span>
+            </InfoTooltip>
+          )}
           {updateAvailable && (
             <InfoTooltip content="A newer version is available on GitHub. Click to open the release page.">
               <a

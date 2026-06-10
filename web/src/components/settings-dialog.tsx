@@ -28,6 +28,7 @@ import {
   TerminalIcon,
 } from "lucide-react";
 import { useProjects } from "@/lib/use-projects";
+import { apiFetch } from "@/lib/projects";
 import {
   getMcpServers,
   saveMcpServers,
@@ -37,29 +38,157 @@ import {
   type McpServerConfig,
 } from "@/lib/mcp";
 
+interface CredentialStatus {
+  openrouter: { set: boolean; masked: string | null };
+}
+
 function ApiKeysPanel() {
+  const [statusState, setStatusState] = useState<CredentialStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [keyInput, setKeyInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/credentials");
+      if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+      setStatusState((await res.json()) as CredentialStatus);
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Failed to load credentials");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const submit = useCallback(
+    async (value: string | null) => {
+      setSaving(true);
+      setError(null);
+      setSaved(false);
+      try {
+        const res = await apiFetch("/credentials", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ openrouterApiKey: value }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | (CredentialStatus & { detail?: string })
+          | null;
+        if (!res.ok) throw new Error(data?.detail || `Save failed (${res.status})`);
+        if (data) setStatusState(data);
+        setKeyInput("");
+        setSaved(true);
+      } catch (exc) {
+        setError(exc instanceof Error ? exc.message : "Save failed");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [],
+  );
+
+  const current = statusState?.openrouter;
+
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto">
       <div>
         <h3 className="text-sm font-medium">API keys</h3>
         <p className="text-xs text-muted-foreground mt-1">
-          K-Dense BYOK is bring-your-own-key. All model and tool calls use the
-          keys defined in your{" "}
-          <code className="rounded bg-muted px-1 py-0.5 text-[11px]">.env</code>{" "}
-          file and run on your own machine — nothing is sent to K-Dense.
+          K-Dense BYOK is bring-your-own-key. Your{" "}
+          <a
+            href="https://openrouter.ai/keys"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            OpenRouter key
+          </a>{" "}
+          stays on this machine (saved to{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-[11px]">.env</code>)
+          and is used for every model call — nothing is sent to K-Dense.
         </p>
       </div>
 
-      <div className="rounded-lg border px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
-        To add or change a key, edit{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">.env</code> in
-        the project root (for example{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-[11px]">
-          OPENROUTER_API_KEY
-        </code>
-        ) and restart the app. Keys are read from the environment at startup and
-        never leave your device.
-      </div>
+      {error && (
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <p className="text-xs text-muted-foreground">Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          <label className="text-xs font-medium">OpenRouter API key</label>
+          {current?.set && (
+            <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+              <span>
+                Key set —{" "}
+                <code className="font-mono">{current.masked}</code>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-6 text-[11px] text-destructive hover:text-destructive"
+                disabled={saving}
+                onClick={() => void submit(null)}
+              >
+                Clear
+              </Button>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <Input
+              type="password"
+              value={keyInput}
+              autoComplete="off"
+              placeholder={current?.set ? "Replace key (sk-or-…)" : "sk-or-v1-…"}
+              className="h-8 text-xs font-mono"
+              onChange={(e) => {
+                setKeyInput(e.target.value);
+                setSaved(false);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && keyInput.trim()) void submit(keyInput.trim());
+              }}
+            />
+            <Button
+              size="sm"
+              className="text-xs"
+              disabled={saving || !keyInput.trim()}
+              onClick={() => void submit(keyInput.trim())}
+            >
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+          {saved && (
+            <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
+              Saved. New runs use it immediately — no restart needed.
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            Other keys (e.g.{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+              OLLAMA_BASE_URL
+            </code>
+            ,{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+              GITHUB_TOKEN
+            </code>
+            ) are still read from{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">.env</code>{" "}
+            at startup.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

@@ -42,13 +42,13 @@ describe("applyFrameToMessage", () => {
   it("labels the subagent tool specially and marks errors", () => {
     const running = applyFrameToMessage(
       baseMessage(),
-      { type: "tool_start", toolCallId: "s1", toolName: "spawn_subagent" },
+      { type: "tool_start", toolCallId: "s1", toolName: "subagent" },
       10,
     );
-    expect(running.activities?.[0].label).toBe("Spawning a subagent");
+    expect(running.activities?.[0].label).toBe("Running a subagent");
     const errored = applyFrameToMessage(
       running,
-      { type: "tool_end", toolCallId: "s1", toolName: "spawn_subagent", isError: true },
+      { type: "tool_end", toolCallId: "s1", toolName: "subagent", isError: true },
       20,
     );
     expect(errored.activities?.[0].status).toBe("error");

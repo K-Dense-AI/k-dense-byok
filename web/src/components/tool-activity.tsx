@@ -40,7 +40,7 @@ function iconFor(toolName?: string) {
       return SearchIcon;
     case "ls":
       return FolderTreeIcon;
-    case "spawn_subagent":
+    case "subagent":
       return UsersIcon;
     default:
       return WrenchIcon;
@@ -57,8 +57,10 @@ function summarize(toolName: string | undefined, args: unknown): string {
       return firstLine(a.command);
     const pathish = a.path ?? a.file_path ?? a.filePath ?? a.pattern ?? a.query;
     if (typeof pathish === "string") return pathish;
-    if (toolName === "spawn_subagent")
-      return firstLine(a.task ?? a.prompt ?? a.description) || "subtask";
+    if (toolName === "subagent") {
+      const agent = typeof a.agent === "string" ? `${a.agent}: ` : "";
+      return agent + (firstLine(a.task ?? a.prompt ?? a.description) || "subtask");
+    }
     const keys = Object.keys(a);
     if (keys.length) return firstLine(a[keys[0]]) || keys.join(", ");
   }

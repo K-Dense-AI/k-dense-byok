@@ -1,6 +1,6 @@
 # Model Selection
 
-Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `spawn_subagent` tool inherit the parent tab's current model.
+Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `subagent` tool use the model named in their agent file (`sandbox/.pi/agents/*.md`) or passed per call; otherwise they fall back to Pi's default model resolution.
 
 The choice is stored per tab, so different chats in the same project can use different models, and you can switch models between messages within a tab.
 
