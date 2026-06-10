@@ -34,6 +34,12 @@ import {
   toNotebook,
   toShellScript,
 } from "../agent/session-export.ts";
+import {
+  pendingInterviewFor,
+  resolveInterview,
+  validateAnswer,
+  type InterviewAnswer,
+} from "../agent/interview.ts";
 
 function snapshot(session: { getSessionStats(): { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } } }): CostSnapshot {
   const s = session.getSessionStats();
@@ -115,6 +121,41 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
     },
   );
+
+  // The interview tool blocks its run until the user answers here (or the
+  // form is dismissed). 404 = nothing waiting (answered, timed out, aborted);
+  // 400 = fixable submission problem — the pending interview is NOT consumed,
+  // so the form can correct and resubmit.
+  app.post<{ Params: { id: string; toolCallId: string }; Body: InterviewAnswer }>(
+    "/sessions/:id/interview/:toolCallId",
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { cancelled?: boolean; responses?: unknown };
+      const answer = (
+        body.cancelled ? { cancelled: true } : { responses: body.responses ?? [] }
+      ) as InterviewAnswer;
+      const invalid = validateAnswer(answer);
+      if (invalid) {
+        reply.code(400);
+        return { detail: invalid };
+      }
+      const ok = resolveInterview(
+        currentProjectId(),
+        req.params.id,
+        req.params.toolCallId,
+        answer,
+      );
+      if (!ok) {
+        reply.code(404);
+        return { detail: "No pending interview for this tool call" };
+      }
+      return { ok: true };
+    },
+  );
+
+  // Pending interview for a session (lets a reconnecting UI re-render the form).
+  app.get<{ Params: { id: string } }>("/sessions/:id/interview", async (req) => {
+    return { pending: pendingInterviewFor(currentProjectId(), req.params.id) };
+  });
 
   app.post<{ Params: { id: string } }>("/sessions/:id/abort", async (req) => {
     const session = await getSession(currentProjectId(), activePaths(), req.params.id);

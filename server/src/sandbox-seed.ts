@@ -46,6 +46,18 @@ scientific packages and rejects \`pip install\` (externally managed), so:
 - The environment lives in \`.venv/\`; \`uv run\` creates and syncs it
   automatically. If \`uv\` is not on PATH, try \`~/.local/bin/uv\`.
 
+## Clarifying questions — ask, don't assume
+
+You have an \`interview\` tool that shows the user an interactive form right
+in the chat. Use it as much as possible:
+
+- Before starting any non-trivial task, confirm scope, inputs, and approach
+  with a short interview (include your recommended answers so the user can
+  confirm in one click).
+- Whenever the request is ambiguous, a parameter is unspecified, or several
+  reasonable approaches exist, interview the user instead of guessing.
+- Bundle related questions into ONE interview rather than several calls.
+
 ## Files
 
 - **Uploads from the user live in \`user_data/\`.** When the user refers to

@@ -34,10 +34,11 @@ import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
 import { ReasoningBlock, ToolActivityList } from "@/components/tool-activity";
+import { InterviewCard } from "@/components/interview-form";
 import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
-import { useAgent, type ChatMessage } from "@/lib/use-agent";
+import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   CheckIcon,
@@ -58,6 +59,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 
 const MAX_QUEUE = 5;
@@ -654,19 +656,43 @@ function ChatInput({
 function AssistantMessageBody({
   message,
   isStreaming,
+  sessionId,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
+  sessionId: string | null;
 }) {
   const activities = message.activities ?? [];
   const hasReasoning = Boolean(message.reasoning?.trim());
   const hasAnything =
     Boolean(message.content) || activities.length > 0 || hasReasoning;
 
+  // Interview tool calls render as interactive forms, in stream order between
+  // the surrounding tool cards (consecutive non-interview calls are chunked
+  // into one ToolActivityList).
+  const activityBlocks: ReactNode[] = [];
+  let chunk: ActivityItem[] = [];
+  const flushChunk = () => {
+    if (!chunk.length) return;
+    activityBlocks.push(
+      <ToolActivityList key={`tools-${chunk[0].id}`} activities={chunk} />,
+    );
+    chunk = [];
+  };
+  for (const a of activities) {
+    if (a.toolName === "interview") {
+      flushChunk();
+      activityBlocks.push(<InterviewCard key={a.id} item={a} sessionId={sessionId} />);
+    } else {
+      chunk.push(a);
+    }
+  }
+  flushChunk();
+
   return (
     <>
       {hasReasoning && <ReasoningBlock reasoning={message.reasoning ?? ""} />}
-      {activities.length > 0 && <ToolActivityList activities={activities} />}
+      {activityBlocks}
       {message.content ? (
         <MessageResponse>{message.content}</MessageResponse>
       ) : isStreaming && !hasAnything ? (
@@ -925,6 +951,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                     <AssistantMessageBody
                       message={message}
                       isStreaming={isStreaming}
+                      sessionId={sessionId}
                     />
                   ) : (
                     <MessageResponse>{message.content}</MessageResponse>
