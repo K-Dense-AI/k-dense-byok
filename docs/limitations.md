@@ -42,6 +42,15 @@ If a task loops or ignores its skill, try a **larger local model** (or temporari
   active, the workflow runs in tab B. Switch to the tab you want to
   receive the workflow before launching.
 
+## Web access
+
+Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access)) gives Kady and the sub-agents `web_search`, `code_search`, and `fetch_content` (pages, PDFs, GitHub repos, YouTube). A few edges:
+
+- **No key = shared fallback.** Without an Exa / Perplexity / Gemini key (Settings → API keys), searches go through a free Exa fallback that can rate-limit under heavy use. Adding any one key removes that bottleneck.
+- **Video understanding needs a Gemini key.** YouTube and local-video analysis are only available once `GEMINI_API_KEY` is set.
+- **PDF extraction is text-only.** Scanned PDFs without a text layer are not OCRed.
+- **Web access for sub-agents applies to new chat tabs**, same as agent and MCP edits below.
+
 ## Sub-agents
 
 Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple of edges:
@@ -52,4 +61,4 @@ Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple o
 
 ## Features deferred during the Pi migration
 
-Native web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and citation verification / "Copy as Methods" provenance export are not available yet in the Pi-based backend. They are being re-added in upcoming releases; the keys for them in `.env.example` are currently unused. In the meantime, many of these capabilities (web search, GitHub, reference managers, ...) can be added today by connecting an [MCP server](./mcp-servers.md).
+Literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and citation verification / "Copy as Methods" provenance export are not available yet in the Pi-based backend. They are being re-added in upcoming releases; the keys for them in `.env.example` are currently unused. In the meantime, many of these capabilities (GitHub, reference managers, ...) can be added today by connecting an [MCP server](./mcp-servers.md).

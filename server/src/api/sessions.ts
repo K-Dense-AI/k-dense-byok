@@ -20,9 +20,13 @@ import {
   listSessions,
 } from "../agent/session-registry.ts";
 import {
+  addTurnUsage,
+  emptySnapshot,
   isBudgetExceeded,
   recordRun,
   sessionCostSummary,
+  snapshotDelta,
+  snapshotMax,
   type CostSnapshot,
 } from "../cost/ledger.ts";
 import {
@@ -188,7 +192,16 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         }
 
         const sandboxRoot = activePaths().sandbox;
+        // Usage tallied straight from turn_end events. getSessionStats() is
+        // recomputed from the in-context messages, so auto-compaction mid-run
+        // can shrink the cumulative stats and make the before/after delta lie
+        // low; the per-turn events are immune to that.
+        const turnTally = emptySnapshot();
         const unsub = session.subscribe((ev) => {
+          if (ev.type === "turn_end") {
+            const usage = (ev.message as { usage?: Parameters<typeof addTurnUsage>[1] }).usage;
+            if (usage) addTurnUsage(turnTally, usage);
+          }
           const frame = toClientFrame(ev, sandboxRoot);
           if (frame) write(frame);
         });
@@ -208,30 +221,38 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           if (errorMessage && errorMessage !== priorError) {
             write({ type: "error", message: errorMessage });
           }
-          const after = snapshot(session);
-          recordRun({
-            sessionId: req.params.id,
-            projectId,
-            model: session.model?.id ?? "unknown",
-            before,
-            after,
-          });
-          const stats = session.getSessionStats();
-          // `cost`/`tokens` are cumulative for the whole session; `runCost`/
-          // `runTokens` are the delta for THIS turn, so the UI can attribute a
-          // price to the message that just completed.
-          write({
-            type: "cost",
-            cost: stats.cost,
-            tokens: stats.tokens,
-            runCost: Math.max(0, after.costUsd - before.costUsd),
-            runTokens: Math.max(0, after.total - before.total),
-          });
-          write({ type: "done" });
         } catch (err) {
           write({ type: "error", message: (err as Error).message });
         } finally {
           unsub();
+          // Ledger in the finally: a run that threw mid-turn still spent real
+          // tokens. The stats delta catches a partial turn that never reached
+          // turn_end; the tally catches compaction — take the max of the two.
+          try {
+            const run = snapshotMax(snapshotDelta(before, snapshot(session)), turnTally);
+            recordRun({
+              sessionId: req.params.id,
+              projectId,
+              model: session.model?.id ?? "unknown",
+              before: emptySnapshot(),
+              after: run,
+            });
+            const stats = session.getSessionStats();
+            // `cost` is the session's full ledgered spend (subagents included,
+            // restart/compaction-proof); `tokens` is Pi's in-context cumulative;
+            // `runCost`/`runTokens` are the delta for THIS turn, so the UI can
+            // attribute a price to the message that just completed.
+            write({
+              type: "cost",
+              cost: sessionCostSummary(req.params.id, projectId).totalUsd,
+              tokens: stats.tokens,
+              runCost: run.costUsd,
+              runTokens: run.total,
+            });
+            write({ type: "done" });
+          } catch (err) {
+            req.log.warn({ err }, "failed to ledger run cost");
+          }
           if (!raw.writableEnded) raw.end();
         }
       } finally {

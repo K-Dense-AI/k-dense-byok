@@ -24,6 +24,7 @@ import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
+import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary
@@ -78,6 +79,10 @@ async function build(
   // Make the scientific agent roster visible to pi-subagents' project-agent
   // discovery (sandbox/.pi/agents/) before the session starts.
   seedAgentFiles(paths);
+  // Reference pi-web-access from sandbox/.pi/settings.json and pre-trust the
+  // sandbox so both this session and pi-subagents' child `pi` processes load
+  // the web tools (web-access-bridge.ts explains why children need this).
+  ensureWebAccess(paths);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -97,7 +102,7 @@ async function build(
     modelRegistry,
     sessionManager,
     resourceLoader,
-    tools: [...BUILTIN_TOOLS, "subagent", ...mcpTools.map((t) => t.name)],
+    tools: [...BUILTIN_TOOLS, "subagent", ...WEB_ACCESS_TOOLS, ...mcpTools.map((t) => t.name)],
     customTools: mcpTools.length > 0 ? mcpTools : undefined,
   });
   holder.session = session;

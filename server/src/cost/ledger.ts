@@ -22,6 +22,61 @@ export interface CostSnapshot {
   total: number;
 }
 
+export function emptySnapshot(): CostSnapshot {
+  return { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 };
+}
+
+/** Field-wise `after - before`, clamped at 0. */
+export function snapshotDelta(before: CostSnapshot, after: CostSnapshot): CostSnapshot {
+  return {
+    costUsd: Math.max(0, after.costUsd - before.costUsd),
+    input: Math.max(0, after.input - before.input),
+    output: Math.max(0, after.output - before.output),
+    cacheRead: Math.max(0, after.cacheRead - before.cacheRead),
+    total: Math.max(0, after.total - before.total),
+  };
+}
+
+/**
+ * Field-wise max of two independent measurements of the same run.
+ *
+ * The stats delta undercounts when compaction shrinks the in-context messages
+ * mid-run; the turn_end tally misses a partial turn that errored before
+ * turn_end fired. Each lies low in a different failure mode, so the max of
+ * the two is the best available estimate of what the run actually spent.
+ */
+export function snapshotMax(a: CostSnapshot, b: CostSnapshot): CostSnapshot {
+  return {
+    costUsd: Math.max(a.costUsd, b.costUsd),
+    input: Math.max(a.input, b.input),
+    output: Math.max(a.output, b.output),
+    cacheRead: Math.max(a.cacheRead, b.cacheRead),
+    total: Math.max(a.total, b.total),
+  };
+}
+
+/** Accumulate one assistant turn's usage (pi-ai `Usage` shape) into a tally. */
+export function addTurnUsage(
+  tally: CostSnapshot,
+  usage: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    cost?: { total?: number };
+  },
+): void {
+  const input = usage.input ?? 0;
+  const output = usage.output ?? 0;
+  const cacheRead = usage.cacheRead ?? 0;
+  const cacheWrite = usage.cacheWrite ?? 0;
+  tally.costUsd += usage.cost?.total ?? 0;
+  tally.input += input;
+  tally.output += output;
+  tally.cacheRead += cacheRead;
+  tally.total += input + output + cacheRead + cacheWrite;
+}
+
 export interface CostEntry {
   entryId: string;
   ts: number;
@@ -54,12 +109,13 @@ export function recordRun(args: {
   role?: "agent" | "subagent";
   projectId?: string;
 }): CostEntry | null {
+  const delta = snapshotDelta(args.before, args.after);
   const d = {
-    costUsd: Math.max(0, args.after.costUsd - args.before.costUsd),
-    promptTokens: Math.max(0, args.after.input - args.before.input),
-    completionTokens: Math.max(0, args.after.output - args.before.output),
-    totalTokens: Math.max(0, args.after.total - args.before.total),
-    cachedTokens: Math.max(0, args.after.cacheRead - args.before.cacheRead),
+    costUsd: delta.costUsd,
+    promptTokens: delta.input,
+    completionTokens: delta.output,
+    totalTokens: delta.total,
+    cachedTokens: delta.cacheRead,
   };
   // Nothing happened (no tokens, no cost) → skip the row.
   if (d.totalTokens === 0 && d.costUsd === 0) return null;
@@ -163,8 +219,9 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
   try {
     for (const dirent of fs.readdirSync(paths.runsDir, { withFileTypes: true })) {
       if (!dirent.isDirectory()) continue;
-      sessionCount++;
       const s = sessionCostSummary(dirent.name, projectId);
+      if (s.entries.length === 0) continue; // run dir with nothing ledgered yet
+      sessionCount++;
       totalUsd += s.totalUsd;
       totalTokens += s.totalTokens;
     }

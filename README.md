@@ -23,7 +23,8 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 
 - **Answer questions and take on tasks.** Chat with Kady like any AI assistant. For bigger work, Kady uses its file and shell tools directly - and can delegate to sub-agents for independent or parallel subtasks - in a full working environment.
 - **A built-in team of 21 scientific specialists.** Kady can hand work to expert sub-agents - a `citation-checker` that verifies every reference, a `statistical-reviewer` that audits your analysis, a `peer-reviewer` that writes a journal-style report, and 18 more. They run one at a time, in parallel, or chained. You can view, edit, and create your own in Settings. [Learn more](./docs/sub-agents.md).
-- **Connect external tools with MCP.** Add [MCP servers](./docs/mcp-servers.md) (an open standard supported by hundreds of services) from Settings to give Kady extra abilities - web search, GitHub, reference managers, databases, and more - with a built-in connection tester.
+- **Search the web and read sources natively.** Kady (and every sub-agent) can search the web, fetch and read pages, PDFs, and entire GitHub repositories, and even understand YouTube videos - out of the box, no API key required. Optional Exa, Perplexity, and Gemini keys (Settings → API keys) unlock the direct providers.
+- **Connect external tools with MCP.** Add [MCP servers](./docs/mcp-servers.md) (an open standard supported by hundreds of services) from Settings to give Kady extra abilities - GitHub, reference managers, databases, and more - with a built-in connection tester.
 - **Run up to 10 chats in parallel.** Open a new tab for each thread of work — every tab keeps its own message history, model, attached files, and cost meter, but all tabs share the project's sandbox so files written in one tab are immediately available in the others. Tabs keep streaming in the background while you switch between them.
 - **Pick any tool-capable AI model, any time.** Choose from the full set of OpenRouter models that support tool calling (OpenAI, Anthropic, Google, xAI, Qwen, and more) with a simple dropdown, per chat tab. You can also use free local models through [Ollama](./docs/local-models-ollama.md).
 - **140+ scientific skills, pre-installed.** Covers genomics, proteomics, drug discovery, materials science, and more. Kady activates the right skills automatically for each task.
@@ -35,7 +36,7 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 - **Voice input, drag-and-drop attachments, `@` file mentions,** and a **message queue** for batching up to 5 messages while the agent is working.
 - **Cost & budget tracking.** Per-session and per-project cost meters, plus an optional hard spend cap per project.
 
-> Native web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and the provenance/"Copy as Methods" export are being re-added in upcoming releases. (In the meantime, many of these are available today by connecting an [MCP server](./docs/mcp-servers.md).)
+> Literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and the provenance/"Copy as Methods" export are being re-added in upcoming releases. (In the meantime, many of these are available today by connecting an [MCP server](./docs/mcp-servers.md).)
 
 ## What you'll need before starting
 
@@ -43,8 +44,9 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 |------|-----|-----------------|
 | A computer running **macOS or Linux** | The app runs locally on your machine | Windows works too - use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) |
 | An **OpenRouter API key** | This is how the AI models are accessed | [openrouter.ai](https://openrouter.ai/) - sign up and create a key |
-| An **Exa API key** *(optional)* | Lets Kady search the web with neural (embedding-based) retrieval tuned for scientific content | Get your Exa API key: [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) |
-| A **Parallel API key** *(optional)* | Alternative web search provider | [parallel.ai](https://parallel.ai/) |
+| An **Exa API key** *(optional)* | Direct Exa web + code search with neural (embedding-based) retrieval tuned for scientific content. Web search works without it via a free fallback | Get your Exa API key: [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) |
+| A **Perplexity API key** *(optional)* | Alternative web search provider with synthesized, cited answers | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
+| A **Gemini API key** *(optional)* | Search fallback plus YouTube / video understanding | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | A **Paperclip API key** *(optional)* | Biomedical literature, regulatory documents, and clinical-trial search | [paperclip.gxl.ai](https://paperclip.gxl.ai/) |
 | **Modal** credentials *(optional)* | Only needed for remote GPU/CPU compute | [modal.com](https://modal.com/) |
 
@@ -104,13 +106,13 @@ These guides live in the [`docs/`](./docs) folder:
 
 ## Features in the works
 
-- Re-adding web search, document conversion, and remote compute as native Pi tools
+- Re-adding document conversion and remote compute as native Pi tools
 - Making MCP tools available to sub-agents (today they're available to Kady itself)
 - Provenance / "Copy as Methods" export on top of Pi sessions
 - Better UI experience tailored to scientific workflows
 - And much more
 
-Recently completed: migrated the backend to the [Pi coding-agent SDK](https://pi.dev) (replacing the orchestrator/expert/Gemini-CLI/LiteLLM stack), native OpenRouter + Ollama, per-project Pi sessions, cost/budget tracking from Pi usage, **custom MCP servers** with a settings UI and connection tester, and a **customizable sub-agent system** ([pi-subagents](https://github.com/nicobailon/pi-subagents)) with 21 pre-installed scientific specialists, parallel/chained delegation, and a full management UI.
+Recently completed: migrated the backend to the [Pi coding-agent SDK](https://pi.dev) (replacing the orchestrator/expert/Gemini-CLI/LiteLLM stack), native OpenRouter + Ollama, per-project Pi sessions, cost/budget tracking from Pi usage, **custom MCP servers** with a settings UI and connection tester, a **customizable sub-agent system** ([pi-subagents](https://github.com/nicobailon/pi-subagents)) with 21 pre-installed scientific specialists, parallel/chained delegation, and a full management UI, and **native web access** ([pi-web-access](https://github.com/nicobailon/pi-web-access)) — web search, page/PDF/GitHub fetching, and video understanding for Kady and all sub-agents.
 
 ## Want more?
 
