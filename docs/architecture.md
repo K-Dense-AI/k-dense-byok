@@ -13,12 +13,12 @@ The `start.sh` script launches two local services that work together:
 | **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
 | **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
 
-The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (pi-subagents extension) and any MCP tools configured in the project's `.pi/mcp.json`. Model calls go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local) — there is no separate proxy.
+The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)) and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local) — there is no separate proxy.
 
 When you send a message:
 
 1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
-2. The backend runs the Pi agent for that session; the agent uses its tools and may spawn subagents.
+2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent runs as its own short-lived `pi` process in the same sandbox, with its spend counted toward the project budget).
 3. Model calls go straight to OpenRouter or Ollama.
 4. Events (text, tool calls, cost) stream back to your browser over SSE in real time.
 
@@ -58,6 +58,8 @@ tab.
 The first time you run `./start.sh`, it will automatically:
 
 - Install backend dependencies (`server/`) and frontend dependencies (`web/`)
+- Install [uv](https://docs.astral.sh/uv/) if missing - the Python manager Kady uses to run analyses in each sandbox
+- Create your `.env` from `.env.example` if you haven't yet, and warn if no API key (or local Ollama) is configured
 - Download the scientific skills catalogue into each project's `sandbox/.pi/skills/`
 
 Subsequent starts are much faster.
@@ -83,6 +85,8 @@ k-dense-byok/
         ├── project.json      ← Project metadata
         └── sandbox/          ← Workspace (the Pi agent's cwd)
             ├── .pi/skills/        ← Per-project scientific skills
+            ├── .pi/agents/        ← Sub-agent definitions (one .md per specialist)
+            ├── .pi/mcp.json       ← MCP server connections for this project
             ├── .pi/sessions/      ← Pi JSONL session files (one per chat tab)
             └── .kady/runs/<sessionId>/costs.jsonl  ← Per-session cost ledger
 ```

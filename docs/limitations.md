@@ -42,6 +42,14 @@ If a task loops or ignores its skill, try a **larger local model** (or temporari
   active, the workflow runs in tab B. Switch to the tab you want to
   receive the workflow before launching.
 
+## Sub-agents
+
+Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple of edges:
+
+- **Sub-agents can't use MCP tools yet.** Tools from connected [MCP servers](./mcp-servers.md) are available to Kady itself but not to the sub-agents it spawns. Making them available to sub-agents is on the roadmap.
+- **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Sub-agents, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
+- **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
+
 ## Features deferred during the Pi migration
 
-Web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), custom MCP servers, browser automation, and citation verification / "Copy as Methods" provenance export are not available yet in the Pi-based backend. They are being re-added as native Pi tools in upcoming releases; the keys for them in `.env.example` are currently unused.
+Native web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and citation verification / "Copy as Methods" provenance export are not available yet in the Pi-based backend. They are being re-added in upcoming releases; the keys for them in `.env.example` are currently unused. In the meantime, many of these capabilities (web search, GitHub, reference managers, ...) can be added today by connecting an [MCP server](./mcp-servers.md).

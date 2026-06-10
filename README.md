@@ -21,7 +21,9 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 
 ## What can it do?
 
-- **Answer questions and take on tasks.** Chat with Kady like any AI assistant. For bigger work, Kady uses its file and shell tools directly - and can spawn subagents for independent or parallel subtasks - in a full working environment.
+- **Answer questions and take on tasks.** Chat with Kady like any AI assistant. For bigger work, Kady uses its file and shell tools directly - and can delegate to sub-agents for independent or parallel subtasks - in a full working environment.
+- **A built-in team of 21 scientific specialists.** Kady can hand work to expert sub-agents - a `citation-checker` that verifies every reference, a `statistical-reviewer` that audits your analysis, a `peer-reviewer` that writes a journal-style report, and 18 more. They run one at a time, in parallel, or chained. You can view, edit, and create your own in Settings. [Learn more](./docs/sub-agents.md).
+- **Connect external tools with MCP.** Add [MCP servers](./docs/mcp-servers.md) (an open standard supported by hundreds of services) from Settings to give Kady extra abilities - web search, GitHub, reference managers, databases, and more - with a built-in connection tester.
 - **Run up to 10 chats in parallel.** Open a new tab for each thread of work — every tab keeps its own message history, model, attached files, and cost meter, but all tabs share the project's sandbox so files written in one tab are immediately available in the others. Tabs keep streaming in the background while you switch between them.
 - **Pick any tool-capable AI model, any time.** Choose from the full set of OpenRouter models that support tool calling (OpenAI, Anthropic, Google, xAI, Qwen, and more) with a simple dropdown, per chat tab. You can also use free local models through [Ollama](./docs/local-models-ollama.md).
 - **140+ scientific skills, pre-installed.** Covers genomics, proteomics, drug discovery, materials science, and more. Kady activates the right skills automatically for each task.
@@ -33,7 +35,7 @@ It is built for scientists, analysts, and curious people who want a powerful AI 
 - **Voice input, drag-and-drop attachments, `@` file mentions,** and a **message queue** for batching up to 5 messages while the agent is working.
 - **Cost & budget tracking.** Per-session and per-project cost meters, plus an optional hard spend cap per project.
 
-> Web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), custom MCP servers, browser automation, and the provenance/"Copy as Methods" export are being re-added as native Pi tools in upcoming releases.
+> Native web search (Exa/Parallel), literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and the provenance/"Copy as Methods" export are being re-added in upcoming releases. (In the meantime, many of these are available today by connecting an [MCP server](./docs/mcp-servers.md).)
 
 ## What you'll need before starting
 
@@ -61,9 +63,9 @@ cd k-dense-byok
 
 ### Step 2 - Add your API keys
 
-In the project's top folder you'll find a file called `.env.example`. Make a copy and rename it to `.env` (note the dot at the start). Open `.env` in any text editor and paste your **OpenRouter API key** - that's the only key you need to get started.
+In the project's top folder you'll find a file called `.env.example`. Make a copy and rename it to `.env` (note the dot at the start). Open `.env` in any text editor and paste your **OpenRouter API key** - that's the only key you need to get started. (If you skip this step, the startup script creates the `.env` file for you and reminds you to add the key - you can also paste it later in **Settings → API keys**.)
 
-Optionally set `OLLAMA_BASE_URL` to use local models. (Other integrations such as web search and document conversion are being re-added as native tools in a later release.)
+Optionally set `OLLAMA_BASE_URL` to use local models with no API key at all - see [Local models with Ollama](./docs/local-models-ollama.md).
 
 ### Step 3 - Start the app
 
@@ -71,7 +73,7 @@ Optionally set `OLLAMA_BASE_URL` to use local models. (Other integrations such a
 ./start.sh
 ```
 
-The first time you run this, it will automatically install the backend and frontend packages and the scientific skills. This may take a few minutes. Future starts are much faster. (You'll need Node.js ≥ 22.19 installed.)
+The first time you run this, it automatically checks for and installs everything the app needs - the backend and frontend packages, the [uv](https://docs.astral.sh/uv/) Python manager Kady uses to run analyses, and the scientific skills. It also creates your `.env` file if you haven't yet, and warns you clearly if no API key (or local Ollama) is set up. This may take a few minutes; future starts are much faster. (You'll need Node.js ≥ 22.19 installed - the script installs it via Homebrew on a Mac if missing.)
 
 Once everything is running, your browser will open to **[http://localhost:3000](http://localhost:3000)**. That's the app.
 
@@ -81,17 +83,19 @@ Press **Ctrl+C** in the terminal.
 
 ## Using the app day to day
 
-- **Send a message.** Type a question or task and hit enter. Kady answers directly, runs tools (read/write files, run code), and can spawn a subagent for heavy or parallel subtasks.
+- **Send a message.** Type a question or task and hit enter. Kady answers directly, runs tools (read/write files, run code), and can delegate to specialist sub-agents for heavy or parallel subtasks - or you can name one yourself: *"have the citation-checker go through manuscript.md"*.
 - **Open multiple chats.** Click `+` in the chat tab strip to start a new chat in the same project (up to 10). Double-click a tab title or use the pencil icon to rename it. Closing a tab cancels any turn it had running. The cost pill in the header shows both the active tab's session cost (`sess`) and the project total across every tab (`proj`).
 - **Switch models.** Use the model dropdown in the input bar - any message can use any tool-capable OpenRouter model, or a local Ollama model.
 - **Upload files.** Drag files into the file browser or directly onto the input bar. Use `@filename` in your message to reference files.
 - **Launch a workflow.** Open the workflows panel, pick one, fill in the blanks, and click Launch. Workflows run in whichever chat tab is currently active.
-- **Open Settings** (the gear icon in the top-right) for API keys and appearance.
+- **Open Settings** (the gear icon in the top-right) to manage your API keys, connect [MCP servers](./docs/mcp-servers.md), view and customize [sub-agents](./docs/sub-agents.md), and change the appearance.
 
 ## Learn more
 
 These guides live in the [`docs/`](./docs) folder:
 
+- **[Sub-agents](./docs/sub-agents.md)** - Kady's team of 21 scientific specialists: what they do and how to customize them or add your own.
+- **[Connecting external tools (MCP)](./docs/mcp-servers.md)** - give Kady extra abilities like web search, GitHub, and databases.
 - **[Architecture](./docs/architecture.md)** - how the two local services fit together and what each folder in the project is for.
 - **[Model selection](./docs/model-selection.md)** - how Kady builds the OpenRouter model list.
 - **[Local models with Ollama](./docs/local-models-ollama.md)** - run everything with local models, no API keys required.
@@ -100,13 +104,13 @@ These guides live in the [`docs/`](./docs) folder:
 
 ## Features in the works
 
-- Re-adding web search, document conversion, custom MCP servers, and remote compute as native Pi tools
+- Re-adding web search, document conversion, and remote compute as native Pi tools
+- Making MCP tools available to sub-agents (today they're available to Kady itself)
 - Provenance / "Copy as Methods" export on top of Pi sessions
-- A full credentials & settings UI
 - Better UI experience tailored to scientific workflows
 - And much more
 
-Recently completed: migrated the backend to the [Pi coding-agent SDK](https://pi.dev) (single flat agent + subagents, replacing the orchestrator/expert/Gemini-CLI/LiteLLM stack), native OpenRouter + Ollama, per-project Pi sessions, and cost/budget tracking from Pi usage.
+Recently completed: migrated the backend to the [Pi coding-agent SDK](https://pi.dev) (replacing the orchestrator/expert/Gemini-CLI/LiteLLM stack), native OpenRouter + Ollama, per-project Pi sessions, cost/budget tracking from Pi usage, **custom MCP servers** with a settings UI and connection tester, and a **customizable sub-agent system** ([pi-subagents](https://github.com/nicobailon/pi-subagents)) with 21 pre-installed scientific specialists, parallel/chained delegation, and a full management UI.
 
 ## Want more?
 
