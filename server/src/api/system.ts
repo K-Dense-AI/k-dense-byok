@@ -8,7 +8,49 @@ import { OLLAMA_BASE_URL } from "../config.ts";
 import { activePaths } from "../projects.ts";
 import { listProjectSkills, seedProjectSkills } from "../agent/skills.ts";
 
+const GITHUB_REPO = "K-Dense-AI/k-dense-byok";
+const VERSION_CACHE_TTL_MS = 60 * 60 * 1000; // re-check at most once per hour
+let versionCache: { ts: number; latestVersion: string | null } | null = null;
+
 export async function registerSystemRoutes(app: FastifyInstance): Promise<void> {
+  // Server-side proxy for the "latest release" check. Doing the GitHub fetch
+  // here (instead of the browser) keeps the unauthenticated-rate-limit 403 out
+  // of the user's console, lets us cache across reloads, and can use a token if
+  // one is configured. Always 200s with a (possibly null) version.
+  app.get("/version/latest", async () => {
+    const now = Date.now();
+    if (versionCache && now - versionCache.ts < VERSION_CACHE_TTL_MS) {
+      return { latestVersion: versionCache.latestVersion };
+    }
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 3000);
+      const token = process.env.GITHUB_TOKEN;
+      const resp = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
+        {
+          signal: ctrl.signal,
+          headers: {
+            Accept: "application/vnd.github+json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+        },
+      );
+      clearTimeout(t);
+      if (!resp.ok) {
+        versionCache = { ts: now, latestVersion: null };
+        return { latestVersion: null };
+      }
+      const data = (await resp.json()) as { tag_name?: string };
+      const latestVersion = (data.tag_name ?? "").replace(/^v/, "") || null;
+      versionCache = { ts: now, latestVersion };
+      return { latestVersion };
+    } catch {
+      versionCache = { ts: now, latestVersion: null };
+      return { latestVersion: null };
+    }
+  });
+
   app.get("/skills", async () => {
     return listProjectSkills(activePaths()).map((s) => ({
       id: s.name,

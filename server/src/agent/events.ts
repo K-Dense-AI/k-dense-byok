@@ -10,8 +10,29 @@ export interface ClientFrame {
   [k: string]: unknown;
 }
 
+/** Pull human-readable text out of a Pi tool result before capping it.
+ *  Results are usually `[{type:"text", text:"…"}]`; fall back to JSON. */
+function resultText(s: unknown): string {
+  if (typeof s === "string") return s;
+  if (Array.isArray(s)) {
+    const parts = s
+      .map((p) =>
+        p && typeof p === "object" && typeof (p as { text?: unknown }).text === "string"
+          ? (p as { text: string }).text
+          : null,
+      )
+      .filter((t): t is string => t !== null);
+    if (parts.length) return parts.join("\n");
+  }
+  if (s && typeof s === "object") {
+    const content = (s as { content?: unknown }).content;
+    if (content !== undefined) return resultText(content);
+  }
+  return JSON.stringify(s ?? "");
+}
+
 function cap(s: unknown, max = 4000): string {
-  const str = typeof s === "string" ? s : JSON.stringify(s ?? "");
+  const str = resultText(s);
   return str.length > max ? str.slice(0, max) + "…" : str;
 }
 

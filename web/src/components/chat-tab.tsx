@@ -33,8 +33,10 @@ import { buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
+import { ReasoningBlock, ToolActivityList } from "@/components/tool-activity";
 import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
+import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
 import { useAgent, type ChatMessage } from "@/lib/use-agent";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
@@ -363,7 +365,16 @@ function ChatInput({
   const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
     const uploaded = await onUploadFiles(files, paths);
     for (const p of uploaded) onAddFile(p);
-  }, [onUploadFiles, onAddFile]);
+    // Surface skills that match the uploaded data formats (e.g. .h5ad → anndata)
+    // by auto-attaching them; they appear as removable chips, so it's a
+    // suggestion the user can undo, not a hidden side-effect.
+    const suggested = suggestSkillsForFiles(uploaded, allSkills);
+    if (suggested.length > 0) {
+      const existing = new Set(selectedSkills.map((s) => s.id));
+      const additions = suggested.filter((s) => !existing.has(s.id));
+      if (additions.length > 0) onSkillsChange([...selectedSkills, ...additions]);
+    }
+  }, [onUploadFiles, onAddFile, allSkills, selectedSkills, onSkillsChange]);
 
   // Wrap onSubmit to append attached file paths and database/skills context,
   // then clear chips.
@@ -640,10 +651,29 @@ function ChatInput({
   );
 }
 
-function AssistantMessageBody({ message }: { message: ChatMessage }) {
+function AssistantMessageBody({
+  message,
+  isStreaming,
+}: {
+  message: ChatMessage;
+  isStreaming: boolean;
+}) {
+  const activities = message.activities ?? [];
+  const hasReasoning = Boolean(message.reasoning?.trim());
+  const hasAnything =
+    Boolean(message.content) || activities.length > 0 || hasReasoning;
+
   return (
     <>
-      <MessageResponse>{message.content}</MessageResponse>
+      {hasReasoning && <ReasoningBlock reasoning={message.reasoning ?? ""} />}
+      {activities.length > 0 && <ToolActivityList activities={activities} />}
+      {message.content ? (
+        <MessageResponse>{message.content}</MessageResponse>
+      ) : isStreaming && !hasAnything ? (
+        <Shimmer className="text-sm" duration={1.5}>
+          Thinking...
+        </Shimmer>
+      ) : null}
       {message.citations && (
         <div className="flex flex-wrap items-center gap-2">
           <CitationBadge report={message.citations} />
@@ -891,14 +921,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             messages.map((message) => (
               <Message from={message.role} key={message.id}>
                 <MessageContent>
-                  {message.role === "assistant" &&
-                  !message.content &&
-                  isStreaming ? (
-                    <Shimmer className="text-sm" duration={1.5}>
-                      Thinking...
-                    </Shimmer>
-                  ) : message.role === "assistant" ? (
-                    <AssistantMessageBody message={message} />
+                  {message.role === "assistant" ? (
+                    <AssistantMessageBody
+                      message={message}
+                      isStreaming={isStreaming}
+                    />
                   ) : (
                     <MessageResponse>{message.content}</MessageResponse>
                   )}
@@ -922,6 +949,26 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                         )}
                       </MessageAction>
                     </MessageActions>
+                    {typeof message.runCostUsd === "number" &&
+                      message.runCostUsd > 0 && (
+                        <InfoTooltip
+                          content={
+                            <>
+                              <b>Cost of this reply</b>
+                              <br />
+                              {formatUsd(message.runCostUsd)}
+                              {typeof message.runTokens === "number" &&
+                              message.runTokens > 0
+                                ? ` · ${message.runTokens.toLocaleString()} tokens`
+                                : ""}
+                            </>
+                          }
+                        >
+                          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                            {formatUsd(message.runCostUsd)}
+                          </span>
+                        </InfoTooltip>
+                      )}
                   </MessageToolbar>
                 )}
               </Message>

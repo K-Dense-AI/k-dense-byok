@@ -25,6 +25,11 @@ import {
   sessionCostSummary,
   type CostSnapshot,
 } from "../cost/ledger.ts";
+import {
+  findSessionFile,
+  toNotebook,
+  toShellScript,
+} from "../agent/session-export.ts";
 
 function snapshot(session: { getSessionStats(): { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } } }): CostSnapshot {
   const s = session.getSessionStats();
@@ -75,6 +80,36 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       return { detail: (err as Error).message };
     }
   });
+
+  // Reproducibility export: a runnable shell script (?format=sh) or a markdown
+  // lab notebook (?format=md) reconstructed from the Pi session log.
+  app.get<{ Params: { id: string }; Querystring: { format?: string } }>(
+    "/sessions/:id/export",
+    async (req, reply) => {
+      try {
+        const format = req.query.format === "md" ? "md" : "sh";
+        const file = findSessionFile(activePaths(), req.params.id);
+        if (!file) {
+          reply.code(404);
+          return { detail: "No such session" };
+        }
+        const body =
+          format === "md"
+            ? toNotebook(file, req.params.id)
+            : toShellScript(file, req.params.id);
+        const ext = format === "md" ? "md" : "sh";
+        reply.type(format === "md" ? "text/markdown" : "text/x-shellscript");
+        reply.header(
+          "Content-Disposition",
+          `attachment; filename="session-${req.params.id}.${ext}"`,
+        );
+        return body;
+      } catch (err) {
+        reply.code(400);
+        return { detail: (err as Error).message };
+      }
+    },
+  );
 
   app.post<{ Params: { id: string } }>("/sessions/:id/abort", async (req) => {
     const session = await getSession(currentProjectId(), activePaths(), req.params.id);
@@ -171,15 +206,25 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           if (errorMessage && errorMessage !== priorError) {
             write({ type: "error", message: errorMessage });
           }
+          const after = snapshot(session);
           recordRun({
             sessionId: req.params.id,
             projectId,
             model: session.model?.id ?? "unknown",
             before,
-            after: snapshot(session),
+            after,
           });
           const stats = session.getSessionStats();
-          write({ type: "cost", cost: stats.cost, tokens: stats.tokens });
+          // `cost`/`tokens` are cumulative for the whole session; `runCost`/
+          // `runTokens` are the delta for THIS turn, so the UI can attribute a
+          // price to the message that just completed.
+          write({
+            type: "cost",
+            cost: stats.cost,
+            tokens: stats.tokens,
+            runCost: Math.max(0, after.costUsd - before.costUsd),
+            runTokens: Math.max(0, after.total - before.total),
+          });
           write({ type: "done" });
         } catch (err) {
           write({ type: "error", message: (err as Error).message });

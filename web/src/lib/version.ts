@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from "react";
 
+import { apiFetch } from "@/lib/projects";
+
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
 
-const GITHUB_REPO = "K-Dense-AI/k-dense-byok";
 const CACHE_KEY = "kdense-update-check";
 const CACHE_TTL_MS = 60 * 60 * 1000; // re-check at most once per hour
 
@@ -47,22 +48,20 @@ export function useUpdateCheck(): UpdateCheckResult {
       localStorage.removeItem(CACHE_KEY);
     }
 
-    fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-        return res.json();
-      })
+    // Routed through the backend (`/version/latest`) so an unauthenticated
+    // GitHub rate-limit never surfaces as a console error in the browser.
+    apiFetch("/version/latest")
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        const tag: string = data.tag_name ?? "";
-        const latestVersion = tag.replace(/^v/, "");
-        const updateAvailable =
-          latestVersion.length > 0 && compareSemver(APP_VERSION, latestVersion);
+        const latestVersion: string = data?.latestVersion ?? "";
+        if (!latestVersion) return;
+        const updateAvailable = compareSemver(APP_VERSION, latestVersion);
         const value: CachedCheck = { updateAvailable, latestVersion, ts: Date.now(), forVersion: APP_VERSION };
         localStorage.setItem(CACHE_KEY, JSON.stringify(value));
         setResult({ updateAvailable, latestVersion });
       })
       .catch(() => {
-        // Network error or rate limit — silently ignore
+        // Network error — silently ignore
       });
   }, []);
 

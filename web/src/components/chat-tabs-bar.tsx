@@ -1,16 +1,28 @@
 "use client";
 
 import {
+  DownloadIcon,
+  FileTextIcon,
   LoaderCircleIcon,
   MessageSquareTextIcon,
   PencilIcon,
   PlusIcon,
+  TerminalIcon,
   WorkflowIcon,
   XIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { apiFetch } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 
 export interface ChatTabDescriptor {
@@ -30,6 +42,81 @@ export interface ChatTabsBarProps {
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onSelectWorkflows: () => void;
+  /** Session id of the active tab, for reproducibility export. */
+  activeSessionId?: string | null;
+  /** Whether the active tab has any messages worth exporting. */
+  canExport?: boolean;
+}
+
+/** Fetch an export and trigger a browser download (X-Project-Id via apiFetch). */
+async function downloadExport(sessionId: string, format: "sh" | "md") {
+  try {
+    const res = await apiFetch(
+      `/sessions/${encodeURIComponent(sessionId)}/export?format=${format}`,
+    );
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `session-${sessionId}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch {
+    // best-effort download; nothing actionable to surface
+  }
+}
+
+function ExportMenu({ sessionId }: { sessionId: string }) {
+  return (
+    <DropdownMenu>
+      <InfoTooltip
+        content={
+          <>
+            <b>Export session</b>
+            <br />
+            Download a reproducible record of this chat — a runnable shell
+            script of every command the agent ran, or a full lab notebook.
+          </>
+        }
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Export session"
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
+            <DownloadIcon className="size-3.5" />
+            Export
+          </button>
+        </DropdownMenuTrigger>
+      </InfoTooltip>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel>Reproducibility export</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => downloadExport(sessionId, "sh")}>
+          <TerminalIcon className="size-4" />
+          <div className="flex flex-col">
+            <span>Shell script (.sh)</span>
+            <span className="text-[11px] text-muted-foreground">
+              Every command, in order
+            </span>
+          </div>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => downloadExport(sessionId, "md")}>
+          <FileTextIcon className="size-4" />
+          <div className="flex flex-col">
+            <span>Lab notebook (.md)</span>
+            <span className="text-[11px] text-muted-foreground">
+              Prompts, commands & outputs
+            </span>
+          </div>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 export function ChatTabsBar({
@@ -42,6 +129,8 @@ export function ChatTabsBar({
   onNew,
   onRename,
   onSelectWorkflows,
+  activeSessionId,
+  canExport = false,
 }: ChatTabsBarProps) {
   const atLimit = tabs.length >= maxTabs;
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -207,6 +296,9 @@ export function ChatTabsBar({
       </div>
 
       <div className="shrink-0 flex items-center gap-1 pl-2 border-l">
+        {view === "chat" && canExport && activeSessionId && (
+          <ExportMenu sessionId={activeSessionId} />
+        )}
         <InfoTooltip
           content={
             <>

@@ -551,6 +551,8 @@ export default function ChatPage() {
             onNew={newTab}
             onRename={renameTab}
             onSelectWorkflows={() => setView("workflows")}
+            activeSessionId={activeSessionId}
+            canExport={(activeMeta?.userMessageCount ?? 0) > 0}
           />
 
           {/* Chat tabs — all kept mounted so background streams continue.

@@ -14,6 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { API_BASE } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -363,12 +364,53 @@ const SafeParagraph = memo(
 );
 SafeParagraph.displayName = "SafeParagraph";
 
-const streamdownComponents = { p: SafeParagraph } as unknown as ComponentProps<
-  typeof Streamdown
->["components"];
+/**
+ * Resolve a sandbox-relative image src (e.g. `plots/fig.png`, `./out.svg`,
+ * `user_data/x.png`) to the backend raw-file endpoint so figures the agent
+ * writes render inline. Absolute URLs (http/data/blob) and root-absolute paths
+ * pass through untouched.
+ */
+function resolveImageSrc(src: unknown): string | undefined {
+  if (typeof src !== "string" || !src) return undefined;
+  if (/^(https?:|data:|blob:|\/\/)/i.test(src) || src.startsWith("/")) return src;
+  const clean = src.replace(/^\.\//, "");
+  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(clean)}`;
+}
+
+const SandboxImage = memo(
+  ({ src, alt, node: _node, ...rest }: Record<string, unknown> & { src?: unknown; alt?: string; node?: unknown }) => {
+    const resolved = resolveImageSrc(src);
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={resolved}
+        alt={typeof alt === "string" ? alt : ""}
+        className="my-2 max-w-full rounded-md border"
+        loading="lazy"
+        {...(rest as React.ImgHTMLAttributes<HTMLImageElement>)}
+      />
+    );
+  }
+);
+SandboxImage.displayName = "SandboxImage";
+
+const streamdownComponents = {
+  p: SafeParagraph,
+  img: SandboxImage,
+} as unknown as ComponentProps<typeof Streamdown>["components"];
+
+/**
+ * Insert a paragraph break before an ATX heading that got glued onto the end
+ * of a previous line (e.g. "…by condition:## Results" → proper heading). A
+ * belt-and-suspenders for the stream-concatenation case; the reducer already
+ * separates text around tool calls.
+ */
+function normalizeMarkdown(md: string): string {
+  return md.replace(/([^\n])(#{1,6}\s+\S)/g, "$1\n\n$2");
+}
 
 export const MessageResponse = memo(
-  ({ className, ...props }: MessageResponseProps) => (
+  ({ className, children, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn(
         "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
@@ -378,7 +420,9 @@ export const MessageResponse = memo(
       linkSafety={linkSafetyOff}
       plugins={streamdownPlugins}
       {...props}
-    />
+    >
+      {typeof children === "string" ? normalizeMarkdown(children) : children}
+    </Streamdown>
   ),
   (prevProps, nextProps) => prevProps.children === nextProps.children
 );
