@@ -24,8 +24,21 @@ if ! command -v node &>/dev/null; then
 else
     NODE_MAJOR=$(node -p "process.versions.node.split('.')[0]")
     NODE_MINOR=$(node -p "process.versions.node.split('.')[1]")
+    # Node < 22 fails to build/install the packages, so stop here rather
+    # than let npm install crash with a confusing error later.
+    if [ "$NODE_MAJOR" -lt 22 ]; then
+        echo "  ✗ Node.js $(node -v) is too old — Kady needs Node.js >= 22 to"
+        echo "    build and install its packages."
+        if command -v brew &>/dev/null; then
+            echo "    Upgrade with 'brew install node', then run ./start.sh again."
+        else
+            echo "    Upgrade via https://nodejs.org/ or your version manager"
+            echo "    (e.g. 'nvm install 22'), then run ./start.sh again."
+        fi
+        exit 1
+    fi
     echo "  Node.js ✓ ($(node -v))"
-    if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 19 ]; }; then
+    if [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 19 ]; then
         echo "  ⚠ Pi recommends Node >= 22.19; you have $(node -v). It usually still works."
     fi
 fi
