@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/k-dense-ai-k-dense-byok-badge.png)](https://mseep.ai/app/k-dense-ai-k-dense-byok)
+
 # K-Dense BYOK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
