@@ -22,7 +22,12 @@ import {
   REPO_ROOT,
 } from "../config.ts";
 
-const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+// OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
+// OpenAI-compatible provider can point at any compatible gateway — e.g.
+// Requesty (https://router.requesty.ai/v1), which uses the same
+// "vendor/model" ids and Bearer auth as OpenRouter.
+const OPENROUTER_BASE_URL =
+  process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
 const CATALOGUE_PATH = path.join(REPO_ROOT, "web", "src", "data", "models.json");
 
 interface CatalogueEntry {
