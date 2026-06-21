@@ -33,6 +33,12 @@ import { SubagentsPanel } from "@/components/subagents-panel";
 import { useProjects } from "@/lib/use-projects";
 import { apiFetch } from "@/lib/projects";
 import {
+  FUSION_DEFAULTS_VERSION,
+  fusionPanelModels,
+  loadFusionConfigs,
+  type StoredFusionConfig,
+} from "@/lib/fusion-presets";
+import {
   getMcpServers,
   saveMcpServers,
   testMcpServer,
@@ -818,65 +824,51 @@ export function SettingsDialog({
 // ---------------------------------------------------------------------------
 // Fusion configs panel (stored in localStorage, auto-populates model list)
 // ---------------------------------------------------------------------------
+const FUSION_SKELETON = JSON.stringify(
+  {
+    model: "openrouter/fusion",
+    reasoning_effort: "high",
+    plugins: [
+      {
+        id: "fusion",
+        preset: "general-high",
+        analysis_models: [],
+        model: "",
+        max_tool_calls: 8,
+      },
+    ],
+  },
+  null,
+  2,
+);
+
 function FusionPanel() {
-  const [configs, setConfigs] = useState<Array<{ id: string; name: string; config: string }>>([]);
+  const [configs, setConfigs] = useState<StoredFusionConfig[]>(() => loadFusionConfigs());
   const [newName, setNewName] = useState("");
-  const [newConfig, setNewConfig] = useState('{\n  "web_search": true,\n  "experts": []\n}');
+  const [newConfig, setNewConfig] = useState(FUSION_SKELETON);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editConfig, setEditConfig] = useState("");
 
-  const save = (next: Array<{ id: string; name: string; config: string }>) => {
+  const save = (next: StoredFusionConfig[]) => {
     setConfigs(next);
     localStorage.setItem("fusionConfigs", JSON.stringify(next));
     window.dispatchEvent(new Event("fusion-configs-changed"));
   };
 
-  const DEFAULT_FUSION_CONFIGS = [
-    {
-      id: "research-fusion",
-      name: "Research Fusion",
-      config: JSON.stringify({
-        web_search: true,
-        web_fetch: true,
-        experts: [
-          "anthropic/claude-opus-4.8",
-          "openai/gpt-5.5-pro",
-          "google/gemini-3.1-pro-preview",
-        ],
-        synthesizer: "anthropic/claude-opus-4.8",
-        reasoning_effort: "xhigh",
-        temperature: 0.7,
-      }, null, 2),
-    },
-    {
-      id: "exaflop",
-      name: "Exaflop",
-      config: JSON.stringify({
-        web_search: true,
-        web_fetch: true,
-        experts: [
-          "openai/gpt-5.5-pro",
-          "google/gemini-3.1-pro-preview",
-          "anthropic/claude-opus-4.8",
-          "openai/gpt-4.5-fable",
-        ],
-        synthesizer: "anthropic/claude-opus-4.8",
-        reasoning_effort: "xhigh",
-        temperature: 0.6,
-      }, null, 2),
-    },
-  ];
-
+  // `configs` is initialised from loadFusionConfigs(), which already merges in
+  // new built-in presets when the stored defaults version is behind. Persist that
+  // seed/migration once (no setState here, so no cascading renders).
   useEffect(() => {
     try {
       const raw = localStorage.getItem("fusionConfigs");
-      if (raw) {
-        setConfigs(JSON.parse(raw));
-      } else {
-        save(DEFAULT_FUSION_CONFIGS);
+      const storedVersion = Number(localStorage.getItem("fusionConfigsVersion") || "0");
+      if (!raw || storedVersion < FUSION_DEFAULTS_VERSION) {
+        localStorage.setItem("fusionConfigs", JSON.stringify(configs));
+        localStorage.setItem("fusionConfigsVersion", String(FUSION_DEFAULTS_VERSION));
+        window.dispatchEvent(new Event("fusion-configs-changed"));
       }
     } catch {}
-  }, []);
+  }, [configs]);
 
   const add = () => {
     if (!newName.trim()) return;
@@ -887,7 +879,7 @@ function FusionPanel() {
     };
     save([...configs, entry]);
     setNewName("");
-    setNewConfig('{\n  "web_search": true,\n  "experts": []\n}');
+    setNewConfig(FUSION_SKELETON);
   };
 
   const remove = (id: string) => {
@@ -953,12 +945,14 @@ function FusionPanel() {
           if (!isEditing) {
             try {
               const p = JSON.parse(c.config);
-              const experts = (p.experts || []).join(", ");
+              const panel = fusionPanelModels(p).join(", ");
+              const judge = p?.plugins?.[0]?.model || "-";
               const r = p.reasoning_effort || "-";
-              const t = p.temperature ?? "-";
+              const t = p.temperature ?? "default";
               summary = (
                 <div className="mt-1 text-[10px] text-muted-foreground">
-                  <div>Models: {experts}</div>
+                  <div>Panel: {panel}</div>
+                  <div>Judge: {judge}</div>
                   <div>Reasoning: {r} • Temp: {t}</div>
                 </div>
               );

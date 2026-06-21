@@ -50,7 +50,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
   Ollama:    "text-teal-600 dark:text-teal-400",
-  "OR Fusion": "text-red-600 dark:text-red-400",
+  "Openrouter Fusion": "text-red-600 dark:text-red-400",
 };
 
 const isOllama = (m: Model) => m.provider === "Ollama" || m.id.startsWith("ollama/");
@@ -249,7 +249,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
         {allModels.some(m => m.isFusion) && (
           <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium">
             <span className={cn("inline-block size-1.5 rounded-full", FUSION_DOT)} />
-            OR Fusion
+            Openrouter Fusion
           </span>
         )}
       </div>

@@ -98,11 +98,11 @@ def main() -> None:
             prompt = 0.0
             completion = 0.0
 
-        provider = provider_for(model_id)
+        provider = "Openrouter Fusion" if is_fusion else provider_for(model_id)
         or_id = model_id if is_fusion else f"openrouter/{model_id}"
         entry = {
             "id": or_id,
-            "label": label_for(m["name"], provider),
+            "label": "Fusion" if is_fusion else label_for(m["name"], provider),
             "provider": provider,
             "tier": "flagship" if is_fusion else tier_for(prompt),
             "context_length": m["context_length"],
