@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import staticModels from "@/data/models.json";
 import type { Model } from "@/components/model-selector";
@@ -14,7 +14,7 @@ interface OllamaListResponse {
 }
 
 export interface UseModelsReturn {
-  /** Every model available to the user: static OpenRouter catalogue + live Ollama tags. */
+  /** Every model available to the user: static OpenRouter catalogue + live Ollama tags + user Fusion configs. */
   models: Model[];
   /** Just the Ollama-sourced entries, in the order returned by the backend. */
   ollamaModels: Model[];
@@ -22,6 +22,12 @@ export interface UseModelsReturn {
   ollamaAvailable: boolean;
   /** Re-fetch the Ollama list. */
   refresh: () => void;
+}
+
+export interface FusionConfig {
+  id: string;
+  name: string;
+  config: Record<string, unknown>;
 }
 
 /**
@@ -56,8 +62,55 @@ export function useModels(): UseModelsReturn {
 
   useEffect(() => onProjectChange(() => fetchOllama()), [fetchOllama]);
 
+  // Load user-defined Fusion configs (stored in localStorage by Settings)
+  const fusionModels = useMemo(() => {
+    try {
+      const raw = localStorage.getItem("fusionConfigs");
+      if (!raw) return [];
+      const configs: FusionConfig[] = JSON.parse(raw);
+      return configs.map((fc) => {
+        const experts = (fc.config.experts as string[]) || [];
+        const reasoning = (fc.config.reasoning_effort as string) || "standard";
+        const expertNames = experts.length > 0 ? experts.join(", ") : "custom experts";
+        const providers = experts.length > 0 ? [...new Set(experts.map((e: string) => e.split("/")[0]))].join("+") : "";
+
+        // Calculate combined pricing from expert models (robust matching)
+        let totalPrompt = 0;
+        let totalCompletion = 0;
+
+        for (const expertId of experts) {
+          const cleanId = expertId.replace(/^openrouter\//, "");
+          const expertModel = OPENROUTER_MODELS.find(m => 
+            m.id === expertId || 
+            m.id === `openrouter/${cleanId}` || 
+            m.id.endsWith(`/${cleanId}`)
+          );
+          if (expertModel) {
+            totalPrompt += expertModel.pricing.prompt;
+            totalCompletion += expertModel.pricing.completion;
+          }
+        }
+
+        return {
+          id: `fusion/${fc.id}`,
+          label: `${fc.name} ${providers}`,
+          provider: "OR Fusion",
+          tier: "flagship" as const,
+          context_length: 1_000_000,
+          pricing: { prompt: totalPrompt, completion: totalCompletion },
+          modality: "text->text",
+          description: `OpenRouter Fusion • ${expertNames} • ${reasoning} reasoning\n$${totalPrompt.toFixed(2)} in / $${totalCompletion.toFixed(2)} out per 1M tok`,
+          isFusion: true,
+          fusionConfig: fc.config,
+        };
+      }) as Model[];
+    } catch {
+      return [];
+    }
+  }, []);
+
   return {
-    models: [...OPENROUTER_MODELS, ...ollamaModels],
+    models: [...fusionModels, ...OPENROUTER_MODELS, ...ollamaModels],
     ollamaModels,
     ollamaAvailable,
     refresh: fetchOllama,

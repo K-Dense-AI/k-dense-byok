@@ -27,6 +27,7 @@ import {
   GlobeIcon,
   TerminalIcon,
   BotIcon,
+  BrainCircuitIcon,
 } from "lucide-react";
 import { SubagentsPanel } from "@/components/subagents-panel";
 import { useProjects } from "@/lib/use-projects";
@@ -778,6 +779,13 @@ export function SettingsDialog({
               Sub-agents
             </TabsTrigger>
             <TabsTrigger
+              value="fusion"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <BrainCircuitIcon className="size-3.5" />
+              Fusion
+            </TabsTrigger>
+            <TabsTrigger
               value="appearance"
               className="justify-start gap-2 px-3 text-xs w-full"
             >
@@ -798,8 +806,200 @@ export function SettingsDialog({
           <TabsContent value="appearance" className="flex-1 min-h-0 p-5">
             <AppearancePanel />
           </TabsContent>
+          <TabsContent value="fusion" className="flex-1 min-h-0 p-5 overflow-y-auto">
+            <FusionPanel />
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Fusion configs panel (stored in localStorage, auto-populates model list)
+// ---------------------------------------------------------------------------
+function FusionPanel() {
+  const [configs, setConfigs] = useState<Array<{ id: string; name: string; config: string }>>([]);
+  const [newName, setNewName] = useState("");
+  const [newConfig, setNewConfig] = useState('{\n  "web_search": true,\n  "experts": []\n}');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editConfig, setEditConfig] = useState("");
+
+  const save = (next: Array<{ id: string; name: string; config: string }>) => {
+    setConfigs(next);
+    localStorage.setItem("fusionConfigs", JSON.stringify(next));
+    window.dispatchEvent(new Event("fusion-configs-changed"));
+  };
+
+  const DEFAULT_FUSION_CONFIGS = [
+    {
+      id: "research-fusion",
+      name: "Research Fusion",
+      config: JSON.stringify({
+        web_search: true,
+        web_fetch: true,
+        experts: [
+          "anthropic/claude-opus-4.8",
+          "openai/gpt-5.5-pro",
+          "google/gemini-3.1-pro-preview",
+        ],
+        synthesizer: "anthropic/claude-opus-4.8",
+        reasoning_effort: "xhigh",
+        temperature: 0.7,
+      }, null, 2),
+    },
+    {
+      id: "exaflop",
+      name: "Exaflop",
+      config: JSON.stringify({
+        web_search: true,
+        web_fetch: true,
+        experts: [
+          "openai/gpt-5.5-pro",
+          "google/gemini-3.1-pro-preview",
+          "anthropic/claude-opus-4.8",
+          "openai/gpt-4.5-fable",
+        ],
+        synthesizer: "anthropic/claude-opus-4.8",
+        reasoning_effort: "xhigh",
+        temperature: 0.6,
+      }, null, 2),
+    },
+  ];
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("fusionConfigs");
+      if (raw) {
+        setConfigs(JSON.parse(raw));
+      } else {
+        save(DEFAULT_FUSION_CONFIGS);
+      }
+    } catch {}
+  }, []);
+
+  const add = () => {
+    if (!newName.trim()) return;
+    const entry = {
+      id: crypto.randomUUID(),
+      name: newName.trim(),
+      config: newConfig,
+    };
+    save([...configs, entry]);
+    setNewName("");
+    setNewConfig('{\n  "web_search": true,\n  "experts": []\n}');
+  };
+
+  const remove = (id: string) => {
+    if (editingId === id) { setEditingId(null); setEditConfig(""); }
+    save(configs.filter((c) => c.id !== id));
+  };
+
+  const startEdit = (c: { id: string; config: string }) => {
+    setEditingId(c.id);
+    setEditConfig(c.config);
+  };
+  const cancelEdit = () => { setEditingId(null); setEditConfig(""); };
+  const saveEdit = () => {
+    if (!editingId) return;
+    const next = configs.map((c) => (c.id === editingId ? { ...c, config: editConfig } : c));
+    save(next);
+    cancelEdit();
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div>
+        <h3 className="text-sm font-medium">Fusion Configurations</h3>
+        <p className="text-xs text-muted-foreground mt-1">
+          Create named OpenRouter Fusion setups. They appear at the top of the model selector.
+          Paste the full Fusion request body (see OpenRouter Fusion docs).
+        </p>
+      </div>
+
+      <div className="pt-2">
+        <div className="text-sm font-medium mb-2">Add Fusion config +</div>
+        <Input
+          placeholder="Config name (e.g. Research Fusion)"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          className="mb-2"
+        />
+        <Textarea
+          value={newConfig}
+          onChange={(e) => setNewConfig(e.target.value)}
+          className="font-mono text-xs h-32"
+        />
+        <Button onClick={add} className="mt-2" size="sm">
+          <PlusIcon className="size-3.5 mr-1" /> Add
+        </Button>
+        <a
+          href="https://openrouter.ai/docs/guides/features/plugins/fusion"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block mt-3 text-[11px] text-muted-foreground hover:underline"
+        >
+          OpenRouter Fusion API docs →
+        </a>
+      </div>
+
+      <div className="space-y-3">
+        {configs.length === 0 && (
+          <p className="text-xs text-muted-foreground">No Fusion configs yet.</p>
+        )}
+        {configs.map((c) => {
+          const isEditing = editingId === c.id;
+          let summary = null;
+          if (!isEditing) {
+            try {
+              const p = JSON.parse(c.config);
+              const experts = (p.experts || []).join(", ");
+              const r = p.reasoning_effort || "-";
+              const t = p.temperature ?? "-";
+              summary = (
+                <div className="mt-1 text-[10px] text-muted-foreground">
+                  <div>Models: {experts}</div>
+                  <div>Reasoning: {r} • Temp: {t}</div>
+                </div>
+              );
+            } catch {
+              summary = <div className="mt-1 text-[10px] text-muted-foreground">Invalid config</div>;
+            }
+          }
+          return (
+            <div key={c.id} className="rounded border p-3 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="font-medium">{c.name}</div>
+                <div className="flex gap-1">
+                  {!isEditing && (
+                    <Button variant="ghost" size="icon" onClick={() => startEdit(c)}>
+                      <PencilIcon className="size-3.5" />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="icon" onClick={() => remove(c.id)}>
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
+              {isEditing ? (
+                <>
+                  <Textarea
+                    value={editConfig}
+                    onChange={(e) => setEditConfig(e.target.value)}
+                    className="font-mono text-xs h-32 mt-2"
+                  />
+                  <div className="flex gap-2 mt-2">
+                    <Button size="sm" onClick={saveEdit}>Save</Button>
+                    <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+                  </div>
+                </>
+              ) : (
+                summary
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }

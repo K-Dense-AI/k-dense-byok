@@ -83,22 +83,33 @@ def main() -> None:
 
     out = []
     for m in live:
-        if "tools" not in (m.get("supported_parameters") or []):
-            continue
-        prompt = round(float(m["pricing"]["prompt"]) * 1_000_000, 6)
-        completion = round(float(m["pricing"]["completion"]) * 1_000_000, 6)
-        if prompt < 0 or completion < 0:
-            continue
-        provider = provider_for(m["id"])
+        model_id = m["id"]
+        is_fusion = model_id == "openrouter/fusion"
+
+        if not is_fusion:
+            if "tools" not in (m.get("supported_parameters") or []):
+                continue
+            prompt = round(float(m["pricing"]["prompt"]) * 1_000_000, 6)
+            completion = round(float(m["pricing"]["completion"]) * 1_000_000, 6)
+            if prompt < 0 or completion < 0:
+                continue
+        else:
+            # Fusion is a special meta-model with variable pricing and no tools param
+            prompt = 0.0
+            completion = 0.0
+
+        provider = provider_for(model_id)
+        or_id = model_id if is_fusion else f"openrouter/{model_id}"
         entry = {
-            "id": f"openrouter/{m['id']}",
+            "id": or_id,
             "label": label_for(m["name"], provider),
             "provider": provider,
-            "tier": tier_for(prompt),
+            "tier": "flagship" if is_fusion else tier_for(prompt),
             "context_length": m["context_length"],
             "pricing": {"prompt": prompt, "completion": completion},
             "modality": m["architecture"]["modality"],
             "description": truncate(m["description"]),
+            "isFusion": is_fusion,
         }
         entry.update(flags.pop(entry["id"], {}))
         out.append(entry)

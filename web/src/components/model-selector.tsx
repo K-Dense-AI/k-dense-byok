@@ -24,6 +24,8 @@ export type Model = {
   description: string;
   default?: boolean;
   expertDefault?: boolean;
+  isFusion?: boolean;
+  fusionConfig?: Record<string, unknown>;
 };
 
 const STATIC_MODELS = models as Model[];
@@ -37,6 +39,9 @@ const TIER_STYLES: Record<string, { dot: string; badge: string }> = {
   flagship: { dot: "bg-amber-500",  badge: "text-amber-600 dark:text-amber-400" },
 };
 
+const FUSION_DOT = "bg-red-500";
+const FUSION_BADGE = "text-red-600 dark:text-red-400";
+
 const PROVIDER_COLORS: Record<string, string> = {
   Google:    "text-blue-600 dark:text-blue-400",
   Anthropic: "text-orange-600 dark:text-orange-400",
@@ -45,11 +50,15 @@ const PROVIDER_COLORS: Record<string, string> = {
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
   Ollama:    "text-teal-600 dark:text-teal-400",
+  "OR Fusion": "text-red-600 dark:text-red-400",
 };
 
 const isOllama = (m: Model) => m.provider === "Ollama" || m.id.startsWith("ollama/");
 
-function TierDot({ tier }: { tier: string }) {
+function TierDot({ tier, isFusion }: { tier: string; isFusion?: boolean }) {
+  if (isFusion) {
+    return <span className={cn("inline-block size-1.5 rounded-full shrink-0", FUSION_DOT)} />;
+  }
   return (
     <span className={cn("inline-block size-1.5 rounded-full shrink-0", TIER_STYLES[tier]?.dot ?? "bg-muted")} />
   );
@@ -139,7 +148,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <TierDot tier={model.tier} />
+            <TierDot tier={model.tier} isFusion={model.isFusion} />
             <span className="font-semibold text-foreground truncate">{model.label}</span>
             {isRecommended(model) && (
               <span className="rounded-full bg-primary/10 px-1.5 py-px text-[10px] font-medium text-primary shrink-0">
@@ -237,6 +246,12 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
             {tier}
           </span>
         ))}
+        {allModels.some(m => m.isFusion) && (
+          <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium">
+            <span className={cn("inline-block size-1.5 rounded-full", FUSION_DOT)} />
+            OR Fusion
+          </span>
+        )}
       </div>
     </div>
   );
@@ -275,7 +290,7 @@ export function ModelSelector({
           tabIndex={0}
         >
           <BrainCircuitIcon className="size-3 shrink-0 text-muted-foreground" />
-          <TierDot tier={selected.tier} />
+          <TierDot tier={selected.tier} isFusion={selected.isFusion} />
           <span className="min-w-0 truncate font-medium text-foreground">{selected.label}</span>
           <ChevronDownIcon
             className={cn(
