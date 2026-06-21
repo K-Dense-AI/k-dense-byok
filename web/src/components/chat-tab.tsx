@@ -68,7 +68,7 @@ interface QueuedMessage {
   id: string;
   rawText: string;
   text: string;
-  model: { id: string; label: string };
+  model: { id: string; label: string; fusionConfig?: Record<string, unknown> };
   databases: Database[];
   skills: Skill[];
   files: string[];
@@ -830,11 +830,16 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     const [next, ...rest] = messageQueue;
     const id = window.setTimeout(() => {
       setMessageQueue(rest);
-      void send(next.text, next.model.id, {
-        attachments: next.files,
-        skills: next.skills.map((s) => s.name),
-        databases: next.databases.map((db) => db.name),
-      });
+      void send(
+        next.text,
+        next.model.id,
+        {
+          attachments: next.files,
+          skills: next.skills.map((s) => s.name),
+          databases: next.databases.map((db) => db.name),
+        },
+        next.model.fusionConfig,
+      );
     }, 0);
     return () => window.clearTimeout(id);
   }, [status, messageQueue, send]);
@@ -870,7 +875,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             id: String(++queueIdCounter.current),
             rawText,
             text: trimmed,
-            model: { id: selectedModel.id, label: selectedModel.label },
+            model: {
+              id: selectedModel.id,
+              label: selectedModel.label,
+              fusionConfig: selectedModel.fusionConfig,
+            },
             databases: [...selectedDbs],
             skills: [...selectedSkills],
             files: [...attachedFiles],
@@ -879,11 +888,16 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         ]);
         return;
       }
-      await send(trimmed, selectedModel.id, {
-        attachments: attachedFiles,
-        skills: selectedSkills.map((s) => s.name),
-        databases: selectedDbs.map((db) => db.name),
-      });
+      await send(
+        trimmed,
+        selectedModel.id,
+        {
+          attachments: attachedFiles,
+          skills: selectedSkills.map((s) => s.name),
+          databases: selectedDbs.map((db) => db.name),
+        },
+        selectedModel.fusionConfig,
+      );
     },
     [
       send,
@@ -905,7 +919,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       stop,
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
-        await send(prompt, selectedModel.id);
+        await send(prompt, selectedModel.id, undefined, selectedModel.fusionConfig);
       },
       launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
         if (budgetState === "exceeded") return;
@@ -915,14 +929,19 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           ? `\n\nMake sure to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
           : "";
         const fullPrompt = prompt + fileRefs + skillsCtx;
-        await send(fullPrompt, model.id, {
-          attachments: uploadedFiles,
-          skills: suggestedSkills,
-          databases: [],
-        });
+        await send(
+          fullPrompt,
+          model.id,
+          {
+            attachments: uploadedFiles,
+            skills: suggestedSkills,
+            databases: [],
+          },
+          model.fusionConfig,
+        );
       },
     }),
-    [send, stop, budgetState, selectedModel.id],
+    [send, stop, budgetState, selectedModel.id, selectedModel.fusionConfig],
   );
 
   // Background tabs stay mounted (so streaming + queue auto-send continue,

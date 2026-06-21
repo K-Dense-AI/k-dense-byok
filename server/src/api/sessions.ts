@@ -13,6 +13,7 @@ import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
 import { resolveModel } from "../agent/models.ts";
+import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
   createSession,
   getModelRegistry,
@@ -56,6 +57,8 @@ interface RunBody {
   message?: string;
   model?: string;
   thinkingLevel?: string;
+  /** Full OpenRouter Fusion request body for a "fusion/<id>" model selection. */
+  fusionConfig?: Record<string, unknown>;
 }
 
 // Sessions with a run in flight, claimed synchronously. `session.isStreaming`
@@ -191,11 +194,37 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // No awaits between the guard above and this claim, so it is atomic.
       activeRuns.add(runKey);
       try {
-        if (body.model) {
+        const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
+        if (isFusion) {
+          // Fusion is load-bearing for the spend cap: the cost-bearing Model
+          // (priced from the panel sum) and the body-rewrite must be applied
+          // together for THIS run. If resolution fails (e.g. catalogue priced
+          // no panel model), do NOT swallow it and run at the prior model's
+          // cost — abort, since the body would still be rewritten to fusion.
           try {
-            await session.setModel(resolveModel(body.model, getModelRegistry()));
+            await session.setModel(
+              resolveModel(body.model, getModelRegistry(), body.fusionConfig),
+            );
+            setFusionConfig(session.sessionId, body.fusionConfig ?? null);
           } catch (err) {
-            req.log.warn({ err }, "setModel failed; keeping current model");
+            // Make sure no stale fusion config rewrites this run's body.
+            // (The outer finally releases the activeRuns claim on return.)
+            setFusionConfig(session.sessionId, null);
+            reply.code(400);
+            return {
+              detail: `Fusion model could not be prepared: ${(err as Error).message}`,
+            };
+          }
+        } else {
+          // Non-fusion run: clear any fusion config so the extension passes the
+          // payload through untouched.
+          setFusionConfig(session.sessionId, null);
+          if (body.model) {
+            try {
+              await session.setModel(resolveModel(body.model, getModelRegistry()));
+            } catch (err) {
+              req.log.warn({ err }, "setModel failed; keeping current model");
+            }
           }
         }
         if (body.thinkingLevel) {

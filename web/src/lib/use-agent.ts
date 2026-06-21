@@ -184,7 +184,12 @@ export function useAgent() {
     // compute) is accepted for call-site compatibility but no longer used: the
     // Pi backend runs a single flat agent. Skill/database hints are still
     // injected into the prompt text by the caller.
-    async (text: string, model?: string, _legacyMeta?: unknown): Promise<string | undefined> => {
+    async (
+      text: string,
+      model?: string,
+      _legacyMeta?: unknown,
+      fusionConfig?: Record<string, unknown>,
+    ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
 
       const userMsgId = nextId();
@@ -215,7 +220,11 @@ export function useAgent() {
           apiFetch(`/sessions/${sessionId}/run`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: text, ...(model ? { model } : {}) }),
+            body: JSON.stringify({
+              message: text,
+              ...(model ? { model } : {}),
+              ...(fusionConfig ? { fusionConfig } : {}),
+            }),
             signal: controller.signal,
           });
         let res = await startRun();
