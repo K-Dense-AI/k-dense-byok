@@ -34,6 +34,8 @@ describe("buildFusionRequestBody", () => {
     // Router alias + forced fusion every message.
     expect(out.model).toBe("openrouter/fusion");
     expect(out.tool_choice).toBe("required");
+    // Request-level fallback to the judge if the fusion router call errors.
+    expect(out.models).toEqual(["openrouter/fusion", "anthropic/claude-opus-4.8"]);
     // Pi's agentic tools are dropped so the plugin injects + forces fusion.
     expect("tools" in out).toBe(false);
     // Panel/judge/limits + reasoning (xhigh passed through) + temperature live
