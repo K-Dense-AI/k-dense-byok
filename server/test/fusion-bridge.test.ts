@@ -35,14 +35,26 @@ describe("buildFusionRequestBody", () => {
     expect(out.model).toBe("openrouter/fusion");
     // Fusion-specific fields come from the preset.
     expect(out.plugins).toBe(fusionConfig.plugins);
-    expect(out.reasoning_effort).toBe("xhigh");
     expect(out.temperature).toBe(0.6);
+    // Reasoning is emitted ONLY as reasoning.effort (xhigh passed through, since
+    // OpenRouter accepts it), never the top-level alias — OpenRouter 400s if both
+    // reasoning_effort and reasoning.effort are present.
+    expect(out.reasoning).toEqual({ effort: "xhigh" });
+    expect("reasoning_effort" in out).toBe(false);
     // The rest of the base payload (messages, stream) is preserved.
     expect(out.messages).toBe(basePayload.messages);
     expect(out.stream).toBe(true);
     // Pure function: the input payload is not mutated.
     expect(basePayload.model).toBe("openrouter/anthropic/claude-opus-4.8");
     expect("plugins" in basePayload).toBe(false);
+  });
+
+  it("merges reasoning.effort into Pi's existing reasoning and never emits the alias", () => {
+    const withReasoning = { ...basePayload, reasoning: { effort: "low", exclude: false } };
+    const out = buildFusionRequestBody(withReasoning, { ...fusionConfig, reasoning_effort: "medium" });
+    // effort overridden to the preset's value; other reasoning fields preserved.
+    expect(out.reasoning).toEqual({ effort: "medium", exclude: false });
+    expect("reasoning_effort" in out).toBe(false);
   });
 
   it("omits temperature when the preset has none", () => {

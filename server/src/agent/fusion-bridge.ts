@@ -37,14 +37,28 @@ export interface FusionConfig {
 }
 
 /**
+ * OpenRouter's accepted reasoning effort values (per its reasoning-tokens docs):
+ * "xhigh" | "high" | "medium" | "low" | "minimal" | "none". "xhigh" is the top
+ * tier (~95% of max reasoning tokens; supported on Opus 4.7+, GPT-5.5, etc.), so
+ * we pass the preset's value through when valid and only fall back to "high" for
+ * an unrecognised value (e.g. a typo in a hand-edited preset).
+ */
+const OPENROUTER_EFFORTS = new Set(["xhigh", "high", "medium", "low", "minimal", "none"]);
+function normalizeEffort(effort: string): string {
+  const e = effort.toLowerCase();
+  return OPENROUTER_EFFORTS.has(e) ? e : "high";
+}
+
+/**
  * Pure transform: given the base chat/completions payload Pi assembled and a
  * Fusion config, return the payload OpenRouter Fusion expects. With no/empty
  * config the base payload is returned UNCHANGED (the non-fusion path).
  *
- * The Fusion-specific fields (`plugins`, `reasoning_effort`, `temperature`)
- * come from the preset; everything else (messages, tools, stream, etc.) is
- * preserved from the base payload. `model` is forced to "openrouter/fusion"
- * because Pi defaults it to the resolved model's id.
+ * `model` is forced to "openrouter/fusion" (Pi defaults it to the resolved model
+ * id) and the preset's `plugins`/`temperature` are merged in. Reasoning is
+ * emitted ONLY as `reasoning.effort` (merged into whatever Pi already set):
+ * OpenRouter returns 400 if a request carries both the top-level
+ * `reasoning_effort` alias and `reasoning.effort`, so we never emit the alias.
  */
 export function buildFusionRequestBody(
   basePayload: Record<string, unknown>,
@@ -57,8 +71,17 @@ export function buildFusionRequestBody(
     plugins: fusionConfig.plugins,
   };
   if (fusionConfig.reasoning_effort !== undefined) {
-    next.reasoning_effort = fusionConfig.reasoning_effort;
+    const baseReasoning =
+      basePayload.reasoning && typeof basePayload.reasoning === "object"
+        ? (basePayload.reasoning as Record<string, unknown>)
+        : {};
+    next.reasoning = {
+      ...baseReasoning,
+      effort: normalizeEffort(String(fusionConfig.reasoning_effort)),
+    };
   }
+  // Never send the top-level alias alongside reasoning.effort (OpenRouter 400s).
+  delete next.reasoning_effort;
   if (fusionConfig.temperature !== undefined) {
     next.temperature = fusionConfig.temperature;
   }
