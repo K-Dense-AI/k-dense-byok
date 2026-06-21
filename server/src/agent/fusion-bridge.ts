@@ -51,40 +51,53 @@ function normalizeEffort(effort: string): string {
 
 /**
  * Pure transform: given the base chat/completions payload Pi assembled and a
- * Fusion config, return the payload OpenRouter Fusion expects. With no/empty
+ * Fusion config, return the payload that runs OpenRouter Fusion. With no/empty
  * config the base payload is returned UNCHANGED (the non-fusion path).
  *
- * `model` is forced to "openrouter/fusion" (Pi defaults it to the resolved model
- * id) and the preset's `plugins`/`temperature` are merged in. Reasoning is
- * emitted ONLY as `reasoning.effort` (merged into whatever Pi already set):
- * OpenRouter returns 400 if a request carries both the top-level
- * `reasoning_effort` alias and `reasoning.effort`, so we never emit the alias.
+ * Uses OpenRouter's Fusion *router* form (docs: routing/routers/fusion-router):
+ * model "openrouter/fusion" + a single `plugins:[{id:"fusion", ...}]` carrying
+ * the panel (analysis_models), judge (model), preset, max_tool_calls, and —
+ * crucially — `reasoning`/`temperature` INSIDE the plugin (top-level reasoning
+ * 400s against Pi's own reasoning.effort). Fusion is a server tool the model
+ * chooses to call, and the plugin only injects it when the caller isn't sending
+ * its own `tools`; Pi always does, so we drop the tools array and set
+ * `tool_choice:"required"` to force deterministic fusion on every message of a
+ * Fusion preset. (This drops Pi's local agentic tools for the fusion turn — the
+ * panel runs web search server-side.)
  */
 export function buildFusionRequestBody(
   basePayload: Record<string, unknown>,
   fusionConfig: FusionConfig | null | undefined,
 ): Record<string, unknown> {
   if (!fusionConfig || !fusionConfig.plugins) return basePayload;
+
+  const plugins = Array.isArray(fusionConfig.plugins) ? fusionConfig.plugins : [];
+  const plugin = { ...((plugins[0] as Record<string, unknown> | undefined) ?? { id: "fusion" }) };
+
+  // Move the preset's reasoning/temperature INSIDE the fusion plugin (the router
+  // applies them to the panel + judge); normalise the effort to OpenRouter's set.
+  if (fusionConfig.reasoning_effort !== undefined) {
+    plugin.reasoning = { effort: normalizeEffort(String(fusionConfig.reasoning_effort)) };
+  }
+  if (fusionConfig.temperature !== undefined) {
+    plugin.temperature = fusionConfig.temperature;
+  }
+
   const next: Record<string, unknown> = {
     ...basePayload,
     model: "openrouter/fusion",
-    plugins: fusionConfig.plugins,
+    plugins: [plugin],
+    tool_choice: "required",
   };
-  if (fusionConfig.reasoning_effort !== undefined) {
-    const baseReasoning =
-      basePayload.reasoning && typeof basePayload.reasoning === "object"
-        ? (basePayload.reasoning as Record<string, unknown>)
-        : {};
-    next.reasoning = {
-      ...baseReasoning,
-      effort: normalizeEffort(String(fusionConfig.reasoning_effort)),
-    };
-  }
-  // Never send the top-level alias alongside reasoning.effort (OpenRouter 400s).
+  // Don't send our own tools array — the fusion plugin injects openrouter:fusion
+  // only when the caller isn't managing tools, and with tool_choice:"required" +
+  // that single tool, fusion runs deterministically.
+  delete next.tools;
+  // Reasoning/temperature now live inside the plugin; remove any top-level copies
+  // so OpenRouter never sees conflicting reasoning fields.
+  delete next.reasoning;
   delete next.reasoning_effort;
-  if (fusionConfig.temperature !== undefined) {
-    next.temperature = fusionConfig.temperature;
-  }
+  delete next.temperature;
   return next;
 }
 

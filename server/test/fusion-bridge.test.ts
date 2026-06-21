@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { buildFusionRequestBody } from "../src/agent/fusion-bridge.ts";
 
-// A representative chat/completions payload Pi would assemble for a normal turn.
+// A representative chat/completions payload Pi assembles for a normal turn.
 // model:"openrouter/anthropic/claude-opus-4.8" stands in for the resolved
-// model's id (Pi defaults payload.model to model.id), which must be overridden.
+// model's id (Pi defaults payload.model to model.id).
 const basePayload = {
   model: "openrouter/anthropic/claude-opus-4.8",
   messages: [{ role: "user", content: "hello" }],
   stream: true,
 };
 
-// The stored Fusion preset body (web/src/lib/fusion-presets.ts shape): a single
-// "fusion" plugin with the analysis panel + judge, plus top-level reasoning_effort.
+// The stored Fusion preset body (web/src/lib/fusion-presets.ts shape): top-level
+// reasoning_effort/temperature plus a single "fusion" plugin (panel + judge).
 const fusionConfig = {
   model: "openrouter/fusion",
   temperature: 0.6,
@@ -28,41 +28,54 @@ const fusionConfig = {
 };
 
 describe("buildFusionRequestBody", () => {
-  it("rewrites the body for a Fusion request, merging plugins/reasoning/temperature", () => {
+  it("rewrites to a forced openrouter/fusion router call with reasoning+temperature inside the plugin", () => {
     const out = buildFusionRequestBody(basePayload, fusionConfig);
 
-    // model is forced to openrouter/fusion (Pi would otherwise send the panel id).
+    // Router alias + forced fusion every message.
     expect(out.model).toBe("openrouter/fusion");
-    // Fusion-specific fields come from the preset.
-    expect(out.plugins).toBe(fusionConfig.plugins);
-    expect(out.temperature).toBe(0.6);
-    // Reasoning is emitted ONLY as reasoning.effort (xhigh passed through, since
-    // OpenRouter accepts it), never the top-level alias — OpenRouter 400s if both
-    // reasoning_effort and reasoning.effort are present.
-    expect(out.reasoning).toEqual({ effort: "xhigh" });
+    expect(out.tool_choice).toBe("required");
+    // Pi's agentic tools are dropped so the plugin injects + forces fusion.
+    expect("tools" in out).toBe(false);
+    // Panel/judge/limits + reasoning (xhigh passed through) + temperature live
+    // INSIDE the plugin — the form OpenRouter's fusion router expects.
+    expect(out.plugins).toEqual([
+      {
+        id: "fusion",
+        preset: "general-high",
+        analysis_models: ["anthropic/claude-opus-4.8", "openai/gpt-5.5"],
+        model: "anthropic/claude-opus-4.8",
+        max_tool_calls: 8,
+        reasoning: { effort: "xhigh" },
+        temperature: 0.6,
+      },
+    ]);
+    // No conflicting top-level reasoning/temperature fields.
     expect("reasoning_effort" in out).toBe(false);
-    // The rest of the base payload (messages, stream) is preserved.
+    expect("reasoning" in out).toBe(false);
+    expect("temperature" in out).toBe(false);
+    // Base payload preserved + not mutated.
     expect(out.messages).toBe(basePayload.messages);
     expect(out.stream).toBe(true);
-    // Pure function: the input payload is not mutated.
     expect(basePayload.model).toBe("openrouter/anthropic/claude-opus-4.8");
     expect("plugins" in basePayload).toBe(false);
   });
 
-  it("merges reasoning.effort into Pi's existing reasoning and never emits the alias", () => {
-    const withReasoning = { ...basePayload, reasoning: { effort: "low", exclude: false } };
+  it("normalises effort inside the plugin and strips top-level reasoning + alias", () => {
+    const withReasoning = { ...basePayload, reasoning: { effort: "low" }, reasoning_effort: "low" };
     const out = buildFusionRequestBody(withReasoning, { ...fusionConfig, reasoning_effort: "medium" });
-    // effort overridden to the preset's value; other reasoning fields preserved.
-    expect(out.reasoning).toEqual({ effort: "medium", exclude: false });
+    const plugin = (out.plugins as Array<Record<string, unknown>>)[0];
+    expect(plugin.reasoning).toEqual({ effort: "medium" });
+    expect("reasoning" in out).toBe(false);
     expect("reasoning_effort" in out).toBe(false);
   });
 
-  it("omits temperature when the preset has none", () => {
+  it("omits temperature from the plugin when the preset has none", () => {
     const noTemp = { ...fusionConfig };
     delete (noTemp as { temperature?: number }).temperature;
     const out = buildFusionRequestBody(basePayload, noTemp);
     expect(out.model).toBe("openrouter/fusion");
-    expect("temperature" in out).toBe(false);
+    const plugin = (out.plugins as Array<Record<string, unknown>>)[0];
+    expect("temperature" in plugin).toBe(false);
   });
 
   it("returns the base payload unchanged when there is no fusionConfig", () => {
