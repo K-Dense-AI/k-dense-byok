@@ -77,8 +77,32 @@ function loadCatalogue(): Map<string, CatalogueEntry> {
   return map;
 }
 
+// OpenRouter reasoning-effort suffixes are a routing form (e.g.
+// "anthropic/claude-opus-4.8-xhigh"), NOT separate catalogue rows — so an exact
+// lookup misses and the model would resolve to $0 cost, silently disabling the
+// project spend cap. These are stripped to price as the base model.
+const EFFORT_SUFFIXES = ["-xhigh", "-high", "-medium", "-low", "-minimal", "-none"];
+
+/**
+ * Catalogue lookup tolerant of a reasoning-effort suffix: exact match first
+ * (so "-fast", a distinct catalogue model with its own pricing, is never
+ * stripped), then fall back to the base model with the effort suffix removed.
+ */
+export function catalogueEntryFor(orId: string): CatalogueEntry | undefined {
+  const cat = loadCatalogue();
+  const exact = cat.get(orId);
+  if (exact) return exact;
+  for (const sfx of EFFORT_SUFFIXES) {
+    if (orId.endsWith(sfx)) {
+      const base = cat.get(orId.slice(0, -sfx.length));
+      if (base) return base;
+    }
+  }
+  return undefined;
+}
+
 function buildOpenRouterModel(orId: string): Model<Api> {
-  const cat = loadCatalogue().get(orId);
+  const cat = catalogueEntryFor(orId);
   return {
     id: orId,
     name: cat?.label ?? orId,
@@ -116,12 +140,11 @@ function fusionPanelModels(fusionConfig: Record<string, unknown>): string[] {
  * abort the run rather than proceed with a $0-priced (cap-bypassing) Fusion model.
  */
 export function buildFusionModel(fusionConfig: Record<string, unknown>): Model<Api> {
-  const cat = loadCatalogue();
   let costInput = 0;
   let costOutput = 0;
   let priced = 0;
   for (const modelId of fusionPanelModels(fusionConfig)) {
-    const entry = cat.get(stripOpenRouter(modelId));
+    const entry = catalogueEntryFor(stripOpenRouter(modelId));
     if (!entry) continue;
     costInput += entry.costInput;
     costOutput += entry.costOutput;
