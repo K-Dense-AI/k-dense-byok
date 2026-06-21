@@ -152,7 +152,7 @@ fi
 # message naming the program in the way.
 
 BACKEND_PORT="${KADY_PORT:-8000}"
-FRONTEND_PORT=3000
+FRONTEND_PORT="${KADY_FRONTEND_PORT:-3000}"
 
 free_port() {
     local port=$1 label=$2
@@ -203,7 +203,7 @@ echo "  → Backend on port $BACKEND_PORT (Pi agent, TypeScript)"
 BACKEND_PID=$!
 
 echo "  → Frontend on port $FRONTEND_PORT (Next.js UI)"
-(cd web && npm run dev) &
+(cd web && npm run dev -- -p "$FRONTEND_PORT") &
 FRONTEND_PID=$!
 
 cleanup() {
