@@ -848,6 +848,7 @@ function FusionPanel() {
   const [newConfig, setNewConfig] = useState(FUSION_SKELETON);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editConfig, setEditConfig] = useState("");
+  const [showAdd, setShowAdd] = useState(false);
 
   const save = (next: StoredFusionConfig[]) => {
     setConfigs(next);
@@ -880,6 +881,7 @@ function FusionPanel() {
     save([...configs, entry]);
     setNewName("");
     setNewConfig(FUSION_SKELETON);
+    setShowAdd(false);
   };
 
   const remove = (id: string) => {
@@ -910,29 +912,40 @@ function FusionPanel() {
       </div>
 
       <div className="pt-2">
-        <div className="text-sm font-medium mb-2">Add Fusion config +</div>
-        <Input
-          placeholder="Config name (e.g. Research Fusion)"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          className="mb-2"
-        />
-        <Textarea
-          value={newConfig}
-          onChange={(e) => setNewConfig(e.target.value)}
-          className="font-mono text-xs h-32"
-        />
-        <Button onClick={add} className="mt-2" size="sm">
-          <PlusIcon className="size-3.5 mr-1" /> Add
-        </Button>
-        <a
-          href="https://openrouter.ai/docs/guides/features/plugins/fusion"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block mt-3 text-[11px] text-muted-foreground hover:underline"
+        <Button
+          variant="outline"
+          size="sm"
+          className="text-sm"
+          onClick={() => setShowAdd((v) => !v)}
         >
-          OpenRouter Fusion API docs →
-        </a>
+          Add Fusion config +
+        </Button>
+        {showAdd && (
+          <div className="mt-2">
+            <Input
+              placeholder="Config name (e.g. Research Fusion)"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="mb-2"
+            />
+            <Textarea
+              value={newConfig}
+              onChange={(e) => setNewConfig(e.target.value)}
+              className="font-mono text-xs h-32"
+            />
+            <Button onClick={add} className="mt-2" size="sm">
+              <PlusIcon className="size-3.5 mr-1" /> Add
+            </Button>
+            <a
+              href="https://openrouter.ai/docs/guides/features/plugins/fusion"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block mt-3 text-[11px] text-muted-foreground hover:underline"
+            >
+              OpenRouter Fusion API docs →
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3">

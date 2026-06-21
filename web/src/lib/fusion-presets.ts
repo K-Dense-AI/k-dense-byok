@@ -24,7 +24,7 @@ export interface StoredFusionConfig {
 
 // Bump when the built-in defaults below change so existing installs re-seed them.
 // User-added configs are preserved during migration (see settings-dialog).
-export const FUSION_DEFAULTS_VERSION = 3;
+export const FUSION_DEFAULTS_VERSION = 4;
 
 function fusionBody(b: {
   preset: string;
@@ -55,19 +55,20 @@ export const DEFAULT_FUSION_CONFIGS: StoredFusionConfig[] = [
   {
     id: "fable5-gpt55",
     name: "Fable 5 + GPT-5.5",
-    note: "tested 69.0% DRACO — beats every individual model",
+    note: "69.0% DRACO — beats every individual model",
     config: fusionBody({
       preset: "general-high",
       analysis_models: ["anthropic/claude-fable-5", "openai/gpt-5.5"],
       judge: JUDGE,
       reasoning_effort: "xhigh",
-      max_tool_calls: 8,
+      temperature: 1,
+      max_tool_calls: 16,
     }),
   },
   {
     id: "opus48-gpt55-gemini31pro",
     name: "Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro",
-    note: "tested 68.3% on deep research tasks",
+    note: "68.3% DRACO (deep research)",
     config: fusionBody({
       preset: "general-high",
       analysis_models: [
@@ -77,25 +78,40 @@ export const DEFAULT_FUSION_CONFIGS: StoredFusionConfig[] = [
       ],
       judge: JUDGE,
       reasoning_effort: "xhigh",
-      max_tool_calls: 8,
+      temperature: 1,
+      max_tool_calls: 16,
     }),
   },
   {
     id: "opus48-gpt55",
     name: "Opus 4.8 + GPT-5.5",
-    note: "tested 67.6%",
+    note: "67.6% DRACO",
     config: fusionBody({
       preset: "general-high",
       analysis_models: ["anthropic/claude-opus-4.8", "openai/gpt-5.5"],
       judge: JUDGE,
       reasoning_effort: "xhigh",
-      max_tool_calls: 8,
+      temperature: 1,
+      max_tool_calls: 16,
+    }),
+  },
+  {
+    id: "opus48-opus48",
+    name: "Opus 4.8 + Opus 4.8",
+    note: "65.5% DRACO — +6.7 pts vs solo Opus 4.8 (synthesis-only lift)",
+    config: fusionBody({
+      preset: "general-high",
+      analysis_models: ["anthropic/claude-opus-4.8", "anthropic/claude-opus-4.8"], // two instances, intentional
+      judge: JUDGE,
+      reasoning_effort: "xhigh",
+      temperature: 1,
+      max_tool_calls: 16,
     }),
   },
   {
     id: "exaflop",
     name: "Exaflop",
-    note: "gpt-5.5-pro + gemini 3.1 pro + fable 5, synthesized by opus 4.8",
+    note: "custom panel — gpt-5.5-pro + gemini 3.1 pro + fable 5, synthesized by opus 4.8",
     config: fusionBody({
       preset: "general-high",
       analysis_models: [
@@ -105,14 +121,14 @@ export const DEFAULT_FUSION_CONFIGS: StoredFusionConfig[] = [
       ],
       judge: JUDGE,
       reasoning_effort: "xhigh",
-      temperature: 0.6,
-      max_tool_calls: 8,
+      temperature: 1,
+      max_tool_calls: 16,
     }),
   },
   {
     id: "budget-fusion",
     name: "Gemini 3 Flash + Kimi K2.6 + DeepSeek V4 Pro",
-    note: "tested 64.7% — budget panel, within 1% of Fable 5",
+    note: "64.7% DRACO — budget, within ~1% of Fable 5",
     config: fusionBody({
       preset: "general-budget",
       analysis_models: [
@@ -122,7 +138,8 @@ export const DEFAULT_FUSION_CONFIGS: StoredFusionConfig[] = [
       ],
       judge: JUDGE,
       reasoning_effort: "xhigh",
-      max_tool_calls: 4,
+      temperature: 1,
+      max_tool_calls: 16,
     }),
   },
 ];
