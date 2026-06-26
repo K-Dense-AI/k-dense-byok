@@ -28,6 +28,7 @@ No coding experience is required. The app runs locally on your machine, your dat
 - **Launch 326 ready-made workflow templates** across 22 disciplines: pick one, fill in the blanks, go.
 - **Query 229 scientific and financial databases** in 18 categories, from PubMed-scale biomedical resources to market and climate data.
 - **Use any tool-capable AI model** — OpenAI, Anthropic, Google, xAI, Qwen, and more via one [OpenRouter](https://openrouter.ai/) account, or free local models via [Ollama](./docs/local-models-ollama.md). Switch per chat.
+- **Fuse multiple frontier models with [OpenRouter Fusion](./docs/openrouter-fusion.md)** — pick a Fusion preset (e.g. *Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro*) and a panel of models deliberates while a judge synthesizes one answer, with combined pricing and DRACO benchmark scores shown right in the model picker.
 - **Stay organized with projects** — each with its own files, chat history, up to 10 parallel chat tabs, rich file previews (including bioinformatics formats), a LaTeX editor, and cost tracking with optional spend caps.
 - **Extend it with [MCP servers](./docs/mcp-servers.md)** — connect GitHub, reference managers, databases, and hundreds of other external tools.
 
@@ -63,6 +64,7 @@ All guides live in the [`docs/`](./docs) folder:
 | [Connecting external tools (MCP)](./docs/mcp-servers.md) | Give Kady extra abilities like GitHub, reference managers, and databases |
 | [Local models with Ollama](./docs/local-models-ollama.md) | Run everything on free local models, no API keys required |
 | [Model selection](./docs/model-selection.md) | How Kady builds the OpenRouter model list |
+| [OpenRouter Fusion](./docs/openrouter-fusion.md) | Multi-model deliberation presets (this fork) — what they are and how the integration works |
 | [Architecture](./docs/architecture.md) | How the two local services fit together |
 | [Contributing workflows](./docs/contributing-workflows.md) | Add new workflow templates to the library |
 | [Known limitations](./docs/limitations.md) | Rough edges to be aware of in the current beta |

@@ -25,6 +25,7 @@ import { defaultModel, setupAuth } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
+import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
@@ -93,6 +94,9 @@ async function build(
     additionalExtensionPaths: [subagentsExtensionPath()],
     extensionFactories: [
       makeSubagentLedgerExtension(projectId, () => holder.session?.sessionId ?? ""),
+      // Rewrites the outgoing provider body to an OpenRouter Fusion request when
+      // the /run handler stashed a Fusion config for this session (setFusionConfig).
+      makeFusionRequestExtension(() => holder.session?.sessionId ?? ""),
     ],
   });
   await resourceLoader.reload();

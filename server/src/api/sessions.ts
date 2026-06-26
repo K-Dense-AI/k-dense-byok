@@ -13,6 +13,7 @@ import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
 import { resolveModel } from "../agent/models.ts";
+import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
   createSession,
   getModelRegistry,
@@ -56,6 +57,8 @@ interface RunBody {
   message?: string;
   model?: string;
   thinkingLevel?: string;
+  /** Full OpenRouter Fusion request body for a "fusion/<id>" model selection. */
+  fusionConfig?: Record<string, unknown>;
 }
 
 // Sessions with a run in flight, claimed synchronously. `session.isStreaming`
@@ -190,12 +193,57 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
       // No awaits between the guard above and this claim, so it is atomic.
       activeRuns.add(runKey);
+      // For a Fusion run we disable Pi's local tools for the turn (see below).
+      // Remember the real active set so we can restore it in the finally; `null`
+      // means "not a fusion run, nothing to restore".
+      let savedToolNames: string[] | null = null;
       try {
-        if (body.model) {
+        const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
+        if (isFusion) {
+          // Fusion is load-bearing for the spend cap: the cost-bearing Model
+          // (priced from the panel sum) and the body-rewrite must be applied
+          // together for THIS run. If resolution fails (e.g. catalogue priced
+          // no panel model), do NOT swallow it and run at the prior model's
+          // cost — abort, since the body would still be rewritten to fusion.
           try {
-            await session.setModel(resolveModel(body.model, getModelRegistry()));
+            await session.setModel(
+              resolveModel(body.model, getModelRegistry(), body.fusionConfig),
+            );
+            setFusionConfig(session.sessionId, body.fusionConfig ?? null);
+            // Disable Pi's local agentic tools for this turn so OpenRouter Fusion
+            // runs deterministically. Stripping `tools` from the wire body (in
+            // fusion-bridge's before_provider_request) is NOT enough: Pi executes
+            // any tool_call the model returns by name-matching against the live
+            // tool registry (agent.state.tools / the loop's context.tools
+            // snapshot), independent of what the HTTP body advertised. With the
+            // registry non-empty, the model is still offered ls/read/etc. and any
+            // returned tool_call still executes — so the agent keeps looping
+            // instead of producing the single fused answer. setActiveToolsByName
+            // is the supported API: it empties agent.state.tools (so the loop's
+            // snapshot carries no tools and any stray tool_call resolves to "not
+            // found") AND rebuilds the system prompt without tool guidelines.
+            // Restored in the finally so non-fusion runs keep all tools.
+            savedToolNames = session.getActiveToolNames();
+            session.setActiveToolsByName([]);
           } catch (err) {
-            req.log.warn({ err }, "setModel failed; keeping current model");
+            // Make sure no stale fusion config rewrites this run's body.
+            // (The outer finally releases the activeRuns claim on return.)
+            setFusionConfig(session.sessionId, null);
+            reply.code(400);
+            return {
+              detail: `Fusion model could not be prepared: ${(err as Error).message}`,
+            };
+          }
+        } else {
+          // Non-fusion run: clear any fusion config so the extension passes the
+          // payload through untouched.
+          setFusionConfig(session.sessionId, null);
+          if (body.model) {
+            try {
+              await session.setModel(resolveModel(body.model, getModelRegistry()));
+            } catch (err) {
+              req.log.warn({ err }, "setModel failed; keeping current model");
+            }
           }
         }
         if (body.thinkingLevel) {
@@ -297,6 +345,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           if (!raw.writableEnded) raw.end();
         }
       } finally {
+        // Restore the local tool set disabled for a fusion run (covers every
+        // exit path, including early returns like the budget cap). No-op for
+        // non-fusion runs (savedToolNames stays null).
+        if (savedToolNames !== null) {
+          session.setActiveToolsByName(savedToolNames);
+        }
         activeRuns.delete(runKey);
       }
     },

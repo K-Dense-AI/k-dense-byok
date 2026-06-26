@@ -77,8 +77,32 @@ function loadCatalogue(): Map<string, CatalogueEntry> {
   return map;
 }
 
+// OpenRouter reasoning-effort suffixes are a routing form (e.g.
+// "anthropic/claude-opus-4.8-xhigh"), NOT separate catalogue rows — so an exact
+// lookup misses and the model would resolve to $0 cost, silently disabling the
+// project spend cap. These are stripped to price as the base model.
+const EFFORT_SUFFIXES = ["-xhigh", "-high", "-medium", "-low", "-minimal", "-none"];
+
+/**
+ * Catalogue lookup tolerant of a reasoning-effort suffix: exact match first
+ * (so "-fast", a distinct catalogue model with its own pricing, is never
+ * stripped), then fall back to the base model with the effort suffix removed.
+ */
+export function catalogueEntryFor(orId: string): CatalogueEntry | undefined {
+  const cat = loadCatalogue();
+  const exact = cat.get(orId);
+  if (exact) return exact;
+  for (const sfx of EFFORT_SUFFIXES) {
+    if (orId.endsWith(sfx)) {
+      const base = cat.get(orId.slice(0, -sfx.length));
+      if (base) return base;
+    }
+  }
+  return undefined;
+}
+
 function buildOpenRouterModel(orId: string): Model<Api> {
-  const cat = loadCatalogue().get(orId);
+  const cat = catalogueEntryFor(orId);
   return {
     id: orId,
     name: cat?.label ?? orId,
@@ -95,6 +119,54 @@ function buildOpenRouterModel(orId: string): Model<Api> {
     },
     contextWindow: cat?.contextWindow ?? 128_000,
     maxTokens: cat?.maxTokens ?? 8192,
+  };
+}
+
+/** Panel (analysis) model ids out of a Fusion request body (real schema). */
+function fusionPanelModels(fusionConfig: Record<string, unknown>): string[] {
+  const plugins = fusionConfig.plugins as Array<Record<string, unknown>> | undefined;
+  const panel = plugins?.[0]?.analysis_models;
+  return Array.isArray(panel) ? (panel as string[]) : [];
+}
+
+/**
+ * Build the Pi Model for an OpenRouter Fusion run. The id is "openrouter/fusion"
+ * (the wire model the extension rewrites the body to), but its cost MUST be the
+ * SUM of the analysis panel models' catalogue prices — otherwise Pi ledgers the
+ * turn at $0 (cost flows from model.cost, not the rewritten HTTP body) and the
+ * project spend cap is silently bypassed.
+ *
+ * Throws if the catalogue priced none of the panel models, so the caller can
+ * abort the run rather than proceed with a $0-priced (cap-bypassing) Fusion model.
+ */
+export function buildFusionModel(fusionConfig: Record<string, unknown>): Model<Api> {
+  let costInput = 0;
+  let costOutput = 0;
+  let priced = 0;
+  for (const modelId of fusionPanelModels(fusionConfig)) {
+    const entry = catalogueEntryFor(stripOpenRouter(modelId));
+    if (!entry) continue;
+    costInput += entry.costInput;
+    costOutput += entry.costOutput;
+    priced++;
+  }
+  if (priced === 0 || (costInput === 0 && costOutput === 0)) {
+    throw new Error(
+      "Fusion panel has no priceable models in the catalogue; refusing to run a " +
+        "$0-priced Fusion model (spend cap would be bypassed).",
+    );
+  }
+  return {
+    id: "openrouter/fusion",
+    name: "OpenRouter Fusion",
+    api: "openai-completions",
+    provider: "openrouter",
+    baseUrl: OPENROUTER_BASE_URL,
+    reasoning: true,
+    input: ["text"],
+    cost: { input: costInput, output: costOutput, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 1_000_000,
+    maxTokens: 8192,
   };
 }
 
@@ -128,9 +200,22 @@ export function setupAuth(authStorage: AuthStorage): void {
 export function resolveModel(
   ref: string | undefined,
   registry: ModelRegistry,
+  fusionConfig?: Record<string, unknown>,
 ): Model<Api> {
   const usingDefault = !ref || !ref.trim();
   const r = usingDefault ? DEFAULT_MODEL_ID.trim() : ref.trim();
+  // A "fusion/<id>" ref is the synthetic selector entry; resolve it to the real
+  // openrouter/fusion Model, priced by the panel sum. The bare string ref can't
+  // carry the panel prices, so the fusionConfig must be threaded in by the
+  // caller (the /run handler). Throws if it wasn't — never proceed at $0.
+  if (r.startsWith("fusion/")) {
+    if (!fusionConfig) {
+      throw new Error(
+        `Fusion model ref "${r}" requires its fusionConfig to be passed for pricing.`,
+      );
+    }
+    return buildFusionModel(fusionConfig);
+  }
   if (r.startsWith("ollama/")) {
     return buildOllamaModel(r.slice("ollama/".length));
   }
