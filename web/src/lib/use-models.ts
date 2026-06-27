@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import staticModels from "@/data/models.json";
 import type { Model } from "@/components/model-selector";
+import { filterAllowedModels } from "@/lib/model-policy";
 import { apiFetch, onProjectChange } from "@/lib/projects";
 import { fusionPanelModels, loadFusionConfigs } from "@/lib/fusion-presets";
 
-const OPENROUTER_MODELS = staticModels as Model[];
+const OPENROUTER_MODELS = filterAllowedModels(staticModels as Model[]);
 
 interface OllamaListResponse {
   available?: boolean;
@@ -130,11 +131,15 @@ export function useModels(): UseModelsReturn {
     }
     return out;
   }, [fusionRevision]);
+  const allowedFusionModels = useMemo(
+    () => filterAllowedModels(fusionModels),
+    [fusionModels],
+  );
 
   return {
     // Drop the static `openrouter/fusion` catalogue row — the presets above
     // replace it (it was a non-functional $0 duplicate).
-    models: [...fusionModels, ...OPENROUTER_MODELS.filter((m) => !m.isFusion), ...ollamaModels],
+    models: [...allowedFusionModels, ...OPENROUTER_MODELS.filter((m) => !m.isFusion), ...ollamaModels],
     ollamaModels,
     ollamaAvailable,
     refresh: fetchOllama,

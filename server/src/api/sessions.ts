@@ -242,7 +242,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             try {
               await session.setModel(resolveModel(body.model, getModelRegistry()));
             } catch (err) {
-              req.log.warn({ err }, "setModel failed; keeping current model");
+              reply.code(400);
+              return { detail: `Model could not be prepared: ${(err as Error).message}` };
             }
           }
         }

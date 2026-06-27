@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { PROJECTS_ROOT } from "../src/config.ts";
+import { KADY_PI_AGENT_DIR, PROJECTS_ROOT } from "../src/config.ts";
 import {
   createProject,
   deleteProject,
@@ -42,6 +42,12 @@ beforeEach(reset);
 afterAll(() => fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }));
 
 describe("projects", () => {
+  it("keeps the embedded Pi config under the Kady projects root by default", () => {
+    expect(path.relative(PROJECTS_ROOT, KADY_PI_AGENT_DIR)).toBe(
+      path.join(".kady", "pi-agent"),
+    );
+  });
+
   it("creates, lists, gets, updates, and deletes", () => {
     const p = createProject({ name: "My Study", tags: ["bio"], spendLimitUsd: 5 });
     expect(p.id).toMatch(/^my-study-/);

@@ -15,10 +15,10 @@ import {
   ModelRegistry,
   SessionManager,
   createAgentSession,
-  getAgentDir,
   type AgentSession,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
@@ -37,9 +37,14 @@ if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
   process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH ?? ""}`;
 }
 
-const authStorage = AuthStorage.create();
+// Child `pi` CLI processes inherit process.env. Pin Pi's user config root to a
+// Kady-owned directory before any auth/model registries or subagents are built.
+fs.mkdirSync(KADY_PI_AGENT_DIR, { recursive: true });
+process.env.PI_CODING_AGENT_DIR = KADY_PI_AGENT_DIR;
+
+const authStorage = AuthStorage.create(path.join(KADY_PI_AGENT_DIR, "auth.json"));
 setupAuth(authStorage);
-const modelRegistry = ModelRegistry.create(authStorage);
+const modelRegistry = ModelRegistry.create(authStorage, path.join(KADY_PI_AGENT_DIR, "models.json"));
 
 export function getAuthStorage(): AuthStorage {
   return authStorage;
@@ -84,16 +89,16 @@ async function build(
   // Reference pi-web-access from sandbox/.pi/settings.json and pre-trust the
   // sandbox so both this session and pi-subagents' child `pi` processes load
   // the web tools (web-access-bridge.ts explains why children need this).
-  ensureWebAccess(paths);
+  ensureWebAccess(paths, KADY_PI_AGENT_DIR);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
   const resourceLoader = new DefaultResourceLoader({
     cwd: paths.sandbox,
-    agentDir: getAgentDir(),
+    agentDir: KADY_PI_AGENT_DIR,
     additionalExtensionPaths: [subagentsExtensionPath()],
     extensionFactories: [
-      makeSubagentLedgerExtension(projectId, () => holder.session?.sessionId ?? ""),
+      makeSubagentLedgerExtension(projectId, () => holder.session?.sessionId ?? "", paths),
       // Rewrites the outgoing provider body to an OpenRouter Fusion request when
       // the /run handler stashed a Fusion config for this session (setFusionConfig).
       makeFusionRequestExtension(() => holder.session?.sessionId ?? ""),

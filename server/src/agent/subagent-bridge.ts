@@ -21,7 +21,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { ProjectPaths } from "../projects.ts";
 import { isBudgetExceeded, recordSubagentRun } from "../cost/ledger.ts";
+import { listAgents } from "./agent-files.ts";
+import { isModelAllowedForMode } from "./models.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -108,6 +111,61 @@ export function usageFromSessionFile(
 // pi-subagents may deliver the same completion to more than one of them.
 const ledgeredAsyncRuns = new Set<string>();
 
+const MODEL_REF_KEYS = new Set(["model", "modelOverride"]);
+const MODEL_REF_ARRAY_KEYS = new Set(["modelCandidates", "fallbackModels"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function collectSubagentModelRefs(
+  value: unknown,
+  paths?: ProjectPaths,
+): string[] {
+  const refs: string[] = [];
+  const agentNames = new Set<string>();
+  const seen = new WeakSet<object>();
+
+  function visit(node: unknown): void {
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item);
+      return;
+    }
+    if (!isRecord(node)) return;
+    if (seen.has(node)) return;
+    seen.add(node);
+
+    for (const [key, item] of Object.entries(node)) {
+      if (MODEL_REF_KEYS.has(key) && typeof item === "string" && item.trim()) {
+        refs.push(item.trim());
+        continue;
+      }
+      if (MODEL_REF_ARRAY_KEYS.has(key) && Array.isArray(item)) {
+        for (const candidate of item) {
+          if (typeof candidate === "string" && candidate.trim()) refs.push(candidate.trim());
+        }
+        continue;
+      }
+      if (key === "agent" && typeof item === "string" && item.trim()) {
+        agentNames.add(item.trim());
+      }
+      visit(item);
+    }
+  }
+
+  visit(value);
+
+  if (paths && agentNames.size > 0) {
+    const byName = new Map(listAgents(paths).map((agent) => [agent.name, agent]));
+    for (const name of agentNames) {
+      const model = byName.get(name)?.model?.trim();
+      if (model) refs.push(model);
+    }
+  }
+
+  return [...new Set(refs)];
+}
+
 /**
  * Budget gate + cost ledger for subagent runs, as a Pi extension.
  *
@@ -117,10 +175,23 @@ const ledgeredAsyncRuns = new Set<string>();
 export function makeSubagentLedgerExtension(
   projectId: string,
   getSessionId: () => string,
+  paths: ProjectPaths,
 ): ExtensionFactory {
   return (pi) => {
     pi.on("tool_call", async (event) => {
       if (event.toolName !== "subagent") return;
+      const blockedModels = collectSubagentModelRefs(event.input, paths).filter(
+        (model) => !isModelAllowedForMode(model),
+      );
+      if (blockedModels.length > 0) {
+        return {
+          block: true,
+          reason:
+            `Delegation blocked by Kady's model policy. Paid OpenRouter model ` +
+            `${blockedModels.join(", ")} is not allowed; use a zero-priced ` +
+            `OpenRouter model or a local Ollama model.`,
+        };
+      }
       const budget = isBudgetExceeded(projectId);
       if (budget.exceeded) {
         return {
@@ -174,4 +245,3 @@ export function makeSubagentLedgerExtension(
     });
   };
 }
-

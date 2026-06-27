@@ -40,6 +40,7 @@ import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upl
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
+import { isAllowedModel, isAllowedModelRef } from "@/lib/model-policy";
 import {
   CheckIcon,
   CopyIcon,
@@ -793,6 +794,29 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  const setAllowedSelectedModel = useCallback((model: Model) => {
+    setSelectedModel(isAllowedModel(model) ? model : DEFAULT_MODEL);
+  }, []);
+
+  useEffect(() => {
+    if (!isAllowedModel(selectedModel)) setSelectedModel(DEFAULT_MODEL);
+  }, [selectedModel]);
+
+  useEffect(() => {
+    setMessageQueue((prev) => {
+      let changed = false;
+      const next = prev.map((item) => {
+        if (isAllowedModelRef(item.model.id)) return item;
+        changed = true;
+        return {
+          ...item,
+          model: { id: DEFAULT_MODEL.id, label: DEFAULT_MODEL.label },
+        };
+      });
+      return changed ? next : prev;
+    });
+  }, []);
+
   const addAttachedFile = useCallback((path: string) => {
     setAttachedFiles(prev => prev.includes(path) ? prev : [...prev, path]);
   }, []);
@@ -866,6 +890,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       if (budgetState === "exceeded") return;
       const trimmed = (text ?? "").trim();
       if (!trimmed) return;
+      const activeModel = isAllowedModel(selectedModel) ? selectedModel : DEFAULT_MODEL;
       if (isStreaming) {
         if (messageQueue.length >= MAX_QUEUE) return;
         const rawText = trimmed.split("\n")[0];
@@ -876,9 +901,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             rawText,
             text: trimmed,
             model: {
-              id: selectedModel.id,
-              label: selectedModel.label,
-              fusionConfig: selectedModel.fusionConfig,
+              id: activeModel.id,
+              label: activeModel.label,
+              fusionConfig: activeModel.fusionConfig,
             },
             databases: [...selectedDbs],
             skills: [...selectedSkills],
@@ -890,13 +915,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       }
       await send(
         trimmed,
-        selectedModel.id,
+        activeModel.id,
         {
           attachments: attachedFiles,
           skills: selectedSkills.map((s) => s.name),
           databases: selectedDbs.map((db) => db.name),
         },
-        selectedModel.fusionConfig,
+        activeModel.fusionConfig,
       );
     },
     [
@@ -919,11 +944,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       stop,
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
-        await send(prompt, selectedModel.id, undefined, selectedModel.fusionConfig);
+        const activeModel = isAllowedModel(selectedModel) ? selectedModel : DEFAULT_MODEL;
+        await send(prompt, activeModel.id, undefined, activeModel.fusionConfig);
       },
       launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
         if (budgetState === "exceeded") return;
-        setSelectedModel(model);
+        const activeModel = isAllowedModel(model) ? model : DEFAULT_MODEL;
+        setSelectedModel(activeModel);
         const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
         const skillsCtx = suggestedSkills.length > 0
           ? `\n\nMake sure to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
@@ -931,13 +958,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         const fullPrompt = prompt + fileRefs + skillsCtx;
         await send(
           fullPrompt,
-          model.id,
+          activeModel.id,
           {
             attachments: uploadedFiles,
             skills: suggestedSkills,
             databases: [],
           },
-          model.fusionConfig,
+          activeModel.fusionConfig,
         );
       },
     }),
@@ -1039,7 +1066,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             selectedDbs={selectedDbs}
             onDbsChange={setSelectedDbs}
             selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
+            onModelChange={setAllowedSelectedModel}
             onUploadFiles={uploadFiles}
             allSkills={allSkills}
             selectedSkills={selectedSkills}

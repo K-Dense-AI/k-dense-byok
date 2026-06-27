@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIcon,
   AtomIcon,
@@ -90,6 +90,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isAllowedModel } from "@/lib/model-policy";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -302,6 +303,15 @@ function LaunchDialog({
   const [editedPrompt, setEditedPrompt] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dirInputRef = useRef<HTMLInputElement>(null);
+  const safeModel = isAllowedModel(model) ? model : DEFAULT_MODEL;
+
+  const handleModelChange = useCallback((next: Model) => {
+    setModel(isAllowedModel(next) ? next : DEFAULT_MODEL);
+  }, []);
+
+  useEffect(() => {
+    if (!isAllowedModel(model)) setModel(DEFAULT_MODEL);
+  }, [model]);
 
   const updatePlaceholder = useCallback((key: string, value: string) => {
     setPlaceholderValues((prev) => ({ ...prev, [key]: value }));
@@ -336,13 +346,14 @@ function LaunchDialog({
   const finalPrompt = editedPrompt ?? assembledPrompt;
 
   const handleLaunch = useCallback(() => {
-    onLaunch(finalPrompt, model, workflow.suggestedSkills, uploadedFiles);
+    if (!canLaunch || budgetBlocked) return;
+    onLaunch(finalPrompt, safeModel, workflow.suggestedSkills, uploadedFiles);
     onOpenChange(false);
     setPlaceholderValues({});
     setUploadedFiles([]);
     setEditedPrompt(null);
     setIsEditingPrompt(false);
-  }, [finalPrompt, model, workflow.suggestedSkills, uploadedFiles, onLaunch, onOpenChange]);
+  }, [finalPrompt, safeModel, workflow.suggestedSkills, uploadedFiles, onLaunch, onOpenChange, canLaunch, budgetBlocked]);
 
   const iconColor = CATEGORY_ICON_COLOR[workflow.category] ?? "text-muted-foreground";
 
@@ -493,7 +504,7 @@ function LaunchDialog({
           )}
 
           <div className="flex items-center gap-2">
-            <ModelSelector selected={model} onChange={setModel} />
+            <ModelSelector selected={safeModel} onChange={handleModelChange} />
           </div>
         </div>
 

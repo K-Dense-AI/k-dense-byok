@@ -33,3 +33,35 @@ if (typeof window !== "undefined" && typeof window.matchMedia === "undefined") {
     }),
   });
 }
+
+if (typeof window !== "undefined") {
+  let storage: Storage | undefined;
+  try {
+    storage = window.localStorage;
+  } catch {
+    storage = undefined;
+  }
+
+  if (typeof storage === "undefined") {
+    const values = new Map<string, string>();
+    const localStorage: Storage = {
+      get length() {
+        return values.size;
+      },
+      clear: () => values.clear(),
+      getItem: (key: string) => values.get(key) ?? null,
+      key: (index: number) => Array.from(values.keys())[index] ?? null,
+      removeItem: (key: string) => values.delete(key),
+      setItem: (key: string, value: string) => values.set(key, String(value)),
+    };
+
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: localStorage,
+    });
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: localStorage,
+    });
+  }
+}

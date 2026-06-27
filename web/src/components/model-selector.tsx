@@ -11,6 +11,12 @@ import {
 import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import models from "@/data/models.json";
+import {
+  FREE_LOCAL_ONLY,
+  filterAllowedModels,
+  isAllowedModel,
+  isFreeOpenRouterModel,
+} from "@/lib/model-policy";
 import { useModels } from "@/lib/use-models";
 
 export type Model = {
@@ -28,7 +34,7 @@ export type Model = {
   fusionConfig?: Record<string, unknown>;
 };
 
-const STATIC_MODELS = models as Model[];
+const STATIC_MODELS = filterAllowedModels(models as Model[]);
 
 const DEFAULT_MODEL = STATIC_MODELS.find((m) => m.default) ?? STATIC_MODELS[0];
 
@@ -168,6 +174,8 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
             )}
             {local ? (
               <span>Runs locally · no API cost</span>
+            ) : FREE_LOCAL_ONLY && isFreeOpenRouterModel(model) ? (
+              <span>Free on OpenRouter</span>
             ) : (
               <span>${model.pricing.prompt.toFixed(2)} in / ${model.pricing.completion.toFixed(2)} out per 1M tok</span>
             )}
@@ -240,6 +248,11 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       </div>
 
       <div className="flex items-center gap-3 border-t px-3 py-1.5 flex-wrap shrink-0">
+        {FREE_LOCAL_ONLY && (
+          <span className="text-[10px] font-medium text-muted-foreground">
+            Free OpenRouter + local only
+          </span>
+        )}
         {Object.entries(TIER_STYLES).map(([tier, s]) => (
           <span key={tier} className="flex items-center gap-1 text-[10px] text-muted-foreground capitalize">
             <span className={cn("inline-block size-1.5 rounded-full", s.dot)} />
@@ -270,6 +283,7 @@ export function ModelSelector({
   onChange: (model: Model) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const safeSelected = isAllowedModel(selected) ? selected : DEFAULT_MODEL;
 
   const handleSelect = (model: Model) => {
     onChange(model);
@@ -290,8 +304,8 @@ export function ModelSelector({
           tabIndex={0}
         >
           <BrainCircuitIcon className="size-3 shrink-0 text-muted-foreground" />
-          <TierDot tier={selected.tier} isFusion={selected.isFusion} />
-          <span className="min-w-0 truncate font-medium text-foreground">{selected.label}</span>
+          <TierDot tier={safeSelected.tier} isFusion={safeSelected.isFusion} />
+          <span className="min-w-0 truncate font-medium text-foreground">{safeSelected.label}</span>
           <ChevronDownIcon
             className={cn(
               "size-3 shrink-0 text-muted-foreground transition-transform ml-0.5",
@@ -308,7 +322,7 @@ export function ModelSelector({
         className="w-96 p-0 overflow-hidden rounded-xl shadow-xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <ModelPickerList selected={selected} onSelect={handleSelect} />
+        <ModelPickerList selected={safeSelected} onSelect={handleSelect} />
       </PopoverContent>
     </Popover>
   );

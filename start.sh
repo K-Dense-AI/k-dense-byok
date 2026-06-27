@@ -129,6 +129,7 @@ elif [ -f kady_agent/.env ]; then
     echo "Loading environment from kady_agent/.env..."
     set -a; source kady_agent/.env; set +a
 fi
+export NEXT_PUBLIC_MODEL_ACCESS_MODE="${KADY_MODEL_ACCESS_MODE:-free-local}"
 
 # Sanity check: the agent needs OpenRouter or a reachable Ollama to do anything.
 OLLAMA_URL="${OLLAMA_BASE_URL:-http://localhost:11434}"

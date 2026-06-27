@@ -18,6 +18,8 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
+  KADY_MODEL_ACCESS_MODE,
+  type ModelAccessMode,
   OLLAMA_BASE_URL,
   REPO_ROOT,
 } from "../config.ts";
@@ -44,6 +46,26 @@ let catalogue: Map<string, CatalogueEntry> | null = null;
 /** Normalize a frontend/user model ref to a bare OpenRouter id ("vendor/model"). */
 function stripOpenRouter(ref: string): string {
   return ref.startsWith("openrouter/") ? ref.slice("openrouter/".length) : ref;
+}
+
+const LOCAL_DEFAULT_PROVIDERS = new Set(["ollama"]);
+const LOCAL_REF_PREFIXES = ["ollama/"];
+const THINKING_SUFFIXES = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
+
+function stripThinkingSuffix(ref: string): string {
+  const idx = ref.lastIndexOf(":");
+  if (idx === -1) return ref;
+  const suffix = ref.slice(idx + 1).toLowerCase();
+  return THINKING_SUFFIXES.has(suffix) ? ref.slice(0, idx) : ref;
+}
+
+function isLocalProvider(provider: string): boolean {
+  return LOCAL_DEFAULT_PROVIDERS.has(provider.trim().toLowerCase());
+}
+
+function isLocalModelRef(ref: string): boolean {
+  const normalized = ref.trim().toLowerCase();
+  return LOCAL_REF_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
 function loadCatalogue(): Map<string, CatalogueEntry> {
@@ -125,6 +147,45 @@ function buildOpenRouterModel(orId: string): Model<Api> {
     contextWindow: cat?.contextWindow ?? 128_000,
     maxTokens: cat?.maxTokens ?? 8192,
   };
+}
+
+export function isFreeOpenRouterRef(ref: string): boolean {
+  const orId = stripOpenRouter(stripThinkingSuffix(ref.trim()));
+  const cat = catalogueEntryFor(orId);
+  if (cat) return cat.costInput === 0 && cat.costOutput === 0;
+  return orId.endsWith(":free");
+}
+
+export function isModelAllowedForMode(
+  ref: string | undefined,
+  mode: ModelAccessMode = KADY_MODEL_ACCESS_MODE,
+  defaultProvider: string = DEFAULT_MODEL_PROVIDER,
+): boolean {
+  if (mode === "all") return true;
+
+  const usingDefault = !ref || !ref.trim();
+  const r = usingDefault ? DEFAULT_MODEL_ID.trim() : ref.trim();
+  if (r.startsWith("fusion/")) return false;
+  if (isLocalModelRef(r)) return true;
+  if (usingDefault && isLocalProvider(defaultProvider)) return true;
+  return isFreeOpenRouterRef(r);
+}
+
+export function assertModelAllowed(ref: string | undefined): void {
+  if (isModelAllowedForMode(ref)) return;
+  const label = ref?.trim() || `${DEFAULT_MODEL_PROVIDER}/${DEFAULT_MODEL_ID}`;
+  throw new Error(
+    `Model policy blocks "${label}". KADY_MODEL_ACCESS_MODE=free-local allows ` +
+      `only zero-priced OpenRouter models from web/src/data/models.json and ` +
+      `local Ollama models.`,
+  );
+}
+
+export function firstFreeOpenRouterRef(): string | null {
+  for (const [id, cat] of loadCatalogue()) {
+    if (cat.costInput === 0 && cat.costOutput === 0) return `openrouter/${id}`;
+  }
+  return null;
 }
 
 /** Panel (analysis) model ids out of a Fusion request body (real schema). */
@@ -209,6 +270,7 @@ export function resolveModel(
 ): Model<Api> {
   const usingDefault = !ref || !ref.trim();
   const r = usingDefault ? DEFAULT_MODEL_ID.trim() : ref.trim();
+  assertModelAllowed(usingDefault ? undefined : r);
   // A "fusion/<id>" ref is the synthetic selector entry; resolve it to the real
   // openrouter/fusion Model, priced by the panel sum. The bare string ref can't
   // carry the panel prices, so the fusionConfig must be threaded in by the
@@ -234,5 +296,13 @@ export function resolveModel(
 }
 
 export function defaultModel(registry: ModelRegistry): Model<Api> {
-  return resolveModel(DEFAULT_MODEL_ID, registry);
+  try {
+    return resolveModel(undefined, registry);
+  } catch (err) {
+    if (KADY_MODEL_ACCESS_MODE === "free-local") {
+      const fallback = firstFreeOpenRouterRef();
+      if (fallback) return resolveModel(fallback, registry);
+    }
+    throw err;
+  }
 }

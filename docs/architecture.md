@@ -100,3 +100,12 @@ provider (key from `OPENROUTER_API_KEY`), and Ollama points at your local daemon
 (`OLLAMA_BASE_URL`). There is no proxy — Pi calls the provider directly. See
 [Local models with Ollama](./local-models-ollama.md) and
 [Model selection](./model-selection.md).
+
+Kady pins `PI_CODING_AGENT_DIR` to `KADY_PI_AGENT_DIR` before creating sessions
+or spawning subagents, so the model registry and child Pi processes stay
+separate from the user's normal Pi configuration. By default
+(`KADY_MODEL_ACCESS_MODE=free-local`), the picker and backend allow only local
+Ollama refs plus zero-priced OpenRouter catalogue entries; paid OpenRouter refs
+and Fusion presets are rejected before a run starts, including subagent model
+overrides. Set `KADY_MODEL_ACCESS_MODE=all` to opt back into paid OpenRouter
+rows.

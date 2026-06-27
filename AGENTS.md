@@ -45,7 +45,7 @@ Full app (both services):
 
 1. **UI → backend.** A chat tab posts to the TS backend. Each tab carries its own `sessionId` (a Pi JSONL session); requests are scoped to a project via the `X-Project-Id` header (→ `?project` → `kady-project` cookie → `default`), resolved in an `onRequest` hook using `AsyncLocalStorage` (`server/src/scope.ts`).
 2. **Sessions.** `server/src/agent/session-registry.ts` holds live Pi `AgentSession` objects (one per tab, ≤10 per project) and persists each as a JSONL file under `projects/<id>/sandbox/.pi/sessions/`. `AuthStorage` + `ModelRegistry` are process singletons (shared OpenRouter key).
-3. **Models.** `server/src/agent/models.ts` resolves a model ref (`openrouter/<vendor>/<model>` or `ollama/<name>`) to a Pi `Model`, synthesizing OpenRouter models from `web/src/data/models.json` pricing when not built in.
+3. **Models.** `server/src/agent/models.ts` resolves a model ref (`openrouter/<vendor>/<model>` or `ollama/<name>`) to a Pi `Model`, synthesizing OpenRouter models from `web/src/data/models.json` pricing when not built in. Kady defaults to `KADY_MODEL_ACCESS_MODE=free-local`, which hides and rejects paid OpenRouter refs and Fusion presets while keeping zero-priced OpenRouter catalogue entries and local Ollama refs available. Set `KADY_MODEL_ACCESS_MODE=all` to opt back into paid OpenRouter rows.
 4. **Streaming.** `POST /sessions/:id/run` calls `session.prompt()` and streams an SSE schema mapped from Pi's `AgentSessionEvent` (`server/src/agent/events.ts`): `text_delta`, `thinking_delta`, `tool_start/update/end`, `turn_start/end`, `error`, a terminal `cost` frame, and `done`.
 5. **Cost ledger + budgets.** Pi reports `usage.cost` inline (no async backfill). `server/src/cost/ledger.ts` snapshots `getSessionStats()` before/after each run and appends a row to `projects/<id>/sandbox/.kady/runs/<sessionId>/costs.jsonl` (role `agent`|`subagent`). A project `spendLimitUsd` blocks runs once cumulative spend reaches it.
 6. **Skills.** Seeded per-project into `sandbox/.pi/skills/` from `K-Dense-AI/scientific-agent-skills` (`server/src/agent/skills.ts`); Pi's `DefaultResourceLoader` (cwd = sandbox) auto-discovers and the agent activates them. `SKILL.md` frontmatter is unchanged.
@@ -67,7 +67,8 @@ projects/
 
 ## Configuration
 
-- API keys come from `process.env`, auto-loaded by `server/src/env.ts` from (in order) repo-root `.env`, the legacy `kady_agent/.env` if present, and `server/.env`. Set `OPENROUTER_API_KEY` (required) and optionally `OLLAMA_BASE_URL`, `DEFAULT_MODEL_ID`, `KADY_PORT`, `KADY_PROJECTS_ROOT`.
+- API keys come from `process.env`, auto-loaded by `server/src/env.ts` from (in order) repo-root `.env`, the legacy `kady_agent/.env` if present, and `server/.env`. Set `OPENROUTER_API_KEY` (required for OpenRouter models) and optionally `OLLAMA_BASE_URL`, `DEFAULT_MODEL_ID`, `KADY_PORT`, `KADY_PROJECTS_ROOT`, `KADY_PI_AGENT_DIR`, `KADY_MODEL_ACCESS_MODE` (`free-local` by default; use `all` to show/allow paid OpenRouter rows).
+- Kady pins `PI_CODING_AGENT_DIR` to `KADY_PI_AGENT_DIR` (default `projects/.kady/pi-agent`) before creating Pi auth/model registries or spawning subagents. Do not rely on `~/.pi/agent/settings.json`, `~/.pi/agent/models.json`, or global Pi packages for app behavior.
 - A full credentials Settings UI, MCP servers, Modal compute, provenance/manifests, citation verification, and first-party web search (Exa/Parallel/Paperclip) / document conversion are **deferred** in this migration. Web search etc. will return as native Pi custom tools.
 
 ## Releases

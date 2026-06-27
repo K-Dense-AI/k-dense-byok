@@ -21,6 +21,7 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   env: {
     NEXT_PUBLIC_APP_VERSION: readAppVersion(),
+    NEXT_PUBLIC_MODEL_ACCESS_MODE: process.env.KADY_MODEL_ACCESS_MODE ?? "free-local",
   },
 };
 
