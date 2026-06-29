@@ -6,6 +6,7 @@ import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage } from "@uiw/codemirror-extensions-langs";
 import { githubLight } from "@uiw/codemirror-theme-github";
 import { keymap } from "@codemirror/view";
+import { linter, lintGutter, forceLinting, type Diagnostic } from "@codemirror/lint";
 import {
   PlayIcon,
   CheckIcon,
@@ -25,6 +26,62 @@ const ENGINES: { id: Engine; label: string }[] = [
   { id: "xelatex", label: "XeLaTeX" },
   { id: "lualatex", label: "LuaLaTeX" },
 ];
+
+const MAX_DIAGNOSTICS = 50;
+
+/**
+ * Extract line-anchored errors from a LaTeX compile log so they can be shown
+ * inline in the editor gutter. The backend compiles with `-file-line-error`,
+ * so hard errors appear as `path:line: message`; we prefer those and restrict
+ * them to the file being edited (errors in \input'd files can't be placed
+ * here). If none are found we fall back to the classic `! message` / `l.N`
+ * pairing. Returns raw line numbers; callers map them to document offsets.
+ */
+function parseTexDiagnostics(
+  log: string,
+  fileName: string,
+): { line: number; message: string }[] {
+  const out: { line: number; message: string }[] = [];
+  const seen = new Set<string>();
+  const base = fileName.split("/").pop()?.toLowerCase() ?? "";
+
+  // Preferred: `-file-line-error` format -> "path:line: message"
+  const fileLineRe = /^(?:\.\/)?(\S+?):(\d+):\s*(.+)$/gm;
+  let m: RegExpExecArray | null;
+  while ((m = fileLineRe.exec(log)) !== null) {
+    const file = m[1].split("/").pop()?.toLowerCase() ?? "";
+    if (base && file !== base) continue;
+    const line = parseInt(m[2], 10);
+    const message = m[3].trim();
+    if (!Number.isFinite(line) || !message) continue;
+    const key = `${line}:${message}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ line, message });
+  }
+  if (out.length > 0) return out.slice(0, MAX_DIAGNOSTICS);
+
+  // Fallback: classic "! message" followed by an "l.N <context>" line.
+  let lastErr: string | null = null;
+  for (const raw of log.split("\n")) {
+    const em = /^! (.+)/.exec(raw);
+    if (em) {
+      lastErr = em[1].trim();
+      continue;
+    }
+    const lm = /^l\.(\d+)/.exec(raw);
+    if (lm && lastErr) {
+      const line = parseInt(lm[1], 10);
+      const key = `${line}:${lastErr}`;
+      if (Number.isFinite(line) && !seen.has(key)) {
+        seen.add(key);
+        out.push({ line, message: lastErr });
+      }
+      lastErr = null;
+    }
+  }
+  return out.slice(0, MAX_DIAGNOSTICS);
+}
 
 export interface LatexEditorProps {
   path: string;
@@ -60,6 +117,13 @@ export function LatexEditor({
   const handleSaveRef = useRef<() => void>(() => {});
   const handleCompileRef = useRef<() => void>(() => {});
   const dividerRef = useRef<HTMLDivElement>(null);
+  const viewRef = useRef<EditorView | null>(null);
+  // Line-anchored compile errors, tied to the exact doc text they came from so
+  // they auto-clear once the user edits past the compiled version.
+  const diagRef = useRef<{
+    doc: string;
+    items: { line: number; message: string }[];
+  } | null>(null);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -84,6 +148,15 @@ export function LatexEditor({
     setLogText(result.log);
     setErrors(result.errors);
 
+    // Pin diagnostics to the doc text that was actually compiled, then force
+    // the linter to refresh so markers appear without waiting for an edit.
+    const compiledDoc = viewRef.current?.state.doc.toString() ?? content;
+    diagRef.current = {
+      doc: compiledDoc,
+      items: parseTexDiagnostics(result.log ?? "", name),
+    };
+    if (viewRef.current) forceLinting(viewRef.current);
+
     if (result.success && result.pdf_path) {
       setPdfPath(result.pdf_path);
       setPdfKey((k) => k + 1);
@@ -91,24 +164,46 @@ export function LatexEditor({
     } else {
       setLogOpen(true);
     }
-  }, [content, isDirty, onSave, onCompile, path, engine]);
+  }, [content, isDirty, onSave, onCompile, path, engine, name]);
 
   handleSaveRef.current = handleSave;
   handleCompileRef.current = handleCompile;
 
   const texLang = useMemo(() => loadLanguage("tex"), []);
 
+  // Surfaces the last compile's errors inline. The source returns nothing once
+  // the doc no longer matches the compiled text, so stale markers clear on edit.
+  const texLinter = useMemo(
+    () =>
+      linter(
+        (view) => {
+          const snap = diagRef.current;
+          if (!snap || snap.doc !== view.state.doc.toString()) return [];
+          const doc = view.state.doc;
+          return snap.items.map((it): Diagnostic => {
+            const lineNo = Math.max(1, Math.min(it.line, doc.lines));
+            const ln = doc.line(lineNo);
+            return { from: ln.from, to: ln.to, severity: "error", message: it.message };
+          });
+        },
+        { delay: 300 },
+      ),
+    [],
+  );
+
   const extensions = useMemo(() => {
     return [
       ...(texLang ? [texLang] : []),
       EditorView.lineWrapping,
+      lintGutter(),
+      texLinter,
       keymap.of([
         { key: "Mod-s", run: () => { handleSaveRef.current(); return true; } },
         { key: "Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
         { key: "Shift-Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
       ]),
     ];
-  }, [texLang]);
+  }, [texLang, texLinter]);
 
   // Resizable split pane
   const dragging = useRef(false);
@@ -221,6 +316,7 @@ export function LatexEditor({
               <CodeMirror
                 value={content}
                 onChange={setContent}
+                onCreateEditor={(view) => { viewRef.current = view; }}
                 extensions={extensions}
                 theme={githubLight}
                 height="100%"
