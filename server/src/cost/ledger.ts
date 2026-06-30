@@ -81,7 +81,7 @@ export interface CostEntry {
   entryId: string;
   ts: number;
   sessionId: string;
-  role: "agent" | "subagent";
+  role: "agent" | "subagent" | "compute";
   model: string;
   promptTokens: number;
   completionTokens: number;
@@ -106,7 +106,7 @@ export function recordRun(args: {
   model: string;
   before: CostSnapshot;
   after: CostSnapshot;
-  role?: "agent" | "subagent";
+  role?: "agent" | "subagent" | "compute";
   projectId?: string;
 }): CostEntry | null {
   const delta = snapshotDelta(args.before, args.after);
@@ -162,6 +162,30 @@ export function recordSubagentRun(
   });
 }
 
+/**
+ * Ledger a Modal remote-compute run against its parent session. Modal compute
+ * is billed on wall-time × the instance's hourly rate (the `modal_run` tool
+ * computes `costUsd` from the instance catalog) and carries no model tokens, so
+ * we record it as a `compute` row. It counts toward the project budget exactly
+ * like agent/subagent spend.
+ */
+export function recordModalRun(
+  projectId: string,
+  sessionId: string,
+  costUsd: number,
+  model = "modal",
+): CostEntry | null {
+  if (!sessionId) return null;
+  return recordRun({
+    sessionId,
+    projectId,
+    model,
+    role: "compute",
+    before: emptySnapshot(),
+    after: { ...emptySnapshot(), costUsd },
+  });
+}
+
 function readEntries(sessionId: string, projectId?: string): CostEntry[] {
   const file = costsPath(sessionId, projectId);
   try {
@@ -181,6 +205,7 @@ export interface SessionCostSummary {
   totalTokens: number;
   agentUsd: number;
   subagentUsd: number;
+  computeUsd: number;
   entries: CostEntry[];
 }
 
@@ -190,13 +215,15 @@ export function sessionCostSummary(sessionId: string, projectId?: string): Sessi
   let totalTokens = 0;
   let agentUsd = 0;
   let subagentUsd = 0;
+  let computeUsd = 0;
   for (const e of entries) {
     totalUsd += e.costUsd;
     totalTokens += e.totalTokens;
     if (e.role === "subagent") subagentUsd += e.costUsd;
+    else if (e.role === "compute") computeUsd += e.costUsd;
     else agentUsd += e.costUsd;
   }
-  return { sessionId, totalUsd, totalTokens, agentUsd, subagentUsd, entries };
+  return { sessionId, totalUsd, totalTokens, agentUsd, subagentUsd, computeUsd, entries };
 }
 
 export type BudgetState = "ok" | "warn" | "exceeded";

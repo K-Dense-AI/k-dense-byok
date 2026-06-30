@@ -91,6 +91,22 @@ const KEY_DEFS: KeyDef[] = [
     keysUrl: "https://aistudio.google.com/apikey",
     hint: "Search fallback plus YouTube and video understanding for fetched links.",
   },
+  {
+    id: "modalTokenId",
+    bodyField: "modalTokenId",
+    label: "Modal Token ID (optional)",
+    placeholder: "ak-…",
+    keysUrl: "https://modal.com/settings/tokens",
+    hint: "Enables remote compute — the agent can run jobs on a Modal sandbox (CPU/GPU). Pair with the Token Secret below.",
+  },
+  {
+    id: "modalTokenSecret",
+    bodyField: "modalTokenSecret",
+    label: "Modal Token Secret (optional)",
+    placeholder: "as-…",
+    keysUrl: "https://modal.com/settings/tokens",
+    hint: "The secret half of your Modal token pair. Both must be set to run jobs on Modal.",
+  },
 ];
 
 function KeyRow({

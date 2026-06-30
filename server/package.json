@@ -21,6 +21,7 @@
     "@types/adm-zip": "^0.5.8",
     "adm-zip": "^0.5.17",
     "fastify": "^5.2.0",
+    "modal": "^0.8.2",
     "pi-subagents": "^0.28.0",
     "pi-web-access": "^0.10.7",
     "typebox": "^1.1.38"

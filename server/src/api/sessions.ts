@@ -14,6 +14,7 @@ import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
 import { resolveModel } from "../agent/models.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
+import { setSessionComputeTarget } from "../agent/modal-tool.ts";
 import {
   createSession,
   getModelRegistry,
@@ -59,6 +60,8 @@ interface RunBody {
   thinkingLevel?: string;
   /** Full OpenRouter Fusion request body for a "fusion/<id>" model selection. */
   fusionConfig?: Record<string, unknown>;
+  /** Default Modal compute instance id for `modal_run` this run ("local" / unset = none). */
+  computeTarget?: string;
 }
 
 // Sessions with a run in flight, claimed synchronously. `session.isStreaming`
@@ -198,6 +201,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // means "not a fusion run, nothing to restore".
       let savedToolNames: string[] | null = null;
       try {
+        // Stash this run's selected compute instance so the modal_run tool uses
+        // it as the default when the agent doesn't name one ("local"/unset clears it).
+        setSessionComputeTarget(session.sessionId, body.computeTarget ?? null);
         const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
         if (isFusion) {
           // Fusion is load-bearing for the spend cap: the cost-bearing Model

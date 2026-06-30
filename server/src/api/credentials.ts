@@ -12,10 +12,11 @@
  *                          restart. The OpenRouter key is additionally pushed
  *                          into the shared AuthStorage.
  *
- * Managed keys: OpenRouter (model calls) plus the optional pi-web-access
- * search providers — Exa, Perplexity, Gemini. Web search works without any of
- * the three (Exa MCP fallback); a key unlocks the direct provider, and Gemini
- * also unlocks YouTube/video understanding.
+ * Managed keys: OpenRouter (model calls); the optional pi-web-access search
+ * providers — Exa, Perplexity, Gemini (web search works without any of the
+ * three via the Exa MCP fallback; a key unlocks the direct provider, and Gemini
+ * also unlocks YouTube/video understanding); and the Modal remote-compute token
+ * pair (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables the `modal_run` tool.
  *
  * Keys are stored exactly where the app already expects them (repo-root
  * `.env`, plaintext, on the user's own machine) — we are removing friction,
@@ -59,6 +60,10 @@ const MANAGED_KEYS: ManagedKey[] = [
   { id: "exa", bodyField: "exaApiKey", envVar: "EXA_API_KEY" },
   { id: "perplexity", bodyField: "perplexityApiKey", envVar: "PERPLEXITY_API_KEY" },
   { id: "gemini", bodyField: "geminiApiKey", envVar: "GEMINI_API_KEY" },
+  // Modal remote compute is two env vars for one logical credential; both must
+  // be set for modalConfigured() to flip true and the modal_run tool to register.
+  { id: "modalTokenId", bodyField: "modalTokenId", envVar: "MODAL_TOKEN_ID" },
+  { id: "modalTokenSecret", bodyField: "modalTokenSecret", envVar: "MODAL_TOKEN_SECRET" },
 ];
 
 function readKey(spec: ManagedKey): string | null {

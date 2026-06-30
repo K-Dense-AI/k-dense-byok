@@ -20,10 +20,12 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
+import { modalConfigured } from "../config.ts";
 import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
+import { makeModalTool } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
@@ -103,6 +105,12 @@ async function build(
   // The interview tool blocks mid-run on answers posted to the HTTP API; it
   // reads the live sessionId through the same holder as the ledger extension.
   const interviewTool = makeInterviewTool(projectId, () => holder.session?.sessionId ?? "");
+  // Remote-compute tool, only when Modal BYOK creds are present. Built per
+  // session (same holder-based late-bound sessionId as the interview tool); a
+  // session created before keys are set picks it up on its next cold-open.
+  const modalTool = modalConfigured()
+    ? makeModalTool(projectId, () => holder.session?.sessionId ?? "")
+    : null;
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
     model: fallbackModel,
@@ -115,9 +123,10 @@ async function build(
       "subagent",
       "interview",
       ...WEB_ACCESS_TOOLS,
+      ...(modalTool ? ["modal_run"] : []),
       ...mcpTools.map((t) => t.name),
     ],
-    customTools: [interviewTool, ...mcpTools],
+    customTools: [interviewTool, ...(modalTool ? [modalTool] : []), ...mcpTools],
   });
   holder.session = session;
   return session;

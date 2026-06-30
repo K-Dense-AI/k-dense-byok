@@ -180,15 +180,17 @@ export function useAgent() {
   }, []);
 
   const send = useCallback(
-    // The optional third arg (expert model / attachments / skills / databases /
-    // compute) is accepted for call-site compatibility but no longer used: the
-    // Pi backend runs a single flat agent. Skill/database hints are still
-    // injected into the prompt text by the caller.
+    // The optional third arg (expert model / attachments / skills / databases)
+    // is accepted for call-site compatibility but no longer used: the Pi
+    // backend runs a single flat agent. Skill/database hints are still injected
+    // into the prompt text by the caller. `computeTarget` is the selected Modal
+    // instance id, forwarded so the modal_run tool defaults to it.
     async (
       text: string,
       model?: string,
       _legacyMeta?: unknown,
       fusionConfig?: Record<string, unknown>,
+      computeTarget?: string,
     ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
 
@@ -224,6 +226,7 @@ export function useAgent() {
               message: text,
               ...(model ? { model } : {}),
               ...(fusionConfig ? { fusionConfig } : {}),
+              ...(computeTarget && computeTarget !== "local" ? { computeTarget } : {}),
             }),
             signal: controller.signal,
           });

@@ -29,6 +29,8 @@ import {
   DEFAULT_MODEL,
   type Model,
 } from "@/components/model-selector";
+import { ComputeSelector, type ModalInstance } from "@/components/compute-selector";
+import { apiFetch } from "@/lib/projects";
 import { buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
@@ -72,6 +74,8 @@ interface QueuedMessage {
   databases: Database[];
   skills: Skill[];
   files: string[];
+  /** Selected Modal compute instance id at enqueue time (null = local). */
+  computeTarget: string | null;
   timestamp: number;
 }
 
@@ -328,6 +332,9 @@ function ChatInput({
   onDbsChange,
   selectedModel,
   onModelChange,
+  selectedComputeTarget,
+  onComputeTargetChange,
+  modalConfigured,
   onUploadFiles,
   allSkills,
   selectedSkills,
@@ -351,6 +358,9 @@ function ChatInput({
   onDbsChange: (dbs: Database[]) => void;
   selectedModel: Model;
   onModelChange: (model: Model) => void;
+  selectedComputeTarget: ModalInstance | null;
+  onComputeTargetChange: (instance: ModalInstance | null) => void;
+  modalConfigured: boolean;
   onUploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   allSkills: Skill[];
   selectedSkills: Skill[];
@@ -582,6 +592,11 @@ function ChatInput({
                 selected={selectedModel}
                 onChange={onModelChange}
               />
+              <ComputeSelector
+                selected={selectedComputeTarget}
+                onChange={onComputeTargetChange}
+                modalConfigured={modalConfigured}
+              />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <InfoTooltip
@@ -785,6 +800,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
 
   // Per-tab settings
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL);
+  const [selectedComputeTarget, setSelectedComputeTarget] = useState<ModalInstance | null>(null);
+  const [modalConfigured, setModalConfigured] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [selectedDbs, setSelectedDbs] = useState<Database[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
@@ -792,6 +809,23 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const queueIdCounter = useRef(0);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Modal compute is gated on both token halves being set; the ComputeSelector
+  // shows a "keys not configured" notice and disables GPU rows until then.
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch("/credentials")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && d) {
+          setModalConfigured(Boolean(d.modalTokenId?.set && d.modalTokenSecret?.set));
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const addAttachedFile = useCallback((path: string) => {
     setAttachedFiles(prev => prev.includes(path) ? prev : [...prev, path]);
@@ -839,6 +873,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           databases: next.databases.map((db) => db.name),
         },
         next.model.fusionConfig,
+        next.computeTarget ?? undefined,
       );
     }, 0);
     return () => window.clearTimeout(id);
@@ -883,6 +918,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             databases: [...selectedDbs],
             skills: [...selectedSkills],
             files: [...attachedFiles],
+            computeTarget: selectedComputeTarget?.id ?? null,
             timestamp: Date.now(),
           },
         ]);
@@ -897,11 +933,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           databases: selectedDbs.map((db) => db.name),
         },
         selectedModel.fusionConfig,
+        selectedComputeTarget?.id,
       );
     },
     [
       send,
       selectedModel,
+      selectedComputeTarget,
       selectedDbs,
       selectedSkills,
       attachedFiles,
@@ -919,7 +957,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       stop,
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
-        await send(prompt, selectedModel.id, undefined, selectedModel.fusionConfig);
+        await send(prompt, selectedModel.id, undefined, selectedModel.fusionConfig, selectedComputeTarget?.id);
       },
       launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
         if (budgetState === "exceeded") return;
@@ -938,10 +976,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             databases: [],
           },
           model.fusionConfig,
+          selectedComputeTarget?.id,
         );
       },
     }),
-    [send, stop, budgetState, selectedModel.id, selectedModel.fusionConfig],
+    [send, stop, budgetState, selectedModel.id, selectedModel.fusionConfig, selectedComputeTarget?.id],
   );
 
   // Background tabs stay mounted (so streaming + queue auto-send continue,
@@ -1040,6 +1079,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onDbsChange={setSelectedDbs}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
+            selectedComputeTarget={selectedComputeTarget}
+            onComputeTargetChange={setSelectedComputeTarget}
+            modalConfigured={modalConfigured}
             onUploadFiles={uploadFiles}
             allSkills={allSkills}
             selectedSkills={selectedSkills}
