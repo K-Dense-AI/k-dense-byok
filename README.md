@@ -12,6 +12,8 @@
 
 **Your own AI research assistant, running on your computer, powered by your API keys.**
 
+![K-Dense BYOK — Kady running an end-to-end single-cell RNA-seq analysis, with the project file browser, a rendered analysis report, and the live chat panel](docs/app-screenshot.png)
+
 K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you **Kady** — an AI research assistant for scientists in any field. Describe a task in plain language — analyze a dataset, review a manuscript, search the literature, build a figure — and Kady does the work: it reads and writes files, runs real code, searches the web, and hands you the results.
 
 No coding experience is required. The app runs locally on your machine, your data stays with you, and you pay only for the AI model usage on your own account.
