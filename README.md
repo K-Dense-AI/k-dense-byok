@@ -30,6 +30,7 @@ No coding experience is required. The app runs locally on your machine, your dat
 - **Use any tool-capable AI model** — OpenAI, Anthropic, Google, xAI, Qwen, and more via one [OpenRouter](https://openrouter.ai/) account, or free local models via [Ollama](./docs/local-models-ollama.md). Switch per chat.
 - **Fuse multiple frontier models with [OpenRouter Fusion](./docs/openrouter-fusion.md)** — pick a Fusion preset (e.g. *Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro*) and a panel of models deliberates while a judge synthesizes one answer, with combined pricing and DRACO benchmark scores shown right in the model picker.
 - **Stay organized with projects** — each with its own files, chat history, up to 10 parallel chat tabs, rich file previews (including bioinformatics formats), a LaTeX editor, and cost tracking with optional spend caps.
+- **Offload heavy or GPU work to the cloud with [Modal](https://modal.com)** — add your Modal keys and Kady can run a command or script on an on-demand sandbox, from a cheap CPU box up to H100 GPUs. Files sync back to your project and the compute cost is tracked right alongside model spend. Pick the instance per chat from the compute selector.
 - **Extend it with [MCP servers](./docs/mcp-servers.md)** — connect GitHub, reference managers, databases, and hundreds of other external tools.
 
 ## Get started in 5 minutes
@@ -71,7 +72,7 @@ All guides live in the [`docs/`](./docs) folder:
 
 ## What's coming
 
-Literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and the provenance/"Copy as Methods" export are being re-added in upcoming releases, along with MCP tools for sub-agents and a UI experience further tailored to scientific workflows. In the meantime, many of these are available today by connecting an [MCP server](./docs/mcp-servers.md).
+Literature search (Paperclip), document conversion, browser automation, and the provenance/"Copy as Methods" export are being re-added in upcoming releases, along with MCP tools for sub-agents and a UI experience further tailored to scientific workflows. In the meantime, many of these are available today by connecting an [MCP server](./docs/mcp-servers.md).
 
 ## Want more?
 
