@@ -6,7 +6,15 @@
 import type { FastifyInstance } from "fastify";
 import { OLLAMA_BASE_URL } from "../config.ts";
 import { activePaths } from "../projects.ts";
-import { listProjectSkills, seedProjectSkills } from "../agent/skills.ts";
+import {
+  disableSkill,
+  enableSkill,
+  listDisabledSkills,
+  listProjectSkills,
+  readSkillSource,
+  seedProjectSkills,
+  SKILL_NAME_RE,
+} from "../agent/skills.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
 
 const GITHUB_REPO = "K-Dense-AI/k-dense-byok";
@@ -58,6 +66,51 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
       name: s.name,
       description: s.description,
     }));
+  });
+
+  const toInfo = (s: { name: string; description: string }) => ({
+    id: s.name,
+    name: s.name,
+    description: s.description,
+  });
+
+  app.get("/skills/all", async () => {
+    const paths = activePaths();
+    return {
+      enabled: listProjectSkills(paths).map(toInfo),
+      disabled: listDisabledSkills(paths).map(toInfo),
+    };
+  });
+
+  app.get<{ Params: { name: string } }>("/skills/:name/source", async (req, reply) => {
+    if (!SKILL_NAME_RE.test(req.params.name)) {
+      reply.code(400);
+      return { detail: `Invalid skill name "${req.params.name}"` };
+    }
+    const content = readSkillSource(activePaths(), req.params.name);
+    if (content === null) {
+      reply.code(404);
+      return { detail: `No such skill: ${req.params.name}` };
+    }
+    return { content };
+  });
+
+  app.post<{ Params: { name: string } }>("/skills/:name/enable", async (req, reply) => {
+    const r = enableSkill(activePaths(), req.params.name);
+    if (!r.ok) {
+      reply.code(r.status);
+      return { detail: r.detail };
+    }
+    return { ok: true };
+  });
+
+  app.post<{ Params: { name: string } }>("/skills/:name/disable", async (req, reply) => {
+    const r = disableSkill(activePaths(), req.params.name);
+    if (!r.ok) {
+      reply.code(r.status);
+      return { detail: r.detail };
+    }
+    return { ok: true };
   });
 
   // Seed the project's skills (network clone allowed). Used by first-run / a
