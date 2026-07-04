@@ -36,6 +36,7 @@ import {
   toNotebook,
   toShellScript,
 } from "../agent/session-export.ts";
+import { toHistory } from "../agent/session-history.ts";
 import {
   pendingInterviewFor,
   resolveInterview,
@@ -86,6 +87,23 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       messageCount: i.messageCount,
       firstMessage: i.firstMessage,
     }));
+  });
+
+  // Full transcript of a stored session, replayed as client frames so the UI
+  // can rebuild a past chat after a reload ("reopen session").
+  app.get<{ Params: { id: string } }>("/sessions/:id/history", async (req, reply) => {
+    try {
+      const paths = activePaths();
+      const file = findSessionFile(paths, req.params.id);
+      if (!file) {
+        reply.code(404);
+        return { detail: "No such session" };
+      }
+      return { messages: toHistory(file, paths.sandbox) };
+    } catch (err) {
+      reply.code(400);
+      return { detail: (err as Error).message };
+    }
   });
 
   app.get<{ Params: { id: string } }>("/sessions/:id/costs", async (req, reply) => {

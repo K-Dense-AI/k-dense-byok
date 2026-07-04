@@ -33,10 +33,11 @@ If a task loops or ignores its skill, try a **larger local model** (or temporari
   bounds the number of parallel SSE streams to the backend. Close an
   existing tab before opening a new one once you hit the limit.
 - **Tab list isn't persisted across reloads.** Refreshing the page resets
-  you to a single new chat tab. The underlying sessions and their message
-  history are still on disk under the project — you just can't currently
-  reopen them all at once into tabs from the UI. Re-opening a session by
-  id from the UI is on the roadmap.
+  you to a single new chat tab. Your conversations aren't lost: the clock
+  ("Chat history") button in the tab strip lists every stored session in
+  the project — pick one to reopen its full transcript in a tab and keep
+  chatting. Restoring the whole tab *layout* automatically is still on
+  the roadmap.
 - **Workflows launch into the active tab.** If you have a long-running
   turn streaming in tab A and click Launch on a workflow while tab B is
   active, the workflow runs in tab B. Switch to the tab you want to

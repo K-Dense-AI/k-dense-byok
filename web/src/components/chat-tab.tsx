@@ -765,6 +765,8 @@ export interface ChatTabHandle {
 export interface ChatTabProps {
   tabId: string;
   isActive: boolean;
+  /** Stored session to reopen into this tab (History menu / reload recovery). */
+  initialSessionId?: string | null;
   // Shared sandbox/state passed in (one instance for the whole project)
   allFiles: string[];
   uploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
@@ -781,6 +783,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   {
     tabId,
     isActive,
+    initialSessionId,
     allFiles,
     uploadFiles,
     onSandboxRefresh,
@@ -793,8 +796,15 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   },
   ref,
 ) {
-  const { messages, status, send, stop, getSessionId } = useAgent();
+  const { messages, status, send, stop, getSessionId, loadSession } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
+
+  // Reopened tab: hydrate the transcript from the stored session before any
+  // sends. loadSession refuses to run once the tab is bound to a session, so
+  // this fires meaningfully only on first mount.
+  useEffect(() => {
+    if (initialSessionId) void loadSession(initialSessionId);
+  }, [initialSessionId, loadSession]);
 
   const prevMessageCount = useRef(0);
 

@@ -14,34 +14,40 @@ import path from "node:path";
 import type { ProjectPaths } from "../projects.ts";
 import { relativizeSandboxPaths } from "./events.ts";
 
-interface ToolCallPart {
+export interface ToolCallPart {
   type: "toolCall";
   id: string;
   name: string;
   arguments?: Record<string, unknown>;
 }
-interface ToolResultPart {
+export interface ToolResultPart {
   type: "toolResult";
   toolCallId: string;
   toolName?: string;
   content?: { type: string; text?: string }[];
   isError?: boolean;
 }
-interface TextPart {
+export interface TextPart {
   type: "text";
   text: string;
 }
-interface ThinkingPart {
+export interface ThinkingPart {
   type: "thinking";
   thinking: string;
 }
 type ContentPart = ToolCallPart | ToolResultPart | TextPart | ThinkingPart | { type: string };
 
-interface MessageRow {
+export interface MessageRow {
   type: "message";
   message: {
-    role: "user" | "assistant" | "tool" | string;
+    role: "user" | "assistant" | "toolResult" | string;
     content: ContentPart[];
+    // Pi writes tool results as whole messages (role "toolResult") with the
+    // linkage fields at the message level rather than as a content part.
+    toolCallId?: string;
+    toolName?: string;
+    isError?: boolean;
+    timestamp?: number;
   };
 }
 
@@ -57,7 +63,7 @@ export function findSessionFile(paths: ProjectPaths, sessionId: string): string 
   return match ? path.join(paths.sessionsDir, match) : null;
 }
 
-function readRows(file: string): MessageRow[] {
+export function readRows(file: string): MessageRow[] {
   const rows: MessageRow[] = [];
   for (const line of fs.readFileSync(file, "utf-8").split("\n")) {
     const trimmed = line.trim();
@@ -72,8 +78,8 @@ function readRows(file: string): MessageRow[] {
   return rows;
 }
 
-function textOf(content: ContentPart[]): string {
-  return content
+export function textOf(content: ContentPart[]): string {
+  return (content ?? [])
     .filter((c): c is TextPart => c.type === "text")
     .map((c) => c.text)
     .join("\n")
@@ -82,10 +88,41 @@ function textOf(content: ContentPart[]): string {
 
 function resultText(parts: ToolResultPart["content"]): string {
   if (!parts) return "";
-  return parts
+  const text = parts
     .map((p) => (typeof p.text === "string" ? p.text : ""))
     .join("")
     .trim();
+  const images = parts.filter((p) => p.type === "image").length;
+  if (!images) return text;
+  const note = `[${images} image attachment${images > 1 ? "s" : ""}]`;
+  return text ? `${text}\n${note}` : note;
+}
+
+/** Index every tool result by call id. Pi stores results as whole messages
+ *  (role "toolResult", linkage at the message level); older logs nested them
+ *  as content parts, so both shapes are scanned. */
+export function indexToolResults(rows: MessageRow[]): Map<string, ToolResultPart> {
+  const byId = new Map<string, ToolResultPart>();
+  for (const row of rows) {
+    const m = row.message;
+    if (m.role === "toolResult" && m.toolCallId) {
+      byId.set(m.toolCallId, {
+        type: "toolResult",
+        toolCallId: m.toolCallId,
+        toolName: m.toolName,
+        content: m.content as ToolResultPart["content"],
+        isError: m.isError,
+      });
+      continue;
+    }
+    for (const part of m.content ?? []) {
+      if (part.type === "toolResult") {
+        const r = part as ToolResultPart;
+        byId.set(r.toolCallId, r);
+      }
+    }
+  }
+  return byId;
 }
 
 /** Quote a command for embedding as a comment without breaking lines. */
@@ -151,15 +188,7 @@ export function toNotebook(file: string, sessionId: string, sandboxRoot = ""): s
   const rel = (s: string) => relativizeSandboxPaths(s, sandboxRoot);
   const rows = readRows(file);
   // Index tool results by call id so we can show output beneath each command.
-  const resultsById = new Map<string, ToolResultPart>();
-  for (const row of rows) {
-    for (const part of row.message.content) {
-      if (part.type === "toolResult") {
-        const r = part as ToolResultPart;
-        resultsById.set(r.toolCallId, r);
-      }
-    }
-  }
+  const resultsById = indexToolResults(rows);
 
   const out: string[] = [
     "# Lab Notebook",

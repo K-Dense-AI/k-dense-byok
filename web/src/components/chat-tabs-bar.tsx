@@ -3,6 +3,7 @@
 import {
   DownloadIcon,
   FileTextIcon,
+  HistoryIcon,
   LoaderCircleIcon,
   MessageSquareTextIcon,
   PencilIcon,
@@ -42,10 +43,128 @@ export interface ChatTabsBarProps {
   onNew: () => void;
   onRename: (id: string, title: string) => void;
   onSelectWorkflows: () => void;
+  /** Reopen a stored session (from the History menu) into a tab. */
+  onOpenSession: (sessionId: string, title: string) => void;
   /** Session id of the active tab, for reproducibility export. */
   activeSessionId?: string | null;
   /** Whether the active tab has any messages worth exporting. */
   canExport?: boolean;
+}
+
+interface SessionListItem {
+  id: string;
+  name: string | null;
+  created: string | number;
+  modified: string | number;
+  messageCount: number;
+  firstMessage?: string | null;
+}
+
+function sessionTitle(s: SessionListItem): string {
+  const raw = (s.name ?? s.firstMessage ?? "").replace(/\s+/g, " ").trim();
+  if (!raw) return "Untitled chat";
+  return raw.length > 60 ? raw.slice(0, 60) + "…" : raw;
+}
+
+function relativeTime(value: string | number): string {
+  const then = new Date(value).getTime();
+  if (!Number.isFinite(then)) return "";
+  const mins = Math.round((Date.now() - then) / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days < 7 ? `${days}d ago` : new Date(then).toLocaleDateString();
+}
+
+/** Clock menu listing the project's stored sessions; picking one reopens it
+ *  (or focuses the tab that already has it). */
+function HistoryMenu({
+  onOpenSession,
+}: {
+  onOpenSession: (sessionId: string, title: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [sessions, setSessions] = useState<SessionListItem[] | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    apiFetch("/sessions")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((list: SessionListItem[]) => {
+        if (cancelled) return;
+        const sorted = [...list]
+          .filter((s) => s.messageCount > 0)
+          .sort(
+            (a, b) =>
+              new Date(b.modified).getTime() - new Date(a.modified).getTime(),
+          );
+        setSessions(sorted);
+      })
+      .catch(() => {
+        if (!cancelled) setSessions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
+
+  return (
+    <DropdownMenu open={open} onOpenChange={setOpen}>
+      <InfoTooltip
+        content={
+          <>
+            <b>Chat history</b>
+            <br />
+            Reopen a previous chat from this project — the full transcript is
+            restored and you can continue the conversation.
+          </>
+        }
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label="Chat history"
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+          >
+            <HistoryIcon className="size-3.5" />
+          </button>
+        </DropdownMenuTrigger>
+      </InfoTooltip>
+      <DropdownMenuContent align="start" className="w-72 max-h-80 overflow-y-auto">
+        <DropdownMenuLabel>Previous chats</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {sessions === null ? (
+          <div className="px-2 py-3 text-xs text-muted-foreground">Loading…</div>
+        ) : sessions.length === 0 ? (
+          <div className="px-2 py-3 text-xs text-muted-foreground">
+            No previous chats in this project yet.
+          </div>
+        ) : (
+          sessions.map((s) => {
+            const title = sessionTitle(s);
+            return (
+              <DropdownMenuItem
+                key={s.id}
+                onClick={() => onOpenSession(s.id, title)}
+              >
+                <MessageSquareTextIcon className="size-4 shrink-0" />
+                <div className="flex min-w-0 flex-col">
+                  <span className="truncate">{title}</span>
+                  <span className="text-[11px] text-muted-foreground">
+                    {relativeTime(s.modified)} · {s.messageCount} message
+                    {s.messageCount === 1 ? "" : "s"}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            );
+          })
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 /** Fetch an export and trigger a browser download (X-Project-Id via apiFetch). */
@@ -129,6 +248,7 @@ export function ChatTabsBar({
   onNew,
   onRename,
   onSelectWorkflows,
+  onOpenSession,
   activeSessionId,
   canExport = false,
 }: ChatTabsBarProps) {
@@ -293,6 +413,7 @@ export function ChatTabsBar({
             <PlusIcon className="size-3.5" />
           </button>
         </InfoTooltip>
+        <HistoryMenu onOpenSession={onOpenSession} />
       </div>
 
       <div className="shrink-0 flex items-center gap-1 pl-2 border-l">

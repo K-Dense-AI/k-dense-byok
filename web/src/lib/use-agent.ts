@@ -159,6 +159,14 @@ export function applyFrameToMessage(
   }
 }
 
+/** One transcript entry from GET /sessions/:id/history. */
+interface HistoryItem {
+  role: "user" | "assistant";
+  content?: string;
+  frames?: AgentFrame[];
+  timestamp?: number;
+}
+
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<Status>("ready");
@@ -167,6 +175,64 @@ export function useAgent() {
   const messageCounter = useRef(0);
 
   const nextId = () => String(++messageCounter.current);
+
+  /**
+   * Hydrate this (untouched) tab from a stored session's transcript, and bind
+   * the tab to that session so follow-up sends continue the conversation.
+   * The server replays the JSONL log as the same frames the live stream
+   * emits, so the restored transcript renders identically.
+   */
+  const loadSession = useCallback(async (sessionId: string): Promise<boolean> => {
+    // Never swap the session out from under a tab that already has one.
+    if (sessionIdRef.current) return false;
+    try {
+      const res = await apiFetch(
+        `/sessions/${encodeURIComponent(sessionId)}/history`,
+      );
+      if (!res.ok) return false;
+      const data = (await res.json()) as { messages?: HistoryItem[] };
+      // Re-check after the awaits: a message sent while the history fetch was
+      // in flight binds the tab to a fresh session, which must win.
+      if (sessionIdRef.current) return false;
+      const restored: ChatMessage[] = [];
+      const fallbackTs = Date.now();
+      for (const item of data.messages ?? []) {
+        const timestamp = item.timestamp ?? fallbackTs;
+        if (item.role === "user") {
+          restored.push({
+            id: nextId(),
+            role: "user",
+            content: item.content ?? "",
+            timestamp,
+          });
+          continue;
+        }
+        let msg: ChatMessage = {
+          id: nextId(),
+          role: "assistant",
+          content: "",
+          timestamp,
+        };
+        for (const frame of item.frames ?? []) {
+          msg = applyFrameToMessage(msg, frame, timestamp);
+        }
+        // A stored log has no live spinner left to resolve.
+        msg = {
+          ...msg,
+          activities: (msg.activities ?? []).map((a) =>
+            a.status === "running" ? { ...a, status: "complete" as const } : a,
+          ),
+        };
+        restored.push(msg);
+      }
+      sessionIdRef.current = sessionId;
+      setMessages(restored);
+      setStatus("ready");
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   const ensureSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
@@ -309,5 +375,5 @@ export function useAgent() {
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 
-  return { messages, status, send, stop, reset, getSessionId };
+  return { messages, status, send, stop, reset, getSessionId, loadSession };
 }

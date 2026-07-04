@@ -1,5 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { cn } from "./utils";
+import { cn, isJunkFilePath } from "./utils";
+
+describe("isJunkFilePath", () => {
+  it("flags cache artifacts", () => {
+    expect(isJunkFilePath("__pycache__/mod.cpython-313.pyc")).toBe(true);
+    expect(isJunkFilePath("pkg/__pycache__/mod.pyc")).toBe(true);
+    expect(isJunkFilePath("scripts/helper.pyo")).toBe(true);
+    expect(isJunkFilePath(".DS_Store")).toBe(true);
+    expect(isJunkFilePath("data/.DS_Store")).toBe(true);
+    expect(isJunkFilePath(".ipynb_checkpoints/nb-checkpoint.ipynb")).toBe(true);
+  });
+
+  it("keeps real research files", () => {
+    expect(isJunkFilePath("FINDINGS.md")).toBe(false);
+    expect(isJunkFilePath("fem_solver.py")).toBe(false);
+    expect(isJunkFilePath("results/_plotdata.npz")).toBe(false);
+    expect(isJunkFilePath("my__pycache__notes.md")).toBe(false);
+  });
+});
 
 describe("cn", () => {
   it("concatenates class names", () => {

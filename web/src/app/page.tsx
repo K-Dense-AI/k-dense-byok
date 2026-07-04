@@ -15,6 +15,7 @@ import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
 import { onProjectChange } from "@/lib/projects";
+import { isJunkFilePath } from "@/lib/utils";
 import {
   PanelLeftCloseIcon,
   PanelLeftIcon,
@@ -38,6 +39,8 @@ const MAX_CHAT_TABS = 10;
 interface ChatTabEntry {
   id: string;
   title: string;
+  /** Stored session reopened into this tab (History menu), if any. */
+  sessionId?: string;
 }
 
 /** Stable id for the first tab so SSR and hydration match. */
@@ -238,8 +241,12 @@ export default function ChatPage() {
     [],
   );
 
-  // Flat list of all sandbox file paths for @ mentions (shared across tabs)
-  const allFiles = useMemo(() => flattenFiles(sandbox.tree), [sandbox.tree]);
+  // Flat list of all sandbox file paths for @ mentions (shared across tabs).
+  // Cache artifacts are excluded — mentioning __pycache__/*.pyc is never useful.
+  const allFiles = useMemo(
+    () => flattenFiles(sandbox.tree).filter((p) => !isJunkFilePath(p)),
+    [sandbox.tree],
+  );
 
   // ------------------------------------------------------------------
   // Tab management callbacks
@@ -298,6 +305,29 @@ export default function ChatPage() {
     setActiveTabId(id);
     setView("chat");
   }, []);
+
+  // Reopen a stored session (History menu). If some tab already holds that
+  // session, just focus it — two tabs must never share one session.
+  const openSession = useCallback(
+    (sessionId: string, title: string) => {
+      const openTab = Object.entries(tabsMeta).find(
+        ([, meta]) => meta.sessionId === sessionId,
+      );
+      if (openTab) {
+        setActiveTabId(openTab[0]);
+        setView("chat");
+        return;
+      }
+      if (tabsRef.current.length >= MAX_CHAT_TABS) return;
+      const id = makeTabId();
+      setTabs((prev) =>
+        prev.length >= MAX_CHAT_TABS ? prev : [...prev, { id, title, sessionId }],
+      );
+      setActiveTabId(id);
+      setView("chat");
+    },
+    [tabsMeta],
+  );
 
   // ------------------------------------------------------------------
   // Workflow launch — routes to the active chat tab via its imperative
@@ -553,6 +583,7 @@ export default function ChatPage() {
             onNew={newTab}
             onRename={renameTab}
             onSelectWorkflows={() => setView("workflows")}
+            onOpenSession={openSession}
             activeSessionId={activeSessionId}
             canExport={(activeMeta?.userMessageCount ?? 0) > 0}
           />
@@ -564,6 +595,7 @@ export default function ChatPage() {
               key={t.id}
               ref={getTabRefCallback(t.id)}
               tabId={t.id}
+              initialSessionId={t.sessionId ?? null}
               isActive={view === "chat" && t.id === activeTabId}
               allFiles={allFiles}
               uploadFiles={sandbox.uploadFiles}
