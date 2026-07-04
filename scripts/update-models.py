@@ -3,19 +3,26 @@
 
 Usage: python3 scripts/update-models.py
 
-Inclusion rule: every OpenRouter model that supports tool calling
-(`supported_parameters` contains "tools") and has non-negative pricing
-(the Auto Router advertises -1 as a "variable pricing" sentinel, which
-would corrupt the spend-cap accrual in server/src/agent/models.ts).
+Inclusion rules: every OpenRouter model that
+  - supports tool calling (`supported_parameters` contains "tools"),
+  - has non-negative pricing (the Auto Router advertises -1 as a
+    "variable pricing" sentinel, which would corrupt the spend-cap
+    accrual in server/src/agent/models.ts), and
+  - was released on OpenRouter within the last MAX_AGE_DAYS (`created`
+    timestamp) — the catalogue stays current instead of accumulating
+    every legacy model, and old models tend to hit tool-calling compat
+    bugs anyway.
 
 The `default` / `expertDefault` flags are carried forward from the
-existing file by model id; the script warns if a flagged model has
-disappeared from OpenRouter.
+existing file by model id; a flagged model is kept even past the age
+cutoff (dropping the app's default would break new chats), and the
+script warns if one has disappeared from OpenRouter entirely.
 """
 
 import json
 import pathlib
 import sys
+import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -37,6 +44,9 @@ PROVIDER_OVERRIDES = {
 TIER_ORDER = {"flagship": 0, "high": 1, "mid": 2, "budget": 3}
 
 DESCRIPTION_WORDS = 30
+
+# Only keep models released on OpenRouter within this window (~6 months).
+MAX_AGE_DAYS = 183
 
 
 def tier_for(prompt_per_m: float) -> str:
@@ -81,6 +91,7 @@ def main() -> None:
     except FileNotFoundError:
         pass
 
+    cutoff = time.time() - MAX_AGE_DAYS * 86_400
     out = []
     for m in live:
         model_id = m["id"]
@@ -88,6 +99,10 @@ def main() -> None:
 
         if not is_fusion:
             if "tools" not in (m.get("supported_parameters") or []):
+                continue
+            # Age gate — but never drop a default/expertDefault model.
+            or_id = f"openrouter/{model_id}"
+            if (m.get("created") or 0) < cutoff and or_id not in flags:
                 continue
             prompt = round(float(m["pricing"]["prompt"]) * 1_000_000, 6)
             completion = round(float(m["pricing"]["completion"]) * 1_000_000, 6)

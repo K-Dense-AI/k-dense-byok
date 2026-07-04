@@ -12,7 +12,7 @@ Open the model picker and you'll see an **Openrouter Fusion** section at the top
 | Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro | `claude-opus-4.8`, `gpt-5.5`, `gemini-3.1-pro-preview` | **68.3%** |
 | Opus 4.8 + GPT-5.5 | `claude-opus-4.8`, `gpt-5.5` | **67.6%** |
 | Opus 4.8 + Opus 4.8 | `claude-opus-4.8` ×2 | **65.5%** |
-| Gemini 3 Flash + Kimi K2.6 + DeepSeek V4 Pro | `gemini-3-flash-preview`, `kimi-k2.6`, `deepseek-v4-pro` | **64.7%** (budget) |
+| Gemini 3.5 Flash + Kimi K2.6 + DeepSeek V4 Pro | `gemini-3.5-flash`, `kimi-k2.6`, `deepseek-v4-pro` | 64.7% (budget; score measured with the predecessor Gemini 3 Flash panel) |
 | Exaflop | `gpt-5.5-pro`, `gemini-3.1-pro-preview`, `claude-fable-5` | custom (not benchmarked) |
 
 All presets are judged by **Opus 4.8** at `xhigh` reasoning, temperature 1, `max_tool_calls` 16. Pick one and send a message — every message on a Fusion preset runs the panel and returns the synthesized answer.

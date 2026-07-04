@@ -127,12 +127,12 @@ export const DEFAULT_FUSION_CONFIGS: StoredFusionConfig[] = [
   },
   {
     id: "budget-fusion",
-    name: "Gemini 3 Flash + Kimi K2.6 + DeepSeek V4 Pro",
-    note: "64.7% DRACO — budget, within ~1% of Fable 5",
+    name: "Gemini 3.5 Flash + Kimi K2.6 + DeepSeek V4 Pro",
+    note: "budget — predecessor panel (Gemini 3 Flash) scored 64.7% DRACO, within ~1% of Fable 5",
     config: fusionBody({
       preset: "general-budget",
       analysis_models: [
-        "google/gemini-3-flash-preview",
+        "google/gemini-3.5-flash",
         "moonshotai/kimi-k2.6",
         "deepseek/deepseek-v4-pro",
       ],
