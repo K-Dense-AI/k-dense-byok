@@ -151,9 +151,9 @@ export const LATEX_SNIPPETS: Completion[] = [
 
 // ---- completion source -----------------------------------------------------
 
-const REF_CMD_RE = /\\(?:ref|eqref|autoref|cref|Cref|pageref|vref)\{([^}]*)$/;
+const REF_CMD_RE = /\\(?:ref|eqref|autoref|cref|Cref|pageref|vref)\{(?:[^},]*,)*([^},]*)$/;
 const CITE_CMD_RE =
-  /\\(?:cite|citep|citet|citeauthor|citeyear|textcite|parencite|autocite)(?:\[[^\]]*\])*\{([^},]*)$/;
+  /\\(?:cite|citep|citet|citeauthor|citeyear|textcite|parencite|autocite)(?:\[[^\]]*\])*\{(?:[^},]*,)*([^},]*)$/;
 const BEGIN_RE = /\\begin\{([a-zA-Z*]*)$/;
 const COMMAND_RE = /\\[a-zA-Z]*$/;
 
@@ -170,7 +170,7 @@ export function latexCompletionSource(opts: {
       return {
         from: context.pos - ref[1].length,
         options: labels.map((l) => ({ label: l, type: "constant" })),
-        validFor: /^[^}]*$/,
+        validFor: /^[^},]*$/,
       };
     }
     const cite = CITE_CMD_RE.exec(before);
