@@ -14,7 +14,7 @@ Everything renders **locally**. Text-based formats load instantly; binary/scient
 | Markdown | `md` `mdx` | Rendered, with LaTeX math and Mermaid diagrams |
 | Jupyter notebooks | `ipynb` | Cells with rich outputs — images, HTML tables, tracebacks |
 | CSV | `csv` | Sortable table |
-| LaTeX | `tex` `latex` | Split-pane editor with inline compile diagnostics |
+| LaTeX | `tex` `latex` | Split-pane editor with autocomplete, outline & spell check, two-way SyncTeX pdf.js preview, inline compile diagnostics, AI fix/edit, and Ask Kady handoff |
 | Anything else | any text file | Syntax-highlighted, **editable** source |
 
 ### Genomics & sequences
