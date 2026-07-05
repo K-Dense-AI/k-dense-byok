@@ -5,12 +5,15 @@ import { parseCompileDiagnostics } from "@/lib/latex/diagnostics";
 import { parseMagicComments, resolveRelative } from "@/lib/latex/magic-comments";
 import { breadcrumbFor, parseOutline, type OutlineItem } from "@/lib/latex/outline";
 import { proseWordCount } from "@/lib/latex/prose";
+import { latexCompletionSource, scanBibFiles, scanBibKeys } from "@/lib/latex/completions";
+import { readSandboxFile } from "@/lib/latex/api";
 import { cn } from "@/lib/utils";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage } from "@uiw/codemirror-extensions-langs";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { keymap } from "@codemirror/view";
 import type { Text } from "@codemirror/state";
+import { autocompletion } from "@codemirror/autocomplete";
 import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/lint";
 import { FileTextIcon } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -99,6 +102,29 @@ export function LatexEditor({
     items: { line: number; message: string; severity: "error" | "warning" }[];
   } | null>(null);
 
+  // .bib key cache for \cite{} completion — a ref (not state) so the stable
+  // autocompletion extension always reads the latest keys without needing
+  // to be recreated.
+  const bibKeysRef = useRef<string[]>([]);
+  const refreshBibKeys = useCallback(async () => {
+    const doc = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    const files = scanBibFiles(doc);
+    if (!files.length) {
+      bibKeysRef.current = [];
+      return;
+    }
+    const keys: string[] = [];
+    for (const f of files) {
+      const text = await readSandboxFile(resolveRelative(path, f));
+      if (text) keys.push(...scanBibKeys(text));
+    }
+    bibKeysRef.current = [...new Set(keys)];
+  }, [path]);
+
+  useEffect(() => {
+    void refreshBibKeys();
+  }, [refreshBibKeys]);
+
   const wordCountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleChange = useCallback((value: string) => {
     contentRef.current = value;
@@ -150,6 +176,7 @@ export function LatexEditor({
       const target = magic.root ? resolveRelative(path, magic.root) : path;
       const result = await onCompile(target, engine);
       setLogText(result.log);
+      void refreshBibKeys();
       const snapshot = viewRef.current?.state.doc ?? null;
       const items = parseCompileDiagnostics(result.log ?? "", name);
       if (snapshot) diagRef.current = { doc: snapshot, items };
@@ -167,7 +194,7 @@ export function LatexEditor({
       compilingRef.current = false;
       setCompiling(false);
     }
-  }, [doSave, onCompile, path, engine, name]);
+  }, [doSave, onCompile, path, engine, name, refreshBibKeys]);
 
   const handleSave = useCallback(async () => {
     const ok = await doSave();
@@ -270,6 +297,11 @@ export function LatexEditor({
       ...(texLang ? [texLang] : []),
       EditorView.lineWrapping,
       lintGutter(),
+      autocompletion({
+        override: [latexCompletionSource({ getBibKeys: () => bibKeysRef.current })],
+        activateOnTyping: true,
+        maxRenderedOptions: 60,
+      }),
       texLinter,
       EditorView.updateListener.of((u) => {
         if (u.selectionSet) {
