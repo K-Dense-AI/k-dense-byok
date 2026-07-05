@@ -368,7 +368,7 @@ export function useAgent() {
     // backend runs a single flat agent. Skill/database hints are still injected
     // into the prompt text by the caller. `computeTarget` is the selected Modal
     // instance id, forwarded so the modal_run tool defaults to it. `thinkingLevel`
-    // is the extended-thinking level ("off" / "low" / "medium" / "high").
+    // is the extended-thinking level ("off" / "minimal" / "low" / "medium" / "high" / "xhigh").
     async (
       text: string,
       model?: string,
