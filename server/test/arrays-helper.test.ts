@@ -66,6 +66,8 @@ describe("arrays_helper", () => {
     expect(temp).toBeDefined();
     expect(temp.dims).toEqual(["t"]);
     expect(d.global_attrs.title).toBe("demo");
+    expect(d.num_variables).toBe(1);
+    expect(d.truncated).toBe(false);
   }, 15000);
 
   it("exits 4 on missing file", () => {

@@ -43,9 +43,6 @@ def summarize_hdf5(path: Path) -> dict:
             if isinstance(item, h5py.Group):
                 attrs = {k: str(v) for k, v in item.attrs.items()}
                 tree.append({"path": node_path, "type": "group", **({"attrs": attrs} if attrs else {})})
-                if len(tree) >= MAX_HDF5_NODES:
-                    truncated = True
-                    return
                 visit_group(item, node_path)
             else:  # Dataset
                 attrs = {k: str(v) for k, v in item.attrs.items()}
@@ -56,8 +53,7 @@ def summarize_hdf5(path: Path) -> dict:
                     "dtype": str(item.dtype),
                     **({"attrs": attrs} if attrs else {}),
                 })
-            if len(tree) >= MAX_HDF5_NODES:
-                truncated = True
+            if truncated:
                 return
 
     with h5py.File(path, "r") as f:
@@ -113,7 +109,7 @@ def _describe_ndarray(name: str, arr) -> dict:
     flat = arr.ravel()
     preview_vals = flat[:MAX_NDARRAY_PREVIEW]
     if is_numeric:
-        preview = [float(v) for v in preview_vals.tolist()]
+        preview = preview_vals.tolist()
         min_v = float(np.nanmin(arr)) if arr.size else None
         max_v = float(np.nanmax(arr)) if arr.size else None
         mean_v = float(np.nanmean(arr)) if arr.size else None
@@ -166,6 +162,8 @@ def summarize_netcdf(path: Path) -> dict:
     ds = netCDF4.Dataset(str(path), "r")
     try:
         dimensions = {name: dim.size for name, dim in ds.dimensions.items()}
+        num_variables = len(ds.variables)
+        truncated = num_variables > MAX_NETCDF_VARS
         variables = []
         for name, var in ds.variables.items():
             if len(variables) >= MAX_NETCDF_VARS:
@@ -188,6 +186,8 @@ def summarize_netcdf(path: Path) -> dict:
         "file_size": path.stat().st_size,
         "dimensions": dimensions,
         "variables": variables,
+        "num_variables": num_variables,
+        "truncated": truncated,
         "global_attrs": global_attrs,
     }
 
