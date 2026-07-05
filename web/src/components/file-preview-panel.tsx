@@ -457,7 +457,7 @@ function FileViewer({
     const Viewer = def.Viewer;
     return (
       <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" /></div>}>
-        <Viewer path={path} name={name ?? ""} content={content} onRetry={onRetry} />
+        <Viewer key={path} path={path} name={name ?? ""} content={content} onRetry={onRetry} />
       </Suspense>
     );
   }
