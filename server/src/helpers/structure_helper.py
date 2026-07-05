@@ -59,6 +59,9 @@ def _summarize_gemmi(path: Path) -> dict:
                 nm = res.name.strip()
                 if nm not in _STD_AA and nm not in _WATER:
                     ligands.add(nm)
+    if n_atoms == 0:
+        sys.stderr.write("No atoms parsed — file may be corrupt or not a valid structure\n")
+        sys.exit(5)
     return {
         "format": path.suffix.lower().lstrip("."),
         "num_atoms": n_atoms,

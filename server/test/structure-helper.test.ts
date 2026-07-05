@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import os from "node:os";
+import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { runSciHelper } from "../src/api/sci-helpers.ts";
@@ -14,6 +16,17 @@ describe("structure_helper", () => {
     const data = JSON.parse(res.stdout);
     expect(data.num_atoms).toBeGreaterThan(0);
     expect(Array.isArray(data.chains)).toBe(true);
+  }, 15000);
+
+  it.runIf(depsOk)("exits 5 on a corrupt PDB", () => {
+    const tmpPath = path.join(os.tmpdir(), `corrupt-${Date.now()}.pdb`);
+    fs.writeFileSync(tmpPath, "this is not a valid pdb file!!!\nrandom junk\n");
+    try {
+      const res = runSciHelper("structure", "summarize", [tmpPath]);
+      expect(res.status).toBe(5);
+    } finally {
+      fs.rmSync(tmpPath, { force: true });
+    }
   }, 15000);
 
   it("exits 4 when the file does not exist", () => {
