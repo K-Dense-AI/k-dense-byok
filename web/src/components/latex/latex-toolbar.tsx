@@ -7,6 +7,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  CrosshairIcon,
   ItalicIcon,
   ListTreeIcon,
   LoaderCircleIcon,
@@ -67,6 +68,8 @@ export interface LatexToolbarProps {
   onToggleOutline: () => void;
   spellcheck: boolean;
   onToggleSpellcheck: () => void;
+  syncAvailable: boolean;
+  onJumpToPdf: () => void;
 }
 
 export function LatexToolbar(p: LatexToolbarProps) {
@@ -198,6 +201,15 @@ export function LatexToolbar(p: LatexToolbarProps) {
         title="Toggle spell check"
       >
         <SpellCheckIcon className="size-3.5" />
+      </button>
+
+      <button
+        onClick={p.onJumpToPdf}
+        disabled={!p.syncAvailable}
+        className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30"
+        title={p.syncAvailable ? "Jump to PDF (SyncTeX)" : "SyncTeX unavailable — compile first"}
+      >
+        <CrosshairIcon className="size-3.5" />
       </button>
 
       {/* Status */}

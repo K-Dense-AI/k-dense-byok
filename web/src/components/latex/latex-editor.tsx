@@ -1,12 +1,12 @@
 "use client";
 
-import { rawFileUrl, type LatexCompileResult } from "@/lib/use-sandbox";
+import { type LatexCompileResult } from "@/lib/use-sandbox";
 import { parseCompileDiagnostics } from "@/lib/latex/diagnostics";
 import { parseMagicComments, resolveRelative } from "@/lib/latex/magic-comments";
 import { breadcrumbFor, parseOutline, type OutlineItem } from "@/lib/latex/outline";
 import { proseWordCount } from "@/lib/latex/prose";
 import { latexCompletionSource, scanBibFiles, scanBibKeys } from "@/lib/latex/completions";
-import { readSandboxFile } from "@/lib/latex/api";
+import { readSandboxFile, fetchSynctexForward, fetchSynctexInverse } from "@/lib/latex/api";
 import {
   createSpellWorker,
   latexSpellLinter,
@@ -21,12 +21,13 @@ import { keymap } from "@codemirror/view";
 import type { Text } from "@codemirror/state";
 import { autocompletion } from "@codemirror/autocomplete";
 import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/lint";
-import { FileTextIcon } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
 import { LogPanel, type LogFilter } from "./log-panel";
 import { OutlinePanel } from "./outline-panel";
+import { LatexPdfPane } from "./latex-pdf-pane";
+import type { PdfSyncClick, PdfSyncHighlight } from "@/components/pdf-viewer/pdf-viewer";
 
 const AUTOCOMPILE_KEY = "kady:latex:autocompile";
 const OUTLINE_KEY = "kady:latex:outline";
@@ -63,6 +64,7 @@ export function LatexEditor({
   onSave,
   onCompile,
   onDiscard,
+  onOpenFile,
 }: LatexEditorProps) {
   // --- document state: content lives in CodeMirror, not React state -------
   const contentRef = useRef(initialContent);
@@ -79,7 +81,13 @@ export function LatexEditor({
     return isValidEngine(p) ? p : "pdflatex";
   });
   const [pdfPath, setPdfPath] = useState<string | null>(null);
-  const [pdfKey, setPdfKey] = useState(0);
+  const [reloadToken, setReloadToken] = useState(0);
+  const pdfPathRef = useRef<string | null>(null);
+  useEffect(() => { pdfPathRef.current = pdfPath; }, [pdfPath]);
+  const [syncHighlight, setSyncHighlight] = useState<PdfSyncHighlight | null>(null);
+  const [synctexOk, setSynctexOk] = useState(false);
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const syncTokenRef = useRef(0);
   const [logText, setLogText] = useState<string | null>(null);
   const [logFilter, setLogFilter] = useState<LogFilter>("all");
   const [errorCount, setErrorCount] = useState(0);
@@ -239,9 +247,10 @@ export function LatexEditor({
       setErrorCount(items.filter((i) => i.severity === "error").length || result.errors.length);
       setWarningCount(items.filter((i) => i.severity === "warning").length);
       if (viewRef.current) forceLinting(viewRef.current);
+      setSynctexOk(result.synctex);
       if (result.success && result.pdf_path) {
         setPdfPath(result.pdf_path);
-        setPdfKey((k) => k + 1);
+        setReloadToken((k) => k + 1);
         setLogOpen(false);
       } else {
         setLogOpen(true);
@@ -315,6 +324,47 @@ export function LatexEditor({
     view.focus();
   }, []);
 
+  const showSyncNotice = useCallback((msg: string) => {
+    setSyncNotice(msg);
+    setTimeout(() => setSyncNotice(null), 4000);
+  }, []);
+
+  const jumpToPdf = useCallback(async () => {
+    const view = viewRef.current;
+    const pdf = pdfPathRef.current;
+    if (!view || !pdf) return;
+    const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    const box = await fetchSynctexForward(path, line, pdf);
+    if (box === "unavailable" || box === null) {
+      showSyncNotice(box === "unavailable" ? "SyncTeX not available (recompile first)" : "No PDF location found for this line");
+      return;
+    }
+    setSyncHighlight({ ...box, token: ++syncTokenRef.current });
+  }, [path, showSyncNotice]);
+  const jumpToPdfRef = useRef(jumpToPdf);
+  jumpToPdfRef.current = jumpToPdf;
+
+  const handleSyncClick = useCallback(
+    async (pos: PdfSyncClick) => {
+      const pdf = pdfPathRef.current;
+      if (!pdf) return;
+      const loc = await fetchSynctexInverse(pdf, pos.page, pos.x, pos.y);
+      if (loc === "unavailable" || loc === null || !loc.file) {
+        showSyncNotice("No source location found");
+        return;
+      }
+      if (loc.file === path) {
+        jumpToLine(loc.line);
+      } else if (onOpenFile) {
+        onOpenFile(loc.file);
+        showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
+      } else {
+        showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
+      }
+    },
+    [path, jumpToLine, onOpenFile, showSyncNotice],
+  );
+
   const toggleOutline = useCallback(() => {
     setOutlineOpen((v) => {
       localStorage.setItem(OUTLINE_KEY, v ? "0" : "1");
@@ -369,6 +419,7 @@ export function LatexEditor({
         { key: "Mod-s", run: () => { handleSaveRef.current(); return true; }, preventDefault: true },
         { key: "Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
         { key: "Shift-Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
+        { key: "Mod-Alt-j", run: () => { jumpToPdfRef.current(); return true; } },
       ]),
     ];
   }, [texLang, texLinter, spellcheck, spellExt]);
@@ -421,6 +472,8 @@ export function LatexEditor({
         onToggleOutline={toggleOutline}
         spellcheck={spellcheck}
         onToggleSpellcheck={toggleSpellcheck}
+        syncAvailable={synctexOk && pdfPath !== null}
+        onJumpToPdf={jumpToPdf}
       />
 
       <div className={cn("flex flex-1 min-h-0", dragging && "select-none")}>
@@ -475,32 +528,19 @@ export function LatexEditor({
           <div className="h-8 w-0.5 rounded-full bg-muted-foreground/20 transition-colors group-hover:bg-blue-400" />
         </div>
 
-        {/* PDF pane (iframe — replaced by LatexPdfPane in a later task) */}
         <div className="flex min-w-0 flex-1 flex-col bg-muted/5">
-          {pdfPath ? (
-            <iframe
-              key={pdfKey}
-              src={`${rawFileUrl(pdfPath)}&_t=${pdfKey}`}
-              title="PDF Preview"
-              className="h-full w-full"
-            />
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/50">
-                <FileTextIcon className="size-6 text-muted-foreground/30" />
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-muted-foreground">No PDF yet</p>
-                <p className="text-xs text-muted-foreground/60">
-                  Press{" "}
-                  <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">
-                    {modKey}↵
-                  </kbd>{" "}
-                  to compile
-                </p>
-              </div>
+          {syncNotice && (
+            <div className="shrink-0 border-b bg-blue-500/10 px-3 py-1 text-[11px] text-blue-700 dark:text-blue-300">
+              {syncNotice}
             </div>
           )}
+          <LatexPdfPane
+            pdfPath={pdfPath}
+            reloadToken={reloadToken}
+            syncHighlight={syncHighlight}
+            onSyncClick={handleSyncClick}
+            modKey={modKey}
+          />
         </div>
       </div>
     </div>

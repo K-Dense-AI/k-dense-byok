@@ -1908,6 +1908,7 @@ export function FilePreviewPanel({
               onSave={(content) => onSaveText(selectedPath, content)}
               onCompile={onCompileLatex}
               onDiscard={() => setMode(selectedPath, "view")}
+              onOpenFile={onTabSelect}
             />
           </div>
         </>
