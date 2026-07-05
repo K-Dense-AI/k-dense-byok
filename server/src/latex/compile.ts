@@ -35,6 +35,11 @@ const COMMAND_TIMEOUT_MS = 60_000;
 const MAX_LOG_BUFFER = 16 * 1024 * 1024;
 const MAX_LOG_RETURN = 8_000;
 
+/** Every CompileOutcome.log is truncated to the last MAX_LOG_RETURN chars. */
+function clampLog(log: string): string {
+  return log.length > MAX_LOG_RETURN ? log.slice(-MAX_LOG_RETURN) : log;
+}
+
 /** Which bibliography tool does this source need, if any? Ignores comments. */
 export function detectBibTool(src: string): "bibtex" | "biber" | null {
   if (
@@ -148,7 +153,7 @@ async function doCompile(
         return {
           success: false,
           pdf_path: null,
-          log: `LaTeX compiler not found. Install TeX Live or add ${cmd} to PATH.`,
+          log: clampLog(`LaTeX compiler not found. Install TeX Live or add ${cmd} to PATH.`),
           errors: [`${cmd} not found`],
           synctex: false,
         };
@@ -157,9 +162,11 @@ async function doCompile(
         return {
           success: false,
           pdf_path: null,
-          log: log + "\nCompilation timed out after 60 seconds.",
+          log: clampLog(
+            log + `\nCompilation timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds.`,
+          ),
           errors: ["Timeout"],
-          synctex: false,
+          synctex: fs.existsSync(path.join(workDir, stem + ".synctex.gz")),
         };
       }
       lastStatus = typeof e.code === "number" ? e.code : 1;
@@ -179,7 +186,7 @@ async function doCompile(
   return {
     success,
     pdf_path: fs.existsSync(pdfAbs) ? path.relative(sandboxRoot, pdfAbs) : null,
-    log: log.length > MAX_LOG_RETURN ? log.slice(-MAX_LOG_RETURN) : log,
+    log: clampLog(log),
     errors,
     synctex: fs.existsSync(path.join(workDir, stem + ".synctex.gz")),
   };
