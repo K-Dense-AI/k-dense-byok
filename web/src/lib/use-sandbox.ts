@@ -141,6 +141,7 @@ export interface LatexCompileResult {
   pdf_path: string | null;
   log: string;
   errors: string[];
+  synctex: boolean;
 }
 
 export function useSandbox(isActive = false) {
@@ -468,12 +469,12 @@ export function useSandbox(isActive = false) {
         });
         if (!res.ok) {
           const detail = await res.text();
-          return { success: false, pdf_path: null, log: detail, errors: [detail] };
+          return { success: false, pdf_path: null, log: detail, errors: [detail], synctex: false };
         }
         return (await res.json()) as LatexCompileResult;
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Network error";
-        return { success: false, pdf_path: null, log: msg, errors: [msg] };
+        return { success: false, pdf_path: null, log: msg, errors: [msg], synctex: false };
       }
     },
     [],

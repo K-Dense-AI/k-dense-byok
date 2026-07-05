@@ -1,7 +1,6 @@
 "use client";
 
 import { MessageResponse } from "@/components/ai-elements/message";
-import { LatexEditor } from "@/components/latex-editor";
 import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
 import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
@@ -16,8 +15,10 @@ import {
 } from "@/lib/use-sandbox";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage, type LanguageName } from "@uiw/codemirror-extensions-langs";
-import { githubLight } from "@uiw/codemirror-theme-github";
+import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { keymap } from "@codemirror/view";
+import { useTheme } from "next-themes";
+import dynamic from "next/dynamic";
 import {
   FilesIcon,
   DownloadIcon,
@@ -44,6 +45,18 @@ import {
   useRef,
   useState,
 } from "react";
+
+const LatexEditor = dynamic(
+  () => import("@/components/latex").then((m) => m.LatexEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
+        Loading LaTeX editor…
+      </div>
+    ),
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -312,6 +325,7 @@ function ReadOnlyCodeView({
   revealToken?: number;
 }) {
   const editorViewRef = useRef<EditorView | null>(null);
+  const { resolvedTheme } = useTheme();
   const extensions = useMemo(() => {
     const lang = langExtension(name);
     return [
@@ -341,7 +355,7 @@ function ReadOnlyCodeView({
     <CodeMirror
       value={content}
       extensions={extensions}
-      theme={githubLight}
+      theme={resolvedTheme === "dark" ? githubDark : githubLight}
       editable={false}
       readOnly
       height="100%"
@@ -1065,6 +1079,8 @@ function TextEditor({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const isDirty = content !== initialContent;
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const { resolvedTheme } = useTheme();
 
   // Use a ref so the keymap closure never goes stale
   const handleSaveRef = useRef<() => void>(() => {});
@@ -1096,7 +1112,7 @@ function TextEditor({
         <span className="text-xs text-muted-foreground">
           {saved ? "Saved" : isDirty ? "Unsaved changes" : "No changes"}
         </span>
-        <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">⌘S to save</span>
+        <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">{isMac ? "⌘S" : "Ctrl+S"} to save</span>
         <button
           onClick={onDiscard}
           className="rounded px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -1120,7 +1136,7 @@ function TextEditor({
             value={content}
             onChange={setContent}
             extensions={extensions}
-            theme={githubLight}
+            theme={resolvedTheme === "dark" ? githubDark : githubLight}
             height="100%"
             className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
             onCreateEditor={(view) => { viewRef.current = view; }}

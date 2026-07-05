@@ -1,0 +1,353 @@
+"use client";
+
+import { rawFileUrl, type LatexCompileResult } from "@/lib/use-sandbox";
+import { parseCompileDiagnostics } from "@/lib/latex/diagnostics";
+import { parseMagicComments, resolveRelative } from "@/lib/latex/magic-comments";
+import { proseWordCount } from "@/lib/latex/prose";
+import { cn } from "@/lib/utils";
+import CodeMirror, { EditorView } from "@uiw/react-codemirror";
+import { loadLanguage } from "@uiw/codemirror-extensions-langs";
+import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
+import { keymap } from "@codemirror/view";
+import type { Text } from "@codemirror/state";
+import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/lint";
+import { FileTextIcon } from "lucide-react";
+import { useTheme } from "next-themes";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
+import { LogPanel, type LogFilter } from "./log-panel";
+
+const AUTOCOMPILE_KEY = "kady:latex:autocompile";
+
+export interface LatexEditorProps {
+  path: string;
+  name: string;
+  initialContent: string;
+  onSave: (content: string) => Promise<boolean>;
+  onCompile: (path: string, engine?: string) => Promise<LatexCompileResult>;
+  onDiscard: () => void;
+  onOpenFile?: (path: string) => void;
+}
+
+function isValidEngine(p: string | undefined): p is Engine {
+  return p === "pdflatex" || p === "xelatex" || p === "lualatex";
+}
+
+export function LatexEditor({
+  path,
+  name,
+  initialContent,
+  onSave,
+  onCompile,
+  onDiscard,
+}: LatexEditorProps) {
+  // --- document state: content lives in CodeMirror, not React state -------
+  const contentRef = useRef(initialContent);
+  const lastSavedRef = useRef(initialContent);
+  const viewRef = useRef<EditorView | null>(null);
+  const [isDirty, setIsDirty] = useState(false);
+
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [compiling, setCompiling] = useState(false);
+  const compilingRef = useRef(false);
+  const [engine, setEngine] = useState<Engine>(() => {
+    const p = parseMagicComments(initialContent).program;
+    return isValidEngine(p) ? p : "pdflatex";
+  });
+  const [pdfPath, setPdfPath] = useState<string | null>(null);
+  const [pdfKey, setPdfKey] = useState(0);
+  const [logText, setLogText] = useState<string | null>(null);
+  const [logFilter, setLogFilter] = useState<LogFilter>("all");
+  const [errorCount, setErrorCount] = useState(0);
+  const [warningCount, setWarningCount] = useState(0);
+  const [logOpen, setLogOpen] = useState(false);
+  const [splitPct, setSplitPct] = useState(50);
+  const [wordCount, setWordCount] = useState(() => proseWordCount(initialContent));
+  const [autoCompile, setAutoCompile] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem(AUTOCOMPILE_KEY) === "1",
+  );
+
+  const { resolvedTheme } = useTheme();
+  const isMac =
+    typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
+  const modKey = isMac ? "⌘" : "Ctrl+";
+
+  // Compile diagnostics pinned to the exact doc Text they were computed for;
+  // Text.eq() is cheap (structural), unlike toString() comparisons.
+  const diagRef = useRef<{
+    doc: Text;
+    items: { line: number; message: string; severity: "error" | "warning" }[];
+  } | null>(null);
+
+  const wordCountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleChange = useCallback((value: string) => {
+    contentRef.current = value;
+    setIsDirty(value !== lastSavedRef.current);
+    if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
+    wordCountTimer.current = setTimeout(() => setWordCount(proseWordCount(value)), 1000);
+  }, []);
+  useEffect(
+    () => () => {
+      if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
+    },
+    [],
+  );
+
+  // --- save / compile ------------------------------------------------------
+  const autoCompileRef = useRef(autoCompile);
+  autoCompileRef.current = autoCompile;
+
+  const doSave = useCallback(async (): Promise<boolean> => {
+    const content = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    setSaving(true);
+    const ok = await onSave(content);
+    setSaving(false);
+    if (ok) {
+      lastSavedRef.current = content;
+      contentRef.current = content;
+      setIsDirty(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    }
+    return ok;
+  }, [onSave]);
+
+  const handleCompile = useCallback(async () => {
+    if (compilingRef.current) return;
+    compilingRef.current = true;
+    setCompiling(true);
+    try {
+      const docText = viewRef.current?.state.doc.toString() ?? contentRef.current;
+      if (docText !== lastSavedRef.current) {
+        const ok = await doSave();
+        if (!ok) return;
+      }
+      const magic = parseMagicComments(docText);
+      const target = magic.root ? resolveRelative(path, magic.root) : path;
+      const result = await onCompile(target, engine);
+      setLogText(result.log);
+      const snapshot = viewRef.current?.state.doc ?? null;
+      const items = parseCompileDiagnostics(result.log ?? "", name);
+      if (snapshot) diagRef.current = { doc: snapshot, items };
+      setErrorCount(items.filter((i) => i.severity === "error").length || result.errors.length);
+      setWarningCount(items.filter((i) => i.severity === "warning").length);
+      if (viewRef.current) forceLinting(viewRef.current);
+      if (result.success && result.pdf_path) {
+        setPdfPath(result.pdf_path);
+        setPdfKey((k) => k + 1);
+        setLogOpen(false);
+      } else {
+        setLogOpen(true);
+      }
+    } finally {
+      compilingRef.current = false;
+      setCompiling(false);
+    }
+  }, [doSave, onCompile, path, engine, name]);
+
+  const handleSave = useCallback(async () => {
+    const ok = await doSave();
+    if (ok && autoCompileRef.current) void handleCompile();
+  }, [doSave, handleCompile]);
+
+  const handleSaveRef = useRef(handleSave);
+  const handleCompileRef = useRef(handleCompile);
+  handleSaveRef.current = handleSave;
+  handleCompileRef.current = handleCompile;
+
+  const toggleAutoCompile = useCallback(() => {
+    setAutoCompile((v) => {
+      localStorage.setItem(AUTOCOMPILE_KEY, v ? "0" : "1");
+      return !v;
+    });
+  }, []);
+
+  // --- snippet inserts ------------------------------------------------------
+  const handleSnippet = useCallback((action: SnippetAction) => {
+    const view = viewRef.current;
+    if (!view) return;
+    if (action.kind === "wrap") {
+      const { from, to } = view.state.selection.main;
+      view.dispatch({
+        changes: [
+          { from, insert: action.before },
+          { from: to, insert: action.after },
+        ],
+        selection: {
+          anchor: from + action.before.length,
+          head: to + action.before.length,
+        },
+      });
+    } else {
+      const line = view.state.doc.lineAt(view.state.selection.main.head);
+      const insert = (line.length > 0 ? "\n" : "") + action.text;
+      view.dispatch({
+        changes: { from: line.to, insert },
+        selection: { anchor: line.to + insert.length },
+      });
+    }
+    view.focus();
+  }, []);
+
+  // --- editor extensions ----------------------------------------------------
+  const texLang = useMemo(() => loadLanguage("tex"), []);
+
+  const texLinter = useMemo(
+    () =>
+      linter(
+        (view) => {
+          const snap = diagRef.current;
+          if (!snap || !snap.doc.eq(view.state.doc)) return [];
+          const doc = view.state.doc;
+          return snap.items.map((it): Diagnostic => {
+            const lineNo = Math.max(1, Math.min(it.line, doc.lines));
+            const ln = doc.line(lineNo);
+            return {
+              from: ln.from,
+              to: ln.to,
+              severity: it.severity,
+              message: it.message,
+            };
+          });
+        },
+        { delay: 300 },
+      ),
+    [],
+  );
+
+  const extensions = useMemo(() => {
+    return [
+      ...(texLang ? [texLang] : []),
+      EditorView.lineWrapping,
+      lintGutter(),
+      texLinter,
+      keymap.of([
+        { key: "Mod-s", run: () => { handleSaveRef.current(); return true; }, preventDefault: true },
+        { key: "Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
+        { key: "Shift-Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
+      ]),
+    ];
+  }, [texLang, texLinter]);
+
+  // --- resizable split pane ---------------------------------------------------
+  const dividerRef = useRef<HTMLDivElement>(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const parent = dividerRef.current?.parentElement;
+      if (!parent) return;
+      const rect = parent.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setSplitPct(Math.max(25, Math.min(75, pct)));
+    };
+    const onUp = () => setDragging(false);
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging]);
+
+  return (
+    <div className="flex h-full flex-col">
+      <LatexToolbar
+        compiling={compiling}
+        saving={saving}
+        saved={saved}
+        isDirty={isDirty}
+        engine={engine}
+        onEngineChange={setEngine}
+        onCompile={handleCompile}
+        onSave={handleSave}
+        onDiscard={onDiscard}
+        errorCount={errorCount}
+        warningCount={warningCount}
+        hasPdf={pdfPath !== null}
+        hasLog={logText !== null}
+        logOpen={logOpen}
+        onToggleLog={() => setLogOpen((v) => !v)}
+        autoCompile={autoCompile}
+        onToggleAutoCompile={toggleAutoCompile}
+        wordCount={wordCount}
+        modKey={modKey}
+        onSnippet={handleSnippet}
+      />
+
+      <div className={cn("flex flex-1 min-h-0", dragging && "select-none")}>
+        {/* Editor pane */}
+        <div className="flex min-w-0 flex-col overflow-hidden" style={{ width: `${splitPct}%` }}>
+          <div className="relative flex-1 min-h-0">
+            <div className="absolute inset-0">
+              <CodeMirror
+                value={initialContent}
+                onChange={handleChange}
+                onCreateEditor={(view) => { viewRef.current = view; }}
+                extensions={extensions}
+                theme={resolvedTheme === "dark" ? githubDark : githubLight}
+                height="100%"
+                className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
+                basicSetup={{
+                  lineNumbers: true,
+                  highlightActiveLine: true,
+                  foldGutter: true,
+                  autocompletion: false,
+                  bracketMatching: true,
+                  indentOnInput: true,
+                  tabSize: 2,
+                }}
+              />
+            </div>
+          </div>
+
+          <LogPanel
+            log={logText ?? ""}
+            open={logOpen}
+            onClose={() => setLogOpen(false)}
+            filter={logFilter}
+            onFilterChange={setLogFilter}
+          />
+        </div>
+
+        {/* Resize divider */}
+        <div
+          ref={dividerRef}
+          className="group relative z-10 flex w-1 shrink-0 cursor-col-resize items-center justify-center bg-border transition-colors hover:bg-blue-400 active:bg-blue-500"
+          onMouseDown={() => setDragging(true)}
+        >
+          <div className="h-8 w-0.5 rounded-full bg-muted-foreground/20 transition-colors group-hover:bg-blue-400" />
+        </div>
+
+        {/* PDF pane (iframe — replaced by LatexPdfPane in a later task) */}
+        <div className="flex min-w-0 flex-1 flex-col bg-muted/5">
+          {pdfPath ? (
+            <iframe
+              key={pdfKey}
+              src={`${rawFileUrl(pdfPath)}&_t=${pdfKey}`}
+              title="PDF Preview"
+              className="h-full w-full"
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+              <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/50">
+                <FileTextIcon className="size-6 text-muted-foreground/30" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">No PDF yet</p>
+                <p className="text-xs text-muted-foreground/60">
+                  Press{" "}
+                  <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">
+                    {modKey}↵
+                  </kbd>{" "}
+                  to compile
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
