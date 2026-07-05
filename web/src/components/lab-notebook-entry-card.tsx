@@ -34,6 +34,9 @@ export function LabNotebookEntryCard({
         <div className="flex items-center gap-2 text-xs">
           <meta.Icon className={`size-4 ${meta.chip}`} />
           <span className={`font-medium ${meta.chip}`}>{meta.label}</span>
+          <span className="text-[10px] text-muted-foreground">
+            {new Date(entry.timestamp).toLocaleTimeString()}
+          </span>
           {entry.confidence && (
             <span className="ml-auto rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide">
               {entry.confidence}

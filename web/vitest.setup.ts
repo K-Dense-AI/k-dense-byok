@@ -18,6 +18,13 @@ if (typeof globalThis.ResizeObserver === "undefined") {
   (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = ResizeObserver;
 }
 
+// jsdom also has no layout engine, so Element.prototype.scrollIntoView is
+// simply absent — components that auto-scroll (e.g. LabNotebookView) throw
+// on mount without this.
+if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView === "undefined") {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 if (typeof window !== "undefined" && typeof window.matchMedia === "undefined") {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
