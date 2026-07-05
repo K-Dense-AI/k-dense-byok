@@ -5,7 +5,7 @@ This guide covers everything you need for day-to-day work with Kady, your AI res
 ## Your first session
 
 1. **Create a project.** Each project is a self-contained workspace with its own files, chat history, and settings. Think of one project per study, paper, or analysis.
-2. **Upload your data** (optional). Drag files into the file browser on the left, or drop them directly onto the message box. CSVs, FASTA/FASTQ, VCF, PDFs, notebooks — most scientific formats are recognized and previewable.
+2. **Upload your data** (optional). Drag files into the file browser on the left, or drop them directly onto the message box. CSVs, PDFs, notebooks, genomics tables, molecular structures, mass spectra, imaging volumes — [60+ scientific formats](./file-previews.md) are recognized and previewable.
 3. **Ask for what you want in plain language.** For example:
    - *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
    - *"Summarize the methods sections of these three PDFs and compare their statistical approaches."*
@@ -35,7 +35,7 @@ Use the model dropdown in the input bar. Any message can use any tool-capable mo
 
 - **Upload:** drag files into the file browser or onto the input bar.
 - **Reference:** type `@filename` in a message to point Kady at a specific file.
-- **Preview:** click any file for a built-in viewer — code, Markdown (with math and diagrams), CSVs, PDFs, images, Jupyter notebooks, and bioinformatics formats (FASTA, FASTQ, VCF, BED, GFF, SAM, BCF).
+- **Preview:** click any file for a built-in viewer — code, Markdown (with math and diagrams), CSVs, PDFs, images, and Jupyter notebooks, plus a broad set of scientific formats: genomics (FASTA/FASTQ, VCF, BED/GFF/SAM, alignments, phylogenetic trees), chemistry (SMILES/MOL/SDF 2D depictions, interactive 3D PDB/mmCIF structures), mass spectra (mzML/MGF/JCAMP), data arrays (AnnData, HDF5, Parquet, NumPy, NetCDF), and bio-imaging (DICOM, NIfTI, TIFF). See the [full list](./file-previews.md).
 - **Download:** grab any result straight from the file browser.
 
 ### Workflow templates
