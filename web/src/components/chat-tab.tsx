@@ -546,10 +546,12 @@ function ChatInput({
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    const isOpen = mentionQuery !== null && filteredFiles.length > 0;
+    // An Enter consumed by the mention overlay must not record queue intent —
+    // the next submit may be a button click that can't overwrite the flag.
+    if (!isOpen && e.key === "Enter" && !e.shiftKey) {
       queueIntentRef.current = e.altKey;
     }
-    const isOpen = mentionQuery !== null && filteredFiles.length > 0;
     if (!isOpen) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -914,6 +916,10 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const queueIdCounter = useRef(0);
+  // Mirrored every render so async continuations (the steer fallback) read
+  // the CURRENT queue length, not the one closed over before the await.
+  const messageQueueLengthRef = useRef(0);
+  messageQueueLengthRef.current = messageQueue.length;
   const composerRestoreRef = useRef<((text: string) => void) | null>(null);
   const [steerError, setSteerError] = useState<string | null>(null);
 
@@ -1063,7 +1069,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         if (result === "ok") return;
         if (result === "not_streaming") {
           // The run ended while we typed: keep ordering behind any queue.
-          if (steerNotStreamingFallback(messageQueue.length) === "queue") enqueue(trimmed);
+          if (steerNotStreamingFallback(messageQueueLengthRef.current) === "queue") enqueue(trimmed);
           else void sendNow();
           return;
         }
@@ -1084,7 +1090,6 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       selectedDbs,
       selectedSkills,
       attachedFiles,
-      messageQueue.length,
     ],
   );
 
