@@ -7,6 +7,12 @@ import { breadcrumbFor, parseOutline, type OutlineItem } from "@/lib/latex/outli
 import { proseWordCount } from "@/lib/latex/prose";
 import { latexCompletionSource, scanBibFiles, scanBibKeys } from "@/lib/latex/completions";
 import { readSandboxFile } from "@/lib/latex/api";
+import {
+  createSpellWorker,
+  latexSpellLinter,
+  type SpellWorkerClient,
+} from "@/lib/latex/spellcheck";
+import { getActiveProjectId } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage } from "@uiw/codemirror-extensions-langs";
@@ -24,6 +30,7 @@ import { OutlinePanel } from "./outline-panel";
 
 const AUTOCOMPILE_KEY = "kady:latex:autocompile";
 const OUTLINE_KEY = "kady:latex:outline";
+const SPELLCHECK_KEY = "kady:latex:spellcheck";
 
 const LATEX_BASIC_SETUP = {
   lineNumbers: true,
@@ -89,6 +96,55 @@ export function LatexEditor({
   );
   const [cursorLine, setCursorLine] = useState(1);
   const breadcrumb = useMemo(() => breadcrumbFor(outline, cursorLine), [outline, cursorLine]);
+
+  // --- spell check ------------------------------------------------------
+  const [spellcheck, setSpellcheck] = useState(
+    () => typeof localStorage !== "undefined" && localStorage.getItem(SPELLCHECK_KEY) === "1",
+  );
+  const spellWorkerRef = useRef<SpellWorkerClient | null>(null);
+  const ignoredRef = useRef<Set<string>>(new Set());
+  const dictKey = `kady:latex:dict:${getActiveProjectId()}`;
+  const dictKeyRef = useRef(dictKey);
+  dictKeyRef.current = dictKey;
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(dictKeyRef.current);
+      if (raw) ignoredRef.current = new Set(JSON.parse(raw) as string[]);
+    } catch { /* corrupted store — start fresh */ }
+  }, []);
+
+  useEffect(() => {
+    if (!spellcheck) return;
+    spellWorkerRef.current = createSpellWorker();
+    return () => {
+      spellWorkerRef.current?.dispose();
+      spellWorkerRef.current = null;
+    };
+  }, [spellcheck]);
+
+  const addToDictionary = useCallback((word: string) => {
+    ignoredRef.current.add(word.toLowerCase());
+    localStorage.setItem(dictKeyRef.current, JSON.stringify([...ignoredRef.current]));
+    if (viewRef.current) forceLinting(viewRef.current);
+  }, []);
+
+  const toggleSpellcheck = useCallback(() => {
+    setSpellcheck((v) => {
+      localStorage.setItem(SPELLCHECK_KEY, v ? "0" : "1");
+      return !v;
+    });
+  }, []);
+
+  const spellExt = useMemo(
+    () =>
+      latexSpellLinter({
+        client: () => spellWorkerRef.current,
+        ignored: () => ignoredRef.current,
+        onAddWord: addToDictionary,
+      }),
+    [addToDictionary],
+  );
 
   const { resolvedTheme } = useTheme();
   const isMac =
@@ -302,6 +358,7 @@ export function LatexEditor({
         activateOnTyping: true,
         maxRenderedOptions: 60,
       }),
+      ...(spellcheck ? [spellExt] : []),
       texLinter,
       EditorView.updateListener.of((u) => {
         if (u.selectionSet) {
@@ -314,7 +371,7 @@ export function LatexEditor({
         { key: "Shift-Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
       ]),
     ];
-  }, [texLang, texLinter]);
+  }, [texLang, texLinter, spellcheck, spellExt]);
 
   // --- resizable split pane ---------------------------------------------------
   const dividerRef = useRef<HTMLDivElement>(null);
@@ -362,6 +419,8 @@ export function LatexEditor({
         onSnippet={handleSnippet}
         outlineOpen={outlineOpen}
         onToggleOutline={toggleOutline}
+        spellcheck={spellcheck}
+        onToggleSpellcheck={toggleSpellcheck}
       />
 
       <div className={cn("flex flex-1 min-h-0", dragging && "select-none")}>

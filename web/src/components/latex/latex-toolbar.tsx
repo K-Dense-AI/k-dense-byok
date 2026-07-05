@@ -12,6 +12,7 @@ import {
   LoaderCircleIcon,
   PlayIcon,
   PlusIcon,
+  SpellCheckIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -64,6 +65,8 @@ export interface LatexToolbarProps {
   onSnippet: (action: SnippetAction) => void;
   outlineOpen: boolean;
   onToggleOutline: () => void;
+  spellcheck: boolean;
+  onToggleSpellcheck: () => void;
 }
 
 export function LatexToolbar(p: LatexToolbarProps) {
@@ -184,6 +187,17 @@ export function LatexToolbar(p: LatexToolbarProps) {
         title="Toggle outline"
       >
         <ListTreeIcon className="size-3.5" />
+      </button>
+
+      <button
+        onClick={p.onToggleSpellcheck}
+        className={cn(
+          "rounded p-1 transition-colors hover:bg-muted",
+          p.spellcheck ? "text-foreground" : "text-muted-foreground",
+        )}
+        title="Toggle spell check"
+      >
+        <SpellCheckIcon className="size-3.5" />
       </button>
 
       {/* Status */}
