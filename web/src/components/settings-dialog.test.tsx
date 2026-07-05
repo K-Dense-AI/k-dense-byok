@@ -8,10 +8,11 @@ vi.mock("@/lib/use-projects", () => ({
 import { SettingsDialog } from "@/components/settings-dialog";
 
 describe("SettingsDialog", () => {
-  it("no longer shows MCP servers or Sub-agents tabs", () => {
+  it("shows the capability tabs (Skills, Specialists, Connectors) alongside API keys", () => {
     render(<SettingsDialog open onOpenChange={() => {}} />);
-    expect(screen.queryByRole("tab", { name: /mcp servers/i })).toBeNull();
-    expect(screen.queryByRole("tab", { name: /sub-agents/i })).toBeNull();
     expect(screen.getByRole("tab", { name: /api keys/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /skills/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /specialists/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /connectors/i })).toBeInTheDocument();
   });
 });

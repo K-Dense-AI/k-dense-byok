@@ -6,7 +6,6 @@ import type { Model } from "@/components/model-selector";
 import { ChatTab, type ChatTabHandle, type ChatTabMeta } from "@/components/chat-tab";
 import { ChatTabsBar, type ChatTabDescriptor } from "@/components/chat-tabs-bar";
 import { SettingsDialog } from "@/components/settings-dialog";
-import { CustomizeDialog } from "@/components/customize-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { SessionCostPill } from "@/components/session-cost-pill";
@@ -21,7 +20,6 @@ import {
   PanelLeftCloseIcon,
   PanelLeftIcon,
   SettingsIcon,
-  SlidersHorizontalIcon,
   SunIcon,
   MoonIcon,
 } from "lucide-react";
@@ -79,7 +77,6 @@ export default function ChatPage() {
   const [mounted, setMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [customizeOpen, setCustomizeOpen] = useState(false);
 
   // Chat tab management. We allocate the initial id once via useRef so it
   // stays stable across React's strict-mode double-invocation of
@@ -475,23 +472,6 @@ export default function ChatPage() {
           <InfoTooltip
             content={
               <>
-                <b>Customize</b>
-                <br />
-                Manage skills, specialists, and connectors available to the agent.
-              </>
-            }
-          >
-            <button
-              onClick={() => setCustomizeOpen(true)}
-              aria-label="Customize"
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              <SlidersHorizontalIcon className="size-4" />
-            </button>
-          </InfoTooltip>
-          <InfoTooltip
-            content={
-              <>
                 <b>Settings</b>
                 <br />
                 View API-key configuration and switch the appearance theme.
@@ -644,7 +624,6 @@ export default function ChatPage() {
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <CustomizeDialog open={customizeOpen} onOpenChange={setCustomizeOpen} />
     </div>
   );
 }

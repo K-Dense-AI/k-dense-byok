@@ -24,6 +24,9 @@ import {
   PencilIcon,
   Trash2Icon,
   BrainCircuitIcon,
+  LayersIcon,
+  BotIcon,
+  PlugIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/projects";
 import {
@@ -32,6 +35,9 @@ import {
   loadFusionConfigs,
   type StoredFusionConfig,
 } from "@/lib/fusion-presets";
+import { SkillsPanel } from "@/components/skills-panel";
+import { SubagentsPanel } from "@/components/subagents-panel";
+import { ConnectorsPanel } from "@/components/connectors-panel";
 
 type CredentialStatus = Record<string, { set: boolean; masked: string | null }>;
 
@@ -354,6 +360,27 @@ export function SettingsDialog({
               API keys
             </TabsTrigger>
             <TabsTrigger
+              value="skills"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <LayersIcon className="size-3.5" />
+              Skills
+            </TabsTrigger>
+            <TabsTrigger
+              value="specialists"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <BotIcon className="size-3.5" />
+              Specialists
+            </TabsTrigger>
+            <TabsTrigger
+              value="connectors"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <PlugIcon className="size-3.5" />
+              Connectors
+            </TabsTrigger>
+            <TabsTrigger
               value="fusion"
               className="justify-start gap-2 px-3 text-xs w-full"
             >
@@ -371,6 +398,15 @@ export function SettingsDialog({
 
           <TabsContent value="api-keys" className="flex-1 min-h-0 p-5">
             <ApiKeysPanel />
+          </TabsContent>
+          <TabsContent value="skills" className="flex-1 min-h-0 p-5 overflow-y-auto">
+            <SkillsPanel />
+          </TabsContent>
+          <TabsContent value="specialists" className="flex-1 min-h-0 p-5 overflow-y-auto">
+            <SubagentsPanel />
+          </TabsContent>
+          <TabsContent value="connectors" className="flex-1 min-h-0 p-5 overflow-y-auto">
+            <ConnectorsPanel />
           </TabsContent>
           <TabsContent value="appearance" className="flex-1 min-h-0 p-5">
             <AppearancePanel />
