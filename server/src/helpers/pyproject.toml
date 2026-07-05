@@ -13,4 +13,5 @@ dependencies = [
     "gemmi",
     "pyteomics",
     "lxml",
+    "psims",
 ]
