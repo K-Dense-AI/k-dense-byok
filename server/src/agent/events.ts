@@ -64,6 +64,24 @@ function resultText(s: unknown): string {
   return JSON.stringify(s ?? "");
 }
 
+/** Flatten a user message's content (string or content-part array) to plain
+ *  text. Image parts are dropped — the UI renders steered messages as text. */
+function userMessageText(message: unknown): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((p) =>
+        p && typeof p === "object" && (p as { type?: string }).type === "text"
+          ? String((p as { text?: unknown }).text ?? "")
+          : "",
+      )
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
 function cap(s: unknown, max = 4000): string {
   const str = resultText(s);
   return str.length > max ? str.slice(0, max) + "…" : str;
@@ -87,8 +105,15 @@ export function toClientFrame(
       const usage = (ev.message as { usage?: unknown }).usage;
       return { type: "turn_end", usage };
     }
-    case "message_start":
-      return { type: "message_start", role: (ev.message as { role?: string }).role };
+    case "message_start": {
+      const role = (ev.message as { role?: string }).role;
+      // User content marks the exact point a steered message was delivered
+      // into the run, so the client can split the transcript there.
+      if (role === "user") {
+        return { type: "message_start", role, content: userMessageText(ev.message) };
+      }
+      return { type: "message_start", role };
+    }
     case "message_end":
       return { type: "message_end", role: (ev.message as { role?: string }).role };
     case "message_update": {

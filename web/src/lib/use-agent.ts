@@ -75,6 +75,9 @@ export interface AgentFrame {
   result?: string;
   runCost?: number;
   runTokens?: number;
+  role?: string;
+  content?: string;
+  steering?: unknown;
   [k: string]: unknown;
 }
 
@@ -159,6 +162,65 @@ export function applyFrameToMessage(
   }
 }
 
+export interface TranscriptRunState {
+  /** Id of the assistant bubble frames currently apply to. */
+  assistantId: string;
+  /** True once the run's own prompt echoed back as a user message_start. */
+  sawPromptEcho: boolean;
+}
+
+export interface TranscriptResult {
+  messages: ChatMessage[];
+  state: TranscriptRunState;
+  /** Pending steering texts when the frame updated them; null otherwise. */
+  steering: string[] | null;
+}
+
+/**
+ * Apply one SSE frame to a run's transcript. Pure; returns the input
+ * `messages` reference when nothing changed so callers can skip re-renders.
+ * A user message_start after the initial prompt echo is a delivered steering
+ * message: it closes the current assistant bubble and opens a new one.
+ */
+export function applyFrameToTranscript(
+  messages: ChatMessage[],
+  state: TranscriptRunState,
+  frame: AgentFrame,
+  nextId: () => string,
+  now = Date.now(),
+): TranscriptResult {
+  if (frame.type === "queue_update") {
+    const steering = Array.isArray(frame.steering) ? frame.steering.map(String) : [];
+    return { messages, state, steering };
+  }
+  if (frame.type === "message_start" && frame.role === "user") {
+    if (!state.sawPromptEcho) {
+      return { messages, state: { ...state, sawPromptEcho: true }, steering: null };
+    }
+    const content = typeof frame.content === "string" ? frame.content : "";
+    if (!content.trim()) return { messages, state, steering: null };
+    const userId = nextId();
+    const assistantId = nextId();
+    return {
+      messages: [
+        ...messages,
+        { id: userId, role: "user", content, timestamp: now },
+        { id: assistantId, role: "assistant", content: "", timestamp: now },
+      ],
+      state: { ...state, assistantId },
+      steering: null,
+    };
+  }
+  let changed = false;
+  const next = messages.map((m) => {
+    if (m.id !== state.assistantId) return m;
+    const applied = applyFrameToMessage(m, frame, now);
+    if (applied !== m) changed = true;
+    return applied;
+  });
+  return { messages: changed ? next : messages, state, steering: null };
+}
+
 /** One transcript entry from GET /sessions/:id/history. */
 interface HistoryItem {
   role: "user" | "assistant";
@@ -170,8 +232,13 @@ interface HistoryItem {
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<Status>("ready");
+  const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // send() claims the tab synchronously BEFORE its first await: a loadSession
+  // resolving mid-run must not replace the transcript, because the run's
+  // plain-value setMessages(transcript) writes would clobber it.
+  const sendClaimRef = useRef(false);
   const messageCounter = useRef(0);
 
   const nextId = () => String(++messageCounter.current);
@@ -183,8 +250,9 @@ export function useAgent() {
    * emits, so the restored transcript renders identically.
    */
   const loadSession = useCallback(async (sessionId: string): Promise<boolean> => {
-    // Never swap the session out from under a tab that already has one.
-    if (sessionIdRef.current) return false;
+    // Never swap the session out from under a tab that already has one, or
+    // one where a send has already claimed the transcript.
+    if (sessionIdRef.current || sendClaimRef.current) return false;
     try {
       const res = await apiFetch(
         `/sessions/${encodeURIComponent(sessionId)}/history`,
@@ -192,8 +260,9 @@ export function useAgent() {
       if (!res.ok) return false;
       const data = (await res.json()) as { messages?: HistoryItem[] };
       // Re-check after the awaits: a message sent while the history fetch was
-      // in flight binds the tab to a fresh session, which must win.
-      if (sessionIdRef.current) return false;
+      // in flight claims the tab (and will bind a fresh session), which must
+      // win over hydration.
+      if (sessionIdRef.current || sendClaimRef.current) return false;
       const restored: ChatMessage[] = [];
       const fallbackTs = Date.now();
       for (const item of data.messages ?? []) {
@@ -245,6 +314,31 @@ export function useAgent() {
     return session.id as string;
   }, []);
 
+  /** Queue a message into the live run. "not_streaming" = the run ended
+   *  first; the caller should fall back to a normal send. */
+  const steer = useCallback(
+    async (text: string): Promise<"ok" | "not_streaming" | "error"> => {
+      const id = sessionIdRef.current;
+      if (!id) return "not_streaming";
+      try {
+        const res = await apiFetch(`/sessions/${id}/steer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { pending?: unknown };
+          if (Array.isArray(data.pending)) setPendingSteers(data.pending.map(String));
+          return "ok";
+        }
+        return res.status === 409 ? "not_streaming" : "error";
+      } catch {
+        return "error";
+      }
+    },
+    [],
+  );
+
   const send = useCallback(
     // The optional third arg (expert model / attachments / skills / databases)
     // is accepted for call-site compatibility but no longer used: the Pi
@@ -259,25 +353,21 @@ export function useAgent() {
       computeTarget?: string,
     ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
+      sendClaimRef.current = true;
 
       const userMsgId = nextId();
-      setMessages((prev) => [
-        ...prev,
-        { id: userMsgId, role: "user", content: text, timestamp: Date.now() },
-      ]);
-      setStatus("submitted");
-
       const assistantId = nextId();
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
-      ]);
-
-      const updateAssistant = (updater: (m: ChatMessage) => ChatMessage) => {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? updater(m) : m)),
-        );
-      };
+      let runState: TranscriptRunState = { assistantId, sawPromptEcho: false };
+      let transcript: ChatMessage[] = [];
+      setMessages((prev) => {
+        transcript = [
+          ...prev,
+          { id: userMsgId, role: "user", content: text, timestamp: Date.now() },
+          { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
+        ];
+        return transcript;
+      });
+      setStatus("submitted");
 
       try {
         const sessionId = await ensureSession();
@@ -324,31 +414,53 @@ export function useAgent() {
             if (!jsonStr) continue;
             try {
               const frame = JSON.parse(jsonStr) as AgentFrame;
-              updateAssistant((m) => applyFrameToMessage(m, frame));
+              const r = applyFrameToTranscript(transcript, runState, frame, nextId);
+              transcript = r.messages;
+              runState = r.state;
+              if (r.steering) setPendingSteers(r.steering);
+              setMessages(transcript);
             } catch {
               /* skip malformed line */
             }
           }
         }
 
-        updateAssistant((m) => ({
-          ...m,
-          activities: (m.activities ?? []).map((a) =>
-            a.status === "running" ? { ...a, status: "complete" } : a,
-          ),
-        }));
+        transcript = transcript.map((m) =>
+          m.role === "assistant" && m.activities?.some((a) => a.status === "running")
+            ? {
+                ...m,
+                activities: m.activities.map((a) =>
+                  a.status === "running" ? { ...a, status: "complete" as const } : a,
+                ),
+              }
+            : m,
+        );
+        setMessages(transcript);
+        setPendingSteers([]);
         setStatus("ready");
       } catch (err: unknown) {
         const aborted = err instanceof DOMException && err.name === "AbortError";
-        updateAssistant((m) => ({
-          ...m,
-          content: aborted ? m.content : m.content || "Something went wrong. Please try again.",
-          activities: (m.activities ?? []).map((a) =>
-            a.status === "running" ? { ...a, status: aborted ? "complete" : "error" } : a,
-          ),
-        }));
+        transcript = transcript.map((m) => {
+          const isCurrent = m.id === runState.assistantId;
+          const activities = (m.activities ?? []).map((a) =>
+            a.status === "running"
+              ? { ...a, status: (aborted ? "complete" : "error") as ActivityItem["status"] }
+              : a,
+          );
+          if (!isCurrent) return m.activities ? { ...m, activities } : m;
+          return {
+            ...m,
+            content: aborted
+              ? m.content
+              : m.content || "Something went wrong. Please try again.",
+            activities,
+          };
+        });
+        setMessages(transcript);
+        setPendingSteers([]);
         setStatus(aborted ? "ready" : "error");
       } finally {
+        sendClaimRef.current = false;
         abortRef.current = null;
       }
 
@@ -357,16 +469,30 @@ export function useAgent() {
     [status, ensureSession],
   );
 
-  const stop = useCallback(() => {
+  const stop = useCallback(async (): Promise<string[]> => {
     abortRef.current?.abort();
     const id = sessionIdRef.current;
-    if (id) void apiFetch(`/sessions/${id}/abort`, { method: "POST" }).catch(() => {});
+    let restored: string[] = [];
+    if (id) {
+      try {
+        const res = await apiFetch(`/sessions/${id}/abort`, { method: "POST" });
+        if (res.ok) {
+          const data = (await res.json()) as { restored?: unknown };
+          if (Array.isArray(data.restored)) restored = data.restored.map(String);
+        }
+      } catch {
+        /* abort is best-effort; restore is a bonus */
+      }
+    }
+    setPendingSteers([]);
     setStatus("ready");
+    return restored;
   }, []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
+    setPendingSteers([]);
     setStatus("ready");
     sessionIdRef.current = null;
   }, []);
@@ -375,5 +501,5 @@ export function useAgent() {
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 
-  return { messages, status, send, stop, reset, getSessionId, loadSession };
+  return { messages, status, send, stop, reset, getSessionId, loadSession, steer, pendingSteers };
 }

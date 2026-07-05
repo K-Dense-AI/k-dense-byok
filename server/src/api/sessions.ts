@@ -183,9 +183,60 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
   app.post<{ Params: { id: string } }>("/sessions/:id/abort", async (req) => {
     const session = await getSession(currentProjectId(), activePaths(), req.params.id);
-    if (session) await session.abort();
-    return { ok: true };
+    if (!session) return { ok: true, restored: [] };
+    // Clear BEFORE abort so a pending steer can't be delivered into the
+    // dying loop; the texts go back to the composer client-side.
+    const cleared = session.clearQueue();
+    await session.abort();
+    return { ok: true, restored: [...cleared.steering, ...cleared.followUp] };
   });
+
+  // Steering side-channel: queue a message into the LIVE run (delivered by Pi
+  // after the current tool calls, before the next LLM call). Never creates a
+  // run or an SSE stream — the /run stream carries the delivery + queue_update
+  // frames. 409 reason "not_streaming" tells the client to fall back to a
+  // normal run.
+  app.post<{ Params: { id: string }; Body: { message?: string } }>(
+    "/sessions/:id/steer",
+    async (req, reply) => {
+      const projectId = currentProjectId();
+      const session = await getSession(projectId, activePaths(), req.params.id);
+      if (!session) {
+        reply.code(404);
+        return { detail: "No such session" };
+      }
+      const message = req.body?.message;
+      if (!message || !message.trim()) {
+        reply.code(400);
+        return { detail: "message is required" };
+      }
+      if (!session.isStreaming) {
+        reply.code(409);
+        return { detail: "No run in flight", reason: "not_streaming" };
+      }
+      // A steer extends a live run's spend past what the run-start check
+      // gated, so re-check the cap here.
+      const budget = isBudgetExceeded(projectId);
+      if (budget.exceeded) {
+        reply.code(403);
+        return {
+          detail:
+            `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+            `$${(budget.limitUsd ?? 0).toFixed(2)}).`,
+          reason: "budget",
+        };
+      }
+      await session.steer(message);
+      // The run can end between the guard and the queue write; a steer left
+      // behind would silently deliver into the NEXT run, so pull it back out.
+      if (!session.isStreaming) {
+        session.clearQueue();
+        reply.code(409);
+        return { detail: "Run ended before the message was delivered", reason: "not_streaming" };
+      }
+      return { ok: true, pending: [...session.getSteeringMessages()] };
+    },
+  );
 
   app.post<{ Params: { id: string }; Body: RunBody }>(
     "/sessions/:id/run",

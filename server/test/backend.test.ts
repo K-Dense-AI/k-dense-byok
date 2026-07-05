@@ -306,6 +306,38 @@ describe("events → client frames", () => {
     );
     expect(frame).toMatchObject({ type: "tool_start", args: { path: "notes.md" } });
   });
+
+  it("includes content on user message_start (string and content-array forms)", () => {
+    expect(
+      toClientFrame({
+        type: "message_start",
+        message: { role: "user", content: "exclude sample 7" },
+      } as never),
+    ).toEqual({ type: "message_start", role: "user", content: "exclude sample 7" });
+
+    expect(
+      toClientFrame({
+        type: "message_start",
+        message: {
+          role: "user",
+          content: [
+            { type: "text", text: "look at" },
+            { type: "image", data: "…", mimeType: "image/png" },
+            { type: "text", text: "plot.png" },
+          ],
+        },
+      } as never),
+    ).toEqual({ type: "message_start", role: "user", content: "look at\nplot.png" });
+  });
+
+  it("omits content on assistant message_start", () => {
+    expect(
+      toClientFrame({
+        type: "message_start",
+        message: { role: "assistant", content: "internal" },
+      } as never),
+    ).toEqual({ type: "message_start", role: "assistant" });
+  });
 });
 
 describe("web access bridge", () => {
