@@ -18,11 +18,12 @@ import { currentProjectId } from "../scope.ts";
 import { guessMime, isUserVisible, safePath, SandboxError } from "../sandbox-fs.ts";
 import { helperPython } from "../helpers-env.ts";
 import { sciHelperFor, runSciHelper } from "./sci-helpers.ts";
+import { LATEX_ENGINES, compileLatex } from "../latex/compile.ts";
+import { synctexAvailable, synctexForward, synctexInverse } from "../latex/synctex.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
 const MAX_PREVIEW_BYTES = 512_000;
-const VALID_ENGINES = new Set(["pdflatex", "xelatex", "lualatex"]);
 
 interface TreeNode {
   name: string;
@@ -559,7 +560,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.post<{ Body: { path?: string; engine?: string } }>("/sandbox/compile-latex", async (req, reply) => {
     try {
       const engine = req.body.engine || "pdflatex";
-      if (!VALID_ENGINES.has(engine)) {
+      if (!LATEX_ENGINES.has(engine)) {
         reply.code(400);
         return { detail: `Unsupported engine: ${engine}` };
       }
@@ -568,35 +569,68 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Not a .tex file" };
       }
-      const workDir = path.dirname(target);
-      const stem = path.basename(target).replace(/\.(tex|latex)$/, "");
-      const pdfPath = path.join(workDir, stem + ".pdf");
-      const hasLatexmk = spawnSync("which", ["latexmk"]).status === 0;
-      const cmd = hasLatexmk
-        ? ["latexmk", `-${engine}`, "-interaction=nonstopmode", "-cd", "-file-line-error", target]
-        : [engine, "-interaction=nonstopmode", "-file-line-error", path.basename(target)];
-      const res = spawnSync(cmd[0], cmd.slice(1), {
-        cwd: workDir,
-        encoding: "utf-8",
-        timeout: 60_000,
-        maxBuffer: 16 * 1024 * 1024,
-      });
-      if (res.error && (res.error as NodeJS.ErrnoException).code === "ETIMEDOUT") {
-        return { success: false, pdf_path: null, log: "Compilation timed out after 60 seconds.", errors: ["Timeout"] };
+      return await compileLatex(target, engine, activePaths().sandbox);
+    } catch (err) {
+      return handle(reply, err);
+    }
+  });
+
+  // --- SyncTeX source<->PDF mapping ---
+  app.get<{
+    Querystring: {
+      dir?: string; path?: string; pdf?: string;
+      line?: string; col?: string; page?: string; x?: string; y?: string;
+    };
+  }>("/sandbox/synctex", async (req, reply) => {
+    try {
+      if (!synctexAvailable()) {
+        reply.code(424);
+        return { detail: "synctex-unavailable" };
       }
-      if (res.error && (res.error as NodeJS.ErrnoException).code === "ENOENT") {
-        return { success: false, pdf_path: null, log: `LaTeX compiler not found. Install TeX Live or add ${engine} to PATH.`, errors: [`${engine} not found`] };
+      const q = req.query;
+      const pdfAbs = safePath(q.pdf || "");
+      if (!fs.existsSync(pdfAbs)) {
+        reply.code(404);
+        return { detail: "no-result" };
       }
-      const log = `${res.stdout || ""}${res.stderr || ""}`;
-      const errors = [...log.matchAll(/^! (.+)/gm)].map((m) => m[1]);
-      const success = res.status === 0 && fs.existsSync(pdfPath);
-      const root = activePaths().sandbox;
-      return {
-        success,
-        pdf_path: fs.existsSync(pdfPath) ? path.relative(root, pdfPath) : null,
-        log: log.length > 8000 ? log.slice(-8000) : log,
-        errors,
-      };
+      if (q.dir === "forward") {
+        const texAbs = safePath(q.path || "");
+        const line = parseInt(q.line || "", 10);
+        const col = parseInt(q.col || "0", 10) || 0;
+        if (!fs.existsSync(texAbs) || !Number.isFinite(line)) {
+          reply.code(400);
+          return { detail: "Bad forward-sync request" };
+        }
+        const box = await synctexForward(texAbs, line, col, pdfAbs);
+        if (!box) {
+          reply.code(404);
+          return { detail: "no-result" };
+        }
+        return box;
+      }
+      if (q.dir === "inverse") {
+        const page = parseInt(q.page || "", 10);
+        const x = parseFloat(q.x || "");
+        const y = parseFloat(q.y || "");
+        if (![page, x, y].every(Number.isFinite)) {
+          reply.code(400);
+          return { detail: "Bad inverse-sync request" };
+        }
+        const loc = await synctexInverse(pdfAbs, page, x, y);
+        if (!loc) {
+          reply.code(404);
+          return { detail: "no-result" };
+        }
+        const root = activePaths().sandbox;
+        const rel = path.relative(root, path.resolve(loc.file));
+        return {
+          file: rel.startsWith("..") ? null : rel,
+          line: loc.line,
+          column: loc.column,
+        };
+      }
+      reply.code(400);
+      return { detail: "dir must be forward or inverse" };
     } catch (err) {
       return handle(reply, err);
     }
