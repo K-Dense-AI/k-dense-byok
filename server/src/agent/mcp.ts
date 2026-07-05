@@ -29,6 +29,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
 import type { ProjectPaths } from "../projects.ts";
+import type { ToggleResult } from "./capability-state.ts";
 
 export interface StdioServerConfig {
   command: string;
@@ -220,6 +221,67 @@ export function writeMcpConfig(
   const tmp = file + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify({ mcpServers: servers }, null, 2) + "\n", "utf-8");
   fs.renameSync(tmp, file);
+}
+
+function mcpDisabledPath(paths: ProjectPaths): string {
+  return path.join(paths.sandbox, ".pi", "mcp-disabled.json");
+}
+
+/** Parsed disabled-server map for a project ({} when missing/malformed). */
+export function readMcpDisabled(paths: ProjectPaths): Record<string, McpServerConfig> {
+  try {
+    return parseConfig(fs.readFileSync(mcpDisabledPath(paths), "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+/** Persist the disabled-server map (atomic write), mirroring mcp.json's shape. */
+export function writeMcpDisabled(
+  paths: ProjectPaths,
+  servers: Record<string, McpServerConfig>,
+): void {
+  const file = mcpDisabledPath(paths);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify({ mcpServers: servers }, null, 2) + "\n", "utf-8");
+  fs.renameSync(tmp, file);
+}
+
+function moveServer(
+  paths: ProjectPaths,
+  name: string,
+  from: "enabled" | "disabled",
+): ToggleResult {
+  const enabled = readMcpConfig(paths);
+  const disabled = readMcpDisabled(paths);
+  const src = from === "enabled" ? enabled : disabled;
+  const dst = from === "enabled" ? disabled : enabled;
+  if (!(name in src)) {
+    return { ok: false, status: 404, detail: `No ${from} connector named "${name}"` };
+  }
+  dst[name] = src[name];
+  delete src[name];
+  // Write the destination first so a crash between the two writes leaves a
+  // recoverable duplicate rather than losing the server config entirely.
+  if (from === "enabled") {
+    writeMcpDisabled(paths, disabled);
+    writeMcpConfig(paths, enabled);
+  } else {
+    writeMcpConfig(paths, enabled);
+    writeMcpDisabled(paths, disabled);
+  }
+  return { ok: true };
+}
+
+/** Move an enabled server into the disabled store (keeps its config + token). */
+export function disableMcpServer(paths: ProjectPaths, name: string): ToggleResult {
+  return moveServer(paths, name, "enabled");
+}
+
+/** Move a disabled server back into mcp.json. */
+export function enableMcpServer(paths: ProjectPaths, name: string): ToggleResult {
+  return moveServer(paths, name, "disabled");
 }
 
 /** Dial a server config once and report its tools; always closes the client. */

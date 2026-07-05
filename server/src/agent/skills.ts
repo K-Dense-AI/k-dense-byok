@@ -16,6 +16,7 @@ import path from "node:path";
 import { loadSkillsFromDir, type Skill } from "@earendil-works/pi-coding-agent";
 import { PROJECTS_ROOT } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
+import type { ToggleResult } from "./capability-state.ts";
 
 const SKILLS_REPO = process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
 const SKILLS_SUBPATH = "skills";
@@ -103,4 +104,59 @@ export function seedProjectSkills(paths: ProjectPaths, allowRemote = true): numb
 export function listProjectSkills(paths: ProjectPaths): Skill[] {
   if (!fs.existsSync(paths.skillsDir)) return [];
   return loadSkillsFromDir({ dir: paths.skillsDir, source: "project" }).skills;
+}
+
+/** Skill directory names: no separators, no dot-dot. */
+export const SKILL_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+
+export function skillsDisabledDir(paths: ProjectPaths): string {
+  return path.join(paths.sandbox, ".pi", "skills-disabled");
+}
+
+/** Installed-but-disabled skills (parsed SKILL.md frontmatter). */
+export function listDisabledSkills(paths: ProjectPaths): Skill[] {
+  const dir = skillsDisabledDir(paths);
+  if (!fs.existsSync(dir)) return [];
+  return loadSkillsFromDir({ dir, source: "project" }).skills;
+}
+
+/** Raw SKILL.md text from whichever location holds the skill; null if absent. */
+export function readSkillSource(paths: ProjectPaths, name: string): string | null {
+  if (!SKILL_NAME_RE.test(name)) return null;
+  for (const base of [paths.skillsDir, skillsDisabledDir(paths)]) {
+    const f = path.join(base, name, "SKILL.md");
+    if (fs.existsSync(f)) {
+      try {
+        return fs.readFileSync(f, "utf-8");
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+  return null;
+}
+
+function moveSkill(fromDir: string, toDir: string, name: string): ToggleResult {
+  if (!SKILL_NAME_RE.test(name)) {
+    return { ok: false, status: 400, detail: `Invalid skill name "${name}"` };
+  }
+  const src = path.join(fromDir, name);
+  const dest = path.join(toDir, name);
+  if (!fs.existsSync(path.join(src, "SKILL.md"))) {
+    return { ok: false, status: 404, detail: `No such skill in this state: "${name}"` };
+  }
+  if (fs.existsSync(dest)) {
+    return { ok: false, status: 409, detail: `A skill named "${name}" already exists at the target` };
+  }
+  fs.mkdirSync(toDir, { recursive: true });
+  fs.renameSync(src, dest);
+  return { ok: true };
+}
+
+export function disableSkill(paths: ProjectPaths, name: string): ToggleResult {
+  return moveSkill(paths.skillsDir, skillsDisabledDir(paths), name);
+}
+
+export function enableSkill(paths: ProjectPaths, name: string): ToggleResult {
+  return moveSkill(skillsDisabledDir(paths), paths.skillsDir, name);
 }

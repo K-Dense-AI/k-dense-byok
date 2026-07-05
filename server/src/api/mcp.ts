@@ -9,7 +9,10 @@
 import type { FastifyInstance } from "fastify";
 import { activePaths } from "../projects.ts";
 import {
+  disableMcpServer,
+  enableMcpServer,
   readMcpConfig,
+  readMcpDisabled,
   testMcpServer,
   writeMcpConfig,
   type McpServerConfig,
@@ -60,7 +63,34 @@ function isStringRecord(value: unknown): value is Record<string, string> {
 
 export async function registerMcpRoutes(app: FastifyInstance): Promise<void> {
   app.get("/mcp", async () => {
-    return { mcpServers: readMcpConfig(activePaths()) };
+    const paths = activePaths();
+    return { mcpServers: readMcpConfig(paths), disabledServers: readMcpDisabled(paths) };
+  });
+
+  app.post<{ Params: { name: string } }>("/mcp/:name/enable", async (req, reply) => {
+    if (!NAME_RE.test(req.params.name)) {
+      reply.code(400);
+      return { detail: `Invalid server name "${req.params.name}"` };
+    }
+    const r = enableMcpServer(activePaths(), req.params.name);
+    if (!r.ok) {
+      reply.code(r.status);
+      return { detail: r.detail };
+    }
+    return { ok: true };
+  });
+
+  app.post<{ Params: { name: string } }>("/mcp/:name/disable", async (req, reply) => {
+    if (!NAME_RE.test(req.params.name)) {
+      reply.code(400);
+      return { detail: `Invalid server name "${req.params.name}"` };
+    }
+    const r = disableMcpServer(activePaths(), req.params.name);
+    if (!r.ok) {
+      reply.code(r.status);
+      return { detail: r.detail };
+    }
+    return { ok: true };
   });
 
   app.put<{ Body: { mcpServers?: Record<string, unknown> } }>("/mcp", async (req, reply) => {

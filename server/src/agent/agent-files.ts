@@ -20,6 +20,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type { ProjectPaths } from "../projects.ts";
 import { SUBAGENT_TYPES } from "./subagents.ts";
+import { readPiSettings, writePiSettings, type ToggleResult } from "./capability-state.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -31,6 +32,8 @@ export interface AgentFile {
   description: string;
   /** Where the definition lives. Only "project" agents are editable. */
   source: "project" | "builtin";
+  /** Whether this agent is active for new sessions (hub toggle). */
+  enabled?: boolean;
   model?: string;
   thinking?: string;
   /** Comma-separated tool allowlist, as authored (e.g. "read, grep, bash"). */
@@ -48,6 +51,57 @@ export type AgentFilePatch = Omit<AgentFile, "name" | "source">;
 
 function agentsDir(paths: ProjectPaths): string {
   return path.join(paths.sandbox, ".pi", "agents");
+}
+
+export function agentsDisabledDir(paths: ProjectPaths): string {
+  return path.join(paths.sandbox, ".pi", "agents-disabled");
+}
+
+/** Project agents parked in the disabled store (source "project"). */
+export function listDisabledProjectAgents(paths: ProjectPaths): AgentFile[] {
+  const dir = agentsDisabledDir(paths);
+  let entries: string[];
+  try {
+    entries = fs.readdirSync(dir).filter((f) => f.endsWith(".md"));
+  } catch {
+    return [];
+  }
+  return entries
+    .sort()
+    .map((f) => readAgentFile(path.join(dir, f), "project"))
+    .filter((a): a is AgentFile => a !== null);
+}
+
+/** Builtin names that are disabled via .pi/settings.json (subagents.*). */
+export function builtinDisabledNames(paths: ProjectPaths): Set<string> {
+  const settings = readPiSettings(paths);
+  const sub = (settings.subagents ?? {}) as Record<string, unknown>;
+  const bulk = sub.disableBuiltins === true;
+  const overrides = (sub.agentOverrides ?? {}) as Record<string, { disabled?: boolean }>;
+  const out = new Set<string>();
+  for (const b of listBuiltinAgents()) {
+    const ov = overrides[b.name];
+    const disabled = ov?.disabled === true || (bulk && ov?.disabled !== false);
+    if (disabled) out.add(b.name);
+  }
+  return out;
+}
+
+/** Set/clear a builtin's disabled override, preserving all other settings keys. */
+export function setBuiltinDisabled(paths: ProjectPaths, name: string, disabled: boolean): void {
+  const settings = readPiSettings(paths);
+  const sub =
+    settings.subagents && typeof settings.subagents === "object" && !Array.isArray(settings.subagents)
+      ? { ...(settings.subagents as Record<string, unknown>) }
+      : {};
+  const overrides =
+    sub.agentOverrides && typeof sub.agentOverrides === "object" && !Array.isArray(sub.agentOverrides)
+      ? { ...(sub.agentOverrides as Record<string, unknown>) }
+      : {};
+  overrides[name] = { ...((overrides[name] as Record<string, unknown>) ?? {}), disabled };
+  sub.agentOverrides = overrides;
+  settings.subagents = sub;
+  writePiSettings(paths, settings);
 }
 
 /** Marker that initial seeding ran; its presence makes user deletions stick. */
@@ -185,15 +239,23 @@ export function listBuiltinAgents(): AgentFile[] {
 }
 
 /**
- * Full roster for the UI: project agents plus builtins that aren't shadowed
- * by a project agent of the same name (project definitions win in
- * pi-subagents' discovery order).
+ * Full roster for the UI: project agents (enabled + disabled) plus builtins
+ * that aren't shadowed by a project agent of the same name (project
+ * definitions win in pi-subagents' discovery order). Every entry has
+ * `enabled` set.
  */
 export function listAgents(paths: ProjectPaths): AgentFile[] {
-  const project = listProjectAgents(paths);
-  const names = new Set(project.map((a) => a.name));
-  const builtins = listBuiltinAgents().filter((a) => !names.has(a.name));
-  return [...project, ...builtins];
+  const enabledProject = listProjectAgents(paths).map((a) => ({ ...a, enabled: true }));
+  const enabledNames = new Set(enabledProject.map((a) => a.name));
+  const disabledProject = listDisabledProjectAgents(paths)
+    .filter((a) => !enabledNames.has(a.name))
+    .map((a) => ({ ...a, enabled: false }));
+  const projectNames = new Set([...enabledProject, ...disabledProject].map((a) => a.name));
+  const disabledBuiltins = builtinDisabledNames(paths);
+  const builtins = listBuiltinAgents()
+    .filter((a) => !projectNames.has(a.name))
+    .map((a) => ({ ...a, enabled: !disabledBuiltins.has(a.name) }));
+  return [...enabledProject, ...disabledProject, ...builtins];
 }
 
 // --- mutations ---------------------------------------------------------------
@@ -211,18 +273,74 @@ export function writeProjectAgent(
     throw new Error(`thinking must be one of: ${THINKING_LEVELS.join(", ")}`);
   }
   const agent: AgentFile = { ...patch, name, source: "project" };
-  const dir = agentsDir(paths);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${name}.md`), serializeAgentMarkdown(agent), "utf-8");
+  const enabledFile = path.join(agentsDir(paths), `${name}.md`);
+  const disabledFile = path.join(agentsDisabledDir(paths), `${name}.md`);
+  // Preserve disabled state when editing an agent that currently lives in the
+  // disabled store; otherwise (new agent, or an enabled one) write to agents/.
+  const target =
+    !fs.existsSync(enabledFile) && fs.existsSync(disabledFile) ? disabledFile : enabledFile;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, serializeAgentMarkdown(agent), "utf-8");
   return agent;
 }
 
 export function deleteProjectAgent(paths: ProjectPaths, name: string): boolean {
   if (!AGENT_NAME_RE.test(name)) return false;
-  const file = path.join(agentsDir(paths), `${name}.md`);
-  if (!fs.existsSync(file)) return false;
-  fs.rmSync(file);
-  return true;
+  let removed = false;
+  for (const f of [
+    path.join(agentsDir(paths), `${name}.md`),
+    path.join(agentsDisabledDir(paths), `${name}.md`),
+  ]) {
+    if (fs.existsSync(f)) {
+      fs.rmSync(f);
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+/**
+ * Enable/disable a specialist for new sessions.
+ *  - Project agent: relocate its .md between agents/ and agents-disabled/.
+ *  - Builtin (pi-subagents package): set subagents.agentOverrides.<name>.disabled.
+ * A name that shadows a builtin sets both, so runtime discovery stays consistent.
+ */
+export function setSpecialistEnabled(
+  paths: ProjectPaths,
+  name: string,
+  enabled: boolean,
+): ToggleResult {
+  if (!AGENT_NAME_RE.test(name)) {
+    return { ok: false, status: 400, detail: `Invalid agent name "${name}"` };
+  }
+  const projFile = path.join(agentsDir(paths), `${name}.md`);
+  const disFile = path.join(agentsDisabledDir(paths), `${name}.md`);
+  const isProject = fs.existsSync(projFile) || fs.existsSync(disFile);
+  const isBuiltin = listBuiltinAgents().some((b) => b.name === name);
+  if (!isProject && !isBuiltin) {
+    return { ok: false, status: 404, detail: `No such specialist: ${name}` };
+  }
+
+  if (enabled) {
+    if (fs.existsSync(disFile)) {
+      if (fs.existsSync(projFile)) {
+        return { ok: false, status: 409, detail: `"${name}" already has an enabled definition` };
+      }
+      fs.mkdirSync(agentsDir(paths), { recursive: true });
+      fs.renameSync(disFile, projFile);
+    }
+    if (isBuiltin) setBuiltinDisabled(paths, name, false);
+  } else {
+    if (fs.existsSync(projFile)) {
+      if (fs.existsSync(disFile)) {
+        return { ok: false, status: 409, detail: `"${name}" already has a disabled definition` };
+      }
+      fs.mkdirSync(agentsDisabledDir(paths), { recursive: true });
+      fs.renameSync(projFile, disFile);
+    }
+    if (isBuiltin) setBuiltinDisabled(paths, name, true);
+  }
+  return { ok: true };
 }
 
 // --- seeding ------------------------------------------------------------------
@@ -267,6 +385,8 @@ export function restoreDefaultAgents(paths: ProjectPaths): string[] {
   const dir = agentsDir(paths);
   fs.mkdirSync(dir, { recursive: true });
   for (const type of SUBAGENT_TYPES) {
+    const disabledCopy = path.join(agentsDisabledDir(paths), `${type.name}.md`);
+    if (fs.existsSync(disabledCopy)) fs.rmSync(disabledCopy);
     fs.writeFileSync(path.join(dir, `${type.name}.md`), rosterMarkdown(type), "utf-8");
   }
   fs.writeFileSync(seedMarkerPath(paths), new Date().toISOString() + "\n", "utf-8");

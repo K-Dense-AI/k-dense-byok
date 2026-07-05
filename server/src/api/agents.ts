@@ -20,6 +20,7 @@ import {
   listAgents,
   restoreDefaultAgents,
   seedAgentFiles,
+  setSpecialistEnabled,
   writeProjectAgent,
   type AgentFilePatch,
 } from "../agent/agent-files.ts";
@@ -99,5 +100,23 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
   app.post("/agents/restore-defaults", async () => {
     const restored = restoreDefaultAgents(activePaths());
     return { ok: true, restored };
+  });
+
+  app.post<{ Params: { name: string } }>("/agents/:name/enable", async (req, reply) => {
+    const r = setSpecialistEnabled(activePaths(), req.params.name, true);
+    if (!r.ok) {
+      reply.code(r.status);
+      return { detail: r.detail };
+    }
+    return { ok: true };
+  });
+
+  app.post<{ Params: { name: string } }>("/agents/:name/disable", async (req, reply) => {
+    const r = setSpecialistEnabled(activePaths(), req.params.name, false);
+    if (!r.ok) {
+      reply.code(r.status);
+      return { detail: r.detail };
+    }
+    return { ok: true };
   });
 }
