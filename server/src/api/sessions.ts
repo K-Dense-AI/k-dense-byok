@@ -20,6 +20,7 @@ import {
 } from "../agent/interview.ts";
 import { setSessionComputeTarget } from "../agent/modal-tool.ts";
 import { resolveModel } from "../agent/models.ts";
+import { readNotebookEntries } from "../agent/notebook-store.ts";
 import {
   findSessionFile,
   toNotebook,
@@ -112,6 +113,15 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     } catch (err) {
       reply.code(400);
       return { detail: (err as Error).message };
+    }
+  });
+
+  app.get<{ Params: { id: string } }>("/sessions/:id/notebook", async (req, reply) => {
+    try {
+      return { entries: readNotebookEntries(req.params.id, currentProjectId()) };
+    } catch (exc) {
+      reply.code(400);
+      return { detail: (exc as Error).message };
     }
   });
 
