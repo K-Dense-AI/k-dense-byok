@@ -12,7 +12,9 @@ import {
   fetchSynctexInverse,
   LatexAssistError,
   postLatexAssist,
+  type LatexAssistResult,
 } from "@/lib/latex/api";
+import { prefillChat } from "@/lib/chat-prefill";
 import { buildFixPayload, extractPreamble, lineRangeToOffsets } from "@/lib/latex/assist-helpers";
 import {
   createSpellWorker,
@@ -26,12 +28,12 @@ import { loadLanguage } from "@uiw/codemirror-extensions-langs";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
 import { getOriginalDoc, unifiedMergeView } from "@codemirror/merge";
 import { keymap } from "@codemirror/view";
-import type { Text } from "@codemirror/state";
+import { Compartment, type Text } from "@codemirror/state";
 import { autocompletion } from "@codemirror/autocomplete";
 import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/lint";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SparklesIcon } from "lucide-react";
+import { LoaderCircleIcon, SparklesIcon } from "lucide-react";
 import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
 import { LogPanel, type LogFilter } from "./log-panel";
 import { OutlinePanel } from "./outline-panel";
@@ -119,8 +121,17 @@ export function LatexEditor({
   const [aiPopover, setAiPopover] = useState<{ x: number; y: number } | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiReview, setAiReview] = useState<{ original: string; costUsd: number } | null>(null);
+  // `applied` is the doc right after the AI change landed — finishReview uses
+  // it to detect manual edits made during the review window.
+  const [aiReview, setAiReview] = useState<{ original: string; applied: string; costUsd: number } | null>(null);
   const aiAbortRef = useRef<AbortController | null>(null);
+  // Abort any in-flight assist request when the editor unmounts (tab switch,
+  // file close) so the fetch doesn't outlive the component.
+  useEffect(() => () => aiAbortRef.current?.abort(), []);
+  // Per-request dynamic bits live in Compartments so toggling them doesn't
+  // swap the whole extensions array (which forces a full root reconfigure).
+  const lockComp = useMemo(() => new Compartment(), []);
+  const mergeComp = useMemo(() => new Compartment(), []);
 
   // --- spell check ------------------------------------------------------
   const [spellcheck, setSpellcheck] = useState(
@@ -220,6 +231,7 @@ export function LatexEditor({
     () => () => {
       if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
       if (cursorTimer.current) clearTimeout(cursorTimer.current);
+      if (noticeTimer.current) clearTimeout(noticeTimer.current);
     },
     [],
   );
@@ -295,6 +307,8 @@ export function LatexEditor({
     });
   }, []);
 
+  const closeLog = useCallback(() => setLogOpen(false), []);
+
   // --- snippet inserts ------------------------------------------------------
   const handleSnippet = useCallback((action: SnippetAction) => {
     const view = viewRef.current;
@@ -341,9 +355,11 @@ export function LatexEditor({
     view.focus();
   }, []);
 
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showSyncNotice = useCallback((msg: string) => {
     setSyncNotice(msg);
-    setTimeout(() => setSyncNotice(null), 4000);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setSyncNotice(null), 4000);
   }, []);
 
   const jumpToPdf = useCallback(async () => {
@@ -351,22 +367,22 @@ export function LatexEditor({
     const pdf = pdfPathRef.current;
     if (!view || !pdf) return;
     const line = view.state.doc.lineAt(view.state.selection.main.head).number;
+    // Claim the token before the await: if a newer jump starts while this one
+    // is in flight, the stale response is dropped instead of winning the race.
+    const token = ++syncTokenRef.current;
     const box = await fetchSynctexForward(path, line, pdf);
+    if (token !== syncTokenRef.current) return;
     if (box === "unavailable" || box === null) {
       showSyncNotice(box === "unavailable" ? "SyncTeX not available (recompile first)" : "No PDF location found for this line");
       return;
     }
-    setSyncHighlight({ ...box, token: ++syncTokenRef.current });
+    setSyncHighlight({ ...box, token });
   }, [path, showSyncNotice]);
   const jumpToPdfRef = useRef(jumpToPdf);
   jumpToPdfRef.current = jumpToPdf;
 
   const askKady = useCallback(() => {
-    window.dispatchEvent(
-      new CustomEvent("kady:prefill-chat", {
-        detail: { text: `Regarding @${path}: ` },
-      }),
-    );
+    prefillChat(`Regarding @${path}: `);
   }, [path]);
 
   const handleSyncClick = useCallback(
@@ -380,14 +396,18 @@ export function LatexEditor({
       }
       if (loc.file === path) {
         jumpToLine(loc.line);
-      } else if (onOpenFile) {
-        onOpenFile(loc.file);
-        showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
-      } else {
-        showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
+        return;
       }
+      // Switching tabs unmounts this editor and its unsaved CodeMirror doc —
+      // never follow a cross-file jump over unsaved edits.
+      if (isDirty) {
+        showSyncNotice(`Source is in ${loc.file}:${loc.line} — save (${modKey}S) to follow`);
+        return;
+      }
+      onOpenFile?.(loc.file);
+      showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
     },
-    [path, jumpToLine, onOpenFile, showSyncNotice],
+    [path, jumpToLine, onOpenFile, showSyncNotice, isDirty, modKey],
   );
 
   const toggleOutline = useCallback(() => {
@@ -398,84 +418,118 @@ export function LatexEditor({
   }, []);
 
   // --- AI assist: review flow + edit/fix flows ------------------------------
-  const startReview = useCallback((from: number, to: number, replacement: string, costUsd: number) => {
-    const view = viewRef.current;
-    if (!view) return;
-    const original = view.state.doc.toString();
-    // Defensive clamp: `from`/`to` were captured before the AI round-trip and
-    // may be stale relative to the current doc (e.g. if it changed length in
-    // the meantime). Guard 1 (editable.of(!aiBusy)) prevents user edits during
-    // the request, but clamp here too so a stale/out-of-range offset can never
-    // throw or land past the end of the document.
-    const docLen = view.state.doc.length;
-    const safeFrom = Math.max(0, Math.min(from, docLen));
-    const safeTo = Math.max(safeFrom, Math.min(to, docLen));
-    view.dispatch({ changes: { from: safeFrom, to: safeTo, insert: replacement } });
-    setAiReview({ original, costUsd });
-    view.dispatch({ effects: EditorView.scrollIntoView(safeFrom, { y: "center" }) });
-  }, []);
+  const startReview = useCallback(
+    (from: number, to: number, expected: string, replacement: string, costUsd: number) => {
+      const view = viewRef.current;
+      if (!view) return;
+      // `from`/`to` were captured before the AI round-trip. The editable lock
+      // only blocks direct input — programmatic edits (snippet buttons,
+      // spellcheck fixes, external file refresh) can still move the doc — so
+      // refuse to apply unless the range still holds exactly the text the AI
+      // was asked to replace.
+      if (to > view.state.doc.length || view.state.sliceDoc(from, to) !== expected) {
+        showSyncNotice("Document changed during the AI request — edit not applied");
+        return;
+      }
+      const original = view.state.doc.toString();
+      view.dispatch({ changes: { from, to, insert: replacement } });
+      view.dispatch({
+        effects: mergeComp.reconfigure(unifiedMergeView({ original, mergeControls: true })),
+      });
+      setAiReview({ original, applied: view.state.doc.toString(), costUsd });
+      view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    },
+    [mergeComp, showSyncNotice],
+  );
 
-  const finishReview = useCallback((revert: boolean) => {
-    const view = viewRef.current;
-    if (view && revert) {
-      const original = getOriginalDoc(view.state).toString();
-      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: original } });
-    }
-    setAiReview(null);
-    viewRef.current?.focus();
-  }, []);
+  const finishReview = useCallback(
+    (revert: boolean) => {
+      const view = viewRef.current;
+      if (view && revert) {
+        const original = getOriginalDoc(view.state).toString();
+        const manuallyEdited =
+          aiReview !== null && view.state.doc.toString() !== aiReview.applied;
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: original } });
+        if (manuallyEdited) {
+          showSyncNotice("Reverted AI edit — manual edits made during review were reverted too (undo to restore)");
+        }
+      }
+      view?.dispatch({ effects: mergeComp.reconfigure([]) });
+      setAiReview(null);
+      viewRef.current?.focus();
+    },
+    [aiReview, mergeComp, showSyncNotice],
+  );
+
+  // Shared request scaffolding for both assist flows: busy state, a
+  // per-request AbortController, and error routing to the caller's sink.
+  const requestAssist = useCallback(
+    async (
+      payload: Record<string, unknown>,
+      onError: (msg: string) => void,
+    ): Promise<LatexAssistResult | null> => {
+      setAiBusy(true);
+      const ctrl = new AbortController();
+      aiAbortRef.current = ctrl;
+      try {
+        return await postLatexAssist(payload, ctrl.signal);
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          onError(err instanceof LatexAssistError ? err.message : "AI request failed");
+        }
+        return null;
+      } finally {
+        setAiBusy(false);
+        if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
+      }
+    },
+    [],
+  );
 
   const runAiEdit = useCallback(
     async (instruction: string) => {
       const view = viewRef.current;
-      if (!view) return;
+      if (!view || aiBusy) return;
       const { from, to } = view.state.selection.main;
       const selection = view.state.sliceDoc(from, to);
-      setAiBusy(true);
       setAiError(null);
-      aiAbortRef.current = new AbortController();
-      try {
-        const res = await postLatexAssist(
-          {
-            mode: "edit", fileName: name, instruction, selection,
-            preamble: extractPreamble(view.state.doc.toString()),
-          },
-          aiAbortRef.current.signal,
-        );
-        setAiPopover(null);
-        startReview(from, to, res.replacement, res.costUsd);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setAiError(err instanceof LatexAssistError ? err.message : "AI edit failed");
-      } finally {
-        setAiBusy(false);
-      }
+      const res = await requestAssist(
+        {
+          mode: "edit", fileName: name, instruction, selection,
+          preamble: extractPreamble(view.state.doc.toString()),
+        },
+        setAiError,
+      );
+      if (!res) return;
+      setAiPopover(null);
+      startReview(from, to, selection, res.replacement, res.costUsd);
     },
-    [name, startReview],
+    [name, aiBusy, requestAssist, startReview],
   );
 
   const fixWithAi = useCallback(
     async (line: number, message: string) => {
       const view = viewRef.current;
       if (!view || aiBusy) return;
+      // Log line numbers refer to the doc as compiled; refuse once it diverges
+      // (same staleness rule the lint gutter enforces via snap.doc.eq).
+      const snap = diagRef.current;
+      if (!snap || !snap.doc.eq(view.state.doc)) {
+        showSyncNotice("Document changed since the last compile — recompile before fixing with AI");
+        return;
+      }
+      // Close a lingering Cmd+K popover so its cancel can't abort this request.
+      setAiPopover(null);
       const doc = view.state.doc.toString();
       const payload = buildFixPayload(doc, name, line, message);
-      setAiBusy(true);
-      aiAbortRef.current = new AbortController();
-      try {
-        const res = await postLatexAssist(payload, aiAbortRef.current.signal);
-        const { from, to } = lineRangeToOffsets(
-          doc, payload.context.startLine, payload.context.endLine,
-        );
-        startReview(from, to, res.replacement, res.costUsd);
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        showSyncNotice(err instanceof LatexAssistError ? err.message : "AI fix failed");
-      } finally {
-        setAiBusy(false);
-      }
+      const res = await requestAssist(payload, showSyncNotice);
+      if (!res) return;
+      const { from, to } = lineRangeToOffsets(
+        doc, payload.context.startLine, payload.context.endLine,
+      );
+      startReview(from, to, payload.context.text, res.replacement, res.costUsd);
     },
-    [name, aiBusy, startReview, showSyncNotice],
+    [name, aiBusy, requestAssist, startReview, showSyncNotice],
   );
   const fixWithAiRef = useRef(fixWithAi);
   fixWithAiRef.current = fixWithAi;
@@ -483,15 +537,25 @@ export function LatexEditor({
   const openAiPopover = useCallback(() => {
     const view = viewRef.current;
     if (!view) return false;
+    if (aiBusy) {
+      showSyncNotice("An AI request is already in flight");
+      return true;
+    }
     const { from, to, head } = view.state.selection.main;
     if (from === to) return false;
+    // coordsAtPos is null when the head is outside the rendered viewport
+    // (e.g. after Cmd+A in a long doc) — fall back to a top-center anchor
+    // instead of silently swallowing the keystroke.
     const coords = view.coordsAtPos(head);
-    if (coords) {
-      setAiError(null);
-      setAiPopover({ x: coords.left, y: coords.bottom });
-    }
+    const rect = view.dom.getBoundingClientRect();
+    setAiError(null);
+    setAiPopover(
+      coords
+        ? { x: coords.left, y: coords.bottom }
+        : { x: rect.left + rect.width / 2 - 160, y: rect.top + 40 },
+    );
     return true;
-  }, []);
+  }, [aiBusy, showSyncNotice]);
   const openAiPopoverRef = useRef(openAiPopover);
   openAiPopoverRef.current = openAiPopover;
 
@@ -552,16 +616,22 @@ export function LatexEditor({
         { key: "Mod-Alt-j", run: () => { jumpToPdfRef.current(); return true; } },
         { key: "Mod-k", run: () => openAiPopoverRef.current(), preventDefault: true },
       ]),
-      ...(aiReview
-        ? [unifiedMergeView({ original: aiReview.original, mergeControls: true })]
-        : []),
-      // Lock the editor to user input while an AI request is in flight, so a
-      // concurrent edit can't shift the doc out from under the from/to offsets
-      // captured before the round-trip. Programmatic dispatch (startReview)
-      // still works — this only blocks keyboard/mouse input.
-      EditorView.editable.of(!aiBusy),
+      // Populated with unifiedMergeView while an AI review is open (startReview /
+      // finishReview reconfigure it) — a Compartment so entering/leaving review
+      // doesn't rebuild the whole extension tree.
+      mergeComp.of([]),
+      // Locks the editor to direct input while an AI request is in flight
+      // (reconfigured from the aiBusy effect below). This blocks typing only;
+      // startReview additionally verifies the target range before applying.
+      lockComp.of(EditorView.editable.of(true)),
     ];
-  }, [texLang, texLinter, spellcheck, spellExt, aiReview, aiBusy]);
+  }, [texLang, texLinter, spellcheck, spellExt, mergeComp, lockComp]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: lockComp.reconfigure(EditorView.editable.of(!aiBusy)),
+    });
+  }, [aiBusy, lockComp]);
 
   // --- resizable split pane ---------------------------------------------------
   const dividerRef = useRef<HTMLDivElement>(null);
@@ -635,6 +705,19 @@ export function LatexEditor({
               ))}
             </div>
           )}
+          {aiBusy && !aiPopover && (
+            <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
+              <LoaderCircleIcon className="size-3 animate-spin" />
+              AI fix in progress — editor locked
+              <span className="flex-1" />
+              <button
+                onClick={() => aiAbortRef.current?.abort()}
+                className="rounded border px-2 py-0.5 hover:bg-muted"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
           {aiReview && (
             <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
               <SparklesIcon className="size-3" />
@@ -667,9 +750,10 @@ export function LatexEditor({
           <LogPanel
             log={logText ?? ""}
             open={logOpen}
-            onClose={() => setLogOpen(false)}
+            onClose={closeLog}
             filter={logFilter}
             onFilterChange={setLogFilter}
+            fileName={name}
             onFixError={fixWithAi}
           />
         </div>

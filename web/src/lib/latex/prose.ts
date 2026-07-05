@@ -40,7 +40,7 @@ function isEscaped(text: string, pos: number): boolean {
 
 /** Index just past the first `\begin{document}` that is not inside a
  * %-comment, or 0 if none is found (matching the "no preamble" case). */
-function findDocBodyStart(text: string): number {
+export function findDocBodyStart(text: string): number {
   let offset = 0;
   for (const line of text.split("\n")) {
     let commentAt = -1;

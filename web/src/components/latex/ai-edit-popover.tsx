@@ -18,7 +18,20 @@ export function AiEditPopover({
 }) {
   const [instruction, setInstruction] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => inputRef.current?.focus(), []);
+  // Focus on mount and again when a request settles — `disabled={busy}` blurs
+  // the input, which would otherwise leave the keyboard dead after an error.
+  useEffect(() => {
+    if (!busy) inputRef.current?.focus();
+  }, [busy]);
+  // Escape must cancel even while busy: the disabled input receives no
+  // keydown events, so listen at the window instead of on the input.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
 
   return (
     <div
@@ -40,7 +53,6 @@ export function AiEditPopover({
           ref={inputRef}
           value={instruction}
           onChange={(e) => setInstruction(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && onCancel()}
           placeholder="Edit selection… e.g. “convert to a booktabs table”"
           disabled={busy}
           className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground/60"

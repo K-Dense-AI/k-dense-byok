@@ -15,6 +15,7 @@ import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
 import { onProjectChange } from "@/lib/projects";
+import { onChatPrefill } from "@/lib/chat-prefill";
 import { isJunkFilePath } from "@/lib/utils";
 import {
   PanelLeftCloseIcon,
@@ -240,6 +241,10 @@ export default function ChatPage() {
       }),
     [],
   );
+
+  // Ask Kady handoff: the active tab's composer (mounted even behind the
+  // Workflows view) appends the text; this listener makes it visible.
+  useEffect(() => onChatPrefill(() => setView("chat")), []);
 
   // Flat list of all sandbox file paths for @ mentions (shared across tabs).
   // Cache artifacts are excluded — mentioning __pycache__/*.pyc is never useful.
@@ -597,6 +602,7 @@ export default function ChatPage() {
               tabId={t.id}
               initialSessionId={t.sessionId ?? null}
               isActive={view === "chat" && t.id === activeTabId}
+              isActiveTab={t.id === activeTabId}
               allFiles={allFiles}
               uploadFiles={sandbox.uploadFiles}
               onSandboxRefresh={handleSandboxRefresh}

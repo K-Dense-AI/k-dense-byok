@@ -31,6 +31,7 @@ import {
 } from "@/components/model-selector";
 import { ComputeSelector, type ModalInstance } from "@/components/compute-selector";
 import { apiFetch } from "@/lib/projects";
+import { onChatPrefill } from "@/lib/chat-prefill";
 import { buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
@@ -172,9 +173,7 @@ function PromptDropZone({
         if (onFileDrop) {
           onFileDrop(path);
         } else {
-          const current = controller.textInput.value;
-          const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? " " : "";
-          controller.textInput.setInput(current + sep + path);
+          appendToComposer(controller.textInput, path, " ");
         }
         return;
       }
@@ -215,6 +214,19 @@ function PromptDropZone({
       </div>
     </div>
   );
+}
+
+/** Append text to the composer, inserting `separator` unless the current
+ * value is empty or already ends in whitespace. Single home for the logic
+ * shared by file drops, voice transcription, and the Ask Kady prefill. */
+function appendToComposer(
+  textInput: { value: string; setInput: (v: string) => void },
+  text: string,
+  separator: " " | "\n",
+) {
+  const current = textInput.value;
+  const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? separator : "";
+  textInput.setInput(current + sep + text);
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +331,7 @@ function MessageQueueDisplay({
  * Must be rendered inside <PromptInputProvider>.
  */
 function ChatInput({
-  isActive,
+  isActiveTab,
   allFiles,
   attachedFiles,
   onAddFile,
@@ -346,7 +358,7 @@ function ChatInput({
   budgetTotalUsd = 0,
   budgetLimitUsd = null,
 }: {
-  isActive: boolean;
+  isActiveTab: boolean;
   allFiles: string[];
   attachedFiles: string[];
   onAddFile: (path: string) => void;
@@ -378,19 +390,16 @@ function ChatInput({
 
   // "Ask Kady" handoff from the LaTeX editor: only the active tab's composer
   // appends the prefill text (it does not submit), so a background tab never
-  // steals the event meant for the visible one.
+  // steals the event. Gated on the active TAB, not the visible view — tabs
+  // stay mounted behind the Workflows view, and page.tsx switches the view
+  // back to chat on the same event. The controller is read through a ref
+  // because its identity changes on every keystroke.
+  const controllerRef = useRef(controller);
+  controllerRef.current = controller;
   useEffect(() => {
-    if (!isActive) return;
-    const onPrefill = (e: Event) => {
-      const text = (e as CustomEvent<{ text: string }>).detail?.text;
-      if (!text) return;
-      const current = controller.textInput.value;
-      const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? "\n" : "";
-      controller.textInput.setInput(current + sep + text);
-    };
-    window.addEventListener("kady:prefill-chat", onPrefill);
-    return () => window.removeEventListener("kady:prefill-chat", onPrefill);
-  }, [isActive, controller]);
+    if (!isActiveTab) return;
+    return onChatPrefill((text) => appendToComposer(controllerRef.current.textInput, text, "\n"));
+  }, [isActiveTab]);
 
   const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
     const uploaded = await onUploadFiles(files, paths);
@@ -502,9 +511,7 @@ function ChatInput({
   }, [mentionQuery, filteredFiles, safeMentionSelIdx, applyMention, closeMention]);
 
   const handleTranscription = useCallback((text: string) => {
-    const current = controller.textInput.value;
-    const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? " " : "";
-    controller.textInput.setInput(current + sep + text);
+    appendToComposer(controller.textInput, text, " ");
   }, [controller]);
 
   const isMentionOpen = mentionQuery !== null && filteredFiles.length > 0;
@@ -783,6 +790,9 @@ export interface ChatTabHandle {
 export interface ChatTabProps {
   tabId: string;
   isActive: boolean;
+  /** True when this is the selected tab, even if the Workflows view hides the
+   * chat column — the Ask Kady prefill targets the tab, not the view. */
+  isActiveTab: boolean;
   /** Stored session to reopen into this tab (History menu / reload recovery). */
   initialSessionId?: string | null;
   // Shared sandbox/state passed in (one instance for the whole project)
@@ -801,6 +811,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   {
     tabId,
     isActive,
+    isActiveTab,
     initialSessionId,
     allFiles,
     uploadFiles,
@@ -1094,7 +1105,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       <div className="px-4 pb-6 pt-2">
         <PromptInputProvider>
           <ChatInput
-            isActive={isActive}
+            isActiveTab={isActiveTab}
             allFiles={allFiles}
             attachedFiles={attachedFiles}
             onAddFile={addAttachedFile}

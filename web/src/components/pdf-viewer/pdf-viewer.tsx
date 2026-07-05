@@ -24,6 +24,7 @@ import {
   useState,
 } from "react";
 
+import { ExternalLinkIcon } from "lucide-react";
 import { rawFileUrl } from "@/lib/use-sandbox";
 import {
   type Annotation,
@@ -158,7 +159,7 @@ export interface PdfViewerProps {
   reloadToken?: number; // bump to re-fetch the same path in place (scroll/zoom preserved)
   syncHighlight?: PdfSyncHighlight | null; // scroll to + flash this box (synctex view coords)
   onSyncClick?: (pos: PdfSyncClick) => void; // Cmd/Ctrl+click on a page
-  hideAnnotationUi?: boolean; // hide annotation sidebar + highlight/note buttons
+  hideAnnotationUi?: boolean; // view-only: hide annotation UI and skip loading/polling the sidecar
 }
 
 export function PdfViewer({
@@ -297,7 +298,11 @@ export function PdfViewer({
   // Annotations fetch + polling
   // --------------------------------------------------------------------
 
+  // View-only panes (hideAnnotationUi, e.g. the LaTeX compile preview) never
+  // show annotations, so skip fetching and the 3s sidecar poll entirely —
+  // compiled build artifacts have no sidecar and would poll empty forever.
   useEffect(() => {
+    if (hideAnnotationUi) return;
     let cancelled = false;
     fetchAnnotations(path).then((res) => {
       if (cancelled) return;
@@ -307,9 +312,10 @@ export function PdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, hideAnnotationUi]);
 
   useEffect(() => {
+    if (hideAnnotationUi) return;
     const unsub = subscribeAnnotations(
       path,
       lastModifiedRef.current,
@@ -319,7 +325,7 @@ export function PdfViewer({
       },
     );
     return unsub;
-  }, [path]);
+  }, [path, hideAnnotationUi]);
 
   // --------------------------------------------------------------------
   // Persistence (debounced per keystroke is overkill — we save on every
@@ -641,6 +647,7 @@ export function PdfViewer({
         showExpert={showExpert}
         setShowExpert={setShowExpert}
         hideAnnotationUi={hideAnnotationUi}
+        openHref={rawFileUrl(path)}
         onJumpPage={(p) => {
           const el = containerRef.current?.querySelector<HTMLElement>(
             `[data-pdf-page="${p}"]`,
@@ -736,6 +743,7 @@ function Toolbar({
   showExpert,
   setShowExpert,
   hideAnnotationUi,
+  openHref,
   onJumpPage,
 }: {
   currentPage: number;
@@ -748,6 +756,7 @@ function Toolbar({
   showExpert: boolean;
   setShowExpert: (v: boolean) => void;
   hideAnnotationUi: boolean;
+  openHref: string;
   onJumpPage: (p: number) => void;
 }) {
   return (
@@ -841,6 +850,17 @@ function Toolbar({
             Expert annotations
           </label>
         )}
+        {/* Browser-native find/print/download live in the browser's own PDF
+            viewer — this pane doesn't reimplement them. */}
+        <a
+          href={openHref}
+          target="_blank"
+          rel="noreferrer"
+          title="Open in browser tab (find, print, download)"
+          className="rounded px-2 py-1 hover:bg-muted"
+        >
+          <ExternalLinkIcon className="size-3.5" />
+        </a>
       </div>
     </div>
   );
