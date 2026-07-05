@@ -235,6 +235,10 @@ export function useAgent() {
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // send() claims the tab synchronously BEFORE its first await: a loadSession
+  // resolving mid-run must not replace the transcript, because the run's
+  // plain-value setMessages(transcript) writes would clobber it.
+  const sendClaimRef = useRef(false);
   const messageCounter = useRef(0);
 
   const nextId = () => String(++messageCounter.current);
@@ -246,8 +250,9 @@ export function useAgent() {
    * emits, so the restored transcript renders identically.
    */
   const loadSession = useCallback(async (sessionId: string): Promise<boolean> => {
-    // Never swap the session out from under a tab that already has one.
-    if (sessionIdRef.current) return false;
+    // Never swap the session out from under a tab that already has one, or
+    // one where a send has already claimed the transcript.
+    if (sessionIdRef.current || sendClaimRef.current) return false;
     try {
       const res = await apiFetch(
         `/sessions/${encodeURIComponent(sessionId)}/history`,
@@ -255,8 +260,9 @@ export function useAgent() {
       if (!res.ok) return false;
       const data = (await res.json()) as { messages?: HistoryItem[] };
       // Re-check after the awaits: a message sent while the history fetch was
-      // in flight binds the tab to a fresh session, which must win.
-      if (sessionIdRef.current) return false;
+      // in flight claims the tab (and will bind a fresh session), which must
+      // win over hydration.
+      if (sessionIdRef.current || sendClaimRef.current) return false;
       const restored: ChatMessage[] = [];
       const fallbackTs = Date.now();
       for (const item of data.messages ?? []) {
@@ -347,6 +353,7 @@ export function useAgent() {
       computeTarget?: string,
     ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
+      sendClaimRef.current = true;
 
       const userMsgId = nextId();
       const assistantId = nextId();
@@ -453,6 +460,7 @@ export function useAgent() {
         setPendingSteers([]);
         setStatus(aborted ? "ready" : "error");
       } finally {
+        sendClaimRef.current = false;
         abortRef.current = null;
       }
 
