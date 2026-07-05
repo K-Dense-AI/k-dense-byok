@@ -474,7 +474,7 @@ export default function ChatPage() {
               <>
                 <b>Settings</b>
                 <br />
-                View API-key configuration and switch the appearance theme.
+                API keys, skills, specialists, connectors, and appearance.
               </>
             }
           >
