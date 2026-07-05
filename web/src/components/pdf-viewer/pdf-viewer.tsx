@@ -261,7 +261,13 @@ export function PdfViewer({
         }
       },
       (e) => {
-        if (!cancelled) setError(e?.message ?? "Failed to load PDF");
+        if (!cancelled) {
+          // Release a previously-successful doc's transport now rather
+          // than leaving it dangling until unmount.
+          try { docRef.current?.destroy(); } catch { /* ignore */ }
+          docRef.current = null;
+          setError(e?.message ?? "Failed to load PDF");
+        }
       },
     );
     return () => {
@@ -570,7 +576,14 @@ export function PdfViewer({
         const vp = p.getViewport({ scale: BASE_SCALE * zoom });
         setDefaultSize({ w: vp.width, h: vp.height });
       })
-      .catch(() => {});
+      .catch(() => {
+        // getPage(1) failed — fall back to a US-Letter-shaped size so
+        // pages still attempt to render instead of the viewer going
+        // permanently blank (defaultSize gates the whole page list).
+        if (!cancelled) {
+          setDefaultSize({ w: 612 * BASE_SCALE * zoom, h: 792 * BASE_SCALE * zoom });
+        }
+      });
     return () => { cancelled = true; };
   }, [doc, zoom]);
 
@@ -886,7 +899,14 @@ function PageView({
     let renderTask: { cancel: () => void } | null = null;
 
     (async () => {
-      const page: PdfPage = await doc.getPage(pageNumber);
+      let page: PdfPage;
+      try {
+        page = await doc.getPage(pageNumber);
+      } catch {
+        // Doc was likely destroyed mid-reload ("Transport destroyed") —
+        // bail silently, same as the cancellation path below.
+        return;
+      }
       if (cancelled) return;
 
       const scale = BASE_SCALE * zoom;
