@@ -25,6 +25,7 @@ import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupAuth } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
+import { makeNotebookTool } from "./notebook.ts";
 import { makeModalTool } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
@@ -105,6 +106,8 @@ async function build(
   // The interview tool blocks mid-run on answers posted to the HTTP API; it
   // reads the live sessionId through the same holder as the ledger extension.
   const interviewTool = makeInterviewTool(projectId, () => holder.session?.sessionId ?? "");
+  // Non-blocking lab-notebook tool: logs the agent's own narrative entries.
+  const notebookTool = makeNotebookTool(projectId, () => holder.session?.sessionId ?? "");
   // Remote-compute tool, only when Modal BYOK creds are present. Built per
   // session (same holder-based late-bound sessionId as the interview tool); a
   // session created before keys are set picks it up on its next cold-open.
@@ -122,11 +125,12 @@ async function build(
       ...BUILTIN_TOOLS,
       "subagent",
       "interview",
+      "notebook",
       ...WEB_ACCESS_TOOLS,
       ...(modalTool ? ["modal_run"] : []),
       ...mcpTools.map((t) => t.name),
     ],
-    customTools: [interviewTool, ...(modalTool ? [modalTool] : []), ...mcpTools],
+    customTools: [interviewTool, notebookTool, ...(modalTool ? [modalTool] : []), ...mcpTools],
   });
   holder.session = session;
   return session;
