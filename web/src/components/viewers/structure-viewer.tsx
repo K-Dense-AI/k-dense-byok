@@ -71,7 +71,7 @@ export default function StructureViewer({ path, name, content }: ViewerProps) {
         <div className="border-b px-4 py-2 text-xs text-muted-foreground">Metadata unavailable: {summaryErr}</div>
       )}
       <div className="relative flex-1 min-h-0">
-        <div ref={mountRef} className="absolute inset-0" style={{ position: "relative" }} />
+        <div ref={mountRef} className="absolute inset-0" />
         {viewerErr && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-6 text-center text-sm text-muted-foreground">
             3D viewer failed to load: {viewerErr}
