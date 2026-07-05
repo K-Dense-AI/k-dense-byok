@@ -224,7 +224,7 @@ def main() -> None:
         raise
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
-        sys.exit(5)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

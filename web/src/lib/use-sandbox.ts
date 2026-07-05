@@ -48,7 +48,7 @@ const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "p
 
 const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
 
-const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "cdf"]);
+const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf"]);
 
 const PHYLO_EXTS = new Set(["nwk", "newick", "tree", "nhx"]);
 
@@ -65,7 +65,7 @@ export function fileCategory(name: string): FileCategory {
   const ext = lower.split(".").pop() ?? "";
   if (IMAGE_EXTS.has(ext)) return "image";
   if (MICROSCOPY_EXTS.has(ext)) return "microscopy";
-  if (ext === "dcm") return "dicom";
+  if (ext === "dcm" || ext === "dicom") return "dicom";
   if (ext === "pdf") return "pdf";
   if (ext === "md" || ext === "mdx") return "markdown";
   if (ext === "csv") return "csv";

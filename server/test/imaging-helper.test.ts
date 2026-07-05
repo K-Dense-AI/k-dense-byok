@@ -82,6 +82,26 @@ describe("imaging_helper", () => {
     }
   }, 15000);
 
+  it.runIf(depsOk)("summarizes an RGB TIFF as a single plane, not one page per sample", () => {
+    const res = runSciHelper("imaging", "summarize", [path.join(FIX, "sample_rgb.tif")]);
+    expect(res.status).toBe(0);
+    const d = JSON.parse(res.stdout);
+    expect(d.format).toBe("tiff");
+    expect(d.axes[0].size).toBe(1);
+  }, 15000);
+
+  it.runIf(depsOk)("renders an RGB TIFF plane to PNG", () => {
+    const out = tmpOut("tiff-rgb.png");
+    try {
+      const res = runSciHelper("imaging", "render", [path.join(FIX, "sample_rgb.tif"), "0", out, "-"]);
+      expect(res.status).toBe(0);
+      const data = fs.readFileSync(out);
+      expect(data.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
+    } finally {
+      fs.rmSync(out, { force: true });
+    }
+  }, 15000);
+
   it("exits 4 on missing file", () => {
     const res = runSciHelper("imaging", "summarize", [path.join(FIX, "does-not-exist.dcm")]);
     expect(res.status).toBe(4);

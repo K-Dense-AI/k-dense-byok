@@ -361,6 +361,11 @@ export default function ArrayDataViewer({ path }: ViewerProps) {
         {summary.kind === "table" && <TableView summary={summary} />}
         {summary.kind === "ndarray" && <NdarrayView summary={summary} />}
         {summary.kind === "variables" && <VariablesView summary={summary} />}
+        {!(["tree", "table", "ndarray", "variables"] as string[]).includes(summary.kind) && (
+          <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
+            Unrecognized array format{summary.kind ? ` (kind: ${summary.kind})` : ""}.
+          </div>
+        )}
       </div>
     </div>
   );

@@ -29,7 +29,7 @@ describe("fileCategory — mass spec", () => {
 
 describe("fileCategory — arraydata, phylo, alignment", () => {
   it("classifies array/omics formats", () => {
-    for (const n of ["a.h5", "a.hdf5", "a.parquet", "a.npy", "a.npz", "a.nc", "a.cdf"]) {
+    for (const n of ["a.h5", "a.hdf5", "a.parquet", "a.npy", "a.npz", "a.nc", "a.nc4", "a.cdf"]) {
       expect(fileCategory(n)).toBe("arraydata");
     }
   });
@@ -54,6 +54,7 @@ describe("fileCategory — arraydata, phylo, alignment", () => {
 describe("fileCategory — bio-imaging (DICOM/NIfTI/microscopy)", () => {
   it("classifies DICOM", () => {
     expect(fileCategory("a.dcm")).toBe("dicom");
+    expect(fileCategory("a.dicom")).toBe("dicom");
   });
   it("classifies NIfTI, including the compound .nii.gz extension", () => {
     expect(fileCategory("a.nii")).toBe("nifti");

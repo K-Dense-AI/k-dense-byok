@@ -59,7 +59,7 @@ export function KadyFileIcon({
     "sql",
   ];
   const shellExts = ["sh", "bash", "zsh", "fish", "ps1", "cmd", "bat"];
-  const imageExts = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"];
+  const imageExts = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "heic"];
   const videoExts = ["mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v"];
   const audioExts = ["mp3", "wav", "ogg", "flac", "m4a", "aac", "opus", "wma"];
   const archiveExts = ["zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz"];

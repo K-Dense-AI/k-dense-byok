@@ -87,14 +87,15 @@ def _to_png(arr, out: Path, value_range: tuple[float, float] | None = None, cap:
     from PIL import Image
 
     arr = np.asarray(arr)
-    if arr.ndim > 2:
+    is_rgb = arr.ndim == 3 and arr.shape[-1] == 3
+    if arr.ndim > 2 and not is_rgb:
         # Collapse an extra channel/sample dimension: prefer a trailing dim of
         # <=4 (channel-last), else fall back to the leading dim (channel-first).
         if arr.shape[-1] <= 4:
             arr = arr[..., 0]
         else:
             arr = arr[0]
-    if arr.ndim != 2:
+    if arr.ndim not in (2, 3):
         sys.stderr.write(f"Cannot render a {arr.ndim}D slice as an image\n")
         sys.exit(5)
 
@@ -110,7 +111,7 @@ def _to_png(arr, out: Path, value_range: tuple[float, float] | None = None, cap:
         norm = np.zeros_like(arr)
     u8 = (np.clip(norm, 0.0, 1.0) * 255).astype(np.uint8)
 
-    img = Image.fromarray(u8, mode="L")
+    img = Image.fromarray(u8, mode="RGB" if is_rgb else "L")
     longest = max(img.size)
     if longest > cap:
         scale = cap / longest
@@ -287,16 +288,49 @@ def render_dicom(path: Path, index: int, out: Path) -> None:
 # --- TIFF ------------------------------------------------------------------
 
 
+def _tiff_plane_layout(series):
+    """For a TiffPageSeries with ndim>2, work out how to carve it into browsable
+    2D (or 2D+channel) "planes" using `series.axes` (e.g. "ZYX", "YXS", "TCYX").
+
+    The image plane is always the Y/X axes. A trailing S axis (channel-last, the
+    conventional layout for an interleaved RGB TIFF -- axes=="YXS") is folded into
+    the plane as well, so each plane is an HxWxS array. Any other axis (including a
+    *non*-trailing S -- tifffile sometimes guesses "SYX" for a plain (3,H,W) array
+    that was actually meant as a 3-slice grayscale stack) is treated as a stack axis.
+
+    Returns (n_planes, transpose_perm, reshape_shape).
+    """
+    shape = series.shape
+    axes = series.axes
+    collapse_s = axes.endswith("S")
+    y_idx = axes.index("Y")
+    x_idx = axes.index("X")
+    s_idx = axes.index("S") if collapse_s else None
+
+    image_positions = {y_idx, x_idx} | ({s_idx} if s_idx is not None else set())
+    stack_positions = [i for i in range(len(axes)) if i not in image_positions]
+
+    perm = stack_positions + [y_idx, x_idx] + ([s_idx] if s_idx is not None else [])
+    n_planes = 1
+    for i in stack_positions:
+        n_planes *= shape[i]
+    reshape_shape = (n_planes, shape[y_idx], shape[x_idx]) + (
+        (shape[s_idx],) if s_idx is not None else ()
+    )
+    return n_planes, perm, reshape_shape
+
+
 def _tiff_stack(tif):
-    """Return (num_slices, series) for a TiffFile, treating the leading non-spatial
-    axis (real pages, or samples/depth packed into a single IFD) as the stack axis."""
+    """Return (num_planes, series) for a TiffFile -- the number of browsable 2D (or
+    2D+channel) planes, per `_tiff_plane_layout`'s axis-aware carve-up."""
     series = tif.series[0] if tif.series else None
     if series is None:
         return len(tif.pages), None
     shape = series.shape
     if len(shape) <= 2:
         return 1, series
-    return shape[0], series
+    n_planes, _perm, _reshape_shape = _tiff_plane_layout(series)
+    return n_planes, series
 
 
 def summarize_tiff(path: Path) -> dict:
@@ -340,6 +374,8 @@ def summarize_tiff(path: Path) -> dict:
 
 def render_tiff(path: Path, index: int, out: Path) -> None:
     _need("tifffile")
+    _need("numpy")
+    import numpy as np
     import tifffile
 
     try:
@@ -348,15 +384,20 @@ def render_tiff(path: Path, index: int, out: Path) -> None:
         sys.stderr.write(f"Failed to read TIFF: {exc}\n")
         sys.exit(5)
     try:
-        n_slices, _series = _tiff_stack(tif)
+        n_slices, series = _tiff_stack(tif)
         if index < 0 or index >= n_slices:
             sys.stderr.write(f"Page index out of range: {index}\n")
             sys.exit(4)
-        full = tif.asarray()
+        full = np.asarray(series.asarray() if series is not None else tif.asarray())
     finally:
         tif.close()
 
-    arr = full[index] if full.ndim > 2 else full
+    if series is not None and full.ndim > 2:
+        _n_planes, perm, reshape_shape = _tiff_plane_layout(series)
+        flat = np.transpose(full, perm).reshape(reshape_shape)
+        arr = flat[index]
+    else:
+        arr = full[index] if full.ndim > 2 else full
     _to_png(arr, out)
 
 
