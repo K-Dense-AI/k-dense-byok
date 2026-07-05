@@ -42,6 +42,7 @@ import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
+import { routeSubmit, steerNotStreamingFallback, type SendIntent } from "@/lib/chat-routing";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   CheckIcon,
@@ -51,6 +52,7 @@ import {
   PaperclipIcon,
   SparklesIcon,
   XIcon,
+  ZapIcon,
 } from "lucide-react";
 import { cn, formatUsd } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
@@ -62,6 +64,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type MutableRefObject,
   type ReactNode,
 } from "react";
 
@@ -254,73 +257,102 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
 
 function MessageQueueDisplay({
   queue,
+  steering,
   onRemove,
 }: {
   queue: QueuedMessage[];
+  steering: string[];
   onRemove: (id: string) => void;
 }) {
-  if (queue.length === 0) return null;
+  if (queue.length === 0 && steering.length === 0) return null;
 
   return (
     <div className="absolute bottom-full left-0 right-0 z-10 mb-2">
       <div className="overflow-hidden rounded-xl border bg-background shadow-lg">
-        <div className="flex items-center gap-2 border-b px-3 py-1.5">
-          <ListOrderedIcon className="size-3.5 text-muted-foreground" />
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Queued
-          </span>
-          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
-            {queue.length}/{MAX_QUEUE}
-          </span>
-        </div>
-        <div className="max-h-52 overflow-y-auto py-1">
-          {queue.map((item, i) => (
-            <div
-              key={item.id}
-              className="group flex items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/50"
-            >
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
-                {i + 1}
+        {steering.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 border-b px-3 py-1.5">
+              <ZapIcon className="size-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Steering — delivers mid-run
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-foreground">
-                  {item.rawText || item.text.split("\n")[0]}
-                </div>
-                <div className="mt-0.5 flex flex-wrap gap-1">
-                  <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                    {item.model.label}
-                  </span>
-                  {item.files.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <PaperclipIcon className="size-2.5" />
-                      {item.files.length}
-                    </span>
-                  )}
-                  {item.databases.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <DatabaseIcon className="size-2.5" />
-                      {item.databases.length}
-                    </span>
-                  )}
-                  {item.skills.length > 0 && (
-                    <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      <SparklesIcon className="size-2.5" />
-                      {item.skills.length}
-                    </span>
-                  )}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => onRemove(item.id)}
-                className="shrink-0 rounded p-1 text-muted-foreground/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                aria-label={`Remove queued message ${i + 1}`}
-              >
-                <XIcon className="size-3" />
-              </button>
+              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+                {steering.length}
+              </span>
             </div>
-          ))}
-        </div>
+            <div className="max-h-32 overflow-y-auto border-b py-1">
+              {steering.map((text, i) => (
+                <div key={`${i}-${text}`} className="flex items-center gap-2.5 px-3 py-2 text-xs">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] tabular-nums text-muted-foreground">
+                    ⏳
+                  </span>
+                  <div className="min-w-0 flex-1 truncate text-foreground">{text}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {queue.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 border-b px-3 py-1.5">
+              <ListOrderedIcon className="size-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Run after
+              </span>
+              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+                {queue.length}/{MAX_QUEUE}
+              </span>
+            </div>
+            <div className="max-h-52 overflow-y-auto py-1">
+              {queue.map((item, i) => (
+                <div
+                  key={item.id}
+                  className="group flex items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/50"
+                >
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
+                    {i + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-foreground">
+                      {item.rawText || item.text.split("\n")[0]}
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {item.model.label}
+                      </span>
+                      {item.files.length > 0 && (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <PaperclipIcon className="size-2.5" />
+                          {item.files.length}
+                        </span>
+                      )}
+                      {item.databases.length > 0 && (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <DatabaseIcon className="size-2.5" />
+                          {item.databases.length}
+                        </span>
+                      )}
+                      {item.skills.length > 0 && (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <SparklesIcon className="size-2.5" />
+                          {item.skills.length}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onRemove(item.id)}
+                    className="shrink-0 rounded p-1 text-muted-foreground/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={`Remove queued message ${i + 1}`}
+                  >
+                    <XIcon className="size-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -337,7 +369,10 @@ function ChatInput({
   onAddFile,
   onRemoveFile,
   onClearFiles,
-  onSubmit,
+  onSend,
+  pendingSteers,
+  composerRestoreRef,
+  inlineError,
   isStreaming,
   agentStatus,
   onStop,
@@ -364,7 +399,10 @@ function ChatInput({
   onAddFile: (path: string) => void;
   onRemoveFile: (path: string) => void;
   onClearFiles: () => void;
-  onSubmit: Parameters<typeof PromptInput>[0]["onSubmit"];
+  onSend: (text: string, intent: SendIntent) => void;
+  pendingSteers: string[];
+  composerRestoreRef: MutableRefObject<((text: string) => void) | null>;
+  inlineError: string | null;
   isStreaming: boolean;
   agentStatus: string;
   onStop: () => void;
@@ -401,6 +439,16 @@ function ChatInput({
     return onChatPrefill((text) => appendToComposer(controllerRef.current.textInput, text, "\n"));
   }, [isActiveTab]);
 
+  // Steer failures and Stop restore undelivered text into this composer;
+  // the parent holds the ref because it owns the steer/stop calls.
+  useEffect(() => {
+    composerRestoreRef.current = (text: string) =>
+      appendToComposer(controllerRef.current.textInput, text, "\n");
+    return () => {
+      composerRestoreRef.current = null;
+    };
+  }, [composerRestoreRef]);
+
   const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
     const uploaded = await onUploadFiles(files, paths);
     for (const p of uploaded) onAddFile(p);
@@ -419,6 +467,8 @@ function ChatInput({
   // then clear chips.
   const handleSubmit = useCallback<Parameters<typeof PromptInput>[0]["onSubmit"]>(
     (msg, event) => {
+      const intent: SendIntent = queueIntentRef.current ? "queue" : "auto";
+      queueIntentRef.current = false;
       if (budgetBlocked) {
         event?.preventDefault();
         return;
@@ -428,10 +478,10 @@ function ChatInput({
       const skillsCtx = buildSkillsContext(selectedSkills);
       const baseText = msg.text ?? "";
       if (!baseText.trim() && attachedFiles.length === 0) return;
-      onSubmit({ ...msg, text: baseText + refs + dbCtx + skillsCtx }, event);
+      onSend(baseText + refs + dbCtx + skillsCtx, intent);
       onClearFiles();
     },
-    [budgetBlocked, onSubmit, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
+    [budgetBlocked, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
   );
 
   // @ mention state
@@ -439,6 +489,9 @@ function ChatInput({
   const [mentionAtIdx, setMentionAtIdx] = useState(0);
   const [mentionSelIdx, setMentionSelIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  // Alt is read from keydown, not the form submit event, which carries no
+  // modifiers by the time the library's Enter handler calls requestSubmit().
+  const queueIntentRef = useRef(false);
 
   const filteredFiles = useMemo(() => {
     if (mentionQuery === null) return [];
@@ -493,6 +546,9 @@ function ChatInput({
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      queueIntentRef.current = e.altKey;
+    }
     const isOpen = mentionQuery !== null && filteredFiles.length > 0;
     if (!isOpen) return;
     if (e.key === "ArrowDown") {
@@ -572,7 +628,16 @@ function ChatInput({
         )}
 
         {!isMentionOpen && (
-          <MessageQueueDisplay queue={queuedMessages} onRemove={onRemoveFromQueue} />
+          <MessageQueueDisplay queue={queuedMessages} steering={pendingSteers} onRemove={onRemoveFromQueue} />
+        )}
+
+        {inlineError && (
+          <div
+            role="alert"
+            className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+          >
+            {inlineError}
+          </div>
         )}
 
         {budgetState !== "ok" && (
@@ -594,10 +659,12 @@ function ChatInput({
           />
           <PromptInputTextarea
             placeholder={
-              queuedMessages.length >= MAX_QUEUE
-                ? `Queue full (${MAX_QUEUE}/${MAX_QUEUE})`
-                : isStreaming && queuedMessages.length > 0
-                  ? `Ask Kady anything… (${queuedMessages.length}/${MAX_QUEUE} queued)`
+              isStreaming
+                ? pendingSteers.length > 0
+                  ? `Steer the run… (${pendingSteers.length} pending · ⌥↵ to run after)`
+                  : "Steer the run… (⌥↵ to run after)"
+                : queuedMessages.length >= MAX_QUEUE
+                  ? `Queue full (${MAX_QUEUE}/${MAX_QUEUE})`
                   : "Ask Kady anything… (@ for files, + for data / compute / skills)"
             }
             onChange={handleChange}
@@ -659,8 +726,9 @@ function ChatInput({
                     <>
                       <b>Stop</b>
                       <br />
-                      Cancel the current turn. Files the agent already wrote
-                      stay in the sandbox.
+                      Cancel the current turn (⏎ steers it instead). Undelivered
+                      steering messages return to the composer; files the agent
+                      already wrote stay in the sandbox.
                     </>
                   ) : queuedMessages.length >= MAX_QUEUE ? (
                     <>
@@ -673,8 +741,8 @@ function ChatInput({
                       <b>Send message</b>
                       <br />
                       Press <kbd>↵</kbd> to send, <kbd>⇧</kbd>+<kbd>↵</kbd> for
-                      a new line. Prompts sent while the agent is busy are
-                      queued.
+                      a new line. Prompts sent while the agent is busy steer
+                      the live run; ⌥⏎ queues a new run instead.
                     </>
                   )
                 }
@@ -825,7 +893,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   },
   ref,
 ) {
-  const { messages, status, send, stop, getSessionId, loadSession } = useAgent();
+  const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
 
   // Reopened tab: hydrate the transcript from the stored session before any
@@ -846,6 +914,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const queueIdCounter = useRef(0);
+  const composerRestoreRef = useRef<((text: string) => void) | null>(null);
+  const [steerError, setSteerError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!steerError) return;
+    const t = window.setTimeout(() => setSteerError(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [steerError]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -935,58 +1011,87 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     });
   }, [tabId, sessionId, status, isStreaming, messages, userMessageCount, onMetaChange]);
 
-  const handleSubmit = useCallback(
-    async ({ text }: { text: string }) => {
-      if (budgetState === "exceeded") return;
-      const trimmed = (text ?? "").trim();
-      if (!trimmed) return;
-      if (isStreaming) {
-        if (messageQueue.length >= MAX_QUEUE) return;
-        const rawText = trimmed.split("\n")[0];
-        setMessageQueue((prev) => [
-          ...prev,
-          {
-            id: String(++queueIdCounter.current),
-            rawText,
-            text: trimmed,
-            model: {
-              id: selectedModel.id,
-              label: selectedModel.label,
-              fusionConfig: selectedModel.fusionConfig,
-            },
-            databases: [...selectedDbs],
-            skills: [...selectedSkills],
-            files: [...attachedFiles],
-            computeTarget: selectedComputeTarget?.id ?? null,
-            timestamp: Date.now(),
+  const enqueue = useCallback(
+    (trimmed: string) => {
+      if (messageQueue.length >= MAX_QUEUE) return;
+      setMessageQueue((prev) => [
+        ...prev,
+        {
+          id: String(++queueIdCounter.current),
+          rawText: trimmed.split("\n")[0],
+          text: trimmed,
+          model: {
+            id: selectedModel.id,
+            label: selectedModel.label,
+            fusionConfig: selectedModel.fusionConfig,
           },
-        ]);
+          databases: [...selectedDbs],
+          skills: [...selectedSkills],
+          files: [...attachedFiles],
+          computeTarget: selectedComputeTarget?.id ?? null,
+          timestamp: Date.now(),
+        },
+      ]);
+    },
+    [messageQueue.length, selectedModel, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget],
+  );
+
+  const handleSend = useCallback(
+    async (text: string, intent: SendIntent) => {
+      if (budgetState === "exceeded") return;
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      const sendNow = () =>
+        send(
+          trimmed,
+          selectedModel.id,
+          {
+            attachments: attachedFiles,
+            skills: selectedSkills.map((s) => s.name),
+            databases: selectedDbs.map((db) => db.name),
+          },
+          selectedModel.fusionConfig,
+          selectedComputeTarget?.id,
+        );
+      const route = routeSubmit(isStreaming, intent);
+      if (route === "queue") {
+        enqueue(trimmed);
         return;
       }
-      await send(
-        trimmed,
-        selectedModel.id,
-        {
-          attachments: attachedFiles,
-          skills: selectedSkills.map((s) => s.name),
-          databases: selectedDbs.map((db) => db.name),
-        },
-        selectedModel.fusionConfig,
-        selectedComputeTarget?.id,
-      );
+      if (route === "steer") {
+        const result = await steer(trimmed);
+        if (result === "ok") return;
+        if (result === "not_streaming") {
+          // The run ended while we typed: keep ordering behind any queue.
+          if (steerNotStreamingFallback(messageQueue.length) === "queue") enqueue(trimmed);
+          else void sendNow();
+          return;
+        }
+        composerRestoreRef.current?.(trimmed);
+        setSteerError("Couldn't deliver the steering message — your text was restored.");
+        return;
+      }
+      await sendNow();
     },
     [
+      budgetState,
+      isStreaming,
+      steer,
+      enqueue,
       send,
       selectedModel,
       selectedComputeTarget,
       selectedDbs,
       selectedSkills,
       attachedFiles,
-      isStreaming,
       messageQueue.length,
-      budgetState,
     ],
   );
+
+  const handleStop = useCallback(async () => {
+    const restored = await stop();
+    if (restored.length > 0) composerRestoreRef.current?.(restored.join("\n"));
+  }, [stop]);
 
   // Imperatively launch a workflow into this tab (called by parent on the
   // active tab when the user hits "Launch" on a workflow template).
@@ -1111,10 +1216,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onAddFile={addAttachedFile}
             onRemoveFile={removeAttachedFile}
             onClearFiles={clearAttachedFiles}
-            onSubmit={handleSubmit}
+            onSend={handleSend}
+            pendingSteers={pendingSteers}
+            composerRestoreRef={composerRestoreRef}
+            inlineError={steerError}
             isStreaming={isStreaming}
             agentStatus={status}
-            onStop={stop}
+            onStop={handleStop}
             selectedDbs={selectedDbs}
             onDbsChange={setSelectedDbs}
             selectedModel={selectedModel}
