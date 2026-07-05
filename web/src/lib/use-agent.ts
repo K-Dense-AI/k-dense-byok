@@ -232,6 +232,7 @@ interface HistoryItem {
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<Status>("ready");
+  const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const messageCounter = useRef(0);
@@ -307,6 +308,31 @@ export function useAgent() {
     return session.id as string;
   }, []);
 
+  /** Queue a message into the live run. "not_streaming" = the run ended
+   *  first; the caller should fall back to a normal send. */
+  const steer = useCallback(
+    async (text: string): Promise<"ok" | "not_streaming" | "error"> => {
+      const id = sessionIdRef.current;
+      if (!id) return "not_streaming";
+      try {
+        const res = await apiFetch(`/sessions/${id}/steer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { pending?: unknown };
+          if (Array.isArray(data.pending)) setPendingSteers(data.pending.map(String));
+          return "ok";
+        }
+        return res.status === 409 ? "not_streaming" : "error";
+      } catch {
+        return "error";
+      }
+    },
+    [],
+  );
+
   const send = useCallback(
     // The optional third arg (expert model / attachments / skills / databases)
     // is accepted for call-site compatibility but no longer used: the Pi
@@ -323,23 +349,18 @@ export function useAgent() {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
 
       const userMsgId = nextId();
-      setMessages((prev) => [
-        ...prev,
-        { id: userMsgId, role: "user", content: text, timestamp: Date.now() },
-      ]);
-      setStatus("submitted");
-
       const assistantId = nextId();
-      setMessages((prev) => [
-        ...prev,
-        { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
-      ]);
-
-      const updateAssistant = (updater: (m: ChatMessage) => ChatMessage) => {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? updater(m) : m)),
-        );
-      };
+      let runState: TranscriptRunState = { assistantId, sawPromptEcho: false };
+      let transcript: ChatMessage[] = [];
+      setMessages((prev) => {
+        transcript = [
+          ...prev,
+          { id: userMsgId, role: "user", content: text, timestamp: Date.now() },
+          { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
+        ];
+        return transcript;
+      });
+      setStatus("submitted");
 
       try {
         const sessionId = await ensureSession();
@@ -386,29 +407,50 @@ export function useAgent() {
             if (!jsonStr) continue;
             try {
               const frame = JSON.parse(jsonStr) as AgentFrame;
-              updateAssistant((m) => applyFrameToMessage(m, frame));
+              const r = applyFrameToTranscript(transcript, runState, frame, nextId);
+              transcript = r.messages;
+              runState = r.state;
+              if (r.steering) setPendingSteers(r.steering);
+              setMessages(transcript);
             } catch {
               /* skip malformed line */
             }
           }
         }
 
-        updateAssistant((m) => ({
-          ...m,
-          activities: (m.activities ?? []).map((a) =>
-            a.status === "running" ? { ...a, status: "complete" } : a,
-          ),
-        }));
+        transcript = transcript.map((m) =>
+          m.role === "assistant" && m.activities?.some((a) => a.status === "running")
+            ? {
+                ...m,
+                activities: m.activities.map((a) =>
+                  a.status === "running" ? { ...a, status: "complete" as const } : a,
+                ),
+              }
+            : m,
+        );
+        setMessages(transcript);
+        setPendingSteers([]);
         setStatus("ready");
       } catch (err: unknown) {
         const aborted = err instanceof DOMException && err.name === "AbortError";
-        updateAssistant((m) => ({
-          ...m,
-          content: aborted ? m.content : m.content || "Something went wrong. Please try again.",
-          activities: (m.activities ?? []).map((a) =>
-            a.status === "running" ? { ...a, status: aborted ? "complete" : "error" } : a,
-          ),
-        }));
+        transcript = transcript.map((m) => {
+          const isCurrent = m.id === runState.assistantId;
+          const activities = (m.activities ?? []).map((a) =>
+            a.status === "running"
+              ? { ...a, status: (aborted ? "complete" : "error") as ActivityItem["status"] }
+              : a,
+          );
+          if (!isCurrent) return m.activities ? { ...m, activities } : m;
+          return {
+            ...m,
+            content: aborted
+              ? m.content
+              : m.content || "Something went wrong. Please try again.",
+            activities,
+          };
+        });
+        setMessages(transcript);
+        setPendingSteers([]);
         setStatus(aborted ? "ready" : "error");
       } finally {
         abortRef.current = null;
@@ -419,16 +461,30 @@ export function useAgent() {
     [status, ensureSession],
   );
 
-  const stop = useCallback(() => {
+  const stop = useCallback(async (): Promise<string[]> => {
     abortRef.current?.abort();
     const id = sessionIdRef.current;
-    if (id) void apiFetch(`/sessions/${id}/abort`, { method: "POST" }).catch(() => {});
+    let restored: string[] = [];
+    if (id) {
+      try {
+        const res = await apiFetch(`/sessions/${id}/abort`, { method: "POST" });
+        if (res.ok) {
+          const data = (await res.json()) as { restored?: unknown };
+          if (Array.isArray(data.restored)) restored = data.restored.map(String);
+        }
+      } catch {
+        /* abort is best-effort; restore is a bonus */
+      }
+    }
+    setPendingSteers([]);
     setStatus("ready");
+    return restored;
   }, []);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
+    setPendingSteers([]);
     setStatus("ready");
     sessionIdRef.current = null;
   }, []);
@@ -437,5 +493,5 @@ export function useAgent() {
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 
-  return { messages, status, send, stop, reset, getSessionId, loadSession };
+  return { messages, status, send, stop, reset, getSessionId, loadSession, steer, pendingSteers };
 }
