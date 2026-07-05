@@ -1,0 +1,7 @@
+HEADER    TEST
+ATOM      1  N   ALA A   1      11.104  13.207  10.567  1.00  0.00           N
+ATOM      2  CA  ALA A   1      12.560  13.207  10.567  1.00  0.00           C
+ATOM      3  C   ALA A   1      13.100  14.600  10.567  1.00  0.00           C
+ATOM      4  O   ALA A   1      12.400  15.600  10.567  1.00  0.00           O
+TER
+END
