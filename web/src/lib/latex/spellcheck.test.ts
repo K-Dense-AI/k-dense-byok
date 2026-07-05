@@ -48,4 +48,16 @@ describe("SpellWorkerClient", () => {
     client.dispose();
     expect((fakeWorker as unknown as { terminate: ReturnType<typeof vi.fn> }).terminate).toHaveBeenCalled();
   });
+
+  it("settles in-flight requests on dispose instead of hanging", async () => {
+    const fakeWorker = {
+      postMessage: vi.fn(),                       // never replies
+      addEventListener: () => {},
+      terminate: vi.fn(),
+    } as unknown as Worker;
+    const client = new SpellWorkerClient(fakeWorker);
+    const pending = client.check(["anything"]);   // will never get a reply
+    client.dispose();
+    await expect(pending).resolves.toEqual([]);    // settled, not hung
+  });
 });

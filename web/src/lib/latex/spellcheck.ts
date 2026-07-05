@@ -55,6 +55,14 @@ export class SpellWorkerClient {
 
   dispose(): void {
     this.worker.terminate();
+    for (const resolve of this.pending.values()) {
+      (
+        resolve as unknown as (v: {
+          misspelled: string[];
+          suggestions: string[];
+        }) => void
+      )({ misspelled: [], suggestions: [] });
+    }
     this.pending.clear();
   }
 }
@@ -111,12 +119,15 @@ export function latexSpellLinter(opts: {
       const misspelledList = await client.check(unique);
       const misspelled = new Set(misspelledList);
 
-      // Fetch suggestions for a bounded number of distinct words per pass;
-      // the worker memoizes, so repeated passes fill the rest in.
-      const suggestions = new Map<string, string[]>();
-      for (const word of misspelledList.slice(0, MAX_SUGGEST_PER_PASS)) {
-        suggestions.set(word, await client.suggest(word));
-      }
+      // Fetch suggestions for a bounded number of distinct words per pass,
+      // in parallel; the worker memoizes, so repeated passes fill the rest in.
+      const suggestWords = misspelledList.slice(0, MAX_SUGGEST_PER_PASS);
+      const suggestionPairs = await Promise.all(
+        suggestWords.map(
+          async (word) => [word, await client.suggest(word)] as const,
+        ),
+      );
+      const suggestions = new Map<string, string[]>(suggestionPairs);
 
       return buildSpellDiagnostics(tokens, misspelled, opts.ignored(), (t) => {
         const fixes = (suggestions.get(t.word) ?? []).map((s) => ({
