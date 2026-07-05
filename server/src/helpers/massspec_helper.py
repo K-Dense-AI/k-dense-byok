@@ -16,7 +16,7 @@ def _downsample_xy(xs, ys, cap):
     n = len(xs)
     if n <= cap:
         return list(map(float, xs)), list(map(float, ys))
-    step = n // cap
+    step = (n + cap - 1) // cap
     return [float(xs[i]) for i in range(0, n, step)], [float(ys[i]) for i in range(0, n, step)]
 
 

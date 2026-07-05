@@ -40,7 +40,7 @@ describe("massspec_helper", () => {
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("mzml");
-    expect(d.n_spectra).toBeGreaterThan(0);
+    expect(d.n_spectra).toBe(4);
     expect(d.chromatogram).not.toBeNull();
     expect(d.chromatogram.x.length).toBeGreaterThan(0);
   }, 15000);
@@ -51,7 +51,7 @@ describe("massspec_helper", () => {
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("mzxml");
-    expect(d.n_spectra).toBeGreaterThan(0);
+    expect(d.n_spectra).toBe(2);
     expect(d.spectra.length).toBeGreaterThan(0);
   }, 15000);
 });
