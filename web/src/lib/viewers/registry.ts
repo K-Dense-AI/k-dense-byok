@@ -23,6 +23,7 @@ const StructureViewer = lazy(() => import("@/components/viewers/structure-viewer
 const SpectrumViewer = lazy(() => import("@/components/viewers/spectrum-viewer"));
 const ArrayDataViewer = lazy(() => import("@/components/viewers/arraydata-viewer"));
 const PhyloViewer = lazy(() => import("@/components/viewers/phylo-viewer"));
+const AlignmentViewer = lazy(() => import("@/components/viewers/alignment-viewer"));
 
 /** Registry of viewers for NEW scientific categories. Existing categories keep
  *  their dispatch in file-preview-panel.tsx; this is additive. */
@@ -32,6 +33,7 @@ export const VIEWER_REGISTRY: Partial<Record<FileCategory, ViewerDef>> = {
   massspec: { loadMode: "none", Viewer: SpectrumViewer, canEditSource: false, managesOwnScroll: true },
   arraydata: { loadMode: "none", Viewer: ArrayDataViewer, canEditSource: false, managesOwnScroll: true },
   phylo: { loadMode: "text", Viewer: PhyloViewer, canEditSource: false, managesOwnScroll: true },
+  alignment: { loadMode: "text", Viewer: AlignmentViewer, canEditSource: false, managesOwnScroll: true },
 };
 
 export function getViewerDef(cat: FileCategory): ViewerDef | undefined {
