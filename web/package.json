@@ -18,6 +18,7 @@
     "@uiw/codemirror-extensions-langs": "^4.25.7",
     "@uiw/codemirror-theme-github": "^4.25.7",
     "@uiw/react-codemirror": "^4.25.7",
+    "3dmol": "^2.5.5",
     "ai": "^6.0.114",
     "chart.js": "^4.5.1",
     "class-variance-authority": "^0.7.1",
