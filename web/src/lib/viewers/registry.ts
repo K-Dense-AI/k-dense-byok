@@ -20,12 +20,24 @@ export interface ViewerDef {
 
 const MoleculeViewer = lazy(() => import("@/components/viewers/molecule-viewer"));
 const StructureViewer = lazy(() => import("@/components/viewers/structure-viewer"));
+const SpectrumViewer = lazy(() => import("@/components/viewers/spectrum-viewer"));
+const ArrayDataViewer = lazy(() => import("@/components/viewers/arraydata-viewer"));
+const PhyloViewer = lazy(() => import("@/components/viewers/phylo-viewer"));
+const AlignmentViewer = lazy(() => import("@/components/viewers/alignment-viewer"));
+const ImagingViewer = lazy(() => import("@/components/viewers/imaging-viewer"));
 
 /** Registry of viewers for NEW scientific categories. Existing categories keep
  *  their dispatch in file-preview-panel.tsx; this is additive. */
 export const VIEWER_REGISTRY: Partial<Record<FileCategory, ViewerDef>> = {
   molecule2d: { loadMode: "none", Viewer: MoleculeViewer, canEditSource: false, managesOwnScroll: true },
   structure3d: { loadMode: "raw", Viewer: StructureViewer, canEditSource: false, managesOwnScroll: true },
+  massspec: { loadMode: "none", Viewer: SpectrumViewer, canEditSource: false, managesOwnScroll: true },
+  arraydata: { loadMode: "none", Viewer: ArrayDataViewer, canEditSource: false, managesOwnScroll: true },
+  phylo: { loadMode: "text", Viewer: PhyloViewer, canEditSource: false, managesOwnScroll: true },
+  alignment: { loadMode: "text", Viewer: AlignmentViewer, canEditSource: false, managesOwnScroll: true },
+  dicom: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },
+  nifti: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },
+  microscopy: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },
 };
 
 export function getViewerDef(cat: FileCategory): ViewerDef | undefined {

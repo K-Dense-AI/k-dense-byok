@@ -11,4 +11,13 @@ dependencies = [
     "h5py",
     "rdkit",
     "gemmi",
+    "pyteomics",
+    "lxml",
+    "psims",
+    "pyarrow",
+    "netCDF4",
+    "pydicom",
+    "nibabel",
+    "tifffile",
+    "pillow",
 ]

@@ -73,6 +73,15 @@ function categoryLabel(name: string): string {
   if (cat === "anndata") return "anndata";
   if (cat === "molecule2d") return ext === "sdf" ? "sdf" : "molecule";
   if (cat === "structure3d") return ext || "structure";
+  if (cat === "massspec") return ext === "jdx" || ext === "dx" ? "spectrum" : ext;
+  if (cat === "arraydata") {
+    return ext === "parquet" ? "parquet" : ext === "npy" || ext === "npz" ? "ndarray" : ext === "nc" || ext === "cdf" ? "netcdf" : "hdf5";
+  }
+  if (cat === "phylo") return "phylo tree";
+  if (cat === "alignment") return "alignment";
+  if (cat === "dicom") return "dicom";
+  if (cat === "nifti") return "nifti";
+  if (cat === "microscopy") return "microscopy";
   return langForFile(name);
 }
 

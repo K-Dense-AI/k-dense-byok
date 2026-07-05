@@ -25,9 +25,16 @@ export type FileCategory =
   | "anndata"
   | "molecule2d"
   | "structure3d"
+  | "massspec"
+  | "arraydata"
+  | "phylo"
+  | "alignment"
+  | "dicom"
+  | "nifti"
+  | "microscopy"
   | "text";
 
-const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "heic"]);
 
 const FASTA_EXTS = new Set(["fasta", "fa", "faa", "fna", "ffn", "fastq", "fq"]);
 
@@ -39,12 +46,26 @@ const MOLECULE2D_EXTS = new Set(["smi", "smiles", "inchi", "mol", "sdf", "mol2"]
 
 const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "pdbqt"]);
 
+const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
+
+const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf"]);
+
+const PHYLO_EXTS = new Set(["nwk", "newick", "tree", "nhx"]);
+
+const ALIGNMENT_EXTS = new Set(["aln", "clustal", "sto", "stk", "phy", "phylip"]);
+
+const MICROSCOPY_EXTS = new Set(["tif", "tiff"]);
+
 export function fileCategory(name: string): FileCategory {
   const lower = name.toLowerCase();
   // Handle compound extensions like .h5ad.gz before the generic split
   if (lower.endsWith(".h5ad") || lower.endsWith(".h5ad.gz")) return "anndata";
+  if (lower.endsWith(".nii") || lower.endsWith(".nii.gz")) return "nifti";
+  if (lower.endsWith(".ome.tif") || lower.endsWith(".ome.tiff")) return "microscopy";
   const ext = lower.split(".").pop() ?? "";
   if (IMAGE_EXTS.has(ext)) return "image";
+  if (MICROSCOPY_EXTS.has(ext)) return "microscopy";
+  if (ext === "dcm" || ext === "dicom") return "dicom";
   if (ext === "pdf") return "pdf";
   if (ext === "md" || ext === "mdx") return "markdown";
   if (ext === "csv") return "csv";
@@ -54,6 +75,10 @@ export function fileCategory(name: string): FileCategory {
   if (LATEX_EXTS.has(ext)) return "latex";
   if (MOLECULE2D_EXTS.has(ext)) return "molecule2d";
   if (STRUCTURE3D_EXTS.has(ext)) return "structure3d";
+  if (MASSSPEC_EXTS.has(ext)) return "massspec";
+  if (ARRAYDATA_EXTS.has(ext)) return "arraydata";
+  if (PHYLO_EXTS.has(ext)) return "phylo";
+  if (ALIGNMENT_EXTS.has(ext)) return "alignment";
   return "text";
 }
 
@@ -86,10 +111,11 @@ export function sciSummaryUrl(path: string, kind: string): string {
   return `${API_BASE}/sandbox/sci-summary?${params.toString()}`;
 }
 
-export function sciRenderUrl(path: string, kind: string, index = 0): string {
+export function sciRenderUrl(path: string, kind: string, index = 0, axis?: string): string {
   const params = new URLSearchParams({
     path, kind, index: String(index), project: getActiveProjectId(),
   });
+  if (axis) params.set("axis", axis);
   return `${API_BASE}/sandbox/sci-render.png?${params.toString()}`;
 }
 
