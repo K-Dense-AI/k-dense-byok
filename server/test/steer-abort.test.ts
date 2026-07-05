@@ -72,6 +72,33 @@ function steer(id: string, body: unknown, projectId = "default") {
   });
 }
 
+describe("POST /sessions/:id/abort", () => {
+  it("clears the queue before aborting and returns the texts", async () => {
+    const s = new FakeSession();
+    await s.steer("pending steer");
+    fakeSessions.set("s1", s);
+    const res = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/abort",
+      headers: { "x-project-id": "default" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, restored: ["pending steer"] });
+    expect(s.aborted).toBe(true);
+    expect(s.clearQueueCalls).toBe(1);
+  });
+
+  it("returns ok with empty restored for an unknown session", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/sessions/nope/abort",
+      headers: { "x-project-id": "default" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, restored: [] });
+  });
+});
+
 describe("POST /sessions/:id/steer", () => {
   it("404s for an unknown session", async () => {
     const res = await steer("nope", { message: "hi" });

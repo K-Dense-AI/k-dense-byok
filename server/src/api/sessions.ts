@@ -183,8 +183,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
   app.post<{ Params: { id: string } }>("/sessions/:id/abort", async (req) => {
     const session = await getSession(currentProjectId(), activePaths(), req.params.id);
-    if (session) await session.abort();
-    return { ok: true };
+    if (!session) return { ok: true, restored: [] };
+    // Clear BEFORE abort so a pending steer can't be delivered into the
+    // dying loop; the texts go back to the composer client-side.
+    const cleared = session.clearQueue();
+    await session.abort();
+    return { ok: true, restored: [...cleared.steering, ...cleared.followUp] };
   });
 
   // Steering side-channel: queue a message into the LIVE run (delivered by Pi
