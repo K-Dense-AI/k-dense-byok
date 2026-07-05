@@ -32,6 +32,7 @@ import {
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
 import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
 import { toClientFrame, relativizeSandboxPaths } from "../src/agent/events.ts";
+import { helperPython, HELPERS_DIR } from "../src/helpers-env.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -359,5 +360,19 @@ describe("web access bridge", () => {
     expect(
       (JSON.parse(fs.readFileSync(trustFile, "utf-8")) as Record<string, boolean>)[key],
     ).toBe(false);
+  });
+});
+
+describe("helper python resolution", () => {
+  it("honors KADY_PYTHON when set", () => {
+    const prev = process.env.KADY_PYTHON;
+    process.env.KADY_PYTHON = "/custom/python";
+    expect(helperPython()).toBe("/custom/python");
+    if (prev === undefined) delete process.env.KADY_PYTHON;
+    else process.env.KADY_PYTHON = prev;
+  });
+
+  it("points HELPERS_DIR at the helpers source dir", () => {
+    expect(HELPERS_DIR.endsWith(path.join("src", "helpers"))).toBe(true);
   });
 });

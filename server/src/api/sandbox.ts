@@ -16,10 +16,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, touchProject } from "../projects.ts";
 import { currentProjectId } from "../scope.ts";
 import { guessMime, isUserVisible, safePath, SandboxError } from "../sandbox-fs.ts";
+import { helperPython } from "../helpers-env.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
-const PYTHON = process.env.KADY_PYTHON || "python3";
 const MAX_PREVIEW_BYTES = 512_000;
 const VALID_ENGINES = new Set(["pdflatex", "xelatex", "lualatex"]);
 
@@ -416,7 +416,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Not a .h5ad file" };
       }
-      const res = spawnSync(PYTHON, [ANNDATA_HELPER, "summarize", target], { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
+      const res = spawnSync(helperPython(), [ANNDATA_HELPER, "summarize", target], { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
       if (res.status === 3) {
         reply.code(503);
         return { detail: res.stderr.trim() || "AnnData deps missing" };
@@ -444,7 +444,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         const cacheDir = path.join(activePaths().root, ".anndata_cache");
         const outPng = path.join(os.tmpdir(), `kady-emb-${process.pid}-${Date.now()}.png`);
         const res = spawnSync(
-          PYTHON,
+          helperPython(),
           [ANNDATA_HELPER, "embedding", target, req.query.key, req.query.color || "-", cacheDir, outPng],
           { encoding: "utf-8" },
         );

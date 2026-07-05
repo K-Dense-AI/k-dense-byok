@@ -8,6 +8,7 @@ import "./env.ts";
 import { ensureProjectExists, listProjects, resolvePaths } from "./projects.ts";
 import { seedProjectSkills } from "./agent/skills.ts";
 import { seedSandboxFiles, syncSandboxVenv } from "./sandbox-seed.ts";
+import { syncHelperVenv } from "./helpers-env.ts";
 import { DEFAULT_PROJECT_ID } from "./config.ts";
 
 async function main(): Promise<void> {
@@ -23,6 +24,8 @@ async function main(): Promise<void> {
     const synced = syncSandboxVenv(paths);
     process.stdout.write(`   venv: ${synced ? "synced" : "skipped (uv unavailable or sync failed)"}\n`);
   }
+  const helperSynced = syncHelperVenv();
+  process.stdout.write(`   helper venv: ${helperSynced ? "synced" : "skipped (uv unavailable or sync failed)"}\n`);
   process.stdout.write("Done.\n");
 }
 
