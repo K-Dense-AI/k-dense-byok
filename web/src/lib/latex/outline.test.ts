@@ -33,6 +33,10 @@ describe("parseOutline", () => {
     expect(items).toContainEqual({ kind: "figure", title: "A nice plot", line: 7, depth: 4 });
     expect(items).toContainEqual({ kind: "table", title: "Results table", line: 12, depth: 3 });
   });
+  it("keeps an escaped %% in a section title instead of treating it as a comment", () => {
+    const items = parseOutline("\\section{50\\% done}");
+    expect(items).toContainEqual({ kind: "section", title: "50\\% done", line: 1, depth: 2 });
+  });
 });
 
 describe("breadcrumbFor", () => {

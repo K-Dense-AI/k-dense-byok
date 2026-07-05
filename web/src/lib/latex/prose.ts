@@ -23,11 +23,44 @@ const MATH_ENVS = new Set([
 ]);
 
 const WORD_RE = /^[A-Za-z][A-Za-z']+$/;
+const DOC_BEGIN = "\\begin{document}";
+
+/** True if the character at `pos` is preceded by an odd number of backslashes
+ * (i.e. it is escaped: `\%` is escaped, `\\%` is not — the `\\` is a
+ * line-break command, and the `%` that follows is a real, unescaped one). */
+function isEscaped(text: string, pos: number): boolean {
+  let n = 0;
+  let j = pos - 1;
+  while (j >= 0 && text[j] === "\\") {
+    n++;
+    j--;
+  }
+  return n % 2 === 1;
+}
+
+/** Index just past the first `\begin{document}` that is not inside a
+ * %-comment, or 0 if none is found (matching the "no preamble" case). */
+function findDocBodyStart(text: string): number {
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    let commentAt = -1;
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === "%" && !isEscaped(line, i)) {
+        commentAt = i;
+        break;
+      }
+    }
+    const codePart = commentAt === -1 ? line : line.slice(0, commentAt);
+    const idx = codePart.indexOf(DOC_BEGIN);
+    if (idx !== -1) return offset + idx + DOC_BEGIN.length;
+    offset += line.length + 1; // +1 for the split-out "\n"
+  }
+  return 0;
+}
 
 export function extractProseTokens(text: string): ProseToken[] {
   const tokens: ProseToken[] = [];
-  const docStart = text.indexOf("\\begin{document}");
-  let i = docStart >= 0 ? docStart + "\\begin{document}".length : 0;
+  let i = findDocBodyStart(text);
   let mathEnvDepth = 0;
 
   const flushWord = (from: number, to: number) => {
@@ -40,7 +73,7 @@ export function extractProseTokens(text: string): ProseToken[] {
   while (i < text.length) {
     const ch = text[i];
 
-    if (ch === "%" && text[i - 1] !== "\\") {
+    if (ch === "%" && !isEscaped(text, i)) {
       while (i < text.length && text[i] !== "\n") i++;
       continue;
     }
@@ -48,7 +81,7 @@ export function extractProseTokens(text: string): ProseToken[] {
       const display = text[i + 1] === "$";
       i += display ? 2 : 1;
       while (i < text.length) {
-        if (text[i] === "$" && text[i - 1] !== "\\") {
+        if (text[i] === "$" && !isEscaped(text, i)) {
           i += display && text[i + 1] === "$" ? 2 : 1;
           break;
         }
@@ -67,6 +100,7 @@ export function extractProseTokens(text: string): ProseToken[] {
       while (j < text.length && /[a-zA-Z]/.test(text[j])) j++;
       const name = text.slice(i + 1, j);
       i = j;
+      if (text[i] === "*") i++;
       // \begin{env}/\end{env}: track math environments
       if (name === "begin" || name === "end") {
         const m = /^\{([a-zA-Z*]+)\}/.exec(text.slice(i));
@@ -94,7 +128,7 @@ export function extractProseTokens(text: string): ProseToken[] {
     }
     if (/[A-Za-z]/.test(ch)) {
       const start = i;
-      while (i < text.length && /[A-Za-z']/.test(text[i])) i++;
+      while (i < text.length && /[A-Za-z0-9']/.test(text[i])) i++;
       flushWord(start, i);
       continue;
     }

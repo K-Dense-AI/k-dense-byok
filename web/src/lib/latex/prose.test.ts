@@ -33,6 +33,34 @@ describe("extractProseTokens", () => {
     const words = extractProseTokens("a x2 hello").map((x) => x.word);
     expect(words).toEqual(["hello"]);
   });
+  it("skips args of starred cite/bibliography commands", () => {
+    const words = extractProseTokens(
+      "See \\citep*{smith2020} and \\cite*{jones1999} here",
+    ).map((x) => x.word);
+    expect(words).toEqual(["See", "and", "here"]);
+  });
+  it("treats a double backslash before %% as a real comment, not an escaped percent", () => {
+    const words = extractProseTokens(
+      "line one \\\\% real comment word\nkept text",
+    ).map((x) => x.word);
+    expect(words).toEqual(["line", "one", "kept", "text"]);
+  });
+  it("finds \\begin{document} that isn't inside a comment", () => {
+    const words = extractProseTokens(
+      "% \\begin{document} commented\npreamble junk\n\\begin{document}\nreal words\n\\end{document}",
+    ).map((x) => x.word);
+    expect(words).toEqual(["real", "words"]);
+  });
+  it("excludes an alphanumeric run wholesale instead of splitting at the digit", () => {
+    const words = extractProseTokens("we use word2vec and bert here").map((x) => x.word);
+    expect(words).toEqual(["we", "use", "and", "bert", "here"]);
+  });
+  it("skips the body of math environments", () => {
+    const words = extractProseTokens(
+      "Before \\begin{equation}\n E = mc^2 skipword\n\\end{equation} after",
+    ).map((x) => x.word);
+    expect(words).toEqual(["Before", "after"]);
+  });
 });
 
 describe("proseWordCount", () => {

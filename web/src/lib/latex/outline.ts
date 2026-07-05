@@ -24,12 +24,25 @@ const FLOAT_BEGIN_RE = /\\begin\{(figure|table)\*?\}/;
 const FLOAT_END_RE = /\\end\{(figure|table)\*?\}/;
 const CAPTION_RE = /\\caption\s*(?:\[[^\]]*\])?\{([^}]*)\}/;
 
+/** True if the character at `pos` is preceded by an odd number of backslashes
+ * (i.e. it is escaped: `\%` is escaped, `\\%` is not — the `\\` is a
+ * line-break command, and the `%` that follows is a real, unescaped one). */
+function isEscaped(line: string, pos: number): boolean {
+  let n = 0;
+  let j = pos - 1;
+  while (j >= 0 && line[j] === "\\") {
+    n++;
+    j--;
+  }
+  return n % 2 === 1;
+}
+
 /** Strip a trailing unescaped %-comment from a line. */
 function stripComment(line: string): string {
   let out = "";
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === "%" && line[i - 1] !== "\\") break;
+    if (ch === "%" && !isEscaped(line, i)) break;
     out += ch;
   }
   return out;
