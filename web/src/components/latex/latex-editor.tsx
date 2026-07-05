@@ -3,6 +3,7 @@
 import { rawFileUrl, type LatexCompileResult } from "@/lib/use-sandbox";
 import { parseCompileDiagnostics } from "@/lib/latex/diagnostics";
 import { parseMagicComments, resolveRelative } from "@/lib/latex/magic-comments";
+import { breadcrumbFor, parseOutline, type OutlineItem } from "@/lib/latex/outline";
 import { proseWordCount } from "@/lib/latex/prose";
 import { cn } from "@/lib/utils";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
@@ -16,8 +17,20 @@ import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
 import { LogPanel, type LogFilter } from "./log-panel";
+import { OutlinePanel } from "./outline-panel";
 
 const AUTOCOMPILE_KEY = "kady:latex:autocompile";
+const OUTLINE_KEY = "kady:latex:outline";
+
+const LATEX_BASIC_SETUP = {
+  lineNumbers: true,
+  highlightActiveLine: true,
+  foldGutter: true,
+  autocompletion: false,
+  bracketMatching: true,
+  indentOnInput: true,
+  tabSize: 2,
+};
 
 export interface LatexEditorProps {
   path: string;
@@ -67,6 +80,12 @@ export function LatexEditor({
   const [autoCompile, setAutoCompile] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem(AUTOCOMPILE_KEY) === "1",
   );
+  const [outline, setOutline] = useState<OutlineItem[]>(() => parseOutline(initialContent));
+  const [outlineOpen, setOutlineOpen] = useState(
+    () => typeof localStorage === "undefined" || localStorage.getItem(OUTLINE_KEY) !== "0",
+  );
+  const [cursorLine, setCursorLine] = useState(1);
+  const breadcrumb = useMemo(() => breadcrumbFor(outline, cursorLine), [outline, cursorLine]);
 
   const { resolvedTheme } = useTheme();
   const isMac =
@@ -85,11 +104,15 @@ export function LatexEditor({
     contentRef.current = value;
     setIsDirty(value !== lastSavedRef.current);
     if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
-    wordCountTimer.current = setTimeout(() => setWordCount(proseWordCount(value)), 1000);
+    wordCountTimer.current = setTimeout(() => {
+      setWordCount(proseWordCount(value));
+      setOutline(parseOutline(value));
+    }, 1000);
   }, []);
   useEffect(
     () => () => {
       if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
+      if (cursorTimer.current) clearTimeout(cursorTimer.current);
     },
     [],
   );
@@ -190,6 +213,32 @@ export function LatexEditor({
     view.focus();
   }, []);
 
+  const cursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const trackCursor = useCallback((line: number) => {
+    if (cursorTimer.current) clearTimeout(cursorTimer.current);
+    cursorTimer.current = setTimeout(() => setCursorLine(line), 150);
+  }, []);
+  const trackCursorRef = useRef(trackCursor);
+  trackCursorRef.current = trackCursor;
+
+  const jumpToLine = useCallback((line: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const ln = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
+    view.dispatch({
+      selection: { anchor: ln.from },
+      effects: EditorView.scrollIntoView(ln.from, { y: "center" }),
+    });
+    view.focus();
+  }, []);
+
+  const toggleOutline = useCallback(() => {
+    setOutlineOpen((v) => {
+      localStorage.setItem(OUTLINE_KEY, v ? "0" : "1");
+      return !v;
+    });
+  }, []);
+
   // --- editor extensions ----------------------------------------------------
   const texLang = useMemo(() => loadLanguage("tex"), []);
 
@@ -222,6 +271,11 @@ export function LatexEditor({
       EditorView.lineWrapping,
       lintGutter(),
       texLinter,
+      EditorView.updateListener.of((u) => {
+        if (u.selectionSet) {
+          trackCursorRef.current(u.state.doc.lineAt(u.state.selection.main.head).number);
+        }
+      }),
       keymap.of([
         { key: "Mod-s", run: () => { handleSaveRef.current(); return true; }, preventDefault: true },
         { key: "Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
@@ -274,11 +328,29 @@ export function LatexEditor({
         wordCount={wordCount}
         modKey={modKey}
         onSnippet={handleSnippet}
+        outlineOpen={outlineOpen}
+        onToggleOutline={toggleOutline}
       />
 
       <div className={cn("flex flex-1 min-h-0", dragging && "select-none")}>
+        {outlineOpen && (
+          <OutlinePanel items={outline} currentLine={cursorLine} onJump={jumpToLine} />
+        )}
+
         {/* Editor pane */}
         <div className="flex min-w-0 flex-col overflow-hidden" style={{ width: `${splitPct}%` }}>
+          {breadcrumb.length > 0 && (
+            <div className="flex shrink-0 items-center gap-1 truncate border-b bg-muted/20 px-3 py-1 text-[10px] text-muted-foreground">
+              {breadcrumb.map((b, i) => (
+                <span key={`${b.line}`} className="flex items-center gap-1 truncate">
+                  {i > 0 && <span className="text-muted-foreground/40">›</span>}
+                  <button className="truncate hover:text-foreground" onClick={() => jumpToLine(b.line)}>
+                    {b.title}
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="relative flex-1 min-h-0">
             <div className="absolute inset-0">
               <CodeMirror
@@ -289,15 +361,7 @@ export function LatexEditor({
                 theme={resolvedTheme === "dark" ? githubDark : githubLight}
                 height="100%"
                 className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
-                basicSetup={{
-                  lineNumbers: true,
-                  highlightActiveLine: true,
-                  foldGutter: true,
-                  autocompletion: false,
-                  bracketMatching: true,
-                  indentOnInput: true,
-                  tabSize: 2,
-                }}
+                basicSetup={LATEX_BASIC_SETUP}
               />
             </div>
           </div>

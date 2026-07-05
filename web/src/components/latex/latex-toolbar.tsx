@@ -8,6 +8,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ItalicIcon,
+  ListTreeIcon,
   LoaderCircleIcon,
   PlayIcon,
   PlusIcon,
@@ -61,6 +62,8 @@ export interface LatexToolbarProps {
   wordCount: number;
   modKey: string;
   onSnippet: (action: SnippetAction) => void;
+  outlineOpen: boolean;
+  onToggleOutline: () => void;
 }
 
 export function LatexToolbar(p: LatexToolbarProps) {
@@ -171,6 +174,17 @@ export function LatexToolbar(p: LatexToolbarProps) {
           </div>
         )}
       </div>
+
+      <button
+        onClick={p.onToggleOutline}
+        className={cn(
+          "rounded p-1 transition-colors hover:bg-muted",
+          p.outlineOpen ? "text-foreground" : "text-muted-foreground",
+        )}
+        title="Toggle outline"
+      >
+        <ListTreeIcon className="size-3.5" />
+      </button>
 
       {/* Status */}
       {(p.errorCount > 0 || p.warningCount > 0) && !p.compiling && (
