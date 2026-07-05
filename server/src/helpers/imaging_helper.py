@@ -171,6 +171,8 @@ def summarize_nifti(path: Path) -> dict:
 
 
 def render_nifti(path: Path, index: int, out: Path, axis: str) -> None:
+    _need("numpy")
+    _need("nibabel")
     import numpy as np
 
     img, shape = _load_nifti(path)
@@ -244,6 +246,7 @@ def summarize_dicom(path: Path) -> dict:
 
 def render_dicom(path: Path, index: int, out: Path) -> None:
     _need("numpy")
+    _need("pydicom")
     import numpy as np
     import pydicom
     from pydicom.multival import MultiValue

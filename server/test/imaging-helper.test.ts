@@ -100,4 +100,11 @@ describe("imaging_helper", () => {
     expect(res.status).toBe(4);
     expect(fs.existsSync(out)).toBe(false);
   });
+
+  it.runIf(depsOk)("exits 4 on out-of-range TIFF page index", () => {
+    const out = tmpOut("oor-tiff.png");
+    const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.tif"), "99", out, "-"]);
+    expect(res.status).toBe(4);
+    expect(fs.existsSync(out)).toBe(false);
+  }, 15000);
 });
