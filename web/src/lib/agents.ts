@@ -15,6 +15,7 @@ export interface AgentFile {
   name: string;
   description: string;
   source: "project" | "builtin";
+  enabled?: boolean;
   model?: string;
   thinking?: string;
   tools?: string;
@@ -65,4 +66,13 @@ export async function restoreDefaultAgents(): Promise<string[]> {
     | null;
   if (!res.ok) throw new Error(data?.detail || `restoreDefaultAgents ${res.status}`);
   return data?.restored ?? [];
+}
+
+export async function setAgentEnabled(name: string, enabled: boolean): Promise<void> {
+  const action = enabled ? "enable" : "disable";
+  const res = await apiFetch(`/agents/${encodeURIComponent(name)}/${action}`, { method: "POST" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `setAgentEnabled ${res.status}`);
+  }
 }

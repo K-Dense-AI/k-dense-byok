@@ -45,6 +45,27 @@ export async function saveMcpServers(mcpServers: McpServers): Promise<void> {
   }
 }
 
+export interface McpListing {
+  mcpServers: McpServers;
+  disabledServers: McpServers;
+}
+
+export async function getMcpListing(): Promise<McpListing> {
+  const res = await apiFetch("/mcp");
+  if (!res.ok) throw new Error(`getMcpListing ${res.status}`);
+  const data = (await res.json()) as { mcpServers?: McpServers; disabledServers?: McpServers };
+  return { mcpServers: data.mcpServers ?? {}, disabledServers: data.disabledServers ?? {} };
+}
+
+export async function setConnectorEnabled(name: string, enabled: boolean): Promise<void> {
+  const action = enabled ? "enable" : "disable";
+  const res = await apiFetch(`/mcp/${encodeURIComponent(name)}/${action}`, { method: "POST" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `setConnectorEnabled ${res.status}`);
+  }
+}
+
 export interface McpTestResult {
   ok: boolean;
   tools?: string[];
