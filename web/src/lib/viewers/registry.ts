@@ -24,6 +24,7 @@ const SpectrumViewer = lazy(() => import("@/components/viewers/spectrum-viewer")
 const ArrayDataViewer = lazy(() => import("@/components/viewers/arraydata-viewer"));
 const PhyloViewer = lazy(() => import("@/components/viewers/phylo-viewer"));
 const AlignmentViewer = lazy(() => import("@/components/viewers/alignment-viewer"));
+const ImagingViewer = lazy(() => import("@/components/viewers/imaging-viewer"));
 
 /** Registry of viewers for NEW scientific categories. Existing categories keep
  *  their dispatch in file-preview-panel.tsx; this is additive. */
@@ -34,6 +35,9 @@ export const VIEWER_REGISTRY: Partial<Record<FileCategory, ViewerDef>> = {
   arraydata: { loadMode: "none", Viewer: ArrayDataViewer, canEditSource: false, managesOwnScroll: true },
   phylo: { loadMode: "text", Viewer: PhyloViewer, canEditSource: false, managesOwnScroll: true },
   alignment: { loadMode: "text", Viewer: AlignmentViewer, canEditSource: false, managesOwnScroll: true },
+  dicom: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },
+  nifti: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },
+  microscopy: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },
 };
 
 export function getViewerDef(cat: FileCategory): ViewerDef | undefined {
