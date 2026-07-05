@@ -13,10 +13,12 @@ class FakeSession {
   steered: string[] = [];
   aborted = false;
   clearQueueCalls = 0;
+  calls: string[] = [];
   /** Called by steer(); lets a test flip isStreaming mid-call. */
   onSteer: (() => void) | null = null;
 
   async steer(text: string): Promise<void> {
+    this.calls.push("steer");
     this.steered.push(text);
     this.onSteer?.();
   }
@@ -24,12 +26,14 @@ class FakeSession {
     return this.steered;
   }
   clearQueue(): { steering: string[]; followUp: string[] } {
+    this.calls.push("clearQueue");
     this.clearQueueCalls += 1;
     const steering = [...this.steered];
     this.steered = [];
     return { steering, followUp: [] };
   }
   async abort(): Promise<void> {
+    this.calls.push("abort");
     this.aborted = true;
   }
 }
@@ -86,6 +90,7 @@ describe("POST /sessions/:id/abort", () => {
     expect(res.json()).toEqual({ ok: true, restored: ["pending steer"] });
     expect(s.aborted).toBe(true);
     expect(s.clearQueueCalls).toBe(1);
+    expect(s.calls).toEqual(["steer", "clearQueue", "abort"]);
   });
 
   it("returns ok with empty restored for an unknown session", async () => {
