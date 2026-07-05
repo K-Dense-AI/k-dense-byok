@@ -7,20 +7,32 @@
  * frame sourced from Pi's per-session usage accounting.
  */
 import type { FastifyInstance } from "fastify";
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { activePaths } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
-import { resolveModel } from "../agent/models.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
+import {
+  pendingInterviewFor,
+  resolveInterview,
+  validateAnswer,
+  type InterviewAnswer,
+} from "../agent/interview.ts";
 import { setSessionComputeTarget } from "../agent/modal-tool.ts";
+import { resolveModel } from "../agent/models.ts";
+import {
+  findSessionFile,
+  toNotebook,
+  toShellScript,
+} from "../agent/session-export.ts";
+import { toHistory } from "../agent/session-history.ts";
 import {
   createSession,
   getModelRegistry,
   getSession,
   listSessions,
 } from "../agent/session-registry.ts";
+import { parseThinkingLevel } from "../agent/thinking.ts";
 import {
   addTurnUsage,
   emptySnapshot,
@@ -31,18 +43,6 @@ import {
   snapshotMax,
   type CostSnapshot,
 } from "../cost/ledger.ts";
-import {
-  findSessionFile,
-  toNotebook,
-  toShellScript,
-} from "../agent/session-export.ts";
-import { toHistory } from "../agent/session-history.ts";
-import {
-  pendingInterviewFor,
-  resolveInterview,
-  validateAnswer,
-  type InterviewAnswer,
-} from "../agent/interview.ts";
 
 function snapshot(session: { getSessionStats(): { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } } }): CostSnapshot {
   const s = session.getSessionStats();
@@ -321,8 +321,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             }
           }
         }
-        if (body.thinkingLevel) {
-          session.setThinkingLevel(body.thinkingLevel as ThinkingLevel);
+        if (body.thinkingLevel !== undefined) {
+          const level = parseThinkingLevel(body.thinkingLevel);
+          if (level) session.setThinkingLevel(level);
+          else req.log.warn({ thinkingLevel: body.thinkingLevel }, "ignoring invalid thinkingLevel");
         }
 
         // Take over the socket for Server-Sent Events.
