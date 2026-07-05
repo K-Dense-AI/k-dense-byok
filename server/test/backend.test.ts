@@ -33,6 +33,7 @@ import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
 import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
 import { toClientFrame, relativizeSandboxPaths } from "../src/agent/events.ts";
 import { helperPython, HELPERS_DIR } from "../src/helpers-env.ts";
+import { sciHelperFor } from "../src/api/sci-helpers.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -380,5 +381,15 @@ describe("helper python resolution", () => {
 
   it("points HELPERS_DIR at the helpers source dir", () => {
     expect(HELPERS_DIR.endsWith(path.join("src", "helpers"))).toBe(true);
+  });
+});
+
+describe("sci helper dispatch", () => {
+  it("returns null for an unknown kind", () => {
+    expect(sciHelperFor("bogus")).toBeNull();
+  });
+  it("resolves known kinds to a helper script path", () => {
+    expect(sciHelperFor("chem")?.script.endsWith("chem_helper.py")).toBe(true);
+    expect(sciHelperFor("structure")?.script.endsWith("structure_helper.py")).toBe(true);
   });
 });
