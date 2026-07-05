@@ -458,7 +458,11 @@ export function useSandbox(isActive = false) {
     for (const tab of current) {
       const name = tab.path.split("/").pop() ?? "";
       const cat = fileCategory(name);
-      if (cat === "image" || cat === "pdf" || cat === "anndata") continue;
+      const def = getViewerDef(cat);
+      const loadMode = def
+        ? def.loadMode
+        : cat === "image" || cat === "pdf" || cat === "anndata" ? "none" : "text";
+      if (loadMode !== "text") continue;
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
       try {

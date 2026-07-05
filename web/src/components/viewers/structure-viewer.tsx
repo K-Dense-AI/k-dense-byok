@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { sciSummaryUrl } from "@/lib/use-sandbox";
+import { rawFileUrl, sciSummaryUrl } from "@/lib/use-sandbox";
 import type { ViewerProps } from "@/lib/viewers/registry";
 
 interface StructSummary {
@@ -16,7 +16,7 @@ function fmtForName(name: string): string {
   return "pdb"; // pdb/ent/gro/pdbqt handled as pdb-ish by 3Dmol
 }
 
-export default function StructureViewer({ path, name, content }: ViewerProps) {
+export default function StructureViewer({ path, name }: ViewerProps) {
   const [summary, setSummary] = useState<StructSummary | null>(null);
   const [summaryErr, setSummaryErr] = useState<string | null>(null);
   const [viewerErr, setViewerErr] = useState<string | null>(null);
@@ -37,14 +37,20 @@ export default function StructureViewer({ path, name, content }: ViewerProps) {
 
   useEffect(() => {
     setViewerErr(null);
-    if (!content || !mountRef.current) return;
+    if (!mountRef.current) return;
     let disposed = false;
     let viewer: { clear(): void } | null = null;
-    import("3dmol")
-      .then(($3Dmol) => {
+    Promise.all([
+      fetch(rawFileUrl(path)).then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.text();
+      }),
+      import("3dmol"),
+    ])
+      .then(([text, $3Dmol]) => {
         if (disposed || !mountRef.current) return;
         const v = $3Dmol.createViewer(mountRef.current, { backgroundColor: "white" });
-        v.addModel(content, fmtForName(name));
+        v.addModel(text, fmtForName(name));
         v.setStyle({}, { cartoon: { color: "spectrum" }, stick: { radius: 0.15 } });
         v.zoomTo();
         v.render();
@@ -52,7 +58,7 @@ export default function StructureViewer({ path, name, content }: ViewerProps) {
       })
       .catch((e) => { if (!disposed) setViewerErr(String(e?.message ?? e)); });
     return () => { disposed = true; viewer?.clear?.(); };
-  }, [content, name]);
+  }, [path, name]);
 
   return (
     <div className="flex h-full flex-col">

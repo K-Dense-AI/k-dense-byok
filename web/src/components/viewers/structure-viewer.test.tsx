@@ -19,9 +19,13 @@ const summary = {
 
 beforeEach(() => {
   createViewerImpl = () => ({ addModel() {}, setStyle() {}, zoomTo() {}, render() {}, resize() {}, clear() {} });
-  vi.stubGlobal("fetch", vi.fn(async () =>
-    new Response(JSON.stringify(summary), { status: 200, headers: { "Content-Type": "application/json" } }),
-  ));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (String(url).includes("sci-summary")) {
+      return new Response(JSON.stringify(summary), { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    // raw file fetch (rawFileUrl) — return a small PDB-ish text blob for 3Dmol.
+    return new Response("ATOM ...\nEND\n", { status: 200, headers: { "Content-Type": "text/plain" } });
+  }));
 });
 
 describe("StructureViewer", () => {

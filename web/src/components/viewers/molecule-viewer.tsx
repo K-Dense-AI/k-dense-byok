@@ -40,7 +40,11 @@ export default function MoleculeViewer({ path }: ViewerProps) {
 
   return (
     <div className="h-full overflow-auto p-4">
-      <p className="mb-3 text-xs text-muted-foreground">{summary.count} molecule{summary.count !== 1 ? "s" : ""}</p>
+      <p className="mb-3 text-xs text-muted-foreground">
+        {summary.count > summary.molecules.length
+          ? `showing first ${summary.molecules.length} of ${summary.count} molecules`
+          : `${summary.count} molecule${summary.count !== 1 ? "s" : ""}`}
+      </p>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {summary.molecules.map((m) => (
           <div key={m.index} className="overflow-hidden rounded-md border">
