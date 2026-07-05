@@ -75,6 +75,9 @@ export interface AgentFrame {
   result?: string;
   runCost?: number;
   runTokens?: number;
+  role?: string;
+  content?: string;
+  steering?: unknown;
   [k: string]: unknown;
 }
 
@@ -157,6 +160,65 @@ export function applyFrameToMessage(
     default:
       return message;
   }
+}
+
+export interface TranscriptRunState {
+  /** Id of the assistant bubble frames currently apply to. */
+  assistantId: string;
+  /** True once the run's own prompt echoed back as a user message_start. */
+  sawPromptEcho: boolean;
+}
+
+export interface TranscriptResult {
+  messages: ChatMessage[];
+  state: TranscriptRunState;
+  /** Pending steering texts when the frame updated them; null otherwise. */
+  steering: string[] | null;
+}
+
+/**
+ * Apply one SSE frame to a run's transcript. Pure; returns the input
+ * `messages` reference when nothing changed so callers can skip re-renders.
+ * A user message_start after the initial prompt echo is a delivered steering
+ * message: it closes the current assistant bubble and opens a new one.
+ */
+export function applyFrameToTranscript(
+  messages: ChatMessage[],
+  state: TranscriptRunState,
+  frame: AgentFrame,
+  nextId: () => string,
+  now = Date.now(),
+): TranscriptResult {
+  if (frame.type === "queue_update") {
+    const steering = Array.isArray(frame.steering) ? frame.steering.map(String) : [];
+    return { messages, state, steering };
+  }
+  if (frame.type === "message_start" && frame.role === "user") {
+    if (!state.sawPromptEcho) {
+      return { messages, state: { ...state, sawPromptEcho: true }, steering: null };
+    }
+    const content = typeof frame.content === "string" ? frame.content : "";
+    if (!content.trim()) return { messages, state, steering: null };
+    const userId = nextId();
+    const assistantId = nextId();
+    return {
+      messages: [
+        ...messages,
+        { id: userId, role: "user", content, timestamp: now },
+        { id: assistantId, role: "assistant", content: "", timestamp: now },
+      ],
+      state: { ...state, assistantId },
+      steering: null,
+    };
+  }
+  let changed = false;
+  const next = messages.map((m) => {
+    if (m.id !== state.assistantId) return m;
+    const applied = applyFrameToMessage(m, frame, now);
+    if (applied !== m) changed = true;
+    return applied;
+  });
+  return { messages: changed ? next : messages, state, steering: null };
 }
 
 /** One transcript entry from GET /sessions/:id/history. */
