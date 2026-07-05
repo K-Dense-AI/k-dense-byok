@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { API_BASE, apiFetch, getActiveProjectId, onProjectChange } from "@/lib/projects";
+import { getViewerDef } from "@/lib/viewers/registry";
 
 export interface TreeNode {
   name: string;
@@ -78,6 +79,18 @@ export function anndataEmbeddingUrl(
   });
   if (color) params.set("color", color);
   return `${API_BASE}/sandbox/anndata-embedding.png?${params.toString()}`;
+}
+
+export function sciSummaryUrl(path: string, kind: string): string {
+  const params = new URLSearchParams({ path, kind, project: getActiveProjectId() });
+  return `${API_BASE}/sandbox/sci-summary?${params.toString()}`;
+}
+
+export function sciRenderUrl(path: string, kind: string, index = 0): string {
+  const params = new URLSearchParams({
+    path, kind, index: String(index), project: getActiveProjectId(),
+  });
+  return `${API_BASE}/sandbox/sci-render.png?${params.toString()}`;
 }
 
 export function flattenFiles(node: TreeNode | null): string[] {
@@ -198,7 +211,11 @@ export function useSandbox(isActive = false) {
     const name = path.split("/").pop() ?? "";
     const cat = fileCategory(name);
 
-    if (cat === "image" || cat === "pdf" || cat === "anndata") {
+    const def = getViewerDef(cat);
+    const loadMode = def
+      ? def.loadMode
+      : cat === "image" || cat === "pdf" || cat === "anndata" ? "none" : "text";
+    if (loadMode !== "text") {
       setTabs((prev) => {
         const next = prev.map((t) => (t.path === path ? { ...t, loading: false } : t));
         tabsRef.current = next;
@@ -206,7 +223,6 @@ export function useSandbox(isActive = false) {
       });
       return;
     }
-
     await fetchFileContent(path);
   }, [fetchFileContent]);
 

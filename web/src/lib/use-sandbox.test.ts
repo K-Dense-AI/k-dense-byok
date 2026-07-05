@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fileCategory } from "./use-sandbox";
+import { fileCategory, sciSummaryUrl, sciRenderUrl } from "./use-sandbox";
 
 describe("fileCategory — chemistry & structures", () => {
   it("classifies 2D molecule formats", () => {
@@ -16,5 +16,20 @@ describe("fileCategory — chemistry & structures", () => {
     expect(fileCategory("a.png")).toBe("image");
     expect(fileCategory("a.h5ad")).toBe("anndata");
     expect(fileCategory("a.py")).toBe("text");
+  });
+});
+
+describe("sci url builders", () => {
+  it("builds a summary url with kind + path", () => {
+    const u = sciSummaryUrl("a/b.pdb", "structure");
+    expect(u).toContain("/sandbox/sci-summary");
+    expect(u).toContain("kind=structure");
+    expect(u).toContain(encodeURIComponent("a/b.pdb"));
+  });
+  it("builds a render url with an index", () => {
+    const u = sciRenderUrl("m.smi", "chem", 2);
+    expect(u).toContain("/sandbox/sci-render.png");
+    expect(u).toContain("kind=chem");
+    expect(u).toContain("index=2");
   });
 });
