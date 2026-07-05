@@ -20,6 +20,7 @@ import { helperPython } from "../helpers-env.ts";
 import { sciHelperFor, runSciHelper } from "./sci-helpers.ts";
 import { LATEX_ENGINES, compileLatex } from "../latex/compile.ts";
 import { synctexAvailable, synctexForward, synctexInverse } from "../latex/synctex.ts";
+import { AssistError, runLatexAssist, type AssistRequest } from "../latex/assist.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
@@ -632,6 +633,20 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       reply.code(400);
       return { detail: "dir must be forward or inverse" };
     } catch (err) {
+      return handle(reply, err);
+    }
+  });
+
+  // --- AI assist (fix error / rewrite selection) ---
+  app.post<{ Body: AssistRequest }>("/sandbox/latex-assist", async (req, reply) => {
+    try {
+      const projectId = currentProjectId();
+      return await runLatexAssist(req.body, projectId);
+    } catch (err) {
+      if (err instanceof AssistError) {
+        reply.code(err.status);
+        return { detail: err.status === 402 ? "budget-exceeded" : "assist-failed", message: err.message };
+      }
       return handle(reply, err);
     }
   });
