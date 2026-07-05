@@ -31,6 +31,7 @@ import {
   getAgents,
   restoreDefaultAgents,
   saveAgent,
+  setAgentEnabled,
   THINKING_LEVELS,
   type AgentFile,
 } from "@/lib/agents";
@@ -118,6 +119,19 @@ export function SubagentsPanel() {
       cancelled = true;
     };
   }, [activeProjectId]);
+
+  const toggleEnabled = useCallback(
+    async (name: string, next: boolean) => {
+      setAgents((list) => list.map((a) => (a.name === name ? { ...a, enabled: next } : a)));
+      try {
+        await setAgentEnabled(name, next);
+      } catch (exc) {
+        setError(exc instanceof Error ? exc.message : "Toggle failed");
+        void refresh(); // reconcile on failure
+      }
+    },
+    [refresh],
+  );
 
   const handleSave = useCallback(async () => {
     if (!form) return;
@@ -357,6 +371,11 @@ export function SubagentsPanel() {
                     {agent.model}
                   </Badge>
                 )}
+                <Switch
+                  aria-label={`Toggle ${agent.name}`}
+                  checked={agent.enabled !== false}
+                  onCheckedChange={(v) => void toggleEnabled(agent.name, v)}
+                />
                 <Button
                   variant="ghost"
                   size="sm"
@@ -439,6 +458,11 @@ export function SubagentsPanel() {
                       </pre>
                     )}
                   </div>
+                  <Switch
+                    aria-label={`Toggle ${agent.name}`}
+                    checked={agent.enabled !== false}
+                    onCheckedChange={(v) => void toggleEnabled(agent.name, v)}
+                  />
                   <Button
                     variant="ghost"
                     size="sm"
