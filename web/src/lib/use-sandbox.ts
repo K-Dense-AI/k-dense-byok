@@ -25,6 +25,7 @@ export type FileCategory =
   | "anndata"
   | "molecule2d"
   | "structure3d"
+  | "massspec"
   | "text";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
@@ -38,6 +39,8 @@ const LATEX_EXTS = new Set(["tex", "latex"]);
 const MOLECULE2D_EXTS = new Set(["smi", "smiles", "inchi", "mol", "sdf", "mol2"]);
 
 const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "pdbqt"]);
+
+const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
 
 export function fileCategory(name: string): FileCategory {
   const lower = name.toLowerCase();
@@ -54,6 +57,7 @@ export function fileCategory(name: string): FileCategory {
   if (LATEX_EXTS.has(ext)) return "latex";
   if (MOLECULE2D_EXTS.has(ext)) return "molecule2d";
   if (STRUCTURE3D_EXTS.has(ext)) return "structure3d";
+  if (MASSSPEC_EXTS.has(ext)) return "massspec";
   return "text";
 }
 

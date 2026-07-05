@@ -73,6 +73,7 @@ function categoryLabel(name: string): string {
   if (cat === "anndata") return "anndata";
   if (cat === "molecule2d") return ext === "sdf" ? "sdf" : "molecule";
   if (cat === "structure3d") return ext || "structure";
+  if (cat === "massspec") return ext === "jdx" || ext === "dx" ? "spectrum" : ext;
   return langForFile(name);
 }
 

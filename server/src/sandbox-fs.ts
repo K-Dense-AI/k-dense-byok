@@ -93,6 +93,11 @@ const MIME: Record<string, string> = {
   ".smi": "text/plain",
   ".smiles": "text/plain",
   ".inchi": "text/plain",
+  ".mzml": "application/xml",
+  ".mzxml": "application/xml",
+  ".mgf": "text/plain",
+  ".jdx": "chemical/x-jcamp-dx",
+  ".dx": "chemical/x-jcamp-dx",
 };
 
 export function guessMime(name: string): string {

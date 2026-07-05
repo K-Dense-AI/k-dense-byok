@@ -225,6 +225,8 @@ describe("sandbox-fs", () => {
     expect(guessMime("m.mol")).toBe("chemical/x-mdl-molfile");
     expect(guessMime("m.sdf")).toBe("chemical/x-mdl-sdfile");
     expect(guessMime("m.smi")).toBe("text/plain");
+    expect(guessMime("a.mzml")).toBe("application/xml");
+    expect(guessMime("a.jdx")).toBe("chemical/x-jcamp-dx");
   });
 });
 
@@ -391,5 +393,8 @@ describe("sci helper dispatch", () => {
   it("resolves known kinds to a helper script path", () => {
     expect(sciHelperFor("chem")?.script.endsWith("chem_helper.py")).toBe(true);
     expect(sciHelperFor("structure")?.script.endsWith("structure_helper.py")).toBe(true);
+  });
+  it("resolves the massspec kind", () => {
+    expect(sciHelperFor("massspec")?.script.endsWith("massspec_helper.py")).toBe(true);
   });
 });

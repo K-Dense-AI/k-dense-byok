@@ -16,6 +16,7 @@ import {
   FileVideoIcon,
   HexagonIcon,
   TableIcon,
+  WavesIcon,
 } from "lucide-react";
 
 export function KadyFileIcon({
@@ -69,6 +70,7 @@ export function KadyFileIcon({
   if (cat === "biotable") return <TableIcon className={`${className} text-indigo-500`} />;
   if (cat === "molecule2d") return <HexagonIcon className={`${className} text-fuchsia-500`} />;
   if (cat === "structure3d") return <BoxesIcon className={`${className} text-sky-500`} />;
+  if (cat === "massspec") return <WavesIcon className={`${className} text-teal-500`} />;
   if (cat === "image" || imageExts.includes(ext)) {
     return <FileImageIcon className={`${className} text-rose-500`} />;
   }

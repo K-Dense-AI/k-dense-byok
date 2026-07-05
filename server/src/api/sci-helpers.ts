@@ -12,11 +12,12 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { HELPERS_DIR, helperPython } from "../helpers-env.ts";
 
-export type SciKind = "chem" | "structure";
+export type SciKind = "chem" | "structure" | "massspec";
 
 const KIND_TO_SCRIPT: Record<string, string> = {
   chem: "chem_helper.py",
   structure: "structure_helper.py",
+  massspec: "massspec_helper.py",
 };
 
 /** Absolute helper script path for a known kind, or null if the kind is unrecognized. */

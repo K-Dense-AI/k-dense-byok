@@ -19,6 +19,14 @@ describe("fileCategory — chemistry & structures", () => {
   });
 });
 
+describe("fileCategory — mass spec", () => {
+  it("classifies mass-spec & spectroscopy formats", () => {
+    for (const n of ["a.mzml", "a.mzxml", "a.mgf", "a.jdx", "a.dx"]) {
+      expect(fileCategory(n)).toBe("massspec");
+    }
+  });
+});
+
 describe("sci url builders", () => {
   it("builds a summary url with kind + path", () => {
     const u = sciSummaryUrl("a/b.pdb", "structure");
