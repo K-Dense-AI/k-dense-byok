@@ -11,6 +11,7 @@ import {
   ItalicIcon,
   ListTreeIcon,
   LoaderCircleIcon,
+  MessageCircleIcon,
   PlayIcon,
   PlusIcon,
   SpellCheckIcon,
@@ -70,6 +71,7 @@ export interface LatexToolbarProps {
   onToggleSpellcheck: () => void;
   syncAvailable: boolean;
   onJumpToPdf: () => void;
+  onAskKady: () => void;
 }
 
 export function LatexToolbar(p: LatexToolbarProps) {
@@ -210,6 +212,14 @@ export function LatexToolbar(p: LatexToolbarProps) {
         title={p.syncAvailable ? "Jump to PDF (SyncTeX)" : "SyncTeX unavailable — compile first"}
       >
         <CrosshairIcon className="size-3.5" />
+      </button>
+
+      <button
+        onClick={p.onAskKady}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-violet-600 transition-colors hover:bg-violet-500/10 dark:text-violet-400"
+        title="Ask Kady about this document in chat"
+      >
+        <MessageCircleIcon className="size-3.5" /> Ask Kady
       </button>
 
       {/* Status */}

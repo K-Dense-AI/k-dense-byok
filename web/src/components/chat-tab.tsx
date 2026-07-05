@@ -319,6 +319,7 @@ function MessageQueueDisplay({
  * Must be rendered inside <PromptInputProvider>.
  */
 function ChatInput({
+  isActive,
   allFiles,
   attachedFiles,
   onAddFile,
@@ -345,6 +346,7 @@ function ChatInput({
   budgetTotalUsd = 0,
   budgetLimitUsd = null,
 }: {
+  isActive: boolean;
   allFiles: string[];
   attachedFiles: string[];
   onAddFile: (path: string) => void;
@@ -373,6 +375,22 @@ function ChatInput({
 }) {
   const budgetBlocked = budgetState === "exceeded";
   const controller = usePromptInputController();
+
+  // "Ask Kady" handoff from the LaTeX editor: only the active tab's composer
+  // appends the prefill text (it does not submit), so a background tab never
+  // steals the event meant for the visible one.
+  useEffect(() => {
+    if (!isActive) return;
+    const onPrefill = (e: Event) => {
+      const text = (e as CustomEvent<{ text: string }>).detail?.text;
+      if (!text) return;
+      const current = controller.textInput.value;
+      const sep = current && !current.endsWith(" ") && !current.endsWith("\n") ? "\n" : "";
+      controller.textInput.setInput(current + sep + text);
+    };
+    window.addEventListener("kady:prefill-chat", onPrefill);
+    return () => window.removeEventListener("kady:prefill-chat", onPrefill);
+  }, [isActive, controller]);
 
   const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
     const uploaded = await onUploadFiles(files, paths);
@@ -1076,6 +1094,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       <div className="px-4 pb-6 pt-2">
         <PromptInputProvider>
           <ChatInput
+            isActive={isActive}
             allFiles={allFiles}
             attachedFiles={attachedFiles}
             onAddFile={addAttachedFile}

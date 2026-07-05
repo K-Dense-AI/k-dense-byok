@@ -361,6 +361,14 @@ export function LatexEditor({
   const jumpToPdfRef = useRef(jumpToPdf);
   jumpToPdfRef.current = jumpToPdf;
 
+  const askKady = useCallback(() => {
+    window.dispatchEvent(
+      new CustomEvent("kady:prefill-chat", {
+        detail: { text: `Regarding @${path}: ` },
+      }),
+    );
+  }, [path]);
+
   const handleSyncClick = useCallback(
     async (pos: PdfSyncClick) => {
       const pdf = pdfPathRef.current;
@@ -605,6 +613,7 @@ export function LatexEditor({
         onToggleSpellcheck={toggleSpellcheck}
         syncAvailable={synctexOk && pdfPath !== null}
         onJumpToPdf={jumpToPdf}
+        onAskKady={askKady}
       />
 
       <div className={cn("flex flex-1 min-h-0", dragging && "select-none")}>
