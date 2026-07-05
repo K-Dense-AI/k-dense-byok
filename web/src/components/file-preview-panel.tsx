@@ -69,6 +69,8 @@ function categoryLabel(name: string): string {
   if (cat === "fasta") return ext === "fastq" || ext === "fq" ? "fastq" : "fasta";
   if (cat === "biotable") return ext;
   if (cat === "anndata") return "anndata";
+  if (cat === "molecule2d") return ext === "sdf" ? "sdf" : "molecule";
+  if (cat === "structure3d") return ext || "structure";
   return langForFile(name);
 }
 

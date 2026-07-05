@@ -22,6 +22,8 @@ export type FileCategory =
   | "biotable"
   | "latex"
   | "anndata"
+  | "molecule2d"
+  | "structure3d"
   | "text";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
@@ -31,6 +33,10 @@ const FASTA_EXTS = new Set(["fasta", "fa", "faa", "fna", "ffn", "fastq", "fq"]);
 const BIOTABLE_EXTS = new Set(["vcf", "bed", "gff", "gtf", "gff3", "sam", "tsv", "bcf"]);
 
 const LATEX_EXTS = new Set(["tex", "latex"]);
+
+const MOLECULE2D_EXTS = new Set(["smi", "smiles", "inchi", "mol", "sdf", "mol2"]);
+
+const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "pdbqt"]);
 
 export function fileCategory(name: string): FileCategory {
   const lower = name.toLowerCase();
@@ -45,6 +51,8 @@ export function fileCategory(name: string): FileCategory {
   if (FASTA_EXTS.has(ext)) return "fasta";
   if (BIOTABLE_EXTS.has(ext)) return "biotable";
   if (LATEX_EXTS.has(ext)) return "latex";
+  if (MOLECULE2D_EXTS.has(ext)) return "molecule2d";
+  if (STRUCTURE3D_EXTS.has(ext)) return "structure3d";
   return "text";
 }
 
