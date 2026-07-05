@@ -23,6 +23,7 @@ import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
 import { registerAgentRoutes } from "./api/agents.ts";
+import { syncHelperVenv } from "./helpers-env.ts";
 
 function readCookie(req: FastifyRequest, name: string): string | undefined {
   const raw = req.headers.cookie;
@@ -118,6 +119,7 @@ const isMain = (() => {
   }
 })();
 if (isMain) {
+  syncHelperVenv(); // best-effort; previews degrade gracefully if it fails
   const app = await buildApp();
   app
     .listen({ port: PORT, host: HOST })

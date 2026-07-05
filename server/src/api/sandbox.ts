@@ -16,10 +16,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, touchProject } from "../projects.ts";
 import { currentProjectId } from "../scope.ts";
 import { guessMime, isUserVisible, safePath, SandboxError } from "../sandbox-fs.ts";
+import { helperPython } from "../helpers-env.ts";
+import { sciHelperFor, runSciHelper } from "./sci-helpers.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
-const PYTHON = process.env.KADY_PYTHON || "python3";
 const MAX_PREVIEW_BYTES = 512_000;
 const VALID_ENGINES = new Set(["pdflatex", "xelatex", "lualatex"]);
 
@@ -416,7 +417,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Not a .h5ad file" };
       }
-      const res = spawnSync(PYTHON, [ANNDATA_HELPER, "summarize", target], { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
+      const res = spawnSync(helperPython(), [ANNDATA_HELPER, "summarize", target], { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
       if (res.status === 3) {
         reply.code(503);
         return { detail: res.stderr.trim() || "AnnData deps missing" };
@@ -444,7 +445,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         const cacheDir = path.join(activePaths().root, ".anndata_cache");
         const outPng = path.join(os.tmpdir(), `kady-emb-${process.pid}-${Date.now()}.png`);
         const res = spawnSync(
-          PYTHON,
+          helperPython(),
           [ANNDATA_HELPER, "embedding", target, req.query.key, req.query.color || "-", cacheDir, outPng],
           { encoding: "utf-8" },
         );
@@ -467,6 +468,85 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         const data = fs.readFileSync(outPng);
         fs.rmSync(outPng, { force: true });
         reply.type("image/png");
+        reply.header("Cache-Control", "private, max-age=300");
+        return data;
+      } catch (err) {
+        return handle(reply, err);
+      }
+    },
+  );
+
+  // --- generic scientific-file previews (chem/structure/...) via Python helper ---
+  app.get<{ Querystring: { path: string; kind: string } }>("/sandbox/sci-summary", async (req, reply) => {
+    try {
+      if (!sciHelperFor(req.query.kind)) {
+        reply.code(400);
+        return { detail: `Unknown kind: ${req.query.kind}` };
+      }
+      const target = safePath(req.query.path);
+      if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+        reply.code(404);
+        return { detail: "File not found" };
+      }
+      const res = runSciHelper(req.query.kind, "summarize", [target]);
+      if (res.status === 3) {
+        reply.code(503);
+        return { detail: res.stderr.trim() || "Preview dependency missing" };
+      }
+      if (res.status === 4) {
+        reply.code(404);
+        return { detail: res.stderr.trim() };
+      }
+      if (res.status === 5) {
+        reply.code(400);
+        return { detail: res.stderr.trim() };
+      }
+      if (res.status !== 0) {
+        reply.code(500);
+        return { detail: res.stderr.trim() || "Failed to summarize" };
+      }
+      reply.type("application/json");
+      return res.stdout;
+    } catch (err) {
+      return handle(reply, err);
+    }
+  });
+
+  app.get<{ Querystring: { path: string; kind: string; index?: string } }>(
+    "/sandbox/sci-render.png",
+    async (req, reply) => {
+      try {
+        if (!sciHelperFor(req.query.kind)) {
+          reply.code(400);
+          return { detail: `Unknown kind: ${req.query.kind}` };
+        }
+        const target = safePath(req.query.path);
+        if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+          reply.code(404);
+          return { detail: "File not found" };
+        }
+        const outPath = path.join(os.tmpdir(), `kady-sci-${process.pid}-${Date.now()}`);
+        const res = runSciHelper(req.query.kind, "render", [target, req.query.index ?? "0", outPath]);
+        if (res.status === 3) {
+          reply.code(503);
+          return { detail: res.stderr.trim() || "Preview dependency missing" };
+        }
+        if (res.status === 4) {
+          reply.code(404);
+          return { detail: res.stderr.trim() };
+        }
+        if (res.status === 5) {
+          reply.code(400);
+          return { detail: res.stderr.trim() };
+        }
+        if (res.status !== 0 || !fs.existsSync(outPath)) {
+          reply.code(500);
+          return { detail: res.stderr.trim() || "Failed to render" };
+        }
+        const data = fs.readFileSync(outPath);
+        fs.rmSync(outPath, { force: true });
+        // helper writes SVG for chem 2D, PNG otherwise; sniff the first byte
+        reply.type(data.slice(0, 5).toString("utf-8").startsWith("<") ? "image/svg+xml" : "image/png");
         reply.header("Cache-Control", "private, max-age=300");
         return data;
       } catch (err) {

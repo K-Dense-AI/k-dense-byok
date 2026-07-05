@@ -32,6 +32,8 @@ import {
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
 import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
 import { toClientFrame, relativizeSandboxPaths } from "../src/agent/events.ts";
+import { helperPython, HELPERS_DIR } from "../src/helpers-env.ts";
+import { sciHelperFor } from "../src/api/sci-helpers.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -217,6 +219,12 @@ describe("sandbox-fs", () => {
     expect(guessMime("a.pdf")).toBe("application/pdf");
     expect(guessMime("a.png")).toBe("image/png");
     expect(guessMime("a.unknownext")).toBe("application/octet-stream");
+    expect(guessMime("m.pdb")).toBe("chemical/x-pdb");
+    expect(guessMime("m.cif")).toBe("chemical/x-cif");
+    expect(guessMime("m.xyz")).toBe("chemical/x-xyz");
+    expect(guessMime("m.mol")).toBe("chemical/x-mdl-molfile");
+    expect(guessMime("m.sdf")).toBe("chemical/x-mdl-sdfile");
+    expect(guessMime("m.smi")).toBe("text/plain");
   });
 });
 
@@ -359,5 +367,29 @@ describe("web access bridge", () => {
     expect(
       (JSON.parse(fs.readFileSync(trustFile, "utf-8")) as Record<string, boolean>)[key],
     ).toBe(false);
+  });
+});
+
+describe("helper python resolution", () => {
+  it("honors KADY_PYTHON when set", () => {
+    const prev = process.env.KADY_PYTHON;
+    process.env.KADY_PYTHON = "/custom/python";
+    expect(helperPython()).toBe("/custom/python");
+    if (prev === undefined) delete process.env.KADY_PYTHON;
+    else process.env.KADY_PYTHON = prev;
+  });
+
+  it("points HELPERS_DIR at the helpers source dir", () => {
+    expect(HELPERS_DIR.endsWith(path.join("src", "helpers"))).toBe(true);
+  });
+});
+
+describe("sci helper dispatch", () => {
+  it("returns null for an unknown kind", () => {
+    expect(sciHelperFor("bogus")).toBeNull();
+  });
+  it("resolves known kinds to a helper script path", () => {
+    expect(sciHelperFor("chem")?.script.endsWith("chem_helper.py")).toBe(true);
+    expect(sciHelperFor("structure")?.script.endsWith("structure_helper.py")).toBe(true);
   });
 });

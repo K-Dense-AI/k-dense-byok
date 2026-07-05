@@ -5,6 +5,7 @@ import { LatexEditor } from "@/components/latex-editor";
 import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
 import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
+import { getViewerDef } from "@/lib/viewers/registry";
 import {
   fileCategory,
   rawFileUrl,
@@ -36,6 +37,7 @@ import {
   AlertCircleIcon,
 } from "lucide-react";
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -69,6 +71,8 @@ function categoryLabel(name: string): string {
   if (cat === "fasta") return ext === "fastq" || ext === "fq" ? "fastq" : "fasta";
   if (cat === "biotable") return ext;
   if (cat === "anndata") return "anndata";
+  if (cat === "molecule2d") return ext === "sdf" ? "sdf" : "molecule";
+  if (cat === "structure3d") return ext || "structure";
   return langForFile(name);
 }
 
@@ -441,6 +445,22 @@ function FileViewer({
     return <FileLoadError message={msg} onRetry={onRetry} />;
   }
   const cat = name ? fileCategory(name) : "text";
+  const def = cat ? getViewerDef(cat) : undefined;
+  if (def) {
+    if (def.loadMode === "text" && content === null) {
+      return (
+        <div className="flex h-full items-center justify-center">
+          <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+        </div>
+      );
+    }
+    const Viewer = def.Viewer;
+    return (
+      <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" /></div>}>
+        <Viewer key={path} path={path} name={name ?? ""} content={content} onRetry={onRetry} />
+      </Suspense>
+    );
+  }
   if (cat === "image") {
     return <ImageViewer path={path} name={name} />;
   }
@@ -1782,9 +1802,11 @@ export function FilePreviewPanel({
 
   const selectedName = selectedPath?.split("/").pop() ?? null;
   const cat = selectedName ? fileCategory(selectedName) : "text";
+  const regDef = getViewerDef(cat);
   // All text-based formats can be edited as source. Binary/structured
-  // viewers (images, PDFs, anndata) have no raw-text editor.
-  const canEdit = cat !== "image" && cat !== "pdf" && cat !== "anndata";
+  // viewers (images, PDFs, anndata) have no raw-text editor. Registered
+  // scientific viewers declare their own editability.
+  const canEdit = regDef ? regDef.canEditSource : (cat !== "image" && cat !== "pdf" && cat !== "anndata");
   const canAnnotate = cat === "image";
 
   const header = selectedPath && (
@@ -1904,7 +1926,7 @@ export function FilePreviewPanel({
           <div className={cn(
             "flex-1 min-h-0",
             // These viewers manage their own scroll internally
-            cat === "pdf" || cat === "notebook" || cat === "fasta" || cat === "biotable" || cat === "anndata"
+            cat === "pdf" || cat === "notebook" || cat === "fasta" || cat === "biotable" || cat === "anndata" || regDef?.managesOwnScroll
               ? ""
               : "overflow-auto bg-muted/10"
           )}>

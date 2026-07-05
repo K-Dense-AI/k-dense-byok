@@ -1,0 +1,14 @@
+[project]
+name = "kady-helpers"
+version = "0.1.0"
+description = "Python decoders the Kady backend shells out to for file previews"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "anndata",
+    "h5py",
+    "rdkit",
+    "gemmi",
+]

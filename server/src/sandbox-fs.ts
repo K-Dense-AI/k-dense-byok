@@ -80,6 +80,19 @@ const MIME: Record<string, string> = {
   ".xml": "application/xml",
   ".zip": "application/zip",
   ".tex": "text/x-tex",
+  ".pdb": "chemical/x-pdb",
+  ".ent": "chemical/x-pdb",
+  ".cif": "chemical/x-cif",
+  ".mmcif": "chemical/x-cif",
+  ".xyz": "chemical/x-xyz",
+  ".gro": "chemical/x-gromacs",
+  ".pdbqt": "chemical/x-pdb",
+  ".mol": "chemical/x-mdl-molfile",
+  ".sdf": "chemical/x-mdl-sdfile",
+  ".mol2": "chemical/x-mol2",
+  ".smi": "text/plain",
+  ".smiles": "text/plain",
+  ".inchi": "text/plain",
 };
 
 export function guessMime(name: string): string {
