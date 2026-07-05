@@ -139,12 +139,36 @@ function loadPdfjs(): Promise<PdfjsModule> {
 // 100% zoom; we set devicePixelRatio separately on the canvas.
 const BASE_SCALE = 1.5;
 
+export interface PdfSyncHighlight {
+  page: number;
+  h: number;
+  v: number;
+  W: number;
+  H: number;
+  token: number;
+}
+export interface PdfSyncClick {
+  page: number;
+  x: number;
+  y: number;
+} // top-left PDF points
 export interface PdfViewerProps {
   path: string;
   className?: string;
+  reloadToken?: number; // bump to re-fetch the same path in place (scroll/zoom preserved)
+  syncHighlight?: PdfSyncHighlight | null; // scroll to + flash this box (synctex view coords)
+  onSyncClick?: (pos: PdfSyncClick) => void; // Cmd/Ctrl+click on a page
+  hideAnnotationUi?: boolean; // hide annotation sidebar + highlight/note buttons
 }
 
-export function PdfViewer({ path, className }: PdfViewerProps) {
+export function PdfViewer({
+  path,
+  className,
+  reloadToken = 0,
+  syncHighlight = null,
+  onSyncClick,
+  hideAnnotationUi = false,
+}: PdfViewerProps) {
   const [pdfjs, setPdfjs] = useState<PdfjsModule | null>(null);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -175,6 +199,8 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const docRef = useRef<PdfDoc | null>(null);
+  const loadedPathRef = useRef<string | null>(null);
 
   // --------------------------------------------------------------------
   // Load pdfjs + document
@@ -197,24 +223,42 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
   useEffect(() => {
     if (!pdfjs) return;
     let cancelled = false;
-    const url = rawFileUrl(path);
+    // Reload-in-place: same path with a doc already shown keeps the old
+    // canvases up until the new document is ready, then restores scroll.
+    const isReload = docRef.current !== null && loadedPathRef.current === path;
+    const savedScroll = isReload ? (containerRef.current?.scrollTop ?? null) : null;
+    const url = rawFileUrl(path) + (reloadToken ? `&_r=${reloadToken}` : "");
     const task = pdfjs.getDocument({ url, withCredentials: true });
-    // Reset happens in the promise callbacks so we don't trigger a
-    // cascading render just for loading.
-    Promise.resolve().then(() => {
-      if (cancelled) return;
-      setError(null);
-      setDoc(null);
-      setNumPages(0);
-    });
+    if (!isReload) {
+      Promise.resolve().then(() => {
+        if (cancelled) return;
+        setError(null);
+        setDoc(null);
+        setNumPages(0);
+      });
+    }
     task.promise.then(
       (loaded) => {
         if (cancelled) {
           loaded.destroy();
           return;
         }
+        const prev = docRef.current;
+        docRef.current = loaded;
+        loadedPathRef.current = path;
+        setError(null);
         setDoc(loaded);
         setNumPages(loaded.numPages);
+        if (prev && prev !== loaded) {
+          try { prev.destroy(); } catch { /* already gone */ }
+        }
+        if (savedScroll !== null) {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (containerRef.current) containerRef.current.scrollTop = savedScroll;
+            });
+          });
+        }
       },
       (e) => {
         if (!cancelled) setError(e?.message ?? "Failed to load PDF");
@@ -222,9 +266,26 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
     );
     return () => {
       cancelled = true;
-      task.destroy();
+      // Only tear down a load that never became the displayed document —
+      // destroying the live doc mid-reload would break mounted PageViews.
+      task.promise.then(
+        (loaded) => {
+          if (loaded !== docRef.current) {
+            try { loaded.destroy(); } catch { /* ignore */ }
+          }
+        },
+        () => {},
+      );
     };
-  }, [pdfjs, path]);
+  }, [pdfjs, path, reloadToken]);
+
+  useEffect(
+    () => () => {
+      try { docRef.current?.destroy(); } catch { /* ignore */ }
+      docRef.current = null;
+    },
+    [],
+  );
 
   // --------------------------------------------------------------------
   // Annotations fetch + polling
@@ -426,6 +487,16 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
 
   const handlePageClick = useCallback(
     (ev: React.MouseEvent<HTMLDivElement>, page: number) => {
+      if ((ev.metaKey || ev.ctrlKey) && onSyncClick) {
+        const pageBox = ev.currentTarget.getBoundingClientRect();
+        const s = BASE_SCALE * zoom;
+        onSyncClick({
+          page,
+          x: (ev.clientX - pageBox.left) / s,
+          y: (ev.clientY - pageBox.top) / s,
+        });
+        return;
+      }
       if (mode !== "note") return;
       const el = ev.currentTarget;
       const box = el.getBoundingClientRect();
@@ -441,7 +512,7 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
       });
       setMode("none");
     },
-    [mode],
+    [mode, onSyncClick, zoom],
   );
 
   // --------------------------------------------------------------------
@@ -474,6 +545,35 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
     setTimeout(() => setActiveAnnotationId(null), 1500);
   }, []);
 
+  useEffect(() => {
+    if (!syncHighlight) return;
+    const el = containerRef.current?.querySelector<HTMLElement>(
+      `[data-pdf-page="${syncHighlight.page}"]`,
+    );
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [syncHighlight?.token]);
+
+  // --------------------------------------------------------------------
+  // Default page size (from page 1) — gates lazy page rendering so
+  // off-screen pages can reserve their layout space before they render.
+  // --------------------------------------------------------------------
+
+  const [defaultSize, setDefaultSize] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    doc
+      .getPage(1)
+      .then((p: PdfPage) => {
+        if (cancelled) return;
+        const vp = p.getViewport({ scale: BASE_SCALE * zoom });
+        setDefaultSize({ w: vp.width, h: vp.height });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [doc, zoom]);
+
   // --------------------------------------------------------------------
   // Track current page for the toolbar
   // --------------------------------------------------------------------
@@ -501,7 +601,7 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
     const pages = c.querySelectorAll("[data-pdf-page]");
     pages.forEach((p) => observer.observe(p));
     return () => observer.disconnect();
-  }, [numPages]);
+  }, [numPages, defaultSize]);
 
   // --------------------------------------------------------------------
   // Render
@@ -527,6 +627,7 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
         onCommitHighlight={handleHighlightSelection}
         showExpert={showExpert}
         setShowExpert={setShowExpert}
+        hideAnnotationUi={hideAnnotationUi}
         onJumpPage={(p) => {
           const el = containerRef.current?.querySelector<HTMLElement>(
             `[data-pdf-page="${p}"]`,
@@ -544,7 +645,7 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
           )}
         >
           <div className="mx-auto flex flex-col items-center gap-3 py-3">
-            {doc &&
+            {doc && defaultSize &&
               Array.from({ length: numPages }, (_, i) => i + 1).map(
                 (pageNumber) => (
                   <PageView
@@ -552,6 +653,8 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
                     doc={doc}
                     pageNumber={pageNumber}
                     zoom={zoom}
+                    defaultSize={defaultSize}
+                    sync={syncHighlight?.page === pageNumber ? syncHighlight : null}
                     annotations={
                       annotationsByPage.get(pageNumber) ?? []
                     }
@@ -570,11 +673,13 @@ export function PdfViewer({ path, className }: PdfViewerProps) {
           </div>
         </div>
 
-        <AnnotationSidebar
-          annotations={visibleAnnotations}
-          onJump={jumpToAnnotation}
-          onRemove={removeAnnotation}
-        />
+        {!hideAnnotationUi && (
+          <AnnotationSidebar
+            annotations={visibleAnnotations}
+            onJump={jumpToAnnotation}
+            onRemove={removeAnnotation}
+          />
+        )}
       </div>
 
       {pendingNote && (
@@ -617,6 +722,7 @@ function Toolbar({
   onCommitHighlight,
   showExpert,
   setShowExpert,
+  hideAnnotationUi,
   onJumpPage,
 }: {
   currentPage: number;
@@ -628,6 +734,7 @@ function Toolbar({
   onCommitHighlight: () => void;
   showExpert: boolean;
   setShowExpert: (v: boolean) => void;
+  hideAnnotationUi: boolean;
   onJumpPage: (p: number) => void;
 }) {
   return (
@@ -682,39 +789,45 @@ function Toolbar({
 
       <div className="mx-2 h-4 w-px bg-border" />
 
-      <button
-        className={cn(
-          "rounded px-2 py-1",
-          mode === "highlight" ? "bg-amber-200 text-amber-900" : "hover:bg-muted",
-        )}
-        title="Highlight current text selection"
-        onClick={() => {
-          setMode("highlight");
-          onCommitHighlight();
-        }}
-      >
-        Highlight selection
-      </button>
-      <button
-        className={cn(
-          "rounded px-2 py-1",
-          mode === "note" ? "bg-blue-200 text-blue-900" : "hover:bg-muted",
-        )}
-        title="Click on the page to drop a note"
-        onClick={() => setMode(mode === "note" ? "none" : "note")}
-      >
-        {mode === "note" ? "Click page…" : "Add note"}
-      </button>
+      {!hideAnnotationUi && (
+        <button
+          className={cn(
+            "rounded px-2 py-1",
+            mode === "highlight" ? "bg-amber-200 text-amber-900" : "hover:bg-muted",
+          )}
+          title="Highlight current text selection"
+          onClick={() => {
+            setMode("highlight");
+            onCommitHighlight();
+          }}
+        >
+          Highlight selection
+        </button>
+      )}
+      {!hideAnnotationUi && (
+        <button
+          className={cn(
+            "rounded px-2 py-1",
+            mode === "note" ? "bg-blue-200 text-blue-900" : "hover:bg-muted",
+          )}
+          title="Click on the page to drop a note"
+          onClick={() => setMode(mode === "note" ? "none" : "note")}
+        >
+          {mode === "note" ? "Click page…" : "Add note"}
+        </button>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
-        <label className="flex items-center gap-1">
-          <input
-            type="checkbox"
-            checked={showExpert}
-            onChange={(e) => setShowExpert(e.target.checked)}
-          />
-          Expert annotations
-        </label>
+        {!hideAnnotationUi && (
+          <label className="flex items-center gap-1">
+            <input
+              type="checkbox"
+              checked={showExpert}
+              onChange={(e) => setShowExpert(e.target.checked)}
+            />
+            Expert annotations
+          </label>
+        )}
       </div>
     </div>
   );
@@ -728,6 +841,8 @@ function PageView({
   doc,
   pageNumber,
   zoom,
+  defaultSize,
+  sync,
   annotations,
   activeAnnotationId,
   onRemove,
@@ -737,6 +852,8 @@ function PageView({
   doc: PdfDoc;
   pageNumber: number;
   zoom: number;
+  defaultSize: { w: number; h: number } | null;
+  sync: { h: number; v: number; W: number; H: number; token: number } | null;
   annotations: Annotation[];
   activeAnnotationId: string | null;
   onRemove: (id: string) => void;
@@ -749,7 +866,22 @@ function PageView({
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [viewport, setViewport] = useState<PdfjsViewport | null>(null);
 
+  const [visible, setVisible] = useState(pageNumber <= 2);
   useEffect(() => {
+    const el = pageRef.current;
+    if (!el || visible) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setVisible(true);
+      },
+      { rootMargin: "150% 0%" },
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
     let renderTask: { cancel: () => void } | null = null;
 
@@ -849,7 +981,7 @@ function PageView({
         }
       }
     };
-  }, [doc, pageNumber, zoom]);
+  }, [doc, pageNumber, zoom, visible]);
 
   return (
     <div
@@ -857,7 +989,7 @@ function PageView({
       data-pdf-page={pageNumber}
       onClick={onClickPage}
       className="relative shadow-md ring-1 ring-border bg-white"
-      style={size ? { width: size.w, height: size.h } : undefined}
+      style={(size ?? defaultSize) ? { width: (size ?? defaultSize)!.w, height: (size ?? defaultSize)!.h } : undefined}
     >
       <canvas
         ref={canvasRef}
@@ -867,6 +999,18 @@ function PageView({
         ref={textLayerRef}
         className="pdf-text-layer absolute inset-0"
       />
+      {sync && (
+        <div
+          key={sync.token}
+          className="pointer-events-none absolute z-10 animate-sync-flash rounded-sm bg-blue-400/40 ring-2 ring-blue-500"
+          style={{
+            left: sync.h * BASE_SCALE * zoom,
+            top: (sync.v - sync.H) * BASE_SCALE * zoom,
+            width: Math.max(sync.W * BASE_SCALE * zoom, 8),
+            height: Math.max(sync.H * BASE_SCALE * zoom, 8),
+          }}
+        />
+      )}
       {size && (
         <AnnotationLayer
           width={size.w}

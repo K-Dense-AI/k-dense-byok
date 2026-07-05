@@ -150,3 +150,12 @@
     @apply bg-background text-foreground;
   }
 }
+
+@keyframes sync-flash {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.animate-sync-flash {
+  animation: sync-flash 2s ease-out forwards;
+}
