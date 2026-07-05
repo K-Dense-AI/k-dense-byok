@@ -21,6 +21,7 @@ export interface ViewerDef {
 const MoleculeViewer = lazy(() => import("@/components/viewers/molecule-viewer"));
 const StructureViewer = lazy(() => import("@/components/viewers/structure-viewer"));
 const SpectrumViewer = lazy(() => import("@/components/viewers/spectrum-viewer"));
+const ArrayDataViewer = lazy(() => import("@/components/viewers/arraydata-viewer"));
 
 /** Registry of viewers for NEW scientific categories. Existing categories keep
  *  their dispatch in file-preview-panel.tsx; this is additive. */
@@ -28,6 +29,7 @@ export const VIEWER_REGISTRY: Partial<Record<FileCategory, ViewerDef>> = {
   molecule2d: { loadMode: "none", Viewer: MoleculeViewer, canEditSource: false, managesOwnScroll: true },
   structure3d: { loadMode: "raw", Viewer: StructureViewer, canEditSource: false, managesOwnScroll: true },
   massspec: { loadMode: "none", Viewer: SpectrumViewer, canEditSource: false, managesOwnScroll: true },
+  arraydata: { loadMode: "none", Viewer: ArrayDataViewer, canEditSource: false, managesOwnScroll: true },
 };
 
 export function getViewerDef(cat: FileCategory): ViewerDef | undefined {
