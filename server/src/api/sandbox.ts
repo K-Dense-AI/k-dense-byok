@@ -512,7 +512,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
     }
   });
 
-  app.get<{ Querystring: { path: string; kind: string; index?: string } }>(
+  app.get<{ Querystring: { path: string; kind: string; index?: string; axis?: string } }>(
     "/sandbox/sci-render.png",
     async (req, reply) => {
       try {
@@ -526,7 +526,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           return { detail: "File not found" };
         }
         const outPath = path.join(os.tmpdir(), `kady-sci-${process.pid}-${Date.now()}`);
-        const res = runSciHelper(req.query.kind, "render", [target, req.query.index ?? "0", outPath]);
+        const res = runSciHelper(req.query.kind, "render", [target, req.query.index ?? "0", outPath, req.query.axis ?? "-"]);
         if (res.status === 3) {
           reply.code(503);
           return { detail: res.stderr.trim() || "Preview dependency missing" };

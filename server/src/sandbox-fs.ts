@@ -115,6 +115,10 @@ const MIME: Record<string, string> = {
   ".stk": "text/plain",
   ".phy": "text/plain",
   ".phylip": "text/plain",
+  ".dcm": "application/dicom",
+  ".nii": "application/octet-stream",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
 };
 
 export function guessMime(name: string): string {

@@ -4,6 +4,7 @@ import {
   AlignJustifyIcon,
   BookOpenIcon,
   BoxesIcon,
+  BrainIcon,
   DatabaseIcon,
   FileArchiveIcon,
   FileAudioIcon,
@@ -18,6 +19,8 @@ import {
   GitForkIcon,
   Grid3x3Icon,
   HexagonIcon,
+  MicroscopeIcon,
+  ScanIcon,
   TableIcon,
   WavesIcon,
 } from "lucide-react";
@@ -64,6 +67,12 @@ export function KadyFileIcon({
   if (lower.endsWith(".h5ad") || lower.endsWith(".h5ad.gz")) {
     return <DatabaseIcon className={`${className} text-indigo-500`} />;
   }
+  if (lower.endsWith(".nii") || lower.endsWith(".nii.gz")) {
+    return <BrainIcon className={`${className} text-fuchsia-600`} />;
+  }
+  if (lower.endsWith(".ome.tif") || lower.endsWith(".ome.tiff")) {
+    return <MicroscopeIcon className={`${className} text-amber-600`} />;
+  }
   if (ext === "json" || ext === "jsonl") {
     return <FileJsonIcon className={`${className} text-amber-600`} />;
   }
@@ -77,6 +86,9 @@ export function KadyFileIcon({
   if (cat === "arraydata") return <Grid3x3Icon className={`${className} text-cyan-600`} />;
   if (cat === "phylo") return <GitForkIcon className={`${className} text-lime-600`} />;
   if (cat === "alignment") return <AlignJustifyIcon className={`${className} text-violet-600`} />;
+  if (cat === "dicom") return <ScanIcon className={`${className} text-rose-600`} />;
+  if (cat === "nifti") return <BrainIcon className={`${className} text-fuchsia-600`} />;
+  if (cat === "microscopy") return <MicroscopeIcon className={`${className} text-amber-600`} />;
   if (cat === "image" || imageExts.includes(ext)) {
     return <FileImageIcon className={`${className} text-rose-500`} />;
   }

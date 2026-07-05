@@ -51,6 +51,25 @@ describe("fileCategory — arraydata, phylo, alignment", () => {
   });
 });
 
+describe("fileCategory — bio-imaging (DICOM/NIfTI/microscopy)", () => {
+  it("classifies DICOM", () => {
+    expect(fileCategory("a.dcm")).toBe("dicom");
+  });
+  it("classifies NIfTI, including the compound .nii.gz extension", () => {
+    expect(fileCategory("a.nii")).toBe("nifti");
+    expect(fileCategory("a.nii.gz")).toBe("nifti");
+  });
+  it("classifies TIFF/OME-TIFF microscopy formats", () => {
+    expect(fileCategory("a.tif")).toBe("microscopy");
+    expect(fileCategory("a.tiff")).toBe("microscopy");
+    expect(fileCategory("a.ome.tif")).toBe("microscopy");
+    expect(fileCategory("a.ome.tiff")).toBe("microscopy");
+  });
+  it("leaves plain images classified as image", () => {
+    expect(fileCategory("a.png")).toBe("image");
+  });
+});
+
 describe("sci url builders", () => {
   it("builds a summary url with kind + path", () => {
     const u = sciSummaryUrl("a/b.pdb", "structure");
@@ -63,5 +82,12 @@ describe("sci url builders", () => {
     expect(u).toContain("/sandbox/sci-render.png");
     expect(u).toContain("kind=chem");
     expect(u).toContain("index=2");
+  });
+  it("builds a render url with an axis for imaging plane selection", () => {
+    const u = sciRenderUrl("a.nii", "imaging", 5, "coronal");
+    expect(u).toContain("/sandbox/sci-render.png");
+    expect(u).toContain("kind=imaging");
+    expect(u).toContain("index=5");
+    expect(u).toContain("axis=coronal");
   });
 });

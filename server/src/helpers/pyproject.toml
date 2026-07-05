@@ -16,4 +16,8 @@ dependencies = [
     "psims",
     "pyarrow",
     "netCDF4",
+    "pydicom",
+    "nibabel",
+    "tifffile",
+    "pillow",
 ]

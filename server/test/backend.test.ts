@@ -229,6 +229,10 @@ describe("sandbox-fs", () => {
     expect(guessMime("a.jdx")).toBe("chemical/x-jcamp-dx");
     expect(guessMime("a.parquet")).toBe("application/vnd.apache.parquet");
     expect(guessMime("a.nwk")).toBe("text/plain");
+    expect(guessMime("a.dcm")).toBe("application/dicom");
+    expect(guessMime("a.nii")).toBe("application/octet-stream");
+    expect(guessMime("a.tif")).toBe("image/tiff");
+    expect(guessMime("a.tiff")).toBe("image/tiff");
   });
 });
 
@@ -401,5 +405,8 @@ describe("sci helper dispatch", () => {
   });
   it("resolves the arrays kind", () => {
     expect(sciHelperFor("arrays")?.script.endsWith("arrays_helper.py")).toBe(true);
+  });
+  it("resolves the imaging kind", () => {
+    expect(sciHelperFor("imaging")?.script.endsWith("imaging_helper.py")).toBe(true);
   });
 });

@@ -79,6 +79,9 @@ function categoryLabel(name: string): string {
   }
   if (cat === "phylo") return "phylo tree";
   if (cat === "alignment") return "alignment";
+  if (cat === "dicom") return "dicom";
+  if (cat === "nifti") return "nifti";
+  if (cat === "microscopy") return "microscopy";
   return langForFile(name);
 }
 
