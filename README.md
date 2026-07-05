@@ -31,9 +31,11 @@ No coding experience is required. The app runs locally on your machine, your dat
 - **Query 229 scientific and financial databases** in 18 categories, from PubMed-scale biomedical resources to market and climate data.
 - **Use any tool-capable AI model** — OpenAI, Anthropic, Google, xAI, Qwen, and more via one [OpenRouter](https://openrouter.ai/) account, or free local models via [Ollama](./docs/local-models-ollama.md). Switch per chat.
 - **Fuse multiple frontier models with [OpenRouter Fusion](./docs/openrouter-fusion.md)** — pick a Fusion preset (e.g. *Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro*) and a panel of models deliberates while a judge synthesizes one answer, with combined pricing and DRACO benchmark scores shown right in the model picker.
-- **Stay organized with projects** — each with its own files, chat history, up to 10 parallel chat tabs, rich file previews (including bioinformatics formats), a LaTeX editor, and cost tracking with optional spend caps.
+- **Stay organized with projects** — each with its own files, chat history, up to 10 parallel chat tabs, rich file previews (including bioinformatics formats), a LaTeX editor with inline compile diagnostics, and cost tracking with optional spend caps.
+- **Pick up where you left off** — reopen any past chat from the session history menu, full transcript included, right alongside your open tabs.
 - **Offload heavy or GPU work to the cloud with [Modal](https://modal.com)** — add your Modal keys and Kady can run a command or script on an on-demand sandbox, from a cheap CPU box up to H100 GPUs. Files sync back to your project and the compute cost is tracked right alongside model spend. Pick the instance per chat from the compute selector.
 - **Extend it with [MCP servers](./docs/mcp-servers.md)** — connect GitHub, reference managers, databases, and hundreds of other external tools.
+- **Manage everything from Settings** — a built-in capability hub with panels to browse and toggle skills, create or disable specialists, and add or disconnect MCP connectors per project, plus live API key management (OpenRouter, Modal, and more) — no config files to edit, and disabling anything is non-destructive.
 
 ## Get started in 5 minutes
 
@@ -48,7 +50,7 @@ cp .env.example .env    # then paste your OpenRouter key into .env
 ./start.sh
 ```
 
-The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000**. Press **Ctrl+C** in the terminal to stop.
+The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000**. Press **Ctrl+C** in the terminal to stop. You can also add or change API keys anytime from the in-app Settings — no restart needed.
 
 That's it. Create a project, drop in your data, and ask Kady for what you want — for example: *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
 
