@@ -229,6 +229,29 @@ interface HistoryItem {
   timestamp?: number;
 }
 
+/**
+ * JSON body for POST /sessions/:id/run. Pure so tests can pin the wire shape.
+ * `thinkingLevel: "off"` is deliberately sent (not stripped): Pi sessions
+ * remember the level across runs, so an explicit off resets a raised one.
+ * Callers omit the field entirely for models without adjustable thinking.
+ */
+export function buildRunBody(opts: {
+  message: string;
+  model?: string;
+  fusionConfig?: Record<string, unknown>;
+  computeTarget?: string;
+  thinkingLevel?: string;
+}): Record<string, unknown> {
+  const { message, model, fusionConfig, computeTarget, thinkingLevel } = opts;
+  return {
+    message,
+    ...(model ? { model } : {}),
+    ...(fusionConfig ? { fusionConfig } : {}),
+    ...(computeTarget && computeTarget !== "local" ? { computeTarget } : {}),
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+  };
+}
+
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState<Status>("ready");
@@ -344,13 +367,15 @@ export function useAgent() {
     // is accepted for call-site compatibility but no longer used: the Pi
     // backend runs a single flat agent. Skill/database hints are still injected
     // into the prompt text by the caller. `computeTarget` is the selected Modal
-    // instance id, forwarded so the modal_run tool defaults to it.
+    // instance id, forwarded so the modal_run tool defaults to it. `thinkingLevel`
+    // is the extended-thinking level ("off" / "minimal" / "low" / "medium" / "high" / "xhigh").
     async (
       text: string,
       model?: string,
       _legacyMeta?: unknown,
       fusionConfig?: Record<string, unknown>,
       computeTarget?: string,
+      thinkingLevel?: string,
     ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
       sendClaimRef.current = true;
@@ -378,12 +403,9 @@ export function useAgent() {
           apiFetch(`/sessions/${sessionId}/run`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message: text,
-              ...(model ? { model } : {}),
-              ...(fusionConfig ? { fusionConfig } : {}),
-              ...(computeTarget && computeTarget !== "local" ? { computeTarget } : {}),
-            }),
+            body: JSON.stringify(
+              buildRunBody({ message: text, model, fusionConfig, computeTarget, thinkingLevel }),
+            ),
             signal: controller.signal,
           });
         let res = await startRun();
