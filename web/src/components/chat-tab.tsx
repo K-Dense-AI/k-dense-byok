@@ -47,6 +47,7 @@ import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
+import type { NotebookEntry } from "@/lib/notebook";
 import { routeSubmit, steerNotStreamingFallback, type SendIntent } from "@/lib/chat-routing";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
@@ -860,6 +861,7 @@ export interface ChatTabMeta {
   isStreaming: boolean;
   messages: ChatMessage[];
   userMessageCount: number;
+  notebookEntries: NotebookEntry[];
 }
 
 export interface ChatTabHandle {
@@ -924,7 +926,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   },
   ref,
 ) {
-  const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession } = useAgent();
+  const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession, notebookEntries } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
 
   // Reopened tab: hydrate the transcript from the stored session before any
@@ -1046,8 +1048,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       isStreaming,
       messages,
       userMessageCount,
+      notebookEntries,
     });
-  }, [tabId, sessionId, status, isStreaming, messages, userMessageCount, onMetaChange]);
+  }, [tabId, sessionId, status, isStreaming, messages, userMessageCount, notebookEntries, onMetaChange]);
 
   const enqueue = useCallback(
     (trimmed: string) => {

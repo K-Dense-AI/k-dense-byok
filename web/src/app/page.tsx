@@ -78,6 +78,7 @@ export default function ChatPage() {
   const [mounted, setMounted] = useState(false);
   const [panelOpen, setPanelOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [showNotebook, setShowNotebook] = useState(false);
 
   // Chat tab management. We allocate the initial id once via useRef so it
   // stays stable across React's strict-mode double-invocation of
@@ -170,6 +171,8 @@ export default function ChatPage() {
   // Drive sandbox polling cadence off the active tab's streaming state
   // (the live-poll mode used to be hard-wired to the single chat).
   const activeMeta = tabsMeta[activeTabId];
+  const notebookEntries = activeMeta?.notebookEntries ?? [];
+  const notebookStreaming = activeMeta?.isStreaming ?? false;
   const anyStreaming = useMemo(
     () => Object.values(tabsMeta).some((m) => m.isStreaming),
     [tabsMeta],
@@ -361,6 +364,7 @@ export default function ChatPage() {
 
   const handleFileSelect = useCallback((path: string) => {
     sandbox.selectFile(path);
+    setShowNotebook(false);
   }, [sandbox]);
 
   // ------------------------------------------------------------------
@@ -565,6 +569,12 @@ export default function ChatPage() {
               onSaveImageBlob={sandbox.saveImageBlob}
               onRetry={sandbox.retryFile}
               onCompileLatex={sandbox.compileLatex}
+              showNotebook={showNotebook}
+              onSelectNotebook={() => setShowNotebook(true)}
+              notebookSessionId={activeSessionId}
+              notebookEntries={notebookEntries}
+              notebookStreaming={notebookStreaming}
+              onOpenNotebookFile={handleFileSelect}
             />
           </div>
         )}

@@ -3,6 +3,8 @@
 import { MessageResponse } from "@/components/ai-elements/message";
 import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
 import { KadyFileIcon } from "@/components/file-icon";
+import { LabNotebookView } from "@/components/lab-notebook-view";
+import type { NotebookEntry } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
 import { getViewerDef } from "@/lib/viewers/registry";
 import {
@@ -137,12 +139,16 @@ function TabBar({
   tabModes,
   onSelect,
   onClose,
+  showNotebook,
+  onSelectNotebook,
 }: {
   tabs: Tab[];
   activeTabPath: string | null;
   tabModes: Record<string, PanelMode>;
   onSelect: (path: string) => void;
   onClose: (path: string) => void;
+  showNotebook: boolean;
+  onSelectNotebook: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -162,7 +168,8 @@ function TabBar({
     });
   }, [tabs]);
 
-  if (uniqueTabs.length === 0) return null;
+  // Note: the Lab Notebook tab below is pinned and always rendered, so this
+  // bar never returns null even when no file tabs are open.
 
   return (
     <div
@@ -170,6 +177,23 @@ function TabBar({
       className="flex overflow-x-auto border-b bg-muted/20 shrink-0"
       style={{ scrollbarWidth: "none" }}
     >
+      {/* Pinned Lab Notebook tab — always first, never closable */}
+      <div
+        data-active={showNotebook}
+        onClick={onSelectNotebook}
+        title="Lab Notebook"
+        className={cn(
+          "group relative flex shrink-0 cursor-pointer select-none",
+          "items-center gap-1.5 border-r px-3 py-1.5 text-xs transition-colors",
+          showNotebook
+            ? "bg-background text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
+            : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+        )}
+      >
+        <BookOpenIcon className="size-3.5 shrink-0 text-orange-500" />
+        <span className="whitespace-nowrap font-medium">Lab Notebook</span>
+      </div>
+
       {uniqueTabs.map((tab) => {
         const name = tab.path.split("/").pop() ?? tab.path;
         const isActive = tab.path === activeTabPath;
@@ -1797,6 +1821,12 @@ export interface FilePreviewPanelProps {
   onRetry?: (path: string) => void;
   onCompileLatex?: (path: string, engine?: string) => Promise<LatexCompileResult>;
   revealTarget?: RevealTarget | null;
+  showNotebook: boolean;
+  onSelectNotebook: () => void;
+  notebookSessionId: string | null;
+  notebookEntries: NotebookEntry[];
+  notebookStreaming: boolean;
+  onOpenNotebookFile: (path: string) => void;
 }
 
 export function FilePreviewPanel({
@@ -1810,6 +1840,12 @@ export function FilePreviewPanel({
   onRetry,
   onCompileLatex,
   revealTarget,
+  showNotebook,
+  onSelectNotebook,
+  notebookSessionId,
+  notebookEntries,
+  notebookStreaming,
+  onOpenNotebookFile,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
   const [tabModes, setTabModes] = useState<Record<string, PanelMode>>({});
@@ -1880,8 +1916,19 @@ export function FilePreviewPanel({
         tabModes={tabModes}
         onSelect={onTabSelect}
         onClose={onTabClose}
+        showNotebook={showNotebook}
+        onSelectNotebook={onSelectNotebook}
       />
 
+      {showNotebook ? (
+        <LabNotebookView
+          sessionId={notebookSessionId}
+          liveEntries={notebookEntries}
+          streaming={notebookStreaming}
+          onOpenFile={onOpenNotebookFile}
+        />
+      ) : (
+      <>
       {/* Empty state — no tabs open */}
       {!selectedPath && (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
@@ -1981,6 +2028,8 @@ export function FilePreviewPanel({
             />
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );
