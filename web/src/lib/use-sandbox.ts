@@ -26,6 +26,9 @@ export type FileCategory =
   | "molecule2d"
   | "structure3d"
   | "massspec"
+  | "arraydata"
+  | "phylo"
+  | "alignment"
   | "text";
 
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp", "ico", "tiff", "heic"]);
@@ -41,6 +44,12 @@ const MOLECULE2D_EXTS = new Set(["smi", "smiles", "inchi", "mol", "sdf", "mol2"]
 const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "pdbqt"]);
 
 const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
+
+const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "cdf"]);
+
+const PHYLO_EXTS = new Set(["nwk", "newick", "tree", "nhx"]);
+
+const ALIGNMENT_EXTS = new Set(["aln", "clustal", "sto", "stk", "phy", "phylip"]);
 
 export function fileCategory(name: string): FileCategory {
   const lower = name.toLowerCase();
@@ -58,6 +67,9 @@ export function fileCategory(name: string): FileCategory {
   if (MOLECULE2D_EXTS.has(ext)) return "molecule2d";
   if (STRUCTURE3D_EXTS.has(ext)) return "structure3d";
   if (MASSSPEC_EXTS.has(ext)) return "massspec";
+  if (ARRAYDATA_EXTS.has(ext)) return "arraydata";
+  if (PHYLO_EXTS.has(ext)) return "phylo";
+  if (ALIGNMENT_EXTS.has(ext)) return "alignment";
   return "text";
 }
 

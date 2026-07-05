@@ -227,6 +227,8 @@ describe("sandbox-fs", () => {
     expect(guessMime("m.smi")).toBe("text/plain");
     expect(guessMime("a.mzml")).toBe("application/xml");
     expect(guessMime("a.jdx")).toBe("chemical/x-jcamp-dx");
+    expect(guessMime("a.parquet")).toBe("application/vnd.apache.parquet");
+    expect(guessMime("a.nwk")).toBe("text/plain");
   });
 });
 
@@ -396,5 +398,8 @@ describe("sci helper dispatch", () => {
   });
   it("resolves the massspec kind", () => {
     expect(sciHelperFor("massspec")?.script.endsWith("massspec_helper.py")).toBe(true);
+  });
+  it("resolves the arrays kind", () => {
+    expect(sciHelperFor("arrays")?.script.endsWith("arrays_helper.py")).toBe(true);
   });
 });

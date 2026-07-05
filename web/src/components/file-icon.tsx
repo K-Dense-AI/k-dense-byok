@@ -1,6 +1,7 @@
 import { fileCategory } from "@/lib/use-sandbox";
 import {
   ActivityIcon,
+  AlignJustifyIcon,
   BookOpenIcon,
   BoxesIcon,
   DatabaseIcon,
@@ -14,6 +15,8 @@ import {
   FileTerminalIcon,
   FileTextIcon,
   FileVideoIcon,
+  GitForkIcon,
+  Grid3x3Icon,
   HexagonIcon,
   TableIcon,
   WavesIcon,
@@ -71,6 +74,9 @@ export function KadyFileIcon({
   if (cat === "molecule2d") return <HexagonIcon className={`${className} text-fuchsia-500`} />;
   if (cat === "structure3d") return <BoxesIcon className={`${className} text-sky-500`} />;
   if (cat === "massspec") return <WavesIcon className={`${className} text-teal-500`} />;
+  if (cat === "arraydata") return <Grid3x3Icon className={`${className} text-cyan-600`} />;
+  if (cat === "phylo") return <GitForkIcon className={`${className} text-lime-600`} />;
+  if (cat === "alignment") return <AlignJustifyIcon className={`${className} text-violet-600`} />;
   if (cat === "image" || imageExts.includes(ext)) {
     return <FileImageIcon className={`${className} text-rose-500`} />;
   }

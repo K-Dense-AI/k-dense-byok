@@ -14,4 +14,6 @@ dependencies = [
     "pyteomics",
     "lxml",
     "psims",
+    "pyarrow",
+    "netCDF4",
 ]

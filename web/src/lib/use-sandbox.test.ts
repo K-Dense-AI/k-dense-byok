@@ -27,6 +27,30 @@ describe("fileCategory — mass spec", () => {
   });
 });
 
+describe("fileCategory — arraydata, phylo, alignment", () => {
+  it("classifies array/omics formats", () => {
+    for (const n of ["a.h5", "a.hdf5", "a.parquet", "a.npy", "a.npz", "a.nc", "a.cdf"]) {
+      expect(fileCategory(n)).toBe("arraydata");
+    }
+  });
+  it("classifies phylogenetic tree formats", () => {
+    for (const n of ["a.nwk", "a.newick", "a.tree", "a.nhx"]) {
+      expect(fileCategory(n)).toBe("phylo");
+    }
+  });
+  it("classifies alignment formats", () => {
+    for (const n of ["a.aln", "a.clustal", "a.sto", "a.stk", "a.phy", "a.phylip"]) {
+      expect(fileCategory(n)).toBe("alignment");
+    }
+  });
+  it("still classifies .h5ad/.h5ad.gz as anndata, not arraydata", () => {
+    expect(fileCategory("a.h5ad")).toBe("anndata");
+    expect(fileCategory("a.h5ad.gz")).toBe("anndata");
+    // Plain .h5 (no "ad") is the new arraydata bucket.
+    expect(fileCategory("a.h5")).toBe("arraydata");
+  });
+});
+
 describe("sci url builders", () => {
   it("builds a summary url with kind + path", () => {
     const u = sciSummaryUrl("a/b.pdb", "structure");

@@ -98,6 +98,23 @@ const MIME: Record<string, string> = {
   ".mgf": "text/plain",
   ".jdx": "chemical/x-jcamp-dx",
   ".dx": "chemical/x-jcamp-dx",
+  ".h5": "application/x-hdf5",
+  ".hdf5": "application/x-hdf5",
+  ".parquet": "application/vnd.apache.parquet",
+  ".npy": "application/octet-stream",
+  ".npz": "application/octet-stream",
+  ".nc": "application/x-netcdf",
+  ".cdf": "application/x-netcdf",
+  ".nwk": "text/plain",
+  ".newick": "text/plain",
+  ".tree": "text/plain",
+  ".nhx": "text/plain",
+  ".aln": "text/plain",
+  ".clustal": "text/plain",
+  ".sto": "text/plain",
+  ".stk": "text/plain",
+  ".phy": "text/plain",
+  ".phylip": "text/plain",
 };
 
 export function guessMime(name: string): string {
