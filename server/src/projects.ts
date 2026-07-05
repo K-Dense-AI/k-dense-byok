@@ -49,6 +49,7 @@ export interface ProjectPaths {
   uploadDir: string;
   kadyDir: string;
   runsDir: string;
+  notebookDir: string;
   skillsDir: string;
   sessionsDir: string;
 }
@@ -119,6 +120,7 @@ export function resolvePaths(projectId: string): ProjectPaths {
     uploadDir: path.join(sandbox, "user_data"),
     kadyDir,
     runsDir: path.join(kadyDir, "runs"),
+    notebookDir: path.join(kadyDir, "notebook"),
     skillsDir: path.join(piDir, "skills"),
     sessionsDir: path.join(piDir, "sessions"),
   };
