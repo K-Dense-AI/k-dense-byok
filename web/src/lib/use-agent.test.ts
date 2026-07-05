@@ -1,5 +1,20 @@
-import { describe, expect, it } from "vitest";
-import { buildRunBody } from "@/lib/use-agent";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as projects from "@/lib/projects";
+import { buildRunBody, useAgent } from "@/lib/use-agent";
+
+/** Build an SSE response body streaming one `data: <json>\n\n` frame per entry. */
+function sseStream(frames: unknown[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const frame of frames) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
+      }
+      controller.close();
+    },
+  });
+}
 
 describe("buildRunBody", () => {
   it("includes thinkingLevel when provided — including an explicit 'off'", () => {
@@ -32,5 +47,38 @@ describe("buildRunBody", () => {
       model: "fusion/x",
       fusionConfig,
     });
+  });
+});
+
+describe("useAgent notebook accumulation", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("accumulates notebook entries from tool_start frames", async () => {
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      if (path === "/sessions") {
+        return new Response(JSON.stringify({ id: "s1" }), { status: 200 });
+      }
+      if (path === "/sessions/s1/run") {
+        return new Response(
+          sseStream([
+            {
+              type: "tool_start",
+              toolName: "notebook",
+              toolCallId: "tc_1",
+              args: { type: "hypothesis", title: "Six types" },
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+
+    const { result } = renderHook(() => useAgent());
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    expect(result.current.notebookEntries.map((e) => e.id)).toEqual(["tc_1"]);
   });
 });

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch, onProjectChange } from "@/lib/projects";
 
+import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./notebook";
+
 // Keep the full tool-call trace per message: scientists rely on it to see and
 // reproduce what the agent ran, and the session export reads it too.
 const MAX_ACTIVITY_ITEMS = 200;
@@ -254,6 +256,7 @@ export function buildRunBody(opts: {
 
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [status, setStatus] = useState<Status>("ready");
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const sessionIdRef = useRef<string | null>(null);
@@ -436,6 +439,8 @@ export function useAgent() {
             if (!jsonStr) continue;
             try {
               const frame = JSON.parse(jsonStr) as AgentFrame;
+              const nb = parseNotebookFrame(frame);
+              if (nb) setNotebookEntries((prev) => mergeNotebookEntries(prev, [nb]));
               const r = applyFrameToTranscript(transcript, runState, frame, nextId);
               transcript = r.messages;
               runState = r.state;
@@ -514,6 +519,7 @@ export function useAgent() {
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
+    setNotebookEntries([]);
     setPendingSteers([]);
     setStatus("ready");
     sessionIdRef.current = null;
@@ -523,5 +529,16 @@ export function useAgent() {
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 
-  return { messages, status, send, stop, reset, getSessionId, loadSession, steer, pendingSteers };
+  return {
+    messages,
+    status,
+    send,
+    stop,
+    reset,
+    getSessionId,
+    loadSession,
+    steer,
+    pendingSteers,
+    notebookEntries,
+  };
 }
