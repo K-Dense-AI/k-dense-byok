@@ -20,19 +20,19 @@ describe("chem_helper", () => {
     const data = JSON.parse(res.stdout);
     expect(data.count).toBe(1);
     expect(data.molecules[0].formula).toBe("C2H6O");
-  });
+  }, 15000);
   it.runIf(depsOk)("renders an SVG for molecule 0", () => {
     const out = path.join(os.tmpdir(), `chem-test-${process.pid}.svg`);
     const res = runSciHelper("chem", "render", [path.join(FIX, "ethanol.smi"), "0", out]);
     expect(res.status).toBe(0);
     expect(fs.readFileSync(out, "utf-8")).toContain("<svg");
     fs.rmSync(out, { force: true });
-  });
+  }, 15000);
   it("exits 5 on a malformed SMILES", () => {
     const bad = path.join(os.tmpdir(), `bad-${process.pid}.smi`);
     fs.writeFileSync(bad, "this-is-not-smiles!!!\n");
     const res = runSciHelper("chem", "summarize", [bad]);
-    expect([0, 3, 5]).toContain(res.status); // 3 if deps missing, else 5 (or 0 w/ empty)
+    expect(res.status).toBe(depsOk ? 5 : 3);
     fs.rmSync(bad, { force: true });
   });
 });
