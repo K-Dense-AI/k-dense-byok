@@ -246,7 +246,10 @@ export function listBuiltinAgents(): AgentFile[] {
  */
 export function listAgents(paths: ProjectPaths): AgentFile[] {
   const enabledProject = listProjectAgents(paths).map((a) => ({ ...a, enabled: true }));
-  const disabledProject = listDisabledProjectAgents(paths).map((a) => ({ ...a, enabled: false }));
+  const enabledNames = new Set(enabledProject.map((a) => a.name));
+  const disabledProject = listDisabledProjectAgents(paths)
+    .filter((a) => !enabledNames.has(a.name))
+    .map((a) => ({ ...a, enabled: false }));
   const projectNames = new Set([...enabledProject, ...disabledProject].map((a) => a.name));
   const disabledBuiltins = builtinDisabledNames(paths);
   const builtins = listBuiltinAgents()
@@ -270,18 +273,30 @@ export function writeProjectAgent(
     throw new Error(`thinking must be one of: ${THINKING_LEVELS.join(", ")}`);
   }
   const agent: AgentFile = { ...patch, name, source: "project" };
-  const dir = agentsDir(paths);
-  fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, `${name}.md`), serializeAgentMarkdown(agent), "utf-8");
+  const enabledFile = path.join(agentsDir(paths), `${name}.md`);
+  const disabledFile = path.join(agentsDisabledDir(paths), `${name}.md`);
+  // Preserve disabled state when editing an agent that currently lives in the
+  // disabled store; otherwise (new agent, or an enabled one) write to agents/.
+  const target =
+    !fs.existsSync(enabledFile) && fs.existsSync(disabledFile) ? disabledFile : enabledFile;
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, serializeAgentMarkdown(agent), "utf-8");
   return agent;
 }
 
 export function deleteProjectAgent(paths: ProjectPaths, name: string): boolean {
   if (!AGENT_NAME_RE.test(name)) return false;
-  const file = path.join(agentsDir(paths), `${name}.md`);
-  if (!fs.existsSync(file)) return false;
-  fs.rmSync(file);
-  return true;
+  let removed = false;
+  for (const f of [
+    path.join(agentsDir(paths), `${name}.md`),
+    path.join(agentsDisabledDir(paths), `${name}.md`),
+  ]) {
+    if (fs.existsSync(f)) {
+      fs.rmSync(f);
+      removed = true;
+    }
+  }
+  return removed;
 }
 
 /**
@@ -370,6 +385,8 @@ export function restoreDefaultAgents(paths: ProjectPaths): string[] {
   const dir = agentsDir(paths);
   fs.mkdirSync(dir, { recursive: true });
   for (const type of SUBAGENT_TYPES) {
+    const disabledCopy = path.join(agentsDisabledDir(paths), `${type.name}.md`);
+    if (fs.existsSync(disabledCopy)) fs.rmSync(disabledCopy);
     fs.writeFileSync(path.join(dir, `${type.name}.md`), rosterMarkdown(type), "utf-8");
   }
   fs.writeFileSync(seedMarkerPath(paths), new Date().toISOString() + "\n", "utf-8");

@@ -4,12 +4,16 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { ensureProjectExists, resolvePaths } from "../src/projects.ts";
 import {
+  deleteProjectAgent,
   listAgents,
   listBuiltinAgents,
+  restoreDefaultAgents,
+  seedAgentFiles,
   setSpecialistEnabled,
   writeProjectAgent,
 } from "../src/agent/agent-files.ts";
 import { readPiSettings } from "../src/agent/capability-state.ts";
+import { SUBAGENT_TYPES } from "../src/agent/subagents.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -100,5 +104,61 @@ describe("specialists enable/disable", () => {
     const paths = resolvePaths("p3");
     expect(setSpecialistEnabled(paths, "does-not-exist", false)).toMatchObject({ ok: false, status: 404 });
     expect(setSpecialistEnabled(paths, "Bad Name", false)).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it("deletes a disabled agent from the disabled store, and it disappears from the roster", () => {
+    ensureProjectExists("p5");
+    const paths = resolvePaths("p5");
+    writeProjectAgent(paths, "quiet-one", {
+      description: "will be disabled then deleted",
+      systemPrompt: "Be quiet.",
+    });
+    expect(setSpecialistEnabled(paths, "quiet-one", false)).toEqual({ ok: true });
+
+    expect(deleteProjectAgent(paths, "quiet-one")).toBe(true);
+
+    expect(listAgents(paths).find((a) => a.name === "quiet-one")).toBeUndefined();
+    expect(fs.existsSync(path.join(paths.sandbox, ".pi", "agents", "quiet-one.md"))).toBe(false);
+    expect(fs.existsSync(path.join(paths.sandbox, ".pi", "agents-disabled", "quiet-one.md"))).toBe(false);
+  });
+
+  it("editing a disabled agent keeps it disabled", () => {
+    ensureProjectExists("p6");
+    const paths = resolvePaths("p6");
+    writeProjectAgent(paths, "edit-me", {
+      description: "original",
+      systemPrompt: "Original body.",
+    });
+    expect(setSpecialistEnabled(paths, "edit-me", false)).toEqual({ ok: true });
+
+    const updated = writeProjectAgent(paths, "edit-me", {
+      description: "edited",
+      systemPrompt: "new body",
+    });
+    expect(updated.description).toBe("edited");
+
+    expect(fs.existsSync(path.join(paths.sandbox, ".pi", "agents", "edit-me.md"))).toBe(false);
+    expect(fs.existsSync(path.join(paths.sandbox, ".pi", "agents-disabled", "edit-me.md"))).toBe(true);
+
+    const rows = listAgents(paths).filter((a) => a.name === "edit-me");
+    expect(rows).toHaveLength(1);
+    expect(rows[0].enabled).toBe(false);
+    expect(rows[0].description).toBe("edited");
+  });
+
+  it("restore-defaults clears a disabled counterpart for a default agent, leaving exactly one enabled row", () => {
+    ensureProjectExists("p7");
+    const paths = resolvePaths("p7");
+    seedAgentFiles(paths);
+    const targetName = SUBAGENT_TYPES[0].name;
+    expect(setSpecialistEnabled(paths, targetName, false)).toEqual({ ok: true });
+    expect(fs.existsSync(path.join(paths.sandbox, ".pi", "agents-disabled", `${targetName}.md`))).toBe(true);
+
+    restoreDefaultAgents(paths);
+
+    const rows = listAgents(paths).filter((a) => a.name === targetName);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].enabled).toBe(true);
+    expect(fs.existsSync(path.join(paths.sandbox, ".pi", "agents-disabled", `${targetName}.md`))).toBe(false);
   });
 });

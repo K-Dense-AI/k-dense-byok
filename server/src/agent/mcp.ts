@@ -262,8 +262,15 @@ function moveServer(
   }
   dst[name] = src[name];
   delete src[name];
-  writeMcpConfig(paths, enabled);
-  writeMcpDisabled(paths, disabled);
+  // Write the destination first so a crash between the two writes leaves a
+  // recoverable duplicate rather than losing the server config entirely.
+  if (from === "enabled") {
+    writeMcpDisabled(paths, disabled);
+    writeMcpConfig(paths, enabled);
+  } else {
+    writeMcpConfig(paths, enabled);
+    writeMcpDisabled(paths, disabled);
+  }
   return { ok: true };
 }
 
