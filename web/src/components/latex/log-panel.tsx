@@ -12,12 +12,14 @@ export function LogPanel({
   onClose,
   filter,
   onFilterChange,
+  onFixError,
 }: {
   log: string;
   open: boolean;
   onClose: () => void;
   filter: LogFilter;
   onFilterChange: (f: LogFilter) => void;
+  onFixError?: (line: number, message: string) => void;
 }) {
   if (!open || !log) return null;
   const lines = log.split("\n");
@@ -52,21 +54,32 @@ export function LogPanel({
         </button>
       </div>
       <pre className="whitespace-pre-wrap break-words p-3 text-[11px] font-mono leading-relaxed text-muted-foreground">
-        {shown.map((line, i) => (
-          <span
-            key={i}
-            className={
-              line.startsWith("!") || /:\d+:/.test(line)
-                ? "text-red-600 dark:text-red-400 font-medium"
-                : /Warning|Overfull|Underfull/.test(line)
-                  ? "text-amber-600 dark:text-amber-400"
-                  : ""
-            }
-          >
-            {line}
-            {"\n"}
-          </span>
-        ))}
+        {shown.map((line, i) => {
+          const errMatch = /^(?:\.\/)?\S+?:(\d+):\s*(.+)$/.exec(line);
+          return (
+            <span
+              key={i}
+              className={
+                line.startsWith("!") || /:\d+:/.test(line)
+                  ? "text-red-600 dark:text-red-400 font-medium"
+                  : /Warning|Overfull|Underfull/.test(line)
+                    ? "text-amber-600 dark:text-amber-400"
+                    : ""
+              }
+            >
+              {line}
+              {onFixError && errMatch && (
+                <button
+                  onClick={() => onFixError(parseInt(errMatch[1], 10), errMatch[2])}
+                  className="ml-2 rounded bg-violet-600/90 px-1.5 text-[10px] text-white hover:bg-violet-600"
+                >
+                  Fix with AI
+                </button>
+              )}
+              {"\n"}
+            </span>
+          );
+        })}
         {filter === "problems" && shown.length === 0 && "No problems found in log.\n"}
       </pre>
     </div>

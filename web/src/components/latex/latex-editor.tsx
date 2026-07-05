@@ -6,7 +6,14 @@ import { parseMagicComments, resolveRelative } from "@/lib/latex/magic-comments"
 import { breadcrumbFor, parseOutline, type OutlineItem } from "@/lib/latex/outline";
 import { proseWordCount } from "@/lib/latex/prose";
 import { latexCompletionSource, scanBibFiles, scanBibKeys } from "@/lib/latex/completions";
-import { readSandboxFile, fetchSynctexForward, fetchSynctexInverse } from "@/lib/latex/api";
+import {
+  readSandboxFile,
+  fetchSynctexForward,
+  fetchSynctexInverse,
+  LatexAssistError,
+  postLatexAssist,
+} from "@/lib/latex/api";
+import { buildFixPayload, extractPreamble, lineRangeToOffsets } from "@/lib/latex/assist-helpers";
 import {
   createSpellWorker,
   latexSpellLinter,
@@ -17,16 +24,19 @@ import { cn } from "@/lib/utils";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage } from "@uiw/codemirror-extensions-langs";
 import { githubDark, githubLight } from "@uiw/codemirror-theme-github";
+import { getOriginalDoc, unifiedMergeView } from "@codemirror/merge";
 import { keymap } from "@codemirror/view";
 import type { Text } from "@codemirror/state";
 import { autocompletion } from "@codemirror/autocomplete";
 import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/lint";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SparklesIcon } from "lucide-react";
 import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
 import { LogPanel, type LogFilter } from "./log-panel";
 import { OutlinePanel } from "./outline-panel";
 import { LatexPdfPane } from "./latex-pdf-pane";
+import { AiEditPopover } from "./ai-edit-popover";
 import type { PdfSyncClick, PdfSyncHighlight } from "@/components/pdf-viewer/pdf-viewer";
 
 const AUTOCOMPILE_KEY = "kady:latex:autocompile";
@@ -104,6 +114,13 @@ export function LatexEditor({
   );
   const [cursorLine, setCursorLine] = useState(1);
   const breadcrumb = useMemo(() => breadcrumbFor(outline, cursorLine), [outline, cursorLine]);
+
+  // --- AI assist (Cmd+K edits / Fix with AI) --------------------------------
+  const [aiPopover, setAiPopover] = useState<{ x: number; y: number } | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiReview, setAiReview] = useState<{ original: string; costUsd: number } | null>(null);
+  const aiAbortRef = useRef<AbortController | null>(null);
 
   // --- spell check ------------------------------------------------------
   const [spellcheck, setSpellcheck] = useState(
@@ -372,6 +389,96 @@ export function LatexEditor({
     });
   }, []);
 
+  // --- AI assist: review flow + edit/fix flows ------------------------------
+  const startReview = useCallback((from: number, to: number, replacement: string, costUsd: number) => {
+    const view = viewRef.current;
+    if (!view) return;
+    const original = view.state.doc.toString();
+    view.dispatch({ changes: { from, to, insert: replacement } });
+    setAiReview({ original, costUsd });
+    view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+  }, []);
+
+  const finishReview = useCallback((revert: boolean) => {
+    const view = viewRef.current;
+    if (view && revert) {
+      const original = getOriginalDoc(view.state).toString();
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: original } });
+    }
+    setAiReview(null);
+    viewRef.current?.focus();
+  }, []);
+
+  const runAiEdit = useCallback(
+    async (instruction: string) => {
+      const view = viewRef.current;
+      if (!view) return;
+      const { from, to } = view.state.selection.main;
+      const selection = view.state.sliceDoc(from, to);
+      setAiBusy(true);
+      setAiError(null);
+      aiAbortRef.current = new AbortController();
+      try {
+        const res = await postLatexAssist(
+          {
+            mode: "edit", fileName: name, instruction, selection,
+            preamble: extractPreamble(view.state.doc.toString()),
+          },
+          aiAbortRef.current.signal,
+        );
+        setAiPopover(null);
+        startReview(from, to, res.replacement, res.costUsd);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setAiError(err instanceof LatexAssistError ? err.message : "AI edit failed");
+      } finally {
+        setAiBusy(false);
+      }
+    },
+    [name, startReview],
+  );
+
+  const fixWithAi = useCallback(
+    async (line: number, message: string) => {
+      const view = viewRef.current;
+      if (!view || aiBusy) return;
+      const doc = view.state.doc.toString();
+      const payload = buildFixPayload(doc, name, line, message);
+      setAiBusy(true);
+      aiAbortRef.current = new AbortController();
+      try {
+        const res = await postLatexAssist(payload, aiAbortRef.current.signal);
+        const { from, to } = lineRangeToOffsets(
+          doc, payload.context.startLine, payload.context.endLine,
+        );
+        startReview(from, to, res.replacement, res.costUsd);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        showSyncNotice(err instanceof LatexAssistError ? err.message : "AI fix failed");
+      } finally {
+        setAiBusy(false);
+      }
+    },
+    [name, aiBusy, startReview, showSyncNotice],
+  );
+  const fixWithAiRef = useRef(fixWithAi);
+  fixWithAiRef.current = fixWithAi;
+
+  const openAiPopover = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return false;
+    const { from, to, head } = view.state.selection.main;
+    if (from === to) return false;
+    const coords = view.coordsAtPos(head);
+    if (coords) {
+      setAiError(null);
+      setAiPopover({ x: coords.left, y: coords.bottom });
+    }
+    return true;
+  }, []);
+  const openAiPopoverRef = useRef(openAiPopover);
+  openAiPopoverRef.current = openAiPopover;
+
   // --- editor extensions ----------------------------------------------------
   const texLang = useMemo(() => loadLanguage("tex"), []);
 
@@ -390,6 +497,13 @@ export function LatexEditor({
               to: ln.to,
               severity: it.severity,
               message: it.message,
+              actions:
+                it.severity === "error"
+                  ? [{
+                      name: "✦ Fix with AI",
+                      apply: () => fixWithAiRef.current(it.line, it.message),
+                    }]
+                  : undefined,
             };
           });
         },
@@ -420,9 +534,13 @@ export function LatexEditor({
         { key: "Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
         { key: "Shift-Mod-Enter", run: () => { handleCompileRef.current(); return true; } },
         { key: "Mod-Alt-j", run: () => { jumpToPdfRef.current(); return true; } },
+        { key: "Mod-k", run: () => openAiPopoverRef.current(), preventDefault: true },
       ]),
+      ...(aiReview
+        ? [unifiedMergeView({ original: aiReview.original, mergeControls: true })]
+        : []),
     ];
-  }, [texLang, texLinter, spellcheck, spellExt]);
+  }, [texLang, texLinter, spellcheck, spellExt, aiReview]);
 
   // --- resizable split pane ---------------------------------------------------
   const dividerRef = useRef<HTMLDivElement>(null);
@@ -495,6 +613,20 @@ export function LatexEditor({
               ))}
             </div>
           )}
+          {aiReview && (
+            <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
+              <SparklesIcon className="size-3" />
+              AI edit applied — review the highlighted chunks
+              {aiReview.costUsd > 0 && <span className="text-muted-foreground">· ${aiReview.costUsd.toFixed(4)}</span>}
+              <span className="flex-1" />
+              <button onClick={() => finishReview(false)} className="rounded bg-violet-600 px-2 py-0.5 text-white hover:bg-violet-700">
+                Keep all
+              </button>
+              <button onClick={() => finishReview(true)} className="rounded border px-2 py-0.5 hover:bg-muted">
+                Revert all
+              </button>
+            </div>
+          )}
           <div className="relative flex-1 min-h-0">
             <div className="absolute inset-0">
               <CodeMirror
@@ -516,6 +648,7 @@ export function LatexEditor({
             onClose={() => setLogOpen(false)}
             filter={logFilter}
             onFilterChange={setLogFilter}
+            onFixError={fixWithAi}
           />
         </div>
 
@@ -543,6 +676,19 @@ export function LatexEditor({
           />
         </div>
       </div>
+
+      {aiPopover && (
+        <AiEditPopover
+          anchor={aiPopover}
+          busy={aiBusy}
+          error={aiError}
+          onSubmit={runAiEdit}
+          onCancel={() => {
+            aiAbortRef.current?.abort();
+            setAiPopover(null);
+          }}
+        />
+      )}
     </div>
   );
 }
