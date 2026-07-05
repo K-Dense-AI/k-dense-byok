@@ -30,6 +30,11 @@ import {
   type Model,
 } from "@/components/model-selector";
 import { ComputeSelector, type ModalInstance } from "@/components/compute-selector";
+import {
+  DEFAULT_THINKING_LEVEL,
+  ThinkingSelector,
+  type ThinkingLevel,
+} from "@/components/thinking-selector";
 import { apiFetch } from "@/lib/projects";
 import { onChatPrefill } from "@/lib/chat-prefill";
 import { buildSkillsContext, type Skill } from "@/components/skills-selector";
@@ -80,7 +85,20 @@ interface QueuedMessage {
   files: string[];
   /** Selected Modal compute instance id at enqueue time (null = local). */
   computeTarget: string | null;
+  /** Thinking level at enqueue time (null = model doesn't support one). */
+  thinkingLevel: ThinkingLevel | null;
   timestamp: number;
+}
+
+/** Models whose runs must NOT carry a thinkingLevel: Ollama models are built
+ *  with reasoning:false (Pi clamps to off) and Fusion rewrites the wire body,
+ *  so a level is meaningless there. Mirrors isOllama in model-selector.tsx. */
+function thinkingUnsupported(model: { id: string; provider?: string }): boolean {
+  return (
+    model.provider === "Ollama" ||
+    model.id.startsWith("ollama/") ||
+    model.id.startsWith("fusion/")
+  );
 }
 
 function BudgetBanner({
@@ -382,6 +400,9 @@ function ChatInput({
   onModelChange,
   selectedComputeTarget,
   onComputeTargetChange,
+  thinkingLevel,
+  onThinkingLevelChange,
+  thinkingDisabled,
   modalConfigured,
   onUploadFiles,
   allSkills,
@@ -412,6 +433,9 @@ function ChatInput({
   onModelChange: (model: Model) => void;
   selectedComputeTarget: ModalInstance | null;
   onComputeTargetChange: (instance: ModalInstance | null) => void;
+  thinkingLevel: ThinkingLevel;
+  onThinkingLevelChange: (level: ThinkingLevel) => void;
+  thinkingDisabled: boolean;
   modalConfigured: boolean;
   onUploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   allSkills: Skill[];
@@ -686,6 +710,11 @@ function ChatInput({
                 selected={selectedModel}
                 onChange={onModelChange}
               />
+              <ThinkingSelector
+                selected={thinkingLevel}
+                onChange={onThinkingLevelChange}
+                disabled={thinkingDisabled}
+              />
               <ComputeSelector
                 selected={selectedComputeTarget}
                 onChange={onComputeTargetChange}
@@ -910,6 +939,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   // Per-tab settings
   const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL);
   const [selectedComputeTarget, setSelectedComputeTarget] = useState<ModalInstance | null>(null);
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL);
+  const thinkingDisabled = thinkingUnsupported(selectedModel);
   const [modalConfigured, setModalConfigured] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
   const [selectedDbs, setSelectedDbs] = useState<Database[]>([]);
@@ -995,6 +1026,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         },
         next.model.fusionConfig,
         next.computeTarget ?? undefined,
+        next.thinkingLevel ?? undefined,
       );
     }, 0);
     return () => window.clearTimeout(id);
@@ -1035,11 +1067,12 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           skills: [...selectedSkills],
           files: [...attachedFiles],
           computeTarget: selectedComputeTarget?.id ?? null,
+          thinkingLevel: thinkingDisabled ? null : thinkingLevel,
           timestamp: Date.now(),
         },
       ]);
     },
-    [messageQueue.length, selectedModel, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget],
+    [messageQueue.length, selectedModel, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, thinkingDisabled, thinkingLevel],
   );
 
   const handleSend = useCallback(
@@ -1058,6 +1091,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           },
           selectedModel.fusionConfig,
           selectedComputeTarget?.id,
+          thinkingDisabled ? undefined : thinkingLevel,
         );
       const route = routeSubmit(isStreaming, intent);
       if (route === "queue") {
@@ -1090,6 +1124,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       selectedDbs,
       selectedSkills,
       attachedFiles,
+      thinkingDisabled,
+      thinkingLevel,
     ],
   );
 
@@ -1106,7 +1142,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       stop,
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
-        await send(prompt, selectedModel.id, undefined, selectedModel.fusionConfig, selectedComputeTarget?.id);
+        await send(
+          prompt,
+          selectedModel.id,
+          undefined,
+          selectedModel.fusionConfig,
+          selectedComputeTarget?.id,
+          thinkingDisabled ? undefined : thinkingLevel,
+        );
       },
       launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
         if (budgetState === "exceeded") return;
@@ -1126,10 +1169,20 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           },
           model.fusionConfig,
           selectedComputeTarget?.id,
+          thinkingUnsupported(model) ? undefined : thinkingLevel,
         );
       },
     }),
-    [send, stop, budgetState, selectedModel.id, selectedModel.fusionConfig, selectedComputeTarget?.id],
+    [
+      send,
+      stop,
+      budgetState,
+      selectedModel.id,
+      selectedModel.fusionConfig,
+      selectedComputeTarget?.id,
+      thinkingDisabled,
+      thinkingLevel,
+    ],
   );
 
   // Background tabs stay mounted (so streaming + queue auto-send continue,
@@ -1234,6 +1287,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onModelChange={setSelectedModel}
             selectedComputeTarget={selectedComputeTarget}
             onComputeTargetChange={setSelectedComputeTarget}
+            thinkingLevel={thinkingLevel}
+            onThinkingLevelChange={setThinkingLevel}
+            thinkingDisabled={thinkingDisabled}
             modalConfigured={modalConfigured}
             onUploadFiles={uploadFiles}
             allSkills={allSkills}
