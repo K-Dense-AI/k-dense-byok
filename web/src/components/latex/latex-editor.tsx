@@ -394,9 +394,17 @@ export function LatexEditor({
     const view = viewRef.current;
     if (!view) return;
     const original = view.state.doc.toString();
-    view.dispatch({ changes: { from, to, insert: replacement } });
+    // Defensive clamp: `from`/`to` were captured before the AI round-trip and
+    // may be stale relative to the current doc (e.g. if it changed length in
+    // the meantime). Guard 1 (editable.of(!aiBusy)) prevents user edits during
+    // the request, but clamp here too so a stale/out-of-range offset can never
+    // throw or land past the end of the document.
+    const docLen = view.state.doc.length;
+    const safeFrom = Math.max(0, Math.min(from, docLen));
+    const safeTo = Math.max(safeFrom, Math.min(to, docLen));
+    view.dispatch({ changes: { from: safeFrom, to: safeTo, insert: replacement } });
     setAiReview({ original, costUsd });
-    view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
+    view.dispatch({ effects: EditorView.scrollIntoView(safeFrom, { y: "center" }) });
   }, []);
 
   const finishReview = useCallback((revert: boolean) => {
@@ -539,8 +547,13 @@ export function LatexEditor({
       ...(aiReview
         ? [unifiedMergeView({ original: aiReview.original, mergeControls: true })]
         : []),
+      // Lock the editor to user input while an AI request is in flight, so a
+      // concurrent edit can't shift the doc out from under the from/to offsets
+      // captured before the round-trip. Programmatic dispatch (startReview)
+      // still works — this only blocks keyboard/mouse input.
+      EditorView.editable.of(!aiBusy),
     ];
-  }, [texLang, texLinter, spellcheck, spellExt, aiReview]);
+  }, [texLang, texLinter, spellcheck, spellExt, aiReview, aiBusy]);
 
   // --- resizable split pane ---------------------------------------------------
   const dividerRef = useRef<HTMLDivElement>(null);
