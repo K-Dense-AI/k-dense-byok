@@ -218,6 +218,12 @@ describe("sandbox-fs", () => {
     expect(guessMime("a.pdf")).toBe("application/pdf");
     expect(guessMime("a.png")).toBe("image/png");
     expect(guessMime("a.unknownext")).toBe("application/octet-stream");
+    expect(guessMime("m.pdb")).toBe("chemical/x-pdb");
+    expect(guessMime("m.cif")).toBe("chemical/x-cif");
+    expect(guessMime("m.xyz")).toBe("chemical/x-xyz");
+    expect(guessMime("m.mol")).toBe("chemical/x-mdl-molfile");
+    expect(guessMime("m.sdf")).toBe("chemical/x-mdl-sdfile");
+    expect(guessMime("m.smi")).toBe("text/plain");
   });
 });
 
