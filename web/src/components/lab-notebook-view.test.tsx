@@ -205,6 +205,56 @@ describe("LabNotebookView", () => {
     await waitFor(() => expect(spy).toHaveBeenCalledTimes(2)); // completion re-fetch
   });
 
+  it("ignores a stale subagent-triggered refetch that resolves after the session has changed", async () => {
+    const { apiFetch } = await import("@/lib/projects");
+    const spy = apiFetch as unknown as ReturnType<typeof vi.fn>;
+
+    // 1) Initial mount fetch for s1 (the sessionId effect) — resolves
+    // immediately with no entries.
+    spy.mockResolvedValueOnce({ ok: true, json: async () => ({ entries: [] }) });
+    const { rerender } = render(
+      <LabNotebookView sessionId="s1" liveEntries={[]} streaming={false}
+        subagentCompletions={0} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+
+    // 2) subagentCompletions bumps while still on s1. This refetch is held
+    // open (simulating a slow backend response) so it resolves only after
+    // the session below has already moved on.
+    let resolveStale: (value: unknown) => void = () => {};
+    const stalePromise = new Promise((resolve) => { resolveStale = resolve; });
+    spy.mockImplementationOnce(() => stalePromise);
+    rerender(
+      <LabNotebookView sessionId="s1" liveEntries={[]} streaming={false}
+        subagentCompletions={1} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2));
+
+    // 3) The session switches to s2 before the stale fetch above resolves.
+    // s2's own (sessionId-triggered) fetch resolves quickly.
+    spy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ entries: [e({ id: "tc_s2", title: "From s2" })] }),
+    });
+    rerender(
+      <LabNotebookView sessionId="s2" liveEntries={[]} streaming={false}
+        subagentCompletions={1} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.getByText("From s2")).toBeInTheDocument());
+
+    // 4) Now resolve the stale s1 fetch. Its data must NOT clobber s2's
+    // notebook, even though nothing cancelled it.
+    resolveStale({
+      ok: true,
+      json: async () => ({ entries: [e({ id: "tc_s1_stale", title: "From stale s1" })] }),
+    });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(screen.getByText("From s2")).toBeInTheDocument();
+    expect(screen.queryByText("From stale s1")).not.toBeInTheDocument();
+  });
+
   it("re-fetches the notebook when streaming transitions from true to false", async () => {
     const { apiFetch } = await import("@/lib/projects");
     const spy = apiFetch as unknown as ReturnType<typeof vi.fn>;

@@ -99,8 +99,16 @@ export function LabNotebookView({
   const [fetched, setFetched] = useState<NotebookEntry[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  // Always holds the *current* sessionId, independent of which effect's
+  // closure a given refetch() call happened to capture. Updated on every
+  // render (not just in the sessionId effect) so it's current even while
+  // other effects' async work is in flight.
+  const currentSessionRef = useRef(sessionId);
+  currentSessionRef.current = sessionId;
+
   const refetch = useCallback(() => {
     let cancelled = false;
+    const capturedSessionId = sessionId;
     if (!sessionId) {
       setFetched([]);
       return () => { cancelled = true; };
@@ -110,7 +118,14 @@ export function LabNotebookView({
         const res = await apiFetch(`/sessions/${encodeURIComponent(sessionId)}/notebook`);
         if (!res.ok) return;
         const data = (await res.json()) as { entries?: NotebookEntry[] };
-        if (!cancelled && Array.isArray(data.entries)) setFetched(data.entries);
+        // Guard against a response for a session we've since navigated away
+        // from (e.g. a subagentCompletions- or run-end-triggered fetch for
+        // session A resolving after sessionId has moved to B). `cancelled`
+        // only covers the effect that kicked this call off unmounting/
+        // re-running; `currentSessionRef` covers the cross-effect race.
+        if (!cancelled && capturedSessionId === currentSessionRef.current && Array.isArray(data.entries)) {
+          setFetched(data.entries);
+        }
       } catch {
         // Non-fatal: live entries still render.
       }
@@ -128,7 +143,7 @@ export function LabNotebookView({
   }, [sessionId]);
 
   useEffect(() => {
-    if (subagentCompletions > 0) refetch();
+    if (subagentCompletions > 0) return refetch();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subagentCompletions]);
 
@@ -141,8 +156,10 @@ export function LabNotebookView({
   // subagent, or reload).
   const wasStreamingRef = useRef(streaming);
   useEffect(() => {
-    if (wasStreamingRef.current && !streaming) refetch();
+    let cleanup: (() => void) | undefined;
+    if (wasStreamingRef.current && !streaming) cleanup = refetch();
     wasStreamingRef.current = streaming;
+    return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [streaming]);
 
