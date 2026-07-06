@@ -2,7 +2,7 @@
 import { useState } from "react";
 import {
   LightbulbIcon, FlaskConicalIcon, BarChart3Icon, SignpostIcon, StickyNoteIcon,
-  ChevronRightIcon, FileIcon,
+  ChevronRightIcon, FileIcon, ExternalLinkIcon,
 } from "lucide-react";
 import { MessageResponse } from "@/components/ai-elements/message";
 import type { NotebookEntry, NotebookEntryType } from "@/lib/notebook";
@@ -18,6 +18,8 @@ export const TYPE_META: Record<
   note: { label: "Note", Icon: StickyNoteIcon, spine: "bg-neutral-400", chip: "text-neutral-500" },
 };
 
+const CODE_FILE_RE = /\.(py|r|jl|sh|ts|js|ipynb|sql)$/i;
+
 export function LabNotebookEntryCard({
   entry,
   onOpenFile,
@@ -27,6 +29,8 @@ export function LabNotebookEntryCard({
 }) {
   const meta = TYPE_META[entry.type];
   const [codeOpen, setCodeOpen] = useState(false);
+  const codeFilePath = entry.artifacts?.[0];
+  const showOpenAsFile = Boolean(entry.code && codeFilePath && CODE_FILE_RE.test(codeFilePath));
   return (
     <div className="relative pl-6" data-testid={`nb-entry-${entry.id}`} data-nb-type={entry.type}>
       <span className={`absolute left-0 top-0 h-full w-1 rounded ${meta.spine}`} aria-hidden />
@@ -51,13 +55,24 @@ export function LabNotebookEntryCard({
         )}
         {entry.code && (
           <div className="mt-2">
-            <button
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-              onClick={() => setCodeOpen((o) => !o)}
-            >
-              <ChevronRightIcon className={`size-3 transition-transform ${codeOpen ? "rotate-90" : ""}`} />
-              {entry.code.lang ?? "code"}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setCodeOpen((o) => !o)}
+              >
+                <ChevronRightIcon className={`size-3 transition-transform ${codeOpen ? "rotate-90" : ""}`} />
+                {entry.code.lang ?? "code"}
+              </button>
+              {showOpenAsFile && (
+                <button
+                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => onOpenFile(codeFilePath!)}
+                >
+                  <ExternalLinkIcon className="size-3" />
+                  Open as file
+                </button>
+              )}
+            </div>
             {codeOpen && (
               <pre className="mt-1 overflow-x-auto rounded bg-muted p-2 text-xs">
                 <code>{entry.code.source}</code>

@@ -61,4 +61,28 @@ describe("LabNotebookView", () => {
     );
     expect(screen.getByText(/Some/)).toBeInTheDocument();
   });
+
+  it("offers 'open as file' for code entries with a script artifact", () => {
+    const onOpenFile = vi.fn();
+    render(
+      <LabNotebookView sessionId="s1" streaming={false} onOpenFile={onOpenFile}
+        liveEntries={[{ id: "m1", type: "method", title: "Ran pipeline", timestamp: 1,
+          code: { source: "print(1)", lang: "python" }, artifacts: ["scripts/02_pipeline.py"] }]} />,
+    );
+    fireEvent.click(screen.getByText(/open as file/i));
+    expect(onOpenFile).toHaveBeenCalledWith("scripts/02_pipeline.py");
+  });
+
+  it("renders no chips and does not crash when artifacts is an empty array", () => {
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[e({ id: "tc_empty_artifacts", artifacts: [] })]}
+        streaming={false}
+        onOpenFile={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("nb-entry-tc_empty_artifacts")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /\.(png|jpg|csv|py)$/i })).not.toBeInTheDocument();
+  });
 });
