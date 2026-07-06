@@ -30,7 +30,11 @@ import { makeModalTool } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
-import { seedNotebookPackage, makeSubagentNotebookExtension } from "./notebook-bridge.ts";
+import {
+  seedNotebookPackage,
+  seedBuiltinAgentNotebookTools,
+  makeSubagentNotebookExtension,
+} from "./notebook-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary
@@ -92,6 +96,9 @@ async function build(
   // Reference the kady-notebook package so child pi processes get the notebook
   // tool (sandbox trust is already handled by ensureWebAccess above).
   seedNotebookPackage(paths);
+  // Builtin pi-subagents specialists pin a tools allowlist that would filter
+  // the notebook tool out of their child processes — extend it via overrides.
+  seedBuiltinAgentNotebookTools(paths);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};

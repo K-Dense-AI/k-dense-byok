@@ -51,7 +51,7 @@ The `notebook` tool is a **non-blocking** in-process agent tool. When Kady logs 
 
 ## Caveats
 
-- **Lead agent only.** The `notebook` tool is available only to the lead agent in the primary chat tab. Sub-agent child processes (spawned by the `subagent` tool) do not see it — entries from subagents are not logged to the notebook in the current version. A future extension could promote the tool to a Pi package to expose it to subagents and render entries in per-agent lanes.
+- **Subagents log too, but as a batch.** The lead agent gets the `notebook` tool in-process; subagents get it via the vendored `kady-notebook` Pi package, and their entries are harvested into the parent notebook when each child finishes (see [Subagent lanes](#subagent-lanes)). Because harvest happens on completion, subagent entries land in a batch, not live. Builtin `pi-subagents` specialists (e.g. `researcher`, `scout`) pin a `tools:` allowlist that Pi also applies to package tools, which would otherwise strip the notebook tool from those children; the backend compensates by seeding `subagents.agentOverrides.<name>.tools` (declared list + `notebook`) into `sandbox/.pi/settings.json` at session build. A user who pins their own `tools` override for a builtin agent takes responsibility for including `notebook`.
 - **Session-scoped.** Each chat tab keeps its own notebook. Switching between tabs shows different notebooks.
 - **Missing artifacts.** If an artifact path no longer exists (e.g., the file was deleted), the chip shows a "not found" state but does not break the entry display or prevent export.
 
