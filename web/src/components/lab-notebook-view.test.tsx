@@ -16,12 +16,28 @@ describe("LabNotebookView", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("shows the empty state with no entries", () => {
-    render(<LabNotebookView sessionId="s1" liveEntries={[]} streaming={false} onOpenFile={() => {}} />);
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[]}
+        streaming={false}
+        subagentCompletions={0}
+        onOpenFile={() => {}}
+      />,
+    );
     expect(screen.getByText(/entries appear here/i)).toBeInTheDocument();
   });
 
   it("renders live entries with the right type", () => {
-    render(<LabNotebookView sessionId="s1" liveEntries={[e({})]} streaming onOpenFile={() => {}} />);
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[e({})]}
+        streaming
+        subagentCompletions={0}
+        onOpenFile={() => {}}
+      />,
+    );
     expect(screen.getByText("Six cell types")).toBeInTheDocument();
     expect(screen.getByTestId("nb-entry-tc_1").getAttribute("data-nb-type")).toBe("hypothesis");
   });
@@ -33,6 +49,7 @@ describe("LabNotebookView", () => {
         sessionId="s1"
         liveEntries={[e({ artifacts: ["figures/fig08.png"] })]}
         streaming={false}
+        subagentCompletions={0}
         onOpenFile={onOpenFile}
       />,
     );
@@ -46,7 +63,15 @@ describe("LabNotebookView", () => {
       ok: true,
       json: async () => ({ entries: [e({ id: "tc_persisted", title: "From disk" })] }),
     });
-    render(<LabNotebookView sessionId="s1" liveEntries={[]} streaming={false} onOpenFile={() => {}} />);
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[]}
+        streaming={false}
+        subagentCompletions={0}
+        onOpenFile={() => {}}
+      />,
+    );
     await waitFor(() => expect(screen.getByText("From disk")).toBeInTheDocument());
   });
 
@@ -56,6 +81,7 @@ describe("LabNotebookView", () => {
         sessionId="s1"
         liveEntries={[e({ id: "tc_body", body: "Some **markdown** body with `code`." })]}
         streaming={false}
+        subagentCompletions={0}
         onOpenFile={() => {}}
       />,
     );
@@ -65,7 +91,7 @@ describe("LabNotebookView", () => {
   it("offers 'open as file' for code entries with a script artifact", () => {
     const onOpenFile = vi.fn();
     render(
-      <LabNotebookView sessionId="s1" streaming={false} onOpenFile={onOpenFile}
+      <LabNotebookView sessionId="s1" streaming={false} subagentCompletions={0} onOpenFile={onOpenFile}
         liveEntries={[{ id: "m1", type: "method", title: "Ran pipeline", timestamp: 1,
           code: { source: "print(1)", lang: "python" }, artifacts: ["scripts/02_pipeline.py"] }]} />,
     );
@@ -79,6 +105,7 @@ describe("LabNotebookView", () => {
         sessionId="s1"
         liveEntries={[e({ id: "tc_empty_artifacts", artifacts: [] })]}
         streaming={false}
+        subagentCompletions={0}
         onOpenFile={() => {}}
       />,
     );
@@ -98,6 +125,7 @@ describe("LabNotebookView", () => {
         sessionId="s1"
         liveEntries={[e({ artifacts: ["figures/fig08.png"] })]}
         streaming={false}
+        subagentCompletions={0}
         onOpenFile={() => {}}
       />,
     );
@@ -112,14 +140,30 @@ describe("LabNotebookView", () => {
 
   it("does not throw when window.open is blocked (returns null)", () => {
     const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
-    render(<LabNotebookView sessionId="s1" liveEntries={[e({})]} streaming={false} onOpenFile={() => {}} />);
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[e({})]}
+        streaming={false}
+        subagentCompletions={0}
+        onOpenFile={() => {}}
+      />,
+    );
     const pdfButton = screen.getByRole("button", { name: /pdf/i });
     expect(() => fireEvent.click(pdfButton)).not.toThrow();
     openSpy.mockRestore();
   });
 
   it("does not render a PDF button when there are no entries", () => {
-    render(<LabNotebookView sessionId="s1" liveEntries={[]} streaming={false} onOpenFile={() => {}} />);
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[]}
+        streaming={false}
+        subagentCompletions={0}
+        onOpenFile={() => {}}
+      />,
+    );
     expect(screen.queryByRole("button", { name: /pdf/i })).not.toBeInTheDocument();
   });
 });

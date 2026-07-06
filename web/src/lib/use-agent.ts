@@ -257,6 +257,7 @@ export function buildRunBody(opts: {
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
+  const [subagentCompletions, setSubagentCompletions] = useState(0);
   const [status, setStatus] = useState<Status>("ready");
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const sessionIdRef = useRef<string | null>(null);
@@ -441,6 +442,9 @@ export function useAgent() {
               const frame = JSON.parse(jsonStr) as AgentFrame;
               const nb = parseNotebookFrame(frame);
               if (nb) setNotebookEntries((prev) => mergeNotebookEntries(prev, [nb]));
+              if (frame.type === "tool_end" && frame.toolName === "subagent") {
+                setSubagentCompletions((n) => n + 1);
+              }
               const r = applyFrameToTranscript(transcript, runState, frame, nextId);
               transcript = r.messages;
               runState = r.state;
@@ -520,6 +524,7 @@ export function useAgent() {
     abortRef.current?.abort();
     setMessages([]);
     setNotebookEntries([]);
+    setSubagentCompletions(0);
     setPendingSteers([]);
     setStatus("ready");
     sessionIdRef.current = null;
@@ -540,5 +545,6 @@ export function useAgent() {
     steer,
     pendingSteers,
     notebookEntries,
+    subagentCompletions,
   };
 }

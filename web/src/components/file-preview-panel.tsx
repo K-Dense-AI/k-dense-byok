@@ -1826,6 +1826,7 @@ export interface FilePreviewPanelProps {
   notebookSessionId: string | null;
   notebookEntries: NotebookEntry[];
   notebookStreaming: boolean;
+  notebookSubagentCompletions: number;
   onOpenNotebookFile: (path: string) => void;
 }
 
@@ -1845,6 +1846,7 @@ export function FilePreviewPanel({
   notebookSessionId,
   notebookEntries,
   notebookStreaming,
+  notebookSubagentCompletions,
   onOpenNotebookFile,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
@@ -1925,6 +1927,7 @@ export function FilePreviewPanel({
           sessionId={notebookSessionId}
           liveEntries={notebookEntries}
           streaming={notebookStreaming}
+          subagentCompletions={notebookSubagentCompletions}
           onOpenFile={onOpenNotebookFile}
         />
       ) : (

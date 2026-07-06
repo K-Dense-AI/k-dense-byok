@@ -173,6 +173,7 @@ export default function ChatPage() {
   const activeMeta = tabsMeta[activeTabId];
   const notebookEntries = activeMeta?.notebookEntries ?? [];
   const notebookStreaming = activeMeta?.isStreaming ?? false;
+  const subagentCompletions = activeMeta?.subagentCompletions ?? 0;
   const anyStreaming = useMemo(
     () => Object.values(tabsMeta).some((m) => m.isStreaming),
     [tabsMeta],
@@ -574,6 +575,7 @@ export default function ChatPage() {
               notebookSessionId={activeSessionId}
               notebookEntries={notebookEntries}
               notebookStreaming={notebookStreaming}
+              notebookSubagentCompletions={subagentCompletions}
               onOpenNotebookFile={handleFileSelect}
             />
           </div>

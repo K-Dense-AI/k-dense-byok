@@ -87,13 +87,17 @@ export function LabNotebookView({
   sessionId,
   liveEntries,
   streaming,
+  subagentCompletions,
   onOpenFile,
 }: {
   sessionId: string | null;
   liveEntries: NotebookEntry[];
   streaming: boolean;
+  subagentCompletions: number;
   onOpenFile: (path: string) => void;
 }) {
+  // Consumed by Task 5 (re-fetch on subagent completion + grouped lanes).
+  void subagentCompletions;
   const [fetched, setFetched] = useState<NotebookEntry[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 

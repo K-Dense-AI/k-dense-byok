@@ -862,6 +862,7 @@ export interface ChatTabMeta {
   messages: ChatMessage[];
   userMessageCount: number;
   notebookEntries: NotebookEntry[];
+  subagentCompletions: number;
 }
 
 export interface ChatTabHandle {
@@ -926,7 +927,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   },
   ref,
 ) {
-  const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession, notebookEntries } = useAgent();
+  const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession, notebookEntries, subagentCompletions } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
 
   // Reopened tab: hydrate the transcript from the stored session before any
@@ -1049,8 +1050,19 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       messages,
       userMessageCount,
       notebookEntries,
+      subagentCompletions,
     });
-  }, [tabId, sessionId, status, isStreaming, messages, userMessageCount, notebookEntries, onMetaChange]);
+  }, [
+    tabId,
+    sessionId,
+    status,
+    isStreaming,
+    messages,
+    userMessageCount,
+    notebookEntries,
+    subagentCompletions,
+    onMetaChange,
+  ]);
 
   const enqueue = useCallback(
     (trimmed: string) => {
