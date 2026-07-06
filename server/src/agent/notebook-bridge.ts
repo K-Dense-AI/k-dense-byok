@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
-import { appendNotebookEntry, type NotebookEntry } from "./notebook-store.ts";
+import { appendNotebookEntry } from "./notebook-store.ts";
 import { notebookEntriesFromSessionFile } from "./notebook-harvest.ts";
 
 /** Absolute dir of the vendored kady-notebook package. */
@@ -78,8 +78,9 @@ export function makeSubagentNotebookExtension(
       if (!r.agent || !r.sessionFile) continue;
       const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent);
       for (const entry of entries) {
-        if (harvestedIds.has(entry.id)) continue;
-        harvestedIds.add(entry.id);
+        const dedupKey = `${r.sessionFile}:${entry.id}`;
+        if (harvestedIds.has(dedupKey)) continue;
+        harvestedIds.add(dedupKey);
         if (harvestedIds.size > 5000) harvestedIds.clear();
         appendNotebookEntry(parentSession, entry, projectId);
       }

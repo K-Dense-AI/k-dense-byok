@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import { makeSubagentNotebookExtension } from "../src/agent/notebook-bridge.ts";
-import { readNotebookEntries, appendNotebookEntry } from "../src/agent/notebook-store.ts";
+import { readNotebookEntries } from "../src/agent/notebook-store.ts";
 import { resolvePaths } from "../src/projects.ts";
 import { PROJECTS_ROOT } from "../src/config.ts";
 
