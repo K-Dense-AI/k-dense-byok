@@ -1,0 +1,15 @@
+{
+  "name": "kady-notebook",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "K-Dense: gives child pi processes the notebook tool so subagents contribute lab-notebook entries.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}
