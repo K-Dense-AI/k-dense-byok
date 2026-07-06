@@ -50,6 +50,7 @@ Three things to know up front:
 **Stay organized and in control**
 
 - **Work in projects** — each with its own files, chat history, up to 10 side-by-side chat tabs, and cost tracking with optional spending caps.
+- **Arrange your workspace** — resize the three panels, or collapse the file browser and chat independently with one click to give the editor and previews the full screen (ideal for writing LaTeX or studying a figure). Your layout is remembered.
 - **Pick up where you left off** — reopen any past chat from the session history menu, full transcript included.
 - **Connect external tools** through [MCP](./docs/mcp-servers.md) (Model Context Protocol — a standard plug-in system for AI assistants): GitHub, reference managers, databases, and hundreds of others.
 - **Manage everything from Settings** — browse and toggle skills, create or disable specialists, connect or disconnect external tools, and manage API keys, all from one in-app panel. No configuration files to edit, and turning something off never deletes it.

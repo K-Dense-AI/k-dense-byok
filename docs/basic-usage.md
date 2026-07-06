@@ -23,6 +23,8 @@ Kady works like a researcher at a computer: it reads and writes files, runs code
 
 ## The interface
 
+Kady's workspace has three columns: the **file browser** on the left, the **file preview / editor** in the center, and the **chat** on the right. Drag the dividers between columns to resize them. The two panel buttons in the header (next to the Settings gear) collapse the left and right panels independently — each button is highlighted while its panel is open — so you can give the center pane the full window width. That's especially useful when writing LaTeX or studying a large figure. Your choice is remembered across restarts, and a hidden chat keeps running in the background.
+
 ### Chat tabs — up to 10 parallel chats
 
 Click `+` in the chat tab strip to open a new chat in the same project. Each tab keeps its own message history, model choice, attached files, and cost meter — but all tabs share the project's files, so results from one chat are immediately available in the others. Tabs keep working in the background while you switch between them. Double-click a tab title to rename it; closing a tab cancels any work it had running.
@@ -48,7 +50,7 @@ Kady can query **229 scientific and financial databases** across 18 categories �
 
 ### LaTeX editor
 
-Open any `.tex` file for a split-pane editor with live PDF compilation (pdfLaTeX, XeLaTeX, LuaLaTeX) — handy for writing up results without leaving the app.
+Open any `.tex` file and click **Edit** for a split-pane editor with live PDF compilation. It includes a choice of engine (pdfLaTeX, XeLaTeX, LuaLaTeX), a section outline with click-to-jump, forward and inverse SyncTeX (jump between a source line and its spot in the PDF), autocomplete and spell check, a compile log with inline error and warning diagnostics, quick-insert snippets, and a word count. AI assist is built in: press `Cmd/Ctrl+K` to rewrite a selection from an instruction, or click **Fix with AI** on a compile error — each change lands as a diff you can keep or revert. Collapse the file browser and chat (the panel buttons in the header) to give the editor and PDF the full window.
 
 ### Other input options
 
