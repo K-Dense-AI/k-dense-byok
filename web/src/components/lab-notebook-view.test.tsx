@@ -85,4 +85,41 @@ describe("LabNotebookView", () => {
     expect(screen.getByTestId("nb-entry-tc_empty_artifacts")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /\.(png|jpg|csv|py)$/i })).not.toBeInTheDocument();
   });
+
+  it("exports to PDF via a print-styled window when entries are present", () => {
+    const fakeWin = {
+      document: { write: vi.fn(), close: vi.fn() },
+      focus: vi.fn(),
+      print: vi.fn(),
+    };
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(fakeWin as unknown as Window);
+    render(
+      <LabNotebookView
+        sessionId="s1"
+        liveEntries={[e({ artifacts: ["figures/fig08.png"] })]}
+        streaming={false}
+        onOpenFile={() => {}}
+      />,
+    );
+    const pdfButton = screen.getByRole("button", { name: /pdf/i });
+    fireEvent.click(pdfButton);
+    expect(openSpy).toHaveBeenCalled();
+    expect(fakeWin.document.write).toHaveBeenCalled();
+    expect(fakeWin.document.close).toHaveBeenCalled();
+    expect(fakeWin.print).toHaveBeenCalled();
+    openSpy.mockRestore();
+  });
+
+  it("does not throw when window.open is blocked (returns null)", () => {
+    const openSpy = vi.spyOn(window, "open").mockReturnValue(null);
+    render(<LabNotebookView sessionId="s1" liveEntries={[e({})]} streaming={false} onOpenFile={() => {}} />);
+    const pdfButton = screen.getByRole("button", { name: /pdf/i });
+    expect(() => fireEvent.click(pdfButton)).not.toThrow();
+    openSpy.mockRestore();
+  });
+
+  it("does not render a PDF button when there are no entries", () => {
+    render(<LabNotebookView sessionId="s1" liveEntries={[]} streaming={false} onOpenFile={() => {}} />);
+    expect(screen.queryByRole("button", { name: /pdf/i })).not.toBeInTheDocument();
+  });
 });
