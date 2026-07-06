@@ -196,7 +196,7 @@ function TabBar({
 
       {uniqueTabs.map((tab) => {
         const name = tab.path.split("/").pop() ?? tab.path;
-        const isActive = tab.path === activeTabPath;
+        const isActive = !showNotebook && tab.path === activeTabPath;
         const mode = tabModes[tab.path] ?? "view";
         const isEditing = mode === "edit" || mode === "annotate";
 
