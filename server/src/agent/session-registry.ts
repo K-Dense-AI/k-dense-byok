@@ -30,6 +30,7 @@ import { makeModalTool } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
+import { seedNotebookPackage, makeSubagentNotebookExtension } from "./notebook-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary
@@ -88,6 +89,9 @@ async function build(
   // sandbox so both this session and pi-subagents' child `pi` processes load
   // the web tools (web-access-bridge.ts explains why children need this).
   ensureWebAccess(paths);
+  // Reference the kady-notebook package so child pi processes get the notebook
+  // tool (sandbox trust is already handled by ensureWebAccess above).
+  seedNotebookPackage(paths);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -100,6 +104,10 @@ async function build(
       // Rewrites the outgoing provider body to an OpenRouter Fusion request when
       // the /run handler stashed a Fusion config for this session (setFusionConfig).
       makeFusionRequestExtension(() => holder.session?.sessionId ?? ""),
+      // Harvest notebook entries the roster's subagents logged (child pi
+      // processes get the notebook tool via seedNotebookPackage above) into
+      // the parent notebook — the parent is the single writer.
+      makeSubagentNotebookExtension(projectId, () => holder.session?.sessionId ?? ""),
     ],
   });
   await resourceLoader.reload();
