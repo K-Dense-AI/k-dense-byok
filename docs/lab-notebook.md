@@ -9,7 +9,7 @@ Kady logs entries through the `notebook` tool when it wants to record its work. 
 - **Title** — a short name for the entry
 - **Type** — one of: `hypothesis` (a testable assumption), `method` (a procedure), `observation` (findings or results), `decision` (a choice made), or `note` (miscellaneous)
 - **Body** — optional Markdown text with details, context, or explanation
-- **Code snippet** — optional code block (e.g., a command that was run or a config used)
+- **Code snippet** — optional code block (e.g., a command that was run or a config used); if the code references a file artifact, an "Open as file" button opens that source file in the preview panel
 - **Confidence** — optional rating (`low`, `medium`, `high`) for hypotheses or observations
 - **Tags** — optional keywords for filtering or grouping
 - **Artifacts** — optional sandbox-relative file paths (e.g., `data/analysis.csv`); each appears as a clickable chip that opens the file in the preview panel
@@ -35,7 +35,7 @@ Each chat tab (session) has its own notebook; closing the tab does not delete en
 ## Export and print
 
 - **Markdown export.** The notebook view has an "Export as Markdown" button that downloads a file with a header, per-entry sections, embedded figures from artifacts, and inline code.
-- **PDF.** Use your browser's print dialog (Cmd+P on Mac, Ctrl+P on Windows/Linux) from the notebook view to save as PDF, or print to a printer.
+- **PDF.** The notebook view has a "PDF" button in its header that opens a print-ready view with figures embedded. Save it as a PDF using your browser's print dialog (Cmd+P on Mac, Ctrl+P on Windows/Linux), or print to a printer directly.
 
 ## Behind the scenes
 
