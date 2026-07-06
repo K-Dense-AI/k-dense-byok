@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpenIcon, DownloadIcon, PrinterIcon } from "lucide-react";
 import { apiFetch, API_BASE, getActiveProjectId } from "@/lib/projects";
 import { rawFileUrl, fileCategory } from "@/lib/use-sandbox";
@@ -96,16 +96,15 @@ export function LabNotebookView({
   subagentCompletions: number;
   onOpenFile: (path: string) => void;
 }) {
-  // Consumed by Task 5 (re-fetch on subagent completion + grouped lanes).
-  void subagentCompletions;
   const [fetched, setFetched] = useState<NotebookEntry[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Cold-open / reload: pull the durable entries whenever the session changes.
-  useEffect(() => {
+  const refetch = useCallback(() => {
     let cancelled = false;
-    setFetched([]);
-    if (!sessionId) return;
+    if (!sessionId) {
+      setFetched([]);
+      return () => { cancelled = true; };
+    }
     (async () => {
       try {
         const res = await apiFetch(`/sessions/${encodeURIComponent(sessionId)}/notebook`);
@@ -116,16 +115,64 @@ export function LabNotebookView({
         // Non-fatal: live entries still render.
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [sessionId]);
+
+  // Cold-open/reload on session change, and re-pull when a subagent completes
+  // (its harvested entries are now in the durable notebook).
+  useEffect(() => {
+    if (sessionId) setFetched([]); // clear only on a real session switch
+    const cleanup = refetch();
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (subagentCompletions > 0) refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subagentCompletions]);
+
+  // The subagentCompletions signal fires on tool_end[subagent], which for
+  // async/background subagents corresponds to dispatch, not completion (async
+  // completion is delivered off the SSE stream). Re-fetch on run-end too, so
+  // entries harvested by an async child mid-run still surface once the parent
+  // run finishes. Residual gap: an async child that finishes AFTER the parent
+  // run ends only appears on the next fetch (session change, another
+  // subagent, or reload).
+  const wasStreamingRef = useRef(streaming);
+  useEffect(() => {
+    if (wasStreamingRef.current && !streaming) refetch();
+    wasStreamingRef.current = streaming;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streaming]);
 
   // Authoritative (fetched) entries win over provisional (live) ones by id.
   const entries = useMemo(
     () => mergeNotebookEntries(liveEntries, fetched),
     [liveEntries, fetched],
   );
+
+  // Group into per-agent lanes: lead (role "agent") first, then each subagent
+  // ordered by its earliest entry. Entries within a lane stay time-ordered.
+  const lanes = useMemo(() => {
+    const byRole = new Map<string, NotebookEntry[]>();
+    for (const e of entries) {
+      const role = e.role ?? "agent";
+      const list = byRole.get(role);
+      if (list) list.push(e);
+      else byRole.set(role, [e]);
+    }
+    const roles = [...byRole.keys()].sort((a, b) => {
+      if (a === "agent") return -1;
+      if (b === "agent") return 1;
+      return (byRole.get(a)![0]?.timestamp ?? 0) - (byRole.get(b)![0]?.timestamp ?? 0);
+    });
+    return roles.map((role) => ({
+      role,
+      label: role === "agent" ? "Kady (lead)" : role,
+      entries: byRole.get(role)!,
+    }));
+  }, [entries]);
 
   // Auto-scroll to the newest entry as it streams in.
   useEffect(() => {
@@ -182,15 +229,34 @@ export function LabNotebookView({
           Kady’s notebook — entries appear here as it works.
         </div>
       ) : (
-        <div className="flex-1 space-y-3 overflow-y-auto p-4">
-          {entries.map((entry) => (
-            <div
-              key={entry.id}
-              className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1"
-            >
-              <LabNotebookEntryCard entry={entry} onOpenFile={onOpenFile} />
-            </div>
-          ))}
+        <div className="flex-1 space-y-4 overflow-y-auto p-4">
+          {lanes.map((lane) =>
+            lanes.length === 1 ? (
+              <div key={lane.role} className="space-y-3">
+                {lane.entries.map((entry) => (
+                  <div key={entry.id} className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
+                    <LabNotebookEntryCard entry={entry} onOpenFile={onOpenFile} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <details key={lane.role} open className="rounded-lg border">
+                <summary className="cursor-pointer select-none px-3 py-2 text-xs font-medium">
+                  {lane.label}
+                  <span className="ml-2 text-muted-foreground">
+                    {lane.entries.length}
+                  </span>
+                </summary>
+                <div className="space-y-3 p-3 pt-0">
+                  {lane.entries.map((entry) => (
+                    <div key={entry.id} className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1">
+                      <LabNotebookEntryCard entry={entry} onOpenFile={onOpenFile} />
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ),
+          )}
           <div ref={bottomRef} />
         </div>
       )}

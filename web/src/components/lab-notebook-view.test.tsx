@@ -166,4 +166,58 @@ describe("LabNotebookView", () => {
     );
     expect(screen.queryByRole("button", { name: /pdf/i })).not.toBeInTheDocument();
   });
+
+  it("groups entries into lanes by role (lead first, then subagents)", () => {
+    const entries: NotebookEntry[] = [
+      { id: "l1", role: "agent", type: "hypothesis", title: "Lead idea", timestamp: 1 },
+      { id: "scout:c1", role: "literature-scout", type: "method", title: "Searched refs", timestamp: 2 },
+      { id: "stats:c1", role: "stats-checker", type: "observation", title: "p<0.001", timestamp: 3 },
+    ];
+    render(
+      <LabNotebookView sessionId="s1" liveEntries={entries} streaming={false}
+        subagentCompletions={0} onOpenFile={() => {}} />,
+    );
+    // Lane headers present; lead labeled and first.
+    const lead = screen.getByText(/Kady \(lead\)/i);
+    const scout = screen.getByText("literature-scout");
+    expect(lead).toBeInTheDocument();
+    expect(scout).toBeInTheDocument();
+    // Lead appears before the subagent lane in DOM order.
+    expect(lead.compareDocumentPosition(scout) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Entries from each lane render.
+    expect(screen.getByText("Lead idea")).toBeInTheDocument();
+    expect(screen.getByText("p<0.001")).toBeInTheDocument();
+  });
+
+  it("re-fetches the notebook when subagentCompletions increments", async () => {
+    const { apiFetch } = await import("@/lib/projects");
+    const spy = apiFetch as unknown as ReturnType<typeof vi.fn>;
+    spy.mockResolvedValue({ ok: true, json: async () => ({ entries: [] }) });
+    const { rerender } = render(
+      <LabNotebookView sessionId="s1" liveEntries={[]} streaming={false}
+        subagentCompletions={0} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1)); // initial (sessionId) fetch
+    rerender(
+      <LabNotebookView sessionId="s1" liveEntries={[]} streaming={false}
+        subagentCompletions={1} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2)); // completion re-fetch
+  });
+
+  it("re-fetches the notebook when streaming transitions from true to false", async () => {
+    const { apiFetch } = await import("@/lib/projects");
+    const spy = apiFetch as unknown as ReturnType<typeof vi.fn>;
+    spy.mockResolvedValue({ ok: true, json: async () => ({ entries: [] }) });
+    const { rerender } = render(
+      <LabNotebookView sessionId="s1" liveEntries={[]} streaming
+        subagentCompletions={0} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1)); // initial (sessionId) fetch
+    rerender(
+      <LabNotebookView sessionId="s1" liveEntries={[]} streaming={false}
+        subagentCompletions={0} onOpenFile={() => {}} />,
+    );
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(2)); // run-end re-fetch
+  });
 });
