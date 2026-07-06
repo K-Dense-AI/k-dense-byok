@@ -48,3 +48,24 @@ describe("GET /sessions/:id/notebook", () => {
     expect(res.json().entries.map((e: NotebookEntry) => e.id)).toEqual(["tc_1", "tc_2"]);
   });
 });
+
+describe("GET /sessions/:id/notebook/export", () => {
+  it("returns markdown with format=md and 400 with unsupported format", async () => {
+    appendNotebookEntry("route-sess", entry({ id: "tc_1" }), "default");
+    const resExport = await app.inject({
+      method: "GET",
+      url: "/sessions/route-sess/notebook/export?format=md",
+      headers: { "x-project-id": "default" },
+    });
+    expect(resExport.statusCode).toBe(200);
+    expect(resExport.headers["content-type"]).toContain("text/markdown");
+    expect(resExport.body).toMatch(/# Lab Notebook/);
+
+    const resPdf = await app.inject({
+      method: "GET",
+      url: "/sessions/route-sess/notebook/export?format=pdf",
+      headers: { "x-project-id": "default" },
+    });
+    expect(resPdf.statusCode).toBe(400);
+  });
+});

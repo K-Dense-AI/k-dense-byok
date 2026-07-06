@@ -21,6 +21,7 @@ import {
 import { setSessionComputeTarget } from "../agent/modal-tool.ts";
 import { resolveModel } from "../agent/models.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
+import { notebookToMarkdown } from "../agent/notebook-export.ts";
 import {
   findSessionFile,
   toNotebook,
@@ -124,6 +125,31 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       return { detail: (exc as Error).message };
     }
   });
+
+  app.get<{ Params: { id: string }; Querystring: { format?: string } }>(
+    "/sessions/:id/notebook/export",
+    async (req, reply) => {
+      const format = req.query.format ?? "md";
+      if (format !== "md") {
+        reply.code(400);
+        return { detail: "Only format=md is supported (PDF is exported client-side)" };
+      }
+      try {
+        const projectId = currentProjectId();
+        const entries = readNotebookEntries(req.params.id, projectId);
+        const md = notebookToMarkdown(entries, { sessionId: req.params.id, projectName: projectId });
+        reply.header("Content-Type", "text/markdown; charset=utf-8");
+        reply.header(
+          "Content-Disposition",
+          `attachment; filename="lab-notebook-${req.params.id}.md"`,
+        );
+        return md;
+      } catch (exc) {
+        reply.code(400);
+        return { detail: (exc as Error).message };
+      }
+    },
+  );
 
   // Reproducibility export: a runnable shell script (?format=sh) or a markdown
   // lab notebook (?format=md) reconstructed from the Pi session log.
