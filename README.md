@@ -88,6 +88,7 @@ All guides live in the [`docs/`](./docs) folder:
 | [Installation](./docs/installation.md) | Full setup walkthrough, optional API keys, updating, troubleshooting |
 | [Basic usage](./docs/basic-usage.md) | First session, chat tabs, files, workflows, databases, costs, tips |
 | [File previews](./docs/file-previews.md) | Every scientific format Kady can render — structures, spectra, imaging, arrays, and more |
+| [Living Lab Notebook](./docs/lab-notebook.md) | Real-time record of Kady's work — structured entries, export, and PDF |
 | [Sub-agents](./docs/sub-agents.md) | Kady's team of 21 scientific specialists and how to customize them |
 | [Connecting external tools (MCP)](./docs/mcp-servers.md) | Give Kady extra abilities like GitHub, reference managers, and databases |
 | [Local models with Ollama](./docs/local-models-ollama.md) | Run everything on free local models, no API keys required |
