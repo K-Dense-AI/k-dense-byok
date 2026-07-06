@@ -13,7 +13,19 @@
  */
 import { Type, type Static } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { resolvePaths } from "../projects.ts";
 import { appendNotebookEntry, type NotebookEntry } from "./notebook-store.ts";
+
+/** Strip an absolute sandbox-root prefix off a single artifact path so stored
+ *  entries match the sandbox-relative form the live SSE frame already shows
+ *  (see relativizeSandboxPaths in ./events.ts). Non-sandbox/relative paths
+ *  pass through unchanged. */
+function relativizeArtifact(value: string, sandboxRoot: string): string {
+  if (!sandboxRoot) return value;
+  if (value === sandboxRoot) return ".";
+  if (value.startsWith(sandboxRoot + "/")) return value.slice(sandboxRoot.length + 1);
+  return value;
+}
 
 const CodeSchema = Type.Object({
   source: Type.String({ description: "The code/snippet text" }),
@@ -78,9 +90,13 @@ export function makeNotebookTool(
       const title = (params.title ?? "").trim();
       if (!title) throw new Error("notebook entry needs a non-empty title");
 
+      const sandboxRoot = resolvePaths(projectId).sandbox;
+      const artifacts = params.artifacts?.map((a) => relativizeArtifact(a, sandboxRoot));
+
       const entry: NotebookEntry = {
         ...params,
         title,
+        ...(artifacts !== undefined ? { artifacts } : {}),
         id: toolCallId,
         timestamp: Date.now(),
         role: "agent",

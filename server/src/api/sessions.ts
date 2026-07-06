@@ -7,7 +7,7 @@
  * frame sourced from Pi's per-session usage accounting.
  */
 import type { FastifyInstance } from "fastify";
-import { activePaths } from "../projects.ts";
+import { activePaths, getProject } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
@@ -137,7 +137,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       try {
         const projectId = currentProjectId();
         const entries = readNotebookEntries(req.params.id, projectId);
-        const md = notebookToMarkdown(entries, { sessionId: req.params.id, projectName: projectId });
+        const projectName = getProject(projectId)?.name ?? projectId;
+        const md = notebookToMarkdown(entries, { sessionId: req.params.id, projectName });
         reply.header("Content-Type", "text/markdown; charset=utf-8");
         reply.header(
           "Content-Disposition",

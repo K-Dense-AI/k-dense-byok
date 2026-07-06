@@ -1,9 +1,17 @@
-import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import { beforeEach, describe, it, expect } from "vitest";
+import { PROJECTS_ROOT } from "../src/config.ts";
+import { resolvePaths } from "../src/projects.ts";
 import { makeNotebookTool } from "../src/agent/notebook.ts";
 import { readNotebookEntries } from "../src/agent/notebook-store.ts";
 
 const run = (tool: ReturnType<typeof makeNotebookTool>, id: string, params: unknown) =>
   tool.execute(id, params as never, undefined as never);
+
+beforeEach(() => {
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
+});
 
 describe("notebook tool", () => {
   it("persists a stamped entry and returns a non-blocking ack", async () => {
@@ -29,6 +37,25 @@ describe("notebook tool", () => {
       confidence: "medium",
     });
     expect(typeof entries[0].timestamp).toBe("number");
+  });
+
+  it("normalizes an absolute sandbox path in artifacts to sandbox-relative", async () => {
+    const s = "sess-tool-artifacts";
+    const projectId = "default";
+    const tool = makeNotebookTool(projectId, () => s);
+    const sandbox = resolvePaths(projectId).sandbox;
+    await run(tool, "tc_art", {
+      type: "method",
+      title: "Ran PCA",
+      artifacts: [`${sandbox}/figures/fig01.png`, "figures/already-relative.png"],
+    });
+
+    const entries = readNotebookEntries(s, projectId);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].artifacts).toEqual([
+      "figures/fig01.png",
+      "figures/already-relative.png",
+    ]);
   });
 
   it("rejects an empty title", async () => {
