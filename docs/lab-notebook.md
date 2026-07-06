@@ -32,6 +32,14 @@ Each chat tab (session) has its own notebook; closing the tab does not delete en
 - **Auto-scroll.** The view scrolls to the newest entry as they arrive.
 - **Empty state.** Before any entries are logged, the notebook shows a friendly message.
 
+## Subagent lanes
+
+The notebook groups entries into collapsible per-agent lanes. The lead agent's entries appear in the "Kady (lead)" lane first, followed by a lane for each subagent that contributed entries (labeled by agent name, with an entry count). A notebook with only lead entries (no subagents) displays without explicit lane headers—unchanged from before.
+
+Subagent entries appear when the subagent finishes, as a batch, not live. For asynchronous/background subagents that finish after the parent run ends, entries may only appear on the next notebook fetch or page reload.
+
+**Limitation:** Nested subagents (depth > 1) are not harvested in this version — only direct children contribute.
+
 ## Export and print
 
 - **Markdown export.** The notebook view has an "Export as Markdown" button that downloads a file with a header, per-entry sections, embedded figures from artifacts, and inline code.
