@@ -8,10 +8,10 @@
  * happening to have rdkit/gemmi/anndata/etc. installed.
  */
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { findUv, firstRunnable } from "./binaries.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -19,25 +19,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const HELPERS_DIR = path.join(__dirname, "helpers");
 
 /** Interpreter for the Python helper CLIs. Prefers an explicit override, then the
- *  uv-managed helper venv, then system python3. */
+ *  uv-managed helper venv, then a system Python. */
 export function helperPython(): string {
   if (process.env.KADY_PYTHON) return process.env.KADY_PYTHON;
-  const venvPy = path.join(HELPERS_DIR, ".venv", "bin", "python");
+  const venvPy =
+    process.platform === "win32"
+      ? path.join(HELPERS_DIR, ".venv", "Scripts", "python.exe")
+      : path.join(HELPERS_DIR, ".venv", "bin", "python");
   if (fs.existsSync(venvPy)) return venvPy;
+  if (process.platform === "win32") return firstRunnable(["python", "py"]) ?? "python";
   return "python3";
-}
-
-function uvBinary(): string | null {
-  for (const c of ["uv", path.join(os.homedir(), ".local", "bin", "uv")]) {
-    if (spawnSync(c, ["--version"], { stdio: "ignore" }).status === 0) return c;
-  }
-  return null;
 }
 
 /** Best-effort `uv sync` of the helper venv. Returns false when uv is unavailable
  *  or the sync fails; callers treat that as "previews degrade to deps-missing". */
 export function syncHelperVenv(): boolean {
-  const uv = uvBinary();
+  const uv = findUv();
   if (!uv) return false;
   const res = spawnSync(uv, ["sync"], {
     cwd: HELPERS_DIR,

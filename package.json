@@ -1,0 +1,11 @@
+{
+  "name": "k-dense-byok",
+  "private": true,
+  "scripts": {
+    "start": "node start.mjs",
+    "check": "node start.mjs --check"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

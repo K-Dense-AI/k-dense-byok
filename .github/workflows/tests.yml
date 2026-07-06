@@ -6,8 +6,12 @@ on:
 
 jobs:
   backend:
-    name: backend (vitest)
-    runs-on: ubuntu-latest
+    name: backend (vitest, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - name: Set up Node
@@ -27,8 +31,12 @@ jobs:
         run: npm test
 
   frontend:
-    name: frontend (vitest)
-    runs-on: ubuntu-latest
+    name: frontend (vitest, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
       - name: Set up Node
@@ -43,3 +51,24 @@ jobs:
       - name: Run tests
         working-directory: web
         run: npm run test
+
+  launcher-smoke:
+    name: launcher --check (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Run start.sh --check
+        if: runner.os != 'Windows'
+        run: ./start.sh --check
+      - name: Run start.cmd --check
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: start.cmd --check

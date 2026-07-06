@@ -30,6 +30,7 @@ import { Type, type Static } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { ModalClient, type Sandbox } from "modal";
 import { resolvePaths } from "../projects.ts";
+import { isWithin } from "../sandbox-fs.ts";
 import { isBudgetExceeded, recordModalRun } from "../cost/ledger.ts";
 import {
   DEFAULT_INSTANCE_ID,
@@ -93,7 +94,7 @@ export type ModalRunParamsT = Static<typeof ModalRunParams>;
 /** Resolve a sandbox-relative path against the project sandbox, refusing traversal. */
 function safeUnder(sandboxRoot: string, rel: string): string {
   const target = path.resolve(sandboxRoot, rel);
-  if (target !== sandboxRoot && !target.startsWith(sandboxRoot + path.sep)) {
+  if (!isWithin(sandboxRoot, target)) {
     throw new Error(`Path escapes the project sandbox: ${rel}`);
   }
   return target;

@@ -6,8 +6,11 @@
  * and `h` its left edge (so the box's top is `v - H`). The frontend maps
  * these straight to CSS pixels by multiplying by its render scale.
  */
-import { execFile, spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
+import path from "node:path";
 import { promisify } from "node:util";
+import { hasBinary } from "../binaries.ts";
+import { toApiPath } from "../sandbox-fs.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -25,12 +28,8 @@ export interface SynctexLoc {
   column: number;
 }
 
-let available: boolean | null = null;
 export function synctexAvailable(): boolean {
-  if (available === null) {
-    available = spawnSync("which", ["synctex"]).status === 0;
-  }
-  return available;
+  return hasBinary("synctex");
 }
 
 function num(re: RegExp, out: string): number | null {
@@ -60,10 +59,11 @@ export function parseSynctexEdit(out: string): SynctexLoc | null {
   return { file, line, column: column ?? -1 };
 }
 
-async function run(args: string[]): Promise<string | null> {
+async function run(args: string[], cwd?: string): Promise<string | null> {
   if (!synctexAvailable()) return null;
   try {
     const { stdout } = await execFileAsync("synctex", args, {
+      cwd,
       timeout: 10_000,
       encoding: "utf-8",
       maxBuffer: 4 * 1024 * 1024,
@@ -74,14 +74,66 @@ async function run(args: string[]): Promise<string | null> {
   }
 }
 
+type PathImpl = Pick<typeof path, "dirname" | "basename" | "relative" | "sep">;
+
+export interface ForwardInvocation {
+  cwd: string;
+  /** Input spellings to try in order: relative-to-cwd, then absolute with
+   *  forward slashes — whichever matches the .synctex Input records. */
+  inputs: string[];
+  args: (input: string) => string[];
+}
+
+/**
+ * Build the `synctex view`/`edit` invocations relative to the PDF's directory.
+ * synctex's `-i`/`-o` values are colon-delimited, so a Windows drive letter
+ * (`C:\...`) inside them would collide with the delimiter — running from the
+ * PDF's directory keeps the fields to basenames/relative paths. The path impl
+ * is injectable so Windows behavior is unit-testable from any host OS.
+ */
+export function forwardArgs(
+  texAbs: string,
+  line: number,
+  col: number,
+  pdfAbs: string,
+  p: PathImpl = path,
+): ForwardInvocation {
+  const cwd = p.dirname(pdfAbs);
+  const relTex = toApiPath(p.relative(cwd, texAbs), p.sep);
+  const absTex = toApiPath(texAbs, p.sep);
+  return {
+    cwd,
+    inputs: [...new Set([relTex, absTex])],
+    args: (input) => ["view", "-i", `${line}:${col}:${input}`, "-o", p.basename(pdfAbs)],
+  };
+}
+
+export function inverseArgs(
+  pdfAbs: string,
+  page: number,
+  x: number,
+  y: number,
+  p: PathImpl = path,
+): { cwd: string; args: string[] } {
+  return {
+    cwd: p.dirname(pdfAbs),
+    args: ["edit", "-o", `${page}:${x}:${y}:${p.basename(pdfAbs)}`],
+  };
+}
+
 export async function synctexForward(
   texAbs: string,
   line: number,
   col: number,
   pdfAbs: string,
 ): Promise<SynctexBox | null> {
-  const out = await run(["view", "-i", `${line}:${col}:${texAbs}`, "-o", pdfAbs]);
-  return out ? parseSynctexView(out) : null;
+  const inv = forwardArgs(texAbs, line, col, pdfAbs);
+  for (const input of inv.inputs) {
+    const out = await run(inv.args(input), inv.cwd);
+    const box = out ? parseSynctexView(out) : null;
+    if (box) return box;
+  }
+  return null;
 }
 
 export async function synctexInverse(
@@ -90,6 +142,7 @@ export async function synctexInverse(
   x: number,
   y: number,
 ): Promise<SynctexLoc | null> {
-  const out = await run(["edit", "-o", `${page}:${x}:${y}:${pdfAbs}`]);
+  const inv = inverseArgs(pdfAbs, page, x, y);
+  const out = await run(inv.args, inv.cwd);
   return out ? parseSynctexEdit(out) : null;
 }

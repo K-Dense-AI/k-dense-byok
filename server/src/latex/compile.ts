@@ -10,10 +10,12 @@
  * Concurrent compile requests for the same target share one in-flight
  * promise (coalescing) so a double-fired Cmd+Enter can't stack processes.
  */
-import { execFile, spawnSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
+import { hasBinary } from "../binaries.ts";
+import { apiRelative } from "../sandbox-fs.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -85,14 +87,6 @@ export function buildCompilePlan(opts: {
   return plan;
 }
 
-let latexmkAvailable: boolean | null = null;
-function hasLatexmk(): boolean {
-  if (latexmkAvailable === null) {
-    latexmkAvailable = spawnSync("which", ["latexmk"]).status === 0;
-  }
-  return latexmkAvailable;
-}
-
 const inflight = new Map<string, Promise<CompileOutcome>>();
 
 /** Compile `targetAbs` with `engine`; paths in the result are sandbox-relative. */
@@ -124,7 +118,7 @@ async function doCompile(
   const plan = buildCompilePlan({
     engine,
     targetAbs,
-    hasLatexmk: opts?.useLatexmk ?? hasLatexmk(),
+    hasLatexmk: opts?.useLatexmk ?? hasBinary("latexmk"),
     bibTool: detectBibTool(src),
   });
 
@@ -185,7 +179,7 @@ async function doCompile(
   const success = lastStatus === 0 && fs.existsSync(pdfAbs);
   return {
     success,
-    pdf_path: fs.existsSync(pdfAbs) ? path.relative(sandboxRoot, pdfAbs) : null,
+    pdf_path: fs.existsSync(pdfAbs) ? apiRelative(sandboxRoot, pdfAbs) : null,
     log: clampLog(log),
     errors,
     synctex: fs.existsSync(path.join(workDir, stem + ".synctex.gz")),

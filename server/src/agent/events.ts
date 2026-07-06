@@ -20,23 +20,82 @@ export interface ClientFrame {
  *   - an exact path field `<root>/de_analysis.py` → `de_analysis.py`
  *   - an embedded occurrence in a command (`cd <root> && …`) → `cd . && …`
  */
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Matcher for every spelling of the sandbox root worth stripping. Windows-ness
+ * is derived from the root string itself (contains "\") so behavior is
+ * unit-testable anywhere; on a Windows root, matching also covers the
+ * forward-slash spelling, either separator after the root, and any casing
+ * (NTFS is case-insensitive — drive letters routinely arrive lowercased).
+ */
+interface RootMatcher {
+  /** Prefix-strip one exact path string; null when no root prefix matches. */
+  strip(value: string): string | null;
+  /** Strip embedded occurrences inside larger strings (bash commands etc.). */
+  stripEmbedded(value: string): string;
+}
+
+function rootMatcher(sandboxRoot: string): RootMatcher {
+  const win = sandboxRoot.includes("\\");
+  const roots = win ? [sandboxRoot, sandboxRoot.replaceAll("\\", "/")] : [sandboxRoot];
+  const seps = win ? ["\\", "/"] : ["/"];
+  const norm = (s: string) => (win ? s.toLowerCase() : s);
+  const toWire = (s: string) => (win ? s.replaceAll("\\", "/") : s);
+  // root+sep followed by the rest of the path token: the tail is kept but its
+  // separators are normalized to the wire format.
+  const embedded = roots.flatMap((root) =>
+    seps.map((sep) => new RegExp(escapeRe(root + sep) + "([^\\s\"'`]*)", win ? "gi" : "g")),
+  );
+  const bare = roots.map((root) => new RegExp(escapeRe(root), win ? "gi" : "g"));
+  return {
+    strip(value) {
+      for (const root of roots) {
+        if (norm(value) === norm(root)) return ".";
+        for (const sep of seps) {
+          const prefix = root + sep;
+          if (norm(value.slice(0, prefix.length)) === norm(prefix)) {
+            return toWire(value.slice(prefix.length));
+          }
+        }
+      }
+      return null;
+    },
+    stripEmbedded(value) {
+      let s = value;
+      for (const re of embedded) s = s.replace(re, (_, tail: string) => toWire(tail));
+      for (const re of bare) s = s.replace(re, ".");
+      return s;
+    },
+  };
+}
+
+/** Strip an exact sandbox-root prefix off one path string; output is always
+ *  wire-format (forward slashes). Non-sandbox paths pass through unchanged. */
+export function stripSandboxRoot(value: string, sandboxRoot: string): string {
+  if (!sandboxRoot) return value;
+  return rootMatcher(sandboxRoot).strip(value) ?? value;
+}
+
 export function relativizeSandboxPaths<T>(value: T, sandboxRoot: string): T {
   if (!sandboxRoot) return value;
+  // One matcher for the whole event/transcript — the root is constant.
+  return relativizeWith(value, rootMatcher(sandboxRoot));
+}
+
+function relativizeWith<T>(value: T, matcher: RootMatcher): T {
   if (typeof value === "string") {
-    let s: string = value;
-    if (s === sandboxRoot) return "." as unknown as T;
-    if (s.startsWith(sandboxRoot + "/")) s = s.slice(sandboxRoot.length + 1);
+    const stripped = matcher.strip(value) ?? value;
     // Embedded references (inside bash commands, multi-path args, etc.).
-    s = s.split(sandboxRoot + "/").join("").split(sandboxRoot).join(".");
-    return s as unknown as T;
+    return matcher.stripEmbedded(stripped) as unknown as T;
   }
   if (Array.isArray(value)) {
-    return value.map((v) => relativizeSandboxPaths(v, sandboxRoot)) as unknown as T;
+    return value.map((v) => relativizeWith(v, matcher)) as unknown as T;
   }
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = relativizeSandboxPaths(v, sandboxRoot);
+      out[k] = relativizeWith(v, matcher);
     }
     return out as T;
   }

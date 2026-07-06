@@ -15,7 +15,7 @@ import AdmZip from "adm-zip";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, touchProject } from "../projects.ts";
 import { currentProjectId } from "../scope.ts";
-import { guessMime, isUserVisible, safePath, SandboxError } from "../sandbox-fs.ts";
+import { apiRelative, guessMime, isUserVisible, isWithin, safePath, SandboxError } from "../sandbox-fs.ts";
 import { helperPython } from "../helpers-env.ts";
 import { sciHelperFor, runSciHelper } from "./sci-helpers.ts";
 import { LATEX_ENGINES, compileLatex } from "../latex/compile.ts";
@@ -38,7 +38,7 @@ function buildTree(dir: string, sandboxRoot: string, depth = 0): TreeNode {
   const node: TreeNode = {
     name: path.basename(dir) || "sandbox",
     type: "directory",
-    path: path.relative(sandboxRoot, dir),
+    path: apiRelative(sandboxRoot, dir),
     children: [],
   };
   if (depth > 8) return node;
@@ -57,7 +57,7 @@ function buildTree(dir: string, sandboxRoot: string, depth = 0): TreeNode {
   for (const entry of entries) {
     const abs = path.join(dir, entry.name);
     if (!isUserVisible(abs, sandboxRoot)) continue;
-    const rel = path.relative(sandboxRoot, abs);
+    const rel = apiRelative(sandboxRoot, abs);
     if (entry.isDirectory()) {
       node.children!.push(buildTree(abs, sandboxRoot, depth + 1));
     } else if (entry.isFile()) {
@@ -80,7 +80,7 @@ function zipDir(root: string, base: string): Buffer {
       const abs = path.join(dir, entry.name);
       if (!isUserVisible(abs, base)) continue;
       if (entry.isDirectory()) walk(abs);
-      else if (entry.isFile()) zip.addLocalFile(abs, path.dirname(path.relative(base, abs)));
+      else if (entry.isFile()) zip.addLocalFile(abs, path.posix.dirname(apiRelative(base, abs)));
     }
   };
   walk(root);
@@ -166,7 +166,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       }
       fs.mkdirSync(path.dirname(dest), { recursive: true });
       fs.writeFileSync(dest, files[i].buf);
-      saved.push(path.relative(paths.sandbox, dest));
+      saved.push(apiRelative(paths.sandbox, dest));
     }
     touchProject(currentProjectId());
     return { uploaded: saved };
@@ -257,10 +257,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "Destination parent directory not found" };
       }
-      if (
-        fs.statSync(srcPath).isDirectory() &&
-        (destPath === srcPath || destPath.startsWith(srcPath + path.sep))
-      ) {
+      if (fs.statSync(srcPath).isDirectory() && isWithin(srcPath, destPath)) {
         reply.code(400);
         return { detail: "Cannot move a directory into itself" };
       }
@@ -623,9 +620,16 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           return { detail: "no-result" };
         }
         const root = activePaths().sandbox;
-        const rel = path.relative(root, path.resolve(loc.file));
+        // synctex Input records may be relative to the build directory —
+        // resolve against the PDF's directory, not the server process cwd.
+        const abs = path.resolve(path.dirname(pdfAbs), loc.file);
+        const rel = apiRelative(root, abs);
+        // Outside the sandbox → null. The isAbsolute check matters on
+        // Windows: path.relative across drives (sandbox on D:, TeX on C:)
+        // returns the absolute target with no ".." prefix.
+        const outside = rel.startsWith("..") || path.isAbsolute(rel);
         return {
-          file: rel.startsWith("..") ? null : rel,
+          file: outside ? null : rel,
           line: loc.line,
           column: loc.column,
         };

@@ -22,6 +22,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { DEFAULT_PROJECT_ID, PROJECTS_ROOT } from "./config.ts";
+import { isWithin } from "./sandbox-fs.ts";
 import { currentProjectId } from "./scope.ts";
 import { seedSandboxFiles } from "./sandbox-seed.ts";
 
@@ -106,7 +107,7 @@ function mintProjectId(name: string): string {
 export function resolvePaths(projectId: string): ProjectPaths {
   const id = projectId || DEFAULT_PROJECT_ID;
   const root = path.resolve(PROJECTS_ROOT, id);
-  if (root !== PROJECTS_ROOT && !root.startsWith(PROJECTS_ROOT + path.sep)) {
+  if (!isWithin(PROJECTS_ROOT, root)) {
     throw new Error(`Invalid project id ${id}`);
   }
   const sandbox = path.join(root, "sandbox");

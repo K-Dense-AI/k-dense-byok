@@ -19,7 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { ProjectPaths } from "../projects.ts";
+import { resolvePaths, type ProjectPaths } from "../projects.ts";
 import { appendNotebookEntry } from "./notebook-store.ts";
 import { notebookEntriesFromSessionFile } from "./notebook-harvest.ts";
 
@@ -177,9 +177,10 @@ export function makeSubagentNotebookExtension(
   const harvest = (results: ChildResult[] | undefined) => {
     const parentSession = getSessionId();
     if (!parentSession) return;
+    const sandboxRoot = resolvePaths(projectId).sandbox;
     for (const r of results ?? []) {
       if (!r.agent || !r.sessionFile) continue;
-      const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent);
+      const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent, sandboxRoot);
       for (const entry of entries) {
         const dedupKey = `${r.sessionFile}:${entry.id}`;
         if (harvestedIds.has(dedupKey)) continue;

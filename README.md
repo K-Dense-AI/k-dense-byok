@@ -59,7 +59,8 @@ Three things to know up front:
 
 You need two things:
 
-1. A computer running **macOS or Linux**. (Windows works too, via [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) — a free Linux environment from Microsoft.)
+1. A computer running **macOS, Linux, or Windows 10/11**.
+   - On Windows, install [Node.js 22+](https://nodejs.org/) (or `winget install OpenJS.NodeJS.LTS`) and [Git for Windows](https://git-scm.com/download/win) first — Kady's agent runs its shell commands through the Git Bash that Git for Windows provides. (Prefer a Linux environment? [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) works too.)
 2. An **[OpenRouter](https://openrouter.ai/) API key** — sign up, add a few dollars of credit, and create a key (it looks like `sk-or-...`). One account gives you every major AI model; no separate OpenAI/Anthropic/Google accounts needed. Or skip this entirely and use [free local models](./docs/local-models-ollama.md).
 
 Open a terminal (on a Mac: press `Cmd+Space`, type "Terminal", press Enter) and run these four lines:
@@ -69,6 +70,15 @@ git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
 cp .env.example .env    # then paste your OpenRouter key into the new .env file
 ./start.sh
+```
+
+On Windows (press `Win`, type "PowerShell" or "Terminal", press Enter):
+
+```powershell
+git clone https://github.com/K-Dense-AI/k-dense-byok.git
+cd k-dense-byok
+copy .env.example .env    # then paste your OpenRouter key into the new .env file
+.\start.cmd
 ```
 
 In plain terms: the first two lines download the app and step into its folder; the third creates a small settings file where you paste your key (open `.env` with any text editor); the last starts the app.

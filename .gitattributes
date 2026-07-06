@@ -1,0 +1,6 @@
+# Keep LF endings on Windows checkouts (core.autocrlf would otherwise corrupt
+# shell scripts, test fixtures, and JSONL session files). cmd scripts are the
+# one format that genuinely wants CRLF.
+* text=auto eol=lf
+*.cmd text eol=crlf
+*.bat text eol=crlf

@@ -11,6 +11,7 @@
  * Pure + defensive: unreadable file / malformed row / invalid entry are skipped.
  */
 import fs from "node:fs";
+import { stripSandboxRoot } from "./events.ts";
 import type { NotebookEntry, NotebookEntryType } from "./notebook-store.ts";
 
 const ENTRY_TYPES: readonly NotebookEntryType[] = [
@@ -27,6 +28,7 @@ function entryFromArgs(
   id: string,
   role: string,
   timestamp: number,
+  sandboxRoot: string,
 ): NotebookEntry | null {
   if (!isEntryType(args.type)) return null;
   const title = typeof args.title === "string" ? args.title.trim() : "";
@@ -48,7 +50,11 @@ function entryFromArgs(
     type: args.type,
     title,
     body: typeof args.body === "string" ? args.body : undefined,
-    artifacts: Array.isArray(args.artifacts) ? args.artifacts.map(String) : undefined,
+    // Same sandbox-relative normalization the lead's notebook tool applies —
+    // subagents may echo absolute host paths.
+    artifacts: Array.isArray(args.artifacts)
+      ? args.artifacts.map((a) => stripSandboxRoot(String(a), sandboxRoot))
+      : undefined,
     code,
     confidence:
       args.confidence === "low" || args.confidence === "medium" || args.confidence === "high"
@@ -61,6 +67,7 @@ function entryFromArgs(
 export function notebookEntriesFromSessionFile(
   sessionFile: string,
   agentName: string,
+  sandboxRoot = "",
 ): NotebookEntry[] {
   let raw: string;
   try {
@@ -96,7 +103,7 @@ export function notebookEntriesFromSessionFile(
       const b = block as { id?: unknown; arguments?: unknown };
       const callId = typeof b.id === "string" ? b.id : "";
       const args = (b.arguments ?? {}) as Record<string, unknown>;
-      const entry = entryFromArgs(args, `${agentName}:${callId}`, agentName, timestamp);
+      const entry = entryFromArgs(args, `${agentName}:${callId}`, agentName, timestamp, sandboxRoot);
       if (entry) out.push(entry);
     }
   }

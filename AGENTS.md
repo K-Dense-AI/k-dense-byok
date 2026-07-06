@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-K-Dense BYOK is a local AI research-assistant app ("Kady") that brings the user's own API keys. It is one repo with **two** runtime services started together by `./start.sh`:
+K-Dense BYOK is a local AI research-assistant app ("Kady") that brings the user's own API keys. It runs natively on macOS, Linux, and Windows. It is one repo with **two** runtime services started together by the cross-platform launcher `start.mjs` (wrapped by `./start.sh` on macOS/Linux and `start.cmd` on Windows):
 
 | Service | Port | Code |
 |---|---|---|
@@ -39,6 +39,7 @@ Full app (both services):
 
 ```bash
 ./start.sh                  # installs deps, seeds skills, starts backend + frontend
+start.cmd                   # same, on Windows (both wrap `node start.mjs`)
 ```
 
 ## Architecture: how a turn flows
@@ -90,5 +91,6 @@ projects/
 - **Modal remote compute (`modal_run`).** Gated on `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (managed live via `/credentials`; `modalConfigured()` in `server/src/config.ts`). `server/src/agent/modal-tool.ts` is an in-process custom tool, registered in `session-registry.ts` only when configured. It uses the `modal` JS SDK to create an isolated Sandbox on a chosen instance (`server/src/agent/modal-instances.ts` catalogue — `cpu`→`h100`, with GPU string + hourly rate), stages `files_in`, runs the command, copies `files_out` back into the local sandbox (which stays the canonical filesystem — no split-brain), and ledgers wall-time × rate as a `compute` row. The per-chat instance is picked in the UI (`web/src/components/compute-selector.tsx`, gated on `modalConfigured`) and threaded through the run body → `setSessionComputeTarget` → the tool's session default. Like `interview`, it is an in-process custom tool, so it is NOT seen by sub-agent child `pi` processes; promoting it to a Pi package (mirroring web-access) would extend it to them. No secrets are injected into the sandbox by default.
 - **Living Lab Notebook (`notebook`).** The lead agent uses an in-process `notebook` custom tool (like `interview` and `modal_run`) to write entries live to the notebook. Subagents get the tool via the vendored `kady-notebook` Pi package (referenced from `sandbox/.pi/settings.json`, like pi-web-access); the package registers the tool only in child processes (gated on `PI_SUBAGENT_CHILD` env var) so it never collides with the lead's tool. When a subagent finishes, its notebook entries are harvested from its session JSONL file, role-stamped with the agent name, and appended to the parent notebook (the parent is the single writer). Subagent entries appear batch-on-completion, not live token-by-token; for asynchronous/background subagents, entries may appear on the next notebook fetch if the child finishes after the parent run ends. Nested subagents (depth > 1) are not harvested in this version.
 - **OpenRouter cost** is read from Pi's `usage.cost` (computed from `model.cost`). For synthesized OpenRouter models the pricing comes from `web/src/data/models.json`; keep that catalogue current for accurate cost.
-- **Node ≥ 22.19** is what Pi targets; lower 22.x usually works but emits an `EBADENGINE` warning. Node < 22 (e.g. v20) fails to build/install the packages, so `start.sh` refuses to run on it.
+- **Node ≥ 22.19** is what Pi targets; lower 22.x usually works but emits an `EBADENGINE` warning. Node < 22 (e.g. v20) fails to build/install the packages, so the launcher (`start.mjs`) refuses to run on it, on every platform.
+- **Windows portability.** Sandbox-relative paths are canonicalized to forward slashes at the API boundary (`apiRelative`/`toApiPath` in `server/src/sandbox-fs.ts`, `stripSandboxRoot` in `server/src/agent/events.ts`) — the frontend always sees `/`-separated paths. External binaries are located via `server/src/binaries.ts` (`hasBinary`/`findUv`/`firstRunnable`), never `which`. On Windows the agent's `bash` tool uses Git Bash (Git for Windows is a hard prerequisite there), the helper venv interpreter lives at `.venv/Scripts/python.exe`, and synctex is invoked from the PDF's directory with relative paths so drive-letter colons stay out of its colon-delimited args in the primary invocation (`forwardArgs`/`inverseArgs` in `server/src/latex/synctex.ts`; a forward-slash absolute-path retry exists as a fallback for absolute `Input:` records).
 - **Don't run our source through `tsc` for emit** — both dev and prod run via `tsx`; `tsconfig.json` is `noEmit` for typechecking only.

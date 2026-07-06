@@ -8,17 +8,43 @@ import { activePaths } from "./projects.ts";
 
 export const USER_HIDDEN_NAMES = new Set(["GEMINI.md", "uv.lock"]);
 
+// No constructor parameter property here: Node's strip-only TS loading (used
+// when a .ts module is require()d outside a transform, e.g. in tests) cannot
+// strip that syntax, and this module is reachable from projects.ts.
 export class SandboxError extends Error {
-  constructor(
-    public statusCode: number,
-    message: string,
-  ) {
+  statusCode: number;
+
+  constructor(statusCode: number, message: string) {
     super(message);
+    this.statusCode = statusCode;
   }
 }
 
-function isWithin(root: string, target: string): boolean {
+/** Lexical containment check on resolved absolute paths. Case-insensitive on
+ *  Windows to match NTFS semantics. */
+export function isWithin(root: string, target: string): boolean {
+  if (process.platform === "win32") {
+    root = root.toLowerCase();
+    target = target.toLowerCase();
+  }
   return target === root || target.startsWith(root + path.sep);
+}
+
+/** Convert a native relative path to the API wire format (forward slashes).
+ *  Identity on POSIX, so filenames that legally contain "\" are never mangled. */
+export function toApiPath(nativeRel: string, sep: string = path.sep): string {
+  return sep === "/" ? nativeRel : nativeRel.split(sep).join("/");
+}
+
+/** path.relative + wire-format normalization: every sandbox-relative path the
+ *  API emits goes through this so the frontend always sees forward slashes.
+ *  The path impl is injectable so Windows behavior is unit-testable anywhere. */
+export function apiRelative(
+  from: string,
+  to: string,
+  p: Pick<typeof path, "relative" | "sep"> = path,
+): string {
+  return toApiPath(p.relative(from, to), p.sep);
 }
 
 /** Resolve a sandbox-relative path, refusing traversal outside the sandbox. */

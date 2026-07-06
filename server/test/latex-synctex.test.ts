@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
+import { hasBinary } from "../src/binaries.ts";
 import { compileLatex } from "../src/latex/compile.ts";
 import {
   parseSynctexEdit,
@@ -63,8 +63,7 @@ describe("parseSynctexEdit", () => {
   });
 });
 
-const canRun =
-  synctexAvailable() && spawnSync("which", ["pdflatex"]).status === 0;
+const canRun = synctexAvailable() && hasBinary("pdflatex");
 
 describe.skipIf(!canRun)("synctex CLI (integration)", () => {
   it("round-trips forward then inverse", async () => {

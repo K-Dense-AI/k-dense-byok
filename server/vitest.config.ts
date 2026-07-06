@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
@@ -10,7 +12,8 @@ export default defineConfig({
     fileParallelism: false,
     // Each run gets an isolated projects root under the OS temp dir.
     env: {
-      KADY_PROJECTS_ROOT: process.env.VITEST_PROJECTS_ROOT ?? "/tmp/kady-vitest-projects",
+      KADY_PROJECTS_ROOT:
+        process.env.VITEST_PROJECTS_ROOT ?? path.join(os.tmpdir(), "kady-vitest-projects"),
     },
   },
 });

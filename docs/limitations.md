@@ -60,6 +60,10 @@ Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple o
 - **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Sub-agents, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
 - **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
 
+## Native Windows support is new
+
+The app now runs natively on Windows 10/11 (no WSL needed) as of this release. It goes through the same test suite as macOS/Linux, but has had less real-world mileage — if you hit something Windows-specific, please [open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues). WSL remains a supported alternative.
+
 ## Features deferred during the Pi migration
 
 Literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and citation verification / "Copy as Methods" provenance export are not available yet in the Pi-based backend. They are being re-added in upcoming releases; the keys for them in `.env.example` are currently unused. In the meantime, many of these capabilities (GitHub, reference managers, ...) can be added today by connecting an [MCP server](./mcp-servers.md).

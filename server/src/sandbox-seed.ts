@@ -11,8 +11,8 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { findUv } from "./binaries.ts";
 import type { ProjectPaths } from "./projects.ts";
 
 const PYPROJECT_TOML = `[project]
@@ -75,14 +75,6 @@ export function seedSandboxFiles(paths: ProjectPaths): void {
   if (!fs.existsSync(agentsMd)) fs.writeFileSync(agentsMd, AGENTS_MD, "utf-8");
 }
 
-function uvBinary(): string | null {
-  for (const candidate of ["uv", path.join(os.homedir(), ".local", "bin", "uv")]) {
-    const res = spawnSync(candidate, ["--version"], { stdio: "ignore" });
-    if (res.status === 0) return candidate;
-  }
-  return null;
-}
-
 /**
  * Pre-warm the sandbox venv (`uv sync`) so the agent's first `uv run` doesn't
  * pay the install cost. Best-effort: returns false when uv is missing or sync
@@ -90,7 +82,7 @@ function uvBinary(): string | null {
  */
 export function syncSandboxVenv(paths: ProjectPaths): boolean {
   seedSandboxFiles(paths);
-  const uv = uvBinary();
+  const uv = findUv();
   if (!uv) return false;
   const res = spawnSync(uv, ["sync"], {
     cwd: paths.sandbox,

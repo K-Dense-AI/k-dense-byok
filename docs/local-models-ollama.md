@@ -12,6 +12,8 @@ You can run Kady entirely against local models served by [Ollama](https://ollama
    ollama serve
    ```
 
+   On Windows, download and run the installer from [ollama.com/download](https://ollama.com/download) — it starts the daemon for you.
+
 2. **Pull one or more models:**
 
    ```bash
