@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.7.0-blue.svg)](server/package.json)
-[![Skills](https://img.shields.io/badge/Skills-140%2B-brightgreen.svg)](#what-can-it-do)
+[![Skills](https://img.shields.io/badge/Skills-149-brightgreen.svg)](#what-can-it-do)
 [![Workflows](https://img.shields.io/badge/Workflows-326-blueviolet.svg)](#what-can-it-do)
 [![Databases](https://img.shields.io/badge/Databases-229-orange.svg)](#what-can-it-do)
 [![Tests](https://github.com/K-Dense-AI/k-dense-byok/actions/workflows/tests.yml/badge.svg)](https://github.com/K-Dense-AI/k-dense-byok/actions/workflows/tests.yml)
@@ -35,11 +35,12 @@ Three things to know up front:
 
 **Built for science**
 
-- **140+ pre-installed scientific skills** covering genomics, proteomics, drug discovery, materials science, and more — Kady picks the right ones for each task automatically.
+- **149 pre-installed scientific skills** covering genomics, proteomics, drug discovery, materials science, and more — Kady picks the right ones for each task automatically.
 - **326 ready-made workflow templates** across 22 disciplines: pick one, fill in the blanks, go.
 - **229 scientific and financial databases** in 18 categories, from PubMed-scale biomedical resources to market and climate data.
-- **Preview 60+ scientific file formats** right in the app — [interactive 3D protein structures, 2D chemical structures from SMILES, mass spectra, single-cell/HDF5/Parquet arrays, phylogenetic trees, sequence alignments, DICOM/NIfTI/microscopy imaging, and more](./docs/file-previews.md) — alongside everyday CSVs, PDFs, notebooks, and genomics tables.
-- **Write in LaTeX** with a built-in editor, one-click compile with inline error diagnostics, and AI-assisted editing.
+- **A Living Lab Notebook that writes itself** — as Kady works, it logs hypotheses, methods, observations, and decisions (from its specialists too) to a notebook you can watch live, review later, and export or print as a PDF. [Learn more](./docs/lab-notebook.md).
+- **Preview 60+ scientific file formats** right in the app — interactive 3D protein structures, 2D chemical structures from SMILES, mass spectra, single-cell/HDF5/Parquet arrays, phylogenetic trees, sequence alignments, DICOM/NIfTI/microscopy imaging, and [more](./docs/file-previews.md) — alongside everyday CSVs, PDFs, notebooks, and genomics tables.
+- **Write in LaTeX** in a full split-pane editor — live PDF compile with your choice of engine, inline error diagnostics, click-to-jump between source and PDF (SyncTeX), and built-in AI assist that rewrites selections or fixes compile errors as diffs you can keep or revert.
 
 **Choose your AI**
 
