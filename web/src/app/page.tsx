@@ -18,8 +18,8 @@ import { onProjectChange } from "@/lib/projects";
 import { onChatPrefill } from "@/lib/chat-prefill";
 import { isJunkFilePath } from "@/lib/utils";
 import {
-  PanelLeftCloseIcon,
   PanelLeftIcon,
+  PanelRightIcon,
   SettingsIcon,
   SunIcon,
   MoonIcon,
@@ -76,7 +76,29 @@ export default function ChatPage() {
   const { skills: allSkills } = useSkills();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  const [panelOpen, setPanelOpen] = useState(true);
+  // The two side panels collapse independently so the center pane (file
+  // preview / LaTeX editor) can be widened. Default open; both initialize to
+  // `true` (matching SSR) and the saved preference is applied after mount to
+  // avoid a hydration mismatch. Toggling either persists to localStorage.
+  const [sandboxOpen, setSandboxOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(true);
+  useEffect(() => {
+    if (typeof localStorage === "undefined") return;
+    if (localStorage.getItem("kady:panel:sandbox") === "0") setSandboxOpen(false);
+    if (localStorage.getItem("kady:panel:chat") === "0") setChatOpen(false);
+  }, []);
+  const toggleSandbox = useCallback(() => {
+    setSandboxOpen((v) => {
+      try { localStorage.setItem("kady:panel:sandbox", v ? "0" : "1"); } catch { /* private mode */ }
+      return !v;
+    });
+  }, []);
+  const toggleChat = useCallback(() => {
+    setChatOpen((v) => {
+      try { localStorage.setItem("kady:panel:chat", v ? "0" : "1"); } catch { /* private mode */ }
+      return !v;
+    });
+  }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [showNotebook, setShowNotebook] = useState(false);
 
@@ -449,36 +471,56 @@ export default function ChatPage() {
             limitUsd={projectCost.limitUsd}
             loading={costLoading || projectCostLoading}
           />
-          <InfoTooltip
-            content={
-              panelOpen ? (
+          {/* Panel visibility — collapse either side panel to give the center
+              pane (file preview / LaTeX editor) more room. */}
+          <div className="flex items-center gap-0.5 rounded-lg border bg-muted/30 p-0.5">
+            <InfoTooltip
+              content={
                 <>
-                  <b>Hide sandbox</b>
+                  <b>{sandboxOpen ? "Hide" : "Show"} file browser</b>
                   <br />
-                  Collapse the file tree and preview panes to focus on the chat.
+                  Collapse the left file tree to widen the editor and preview.
                 </>
-              ) : (
-                <>
-                  <b>Show sandbox</b>
-                  <br />
-                  Open the agent&apos;s working directory with the file tree and
-                  inline previews.
-                </>
-              )
-            }
-          >
-            <button
-              onClick={() => setPanelOpen((v) => !v)}
-              aria-label={panelOpen ? "Hide sandbox" : "Show sandbox"}
-              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              }
             >
-              {panelOpen ? (
-                <PanelLeftCloseIcon className="size-4" />
-              ) : (
+              <button
+                onClick={toggleSandbox}
+                aria-label={sandboxOpen ? "Hide file browser" : "Show file browser"}
+                aria-pressed={sandboxOpen}
+                className={cn(
+                  "rounded-md p-1.5 transition-colors",
+                  sandboxOpen
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
                 <PanelLeftIcon className="size-4" />
-              )}
-            </button>
-          </InfoTooltip>
+              </button>
+            </InfoTooltip>
+            <InfoTooltip
+              content={
+                <>
+                  <b>{chatOpen ? "Hide" : "Show"} chat</b>
+                  <br />
+                  Collapse the right chat panel to widen the editor and preview.
+                </>
+              }
+            >
+              <button
+                onClick={toggleChat}
+                aria-label={chatOpen ? "Hide chat" : "Show chat"}
+                aria-pressed={chatOpen}
+                className={cn(
+                  "rounded-md p-1.5 transition-colors",
+                  chatOpen
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <PanelRightIcon className="size-4" />
+              </button>
+            </InfoTooltip>
+          </div>
           <InfoTooltip
             content={
               <>
@@ -524,7 +566,7 @@ export default function ChatPage() {
       <div className={cn("flex flex-1 overflow-hidden", isResizing && "select-none")}>
 
         {/* Left: file tree */}
-        {panelOpen && (
+        {sandboxOpen && (
           <div className="shrink-0 overflow-hidden" style={{ width: treeWidth }}>
             <FileTreePanel
               tree={sandbox.tree}
@@ -537,7 +579,7 @@ export default function ChatPage() {
               onDeleteDir={sandbox.deleteDir}
               onDownloadAll={sandbox.downloadAll}
               onRefresh={sandbox.fetchTree}
-              onClose={() => setPanelOpen(false)}
+              onClose={toggleSandbox}
               onUpload={sandbox.uploadFiles}
               onOrganize={() => {
                 const handle = tabHandles.current.get(activeTabId);
@@ -555,39 +597,42 @@ export default function ChatPage() {
         )}
 
         {/* Drag handle: tree ↔ preview */}
-        {panelOpen && <ResizeHandle onMouseDown={startDrag("tree")} />}
+        {sandboxOpen && <ResizeHandle onMouseDown={startDrag("tree")} />}
 
-        {/* Middle: file preview with tabs */}
-        {panelOpen && (
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <FilePreviewPanel
-              tabs={sandbox.tabs}
-              activeTabPath={sandbox.activeTabPath}
-              onTabSelect={handleFileSelect}
-              onTabClose={sandbox.closeTab}
-              onDownload={sandbox.downloadFile}
-              onSaveText={sandbox.saveFile}
-              onSaveImageBlob={sandbox.saveImageBlob}
-              onRetry={sandbox.retryFile}
-              onCompileLatex={sandbox.compileLatex}
-              showNotebook={showNotebook}
-              onSelectNotebook={() => setShowNotebook(true)}
-              notebookSessionId={activeSessionId}
-              notebookEntries={notebookEntries}
-              notebookStreaming={notebookStreaming}
-              notebookSubagentCompletions={subagentCompletions}
-              onOpenNotebookFile={handleFileSelect}
-            />
-          </div>
-        )}
+        {/* Middle: file preview with tabs — always shown; it is the pane the
+            side panels make room for (e.g. the LaTeX editor + PDF). */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          <FilePreviewPanel
+            tabs={sandbox.tabs}
+            activeTabPath={sandbox.activeTabPath}
+            onTabSelect={handleFileSelect}
+            onTabClose={sandbox.closeTab}
+            onDownload={sandbox.downloadFile}
+            onSaveText={sandbox.saveFile}
+            onSaveImageBlob={sandbox.saveImageBlob}
+            onRetry={sandbox.retryFile}
+            onCompileLatex={sandbox.compileLatex}
+            showNotebook={showNotebook}
+            onSelectNotebook={() => setShowNotebook(true)}
+            notebookSessionId={activeSessionId}
+            notebookEntries={notebookEntries}
+            notebookStreaming={notebookStreaming}
+            notebookSubagentCompletions={subagentCompletions}
+            onOpenNotebookFile={handleFileSelect}
+          />
+        </div>
 
         {/* Drag handle: preview ↔ chat */}
-        {panelOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
+        {chatOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
 
-        {/* Right: chat / workflows — fills all space when sandbox is hidden */}
+        {/* Right: chat / workflows. Kept mounted (hidden via CSS when
+            collapsed) so background chat streams keep running. */}
         <div
-          className={`flex flex-col border-l overflow-hidden ${panelOpen ? "shrink-0" : "flex-1"}`}
-          style={{ width: panelOpen ? chatWidth : undefined }}
+          className={cn(
+            "flex flex-col border-l overflow-hidden shrink-0",
+            !chatOpen && "hidden",
+          )}
+          style={{ width: chatWidth }}
         >
 
           <ChatTabsBar
