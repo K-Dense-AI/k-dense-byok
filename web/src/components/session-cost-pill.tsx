@@ -191,6 +191,12 @@ export function SessionCostPill({
           </div>
           <div className="mt-2">
             <CostRow label="Agent" costUsd={summary.agentUsd} />
+            {summary.subagentUsd > 0 && (
+              <CostRow label="Subagents" costUsd={summary.subagentUsd} />
+            )}
+            {summary.computeUsd > 0 && (
+              <CostRow label="Compute (Modal)" costUsd={summary.computeUsd} />
+            )}
           </div>
         </div>
 
@@ -231,7 +237,11 @@ function EntryRow({ entry }: { entry: CostEntry }) {
         <span
           className={cn(
             "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-            entry.role === "agent" ? "bg-sky-500" : "bg-amber-500",
+            entry.role === "agent"
+              ? "bg-sky-500"
+              : entry.role === "compute"
+                ? "bg-violet-500"
+                : "bg-amber-500",
           )}
           aria-hidden
         />

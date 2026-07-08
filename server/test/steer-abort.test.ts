@@ -165,3 +165,35 @@ describe("POST /sessions/:id/steer", () => {
     expect(res.json()).toMatchObject({ reason: "budget" });
   });
 });
+
+describe("POST /sessions/:id/run image validation", () => {
+  function run(id: string, body: unknown) {
+    return app.inject({
+      method: "POST",
+      url: `/sessions/${id}/run`,
+      headers: { "x-project-id": "default", "content-type": "application/json" },
+      payload: body as Record<string, unknown>,
+    });
+  }
+
+  it("400s for images outside the vision allowlist before any streaming", async () => {
+    const s = new FakeSession();
+    s.isStreaming = false;
+    fakeSessions.set("s1", s);
+    const res = await run("s1", {
+      message: "what is this?",
+      images: [{ data: "aGVsbG8=", mimeType: "image/tiff" }],
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().detail).toContain("image/tiff");
+  });
+
+  it("400s for malformed image entries", async () => {
+    const s = new FakeSession();
+    s.isStreaming = false;
+    fakeSessions.set("s1", s);
+    const res = await run("s1", { message: "hi", images: [{ mimeType: "image/png" }] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().detail).toContain("base64");
+  });
+});

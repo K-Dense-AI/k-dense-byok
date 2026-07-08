@@ -7,7 +7,7 @@
  * frame sourced from Pi's per-session usage accounting.
  */
 import type { FastifyInstance } from "fastify";
-import { activePaths, getProject } from "../projects.ts";
+import { activePaths, getProject, touchProject } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
 import { toClientFrame, type ClientFrame } from "../agent/events.ts";
@@ -20,8 +20,18 @@ import {
 } from "../agent/interview.ts";
 import { setSessionComputeTarget } from "../agent/modal-tool.ts";
 import { resolveModel } from "../agent/models.ts";
+import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
+import { buildNotebookZip } from "../agent/notebook-zip.ts";
+import {
+  normalizeNotebookAnnotations,
+  readNotebookAnnotations,
+  writeNotebookAnnotations,
+} from "../agent/notebook-annotations.ts";
+import { MethodsDraftError, runMethodsDraft } from "../agent/methods-draft.ts";
+import { mintRunId, setSessionRunId } from "../agent/run-ids.ts";
+import { SandboxError } from "../sandbox-fs.ts";
 import {
   findSessionFile,
   toNotebook,
@@ -65,6 +75,8 @@ interface RunBody {
   fusionConfig?: Record<string, unknown>;
   /** Default Modal compute instance id for `modal_run` this run ("local" / unset = none). */
   computeTarget?: string;
+  /** Inline image attachments (base64 + mime type); ride the user message as image blocks. */
+  images?: unknown;
 }
 
 // Sessions with a run in flight, claimed synchronously. `session.isStreaming`
@@ -130,24 +142,109 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     "/sessions/:id/notebook/export",
     async (req, reply) => {
       const format = req.query.format ?? "md";
-      if (format !== "md") {
+      if (format !== "md" && format !== "json" && format !== "zip") {
         reply.code(400);
-        return { detail: "Only format=md is supported (PDF is exported client-side)" };
+        return { detail: "format must be md, json, or zip (PDF is exported client-side)" };
       }
       try {
         const projectId = currentProjectId();
         const entries = readNotebookEntries(req.params.id, projectId);
         const projectName = getProject(projectId)?.name ?? projectId;
+        const attachment = (ext: string) =>
+          reply.header(
+            "Content-Disposition",
+            `attachment; filename="lab-notebook-${req.params.id}.${ext}"`,
+          );
+        if (format === "json") {
+          reply.header("Content-Type", "application/json; charset=utf-8");
+          attachment("json");
+          return { sessionId: req.params.id, projectName, entries };
+        }
+        if (format === "zip") {
+          const { buffer } = buildNotebookZip(entries, {
+            sessionId: req.params.id,
+            projectName,
+            sandboxRoot: activePaths().sandbox,
+          });
+          reply.type("application/zip");
+          attachment("zip");
+          return buffer;
+        }
         const md = notebookToMarkdown(entries, { sessionId: req.params.id, projectName });
         reply.header("Content-Type", "text/markdown; charset=utf-8");
-        reply.header(
-          "Content-Disposition",
-          `attachment; filename="lab-notebook-${req.params.id}.md"`,
-        );
+        attachment("md");
         return md;
       } catch (exc) {
         reply.code(400);
         return { detail: (exc as Error).message };
+      }
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/sessions/:id/notebook/annotations",
+    async (req, reply) => {
+      try {
+        reply.header("Cache-Control", "no-store");
+        const { doc, mtime } = readNotebookAnnotations(req.params.id, currentProjectId());
+        if (mtime) reply.header("Last-Modified", mtime.toUTCString());
+        return doc;
+      } catch (err) {
+        if (err instanceof SandboxError) {
+          reply.code(err.statusCode);
+          return { detail: err.message };
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.put<{ Params: { id: string }; Body: unknown }>(
+    "/sessions/:id/notebook/annotations",
+    async (req, reply) => {
+      try {
+        const projectId = currentProjectId();
+        const { mtime } = readNotebookAnnotations(req.params.id, projectId);
+        if (mtime) {
+          const precond = req.headers["if-unmodified-since"];
+          if (precond) {
+            const expected = new Date(String(precond)).getTime();
+            if (!Number.isNaN(expected) && mtime.getTime() - expected > 1000) {
+              reply.code(412);
+              return { detail: "Sidecar modified; re-read and retry" };
+            }
+          }
+        }
+        const doc = normalizeNotebookAnnotations(req.body);
+        const newMtime = writeNotebookAnnotations(req.params.id, doc, projectId);
+        touchProject(projectId);
+        reply.header("Last-Modified", newMtime.toUTCString());
+        return { saved: req.params.id, count: doc.annotations.length };
+      } catch (err) {
+        if (err instanceof SandboxError) {
+          reply.code(err.statusCode);
+          return { detail: err.message };
+        }
+        throw err;
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string }; Body: { model?: string } | null }>(
+    "/sessions/:id/notebook/methods-draft",
+    async (req, reply) => {
+      try {
+        return await runMethodsDraft(req.params.id, currentProjectId(), {
+          model: req.body?.model,
+        });
+      } catch (err) {
+        if (err instanceof MethodsDraftError) {
+          reply.code(err.status);
+          return err.status === 402
+            ? { detail: "budget-exceeded", message: err.message }
+            : { detail: "methods-draft-failed", message: err.message };
+        }
+        throw err;
       }
     },
   );
@@ -300,8 +397,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "message is required" };
       }
+      const parsedImages = parseRunImages(body.images);
+      if ("error" in parsedImages) {
+        reply.code(400);
+        return { detail: parsedImages.error };
+      }
       // No awaits between the guard above and this claim, so it is atomic.
       activeRuns.add(runKey);
+      // One id per run invocation; notebook entries appended during this run
+      // (lead tool + subagent harvest) are stamped with it. Cleared in the
+      // outer finally so it covers every exit path.
+      const runId = mintRunId();
+      setSessionRunId(session.sessionId, runId);
       // For a Fusion run we disable Pi's local tools for the turn (see below).
       // Remember the real active set so we can restore it in the finally; `null`
       // means "not a fusion run, nothing to restore".
@@ -377,6 +484,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         const write = (frame: ClientFrame) => {
           if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(frame)}\n\n`);
         };
+        // Synthetic route-level frame (Pi events carry no run id): lets the
+        // client stamp provisional notebook entries with this run before the
+        // authoritative refetch.
+        write({ type: "run_start", runId });
 
         // Hard budget cap: refuse to run if the project has reached its limit.
         const budget = isBudgetExceeded(projectId);
@@ -417,7 +528,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         const priorError = session.state.errorMessage;
         const before = snapshot(session);
         try {
-          await session.prompt(body.message ?? "");
+          await session.prompt(
+            body.message ?? "",
+            parsedImages.images.length > 0 ? { images: parsedImages.images } : undefined,
+          );
           // Surface a provider/agent error that didn't already stream as a frame
           // (e.g. an auth failure that produced an empty assistant turn).
           const errorMessage = session.state.errorMessage;
@@ -465,6 +579,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         if (savedToolNames !== null) {
           session.setActiveToolsByName(savedToolNames);
         }
+        setSessionRunId(session.sessionId, null);
         activeRuns.delete(runKey);
       }
     },

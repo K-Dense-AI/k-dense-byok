@@ -48,6 +48,24 @@ export const NotebookParams = Type.Object({
     Type.Union([Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")]),
   ),
   tags: Type.Optional(Type.Array(Type.String())),
+  relatesTo: Type.Optional(
+    Type.String({
+      description:
+        "Id of an earlier notebook entry this one responds to (every notebook call returns its entry id). Pair with `stance`.",
+    }),
+  ),
+  stance: Type.Optional(
+    Type.Union(
+      [Type.Literal("supports"), Type.Literal("refutes"), Type.Literal("neutral")],
+      { description: "How this entry bears on the `relatesTo` target" },
+    ),
+  ),
+  supersedes: Type.Optional(
+    Type.String({
+      description:
+        "Id of an earlier entry this one amends or replaces — use instead of re-logging corrected content without linkage",
+    }),
+  ),
 });
 
 export const notebookChildTool: ToolDefinition<typeof NotebookParams> = {
@@ -57,6 +75,7 @@ export const notebookChildTool: ToolDefinition<typeof NotebookParams> = {
     "Log an entry to the shared living lab notebook as you work.",
     "Record your real reasoning: a `hypothesis` when you form an idea to test, a `method` before/after you run something, an `observation` for a result, a `decision` when a result changes your plan.",
     "Attach `artifacts` (sandbox-relative paths) whenever an entry corresponds to a figure, table, or script you wrote.",
+    "Every call returns the new entry's id. When a later result bears on an earlier entry, link them: `relatesTo: <id>` with a `stance` (supports/refutes/neutral). To correct an earlier entry, log a new one with `supersedes: <id>` — history is append-only.",
     "This does NOT block; it returns immediately and your run continues. Log liberally at natural milestones.",
   ].join("\n"),
   promptSnippet:
@@ -64,13 +83,19 @@ export const notebookChildTool: ToolDefinition<typeof NotebookParams> = {
   promptGuidelines: [
     "Keep a running lab notebook: call `notebook` at natural milestones as you work, not in one dump at the end.",
     "Attach `artifacts` for any entry tied to a file you wrote so the notebook links to real output.",
+    "Thread the narrative: when an observation tests an earlier hypothesis, log it with `relatesTo: <that entry's id>` and a `stance`; to correct an earlier entry, log a new one with `supersedes: <its id>`.",
   ],
   parameters: NotebookParams,
   execute: async (toolCallId, params) => {
     const title = (params.title ?? "").trim();
     if (!title) throw new Error("notebook entry needs a non-empty title");
     return {
-      content: [{ type: "text" as const, text: `logged notebook entry ${toolCallId}` }],
+      content: [
+        {
+          type: "text" as const,
+          text: `logged notebook entry (id: ${toolCallId}) — reference this id in relatesTo/supersedes to link later entries`,
+        },
+      ],
       details: {},
     };
   },

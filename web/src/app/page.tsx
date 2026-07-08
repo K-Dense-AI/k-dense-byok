@@ -9,6 +9,7 @@ import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { SessionCostPill } from "@/components/session-cost-pill";
+import { ResourceMonitor } from "@/components/resource-monitor";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
@@ -25,6 +26,7 @@ import {
   MoonIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
@@ -391,6 +393,28 @@ export default function ChatPage() {
   }, [sandbox]);
 
   // ------------------------------------------------------------------
+  // Chat ↔ notebook deep links (join key: tool-call id === entry id).
+  // ------------------------------------------------------------------
+  const [notebookFocus, setNotebookFocus] = useState<{ id: string; token: number } | null>(null);
+  const handleViewInNotebook = useCallback((entryId: string) => {
+    setShowNotebook(true);
+    setNotebookFocus({ id: entryId, token: Date.now() });
+  }, []);
+  const handleNotebookJumpToChat = useCallback(
+    (entryId: string) => {
+      // Un-hide the chat column without toggling it closed, then scroll once
+      // display:none has lifted (scrollIntoView no-ops on hidden elements).
+      setChatOpen(true);
+      setView("chat");
+      setTimeout(() => {
+        const ok = tabHandles.current.get(activeTabId)?.scrollToToolCall(entryId) ?? false;
+        if (!ok) toast.error("Couldn't find this entry in the chat transcript.");
+      }, 50);
+    },
+    [activeTabId],
+  );
+
+  // ------------------------------------------------------------------
   // Header pieces — cost pill — read from the active tab.
   // ------------------------------------------------------------------
 
@@ -465,6 +489,7 @@ export default function ChatPage() {
           Brought to you by K-Dense, Inc.
         </p>
         <div className="flex items-center gap-2">
+          <ResourceMonitor />
           <SessionCostPill
             summary={costSummary}
             projectSummary={projectCost}
@@ -619,6 +644,8 @@ export default function ChatPage() {
             notebookStreaming={notebookStreaming}
             notebookSubagentCompletions={subagentCompletions}
             onOpenNotebookFile={handleFileSelect}
+            notebookFocus={notebookFocus}
+            onNotebookJumpToChat={handleNotebookJumpToChat}
           />
         </div>
 
@@ -669,6 +696,7 @@ export default function ChatPage() {
               budgetTotalUsd={projectCost.budget.totalUsd}
               budgetLimitUsd={projectCost.budget.limitUsd}
               onMetaChange={handleMetaChange}
+              onViewInNotebook={handleViewInNotebook}
             />
           ))}
 

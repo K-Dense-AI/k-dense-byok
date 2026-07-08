@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpenIcon,
   BrainIcon,
   CheckIcon,
   ChevronRightIcon,
@@ -105,7 +106,7 @@ function ToolCard({ item }: { item: ActivityItem }) {
   const hasDetail = Boolean(args || item.result);
 
   return (
-    <Collapsible open={open} onOpenChange={setOpen}>
+    <Collapsible open={open} onOpenChange={setOpen} data-tool-call-id={item.id}>
       <CollapsibleTrigger
         disabled={!hasDetail}
         className={cn(
@@ -167,6 +168,48 @@ function ToolCard({ item }: { item: ActivityItem }) {
         </CollapsibleContent>
       )}
     </Collapsible>
+  );
+}
+
+/**
+ * Compact chip for a `notebook` tool call: the entry itself renders in the
+ * Lab Notebook panel, so the transcript shows a one-line pointer with an
+ * optional jump ("View in notebook"). item.id === the notebook entry id.
+ */
+export function NotebookEntryChip({
+  item,
+  onView,
+}: {
+  item: ActivityItem;
+  onView?: (entryId: string) => void;
+}) {
+  const args = (item.args ?? {}) as Record<string, unknown>;
+  const typeLabel =
+    typeof args.type === "string"
+      ? args.type.charAt(0).toUpperCase() + args.type.slice(1)
+      : "Entry";
+  const title = typeof args.title === "string" ? args.title : "";
+  return (
+    <div
+      data-tool-call-id={item.id}
+      className="my-1 flex w-full items-center gap-2 rounded-md border border-orange-500/25 bg-orange-500/5 px-2.5 py-1.5 text-xs"
+    >
+      <BookOpenIcon className="size-3.5 shrink-0 text-orange-500" />
+      <span className="font-medium text-foreground">Notebook · {typeLabel}</span>
+      {title && (
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">{title}</span>
+      )}
+      <StatusDot status={item.status} />
+      {onView && (
+        <button
+          type="button"
+          onClick={() => onView(item.id)}
+          className="shrink-0 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+        >
+          View in notebook
+        </button>
+      )}
+    </div>
   );
 }
 

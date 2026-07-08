@@ -372,6 +372,10 @@ export type PromptInputProps = Omit<
   multiple?: boolean;
   // When true, accepts drops anywhere on document. Default false (opt-in).
   globalDrop?: boolean;
+  // When true, skip the built-in form-level drop handler entirely — for hosts
+  // that own drop routing themselves (e.g. a wrapping drop zone that splits
+  // inline attachments from uploads). Default false.
+  disableFormDrop?: boolean;
   // Render a hidden input with given name and keep it in sync for native form posts. Default false.
   syncHiddenInput?: boolean;
   // Minimal constraints
@@ -382,10 +386,12 @@ export type PromptInputProps = Omit<
     code: "max_files" | "max_file_size" | "accept";
     message: string;
   }) => void;
+  // Return false (or resolve to false) to reject the submission: the text and
+  // attachments are kept so the user can fix and resubmit.
   onSubmit: (
     message: PromptInputMessage,
     event: FormEvent<HTMLFormElement>
-  ) => void | Promise<void>;
+  ) => void | boolean | Promise<void | boolean>;
 };
 
 export const PromptInput = ({
@@ -393,6 +399,7 @@ export const PromptInput = ({
   accept,
   multiple,
   globalDrop,
+  disableFormDrop,
   syncHiddenInput,
   maxFiles,
   maxFileSize,
@@ -612,8 +619,9 @@ export const PromptInput = ({
     if (!form) {
       return;
     }
-    if (globalDrop) {
-      // when global drop is on, let the document-level handler own drops
+    if (globalDrop || disableFormDrop) {
+      // when global drop is on (or the host owns drop routing), let the
+      // outer handler own drops
       return;
     }
 
@@ -636,7 +644,7 @@ export const PromptInput = ({
       form.removeEventListener("dragover", onDragOver);
       form.removeEventListener("drop", onDrop);
     };
-  }, [add, globalDrop]);
+  }, [add, globalDrop, disableFormDrop]);
 
   useEffect(() => {
     if (!globalDrop) {
@@ -755,10 +763,14 @@ export const PromptInput = ({
 
         const result = onSubmit({ files: convertedFiles, text }, event);
 
-        // Handle both sync and async onSubmit
+        // Handle both sync and async onSubmit; an explicit `false` means the
+        // submission was rejected — keep text and attachments for a retry.
         if (result instanceof Promise) {
           try {
-            await result;
+            const accepted = await result;
+            if (accepted === false) {
+              return;
+            }
             clear();
             if (usingProvider) {
               controller.textInput.clear();
@@ -766,7 +778,7 @@ export const PromptInput = ({
           } catch {
             // Don't clear on error - user may want to retry
           }
-        } else {
+        } else if (result !== false) {
           // Sync function completed without throwing, clear inputs
           clear();
           if (usingProvider) {

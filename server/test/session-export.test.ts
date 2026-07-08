@@ -205,4 +205,39 @@ describe("toHistory", () => {
     expect(result.length).toBe(4001);
     expect(result.endsWith("…")).toBe(true);
   });
+
+  it("surfaces inline image attachments on user messages", () => {
+    const file = writeFixture("images.jsonl", [
+      msg({
+        role: "user",
+        content: [
+          { type: "text", text: "What does this gel show?" },
+          { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+        ],
+        timestamp: 42,
+      }),
+      // Image-only user rows (no text) must not be dropped from the replay.
+      msg({
+        role: "user",
+        content: [{ type: "image", data: "d29ybGQ=", mimeType: "image/jpeg" }],
+      }),
+    ]);
+    const history = toHistory(file);
+    expect(history[0]).toMatchObject({
+      role: "user",
+      content: "What does this gel show?",
+      images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+      timestamp: 42,
+    });
+    expect(history[1]).toMatchObject({
+      role: "user",
+      content: "",
+      images: [{ data: "d29ybGQ=", mimeType: "image/jpeg" }],
+    });
+    // Text-only user messages carry no images field at all.
+    const plain = toHistory(writeFixture("plain.jsonl", [
+      msg({ role: "user", content: [{ type: "text", text: "hi" }] }),
+    ]));
+    expect(plain[0].images).toBeUndefined();
+  });
 });

@@ -6,6 +6,7 @@ import {
   seedBuiltinAgentNotebookTools,
 } from "../src/agent/notebook-bridge.ts";
 import { readNotebookEntries } from "../src/agent/notebook-store.ts";
+import { setSessionRunId } from "../src/agent/run-ids.ts";
 import { resolvePaths } from "../src/projects.ts";
 import { PROJECTS_ROOT } from "../src/config.ts";
 
@@ -79,6 +80,63 @@ describe("makeSubagentNotebookExtension", () => {
     makeSubagentNotebookExtension("default", () => "p2")(pi.api as never);
     pi.onHandlers["tool_result"]({ toolName: "bash", details: {} });
     expect(readNotebookEntries("p2", "default")).toEqual([]);
+  });
+
+  it("stamps harvested entries with the parent's in-flight run id (tool_result)", () => {
+    const projectId = "default";
+    const parentSession = "parent-run-sync";
+    // Distinct child file per case so the module-level harvestedIds dedup never
+    // suppresses a fresh harvest.
+    const childFile = writeChildSession(projectId, "child-sync.jsonl");
+
+    setSessionRunId(parentSession, "run_y");
+    const pi = fakePi();
+    makeSubagentNotebookExtension(projectId, () => parentSession)(pi.api as never);
+    pi.onHandlers["tool_result"]({
+      toolName: "subagent",
+      details: { results: [{ agent: "stats-checker", sessionFile: childFile }] },
+    });
+    setSessionRunId(parentSession, null);
+
+    const entries = readNotebookEntries(parentSession, projectId);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].runId).toBe("run_y");
+  });
+
+  it("stamps harvested entries with the run id on subagent:async-complete", () => {
+    const projectId = "default";
+    const parentSession = "parent-run-async";
+    const childFile = writeChildSession(projectId, "child-async.jsonl");
+
+    setSessionRunId(parentSession, "run_z");
+    const pi = fakePi();
+    makeSubagentNotebookExtension(projectId, () => parentSession)(pi.api as never);
+    pi.eventHandlers["subagent:async-complete"]({
+      results: [{ agent: "scout", sessionFile: childFile }],
+    });
+    setSessionRunId(parentSession, null);
+
+    const entries = readNotebookEntries(parentSession, projectId);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].runId).toBe("run_z");
+  });
+
+  it("leaves harvested entries unstamped when no run is live", () => {
+    const projectId = "default";
+    const parentSession = "parent-no-run";
+    const childFile = writeChildSession(projectId, "child-norun.jsonl");
+
+    setSessionRunId(parentSession, null); // explicit: no run in flight
+    const pi = fakePi();
+    makeSubagentNotebookExtension(projectId, () => parentSession)(pi.api as never);
+    pi.onHandlers["tool_result"]({
+      toolName: "subagent",
+      details: { results: [{ agent: "worker", sessionFile: childFile }] },
+    });
+
+    const entries = readNotebookEntries(parentSession, projectId);
+    expect(entries).toHaveLength(1);
+    expect("runId" in entries[0]).toBe(false);
   });
 });
 

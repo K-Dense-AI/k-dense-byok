@@ -14,6 +14,7 @@ import {
   type UpdateProjectInput,
 } from "../projects.ts";
 import { projectCostSummary } from "../cost/ledger.ts";
+import { readProjectNotebooks } from "../agent/notebook-store.ts";
 import { disposeMcpClients } from "../agent/mcp.ts";
 import { seedProjectSkills } from "../agent/skills.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
@@ -72,6 +73,30 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
 
   app.get<{ Params: { projectId: string } }>("/projects/:projectId/costs", async (req) => {
     return projectCostSummary(req.params.projectId);
+  });
+
+  // Project-wide lab notebook: every session's entries merged into one
+  // chronological list (sessionId stamped per entry so the client can insert
+  // session dividers), plus a per-session summary for divider headers.
+  app.get<{ Params: { projectId: string } }>("/projects/:projectId/notebook", async (req, reply) => {
+    try {
+      const notebooks = readProjectNotebooks(req.params.projectId);
+      const entries = notebooks
+        .flatMap((nb) => nb.entries.map((e) => ({ ...e, sessionId: nb.sessionId })))
+        .sort((a, b) => a.timestamp - b.timestamp || a.sessionId.localeCompare(b.sessionId));
+      const sessions = notebooks
+        .filter((nb) => nb.entries.length > 0)
+        .map((nb) => ({
+          sessionId: nb.sessionId,
+          entryCount: nb.entries.length,
+          firstTimestamp: nb.entries[0].timestamp,
+          lastTimestamp: nb.entries[nb.entries.length - 1].timestamp,
+        }));
+      return { entries, sessions };
+    } catch (err) {
+      reply.code(400);
+      return { detail: (err as Error).message };
+    }
   });
 
   // Heavier per-project bootstrap (seed scientific skills). The frontend posts

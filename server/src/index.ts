@@ -54,7 +54,13 @@ function resolveProjectId(req: FastifyRequest): string {
 }
 
 export async function buildApp() {
-  const app = Fastify({ logger: { level: process.env.LOG_LEVEL ?? "info" } });
+  const app = Fastify({
+    logger: { level: process.env.LOG_LEVEL ?? "info" },
+    // Inline image attachments ride the JSON run body as base64 (up to 12 ×
+    // 5MB, see agent/prompt-images.ts); Fastify's default 1MB limit would
+    // reject them.
+    bodyLimit: 96 * 1024 * 1024,
+  });
 
   await app.register(fastifyCors, {
     origin: (origin, cb) => {

@@ -16,6 +16,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { resolvePaths } from "../projects.ts";
 import { stripSandboxRoot } from "./events.ts";
 import { appendNotebookEntry, type NotebookEntry } from "./notebook-store.ts";
+import { currentRunId } from "./run-ids.ts";
 
 const CodeSchema = Type.Object({
   source: Type.String({ description: "The code/snippet text" }),
@@ -51,6 +52,24 @@ export const NotebookParams = Type.Object({
     }),
   ),
   tags: Type.Optional(Type.Array(Type.String(), { description: "Free-form labels" })),
+  relatesTo: Type.Optional(
+    Type.String({
+      description:
+        "Id of an earlier notebook entry this one responds to (every notebook call returns its entry id). Pair with `stance`.",
+    }),
+  ),
+  stance: Type.Optional(
+    Type.Union(
+      [Type.Literal("supports"), Type.Literal("refutes"), Type.Literal("neutral")],
+      { description: "How this entry bears on the `relatesTo` target" },
+    ),
+  ),
+  supersedes: Type.Optional(
+    Type.String({
+      description:
+        "Id of an earlier entry this one amends or replaces — use instead of re-logging corrected content without linkage",
+    }),
+  ),
 });
 
 export type NotebookParamsT = Static<typeof NotebookParams>;
@@ -66,6 +85,7 @@ export function makeNotebookTool(
       "Log an entry to your living lab notebook — the scientist watching you works from it.",
       "Record your real reasoning as you go: a `hypothesis` when you form an idea to test, a `method` before/after you run an analysis, an `observation` when you get a result, and a `decision` when a result makes you change course.",
       "Attach `artifacts` (sandbox-relative paths) whenever an entry corresponds to a figure, table, or script you just wrote — they become clickable links in the notebook.",
+      "Every call returns the new entry's id. When a later result bears on an earlier entry, link them: `relatesTo: <id>` with a `stance` (supports/refutes/neutral). To correct an earlier entry, log a new one with `supersedes: <id>` — history is append-only.",
       "This does NOT block; it returns immediately and your run continues. Log liberally at natural milestones rather than in one dump at the end.",
     ].join("\n"),
     promptSnippet:
@@ -74,6 +94,8 @@ export function makeNotebookTool(
       "Keep a running lab notebook: call `notebook` at natural milestones — when forming a hypothesis, before and after running an analysis, and whenever a result changes your plan.",
       "Prefer several small, timely entries over one big summary at the end; the user watches the notebook fill in as you work.",
       "Attach `artifacts` for any entry tied to a file you wrote (figure, table, script) so the notebook links to the real output.",
+      "Thread the narrative: when an observation tests an earlier hypothesis, log it with `relatesTo: <that entry's id>` and a `stance` (supports/refutes/neutral); when a decision follows from evidence, relate it to the observation. Entry ids come back in each notebook tool result.",
+      "Never rewrite history — to correct an earlier entry, log a new entry with `supersedes: <its id>`.",
     ],
     parameters: NotebookParams,
     execute: async (toolCallId, params, _signal) => {
@@ -83,6 +105,9 @@ export function makeNotebookTool(
       const sandboxRoot = resolvePaths(projectId).sandbox;
       const artifacts = params.artifacts?.map((a) => stripSandboxRoot(a, sandboxRoot));
 
+      // Server-stamped fields go AFTER the spread: NotebookParams allows
+      // additional properties, so a model-supplied `runId`/`id`/`role` in
+      // params must not survive into the stored row.
       const entry: NotebookEntry = {
         ...params,
         title,
@@ -90,6 +115,7 @@ export function makeNotebookTool(
         id: toolCallId,
         timestamp: Date.now(),
         role: "agent",
+        runId: currentRunId(getSessionId()),
       };
       try {
         appendNotebookEntry(getSessionId(), entry, projectId);
@@ -106,7 +132,12 @@ export function makeNotebookTool(
         };
       }
       return {
-        content: [{ type: "text" as const, text: `logged notebook entry ${toolCallId}` }],
+        content: [
+          {
+            type: "text" as const,
+            text: `logged notebook entry (id: ${toolCallId}) — reference this id in relatesTo/supersedes to link later entries`,
+          },
+        ],
         details: { logged: true },
       };
     },

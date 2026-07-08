@@ -16,6 +16,7 @@ import {
   SKILL_NAME_RE,
 } from "../agent/skills.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
+import { getSystemStats } from "../system-stats.ts";
 
 const GITHUB_REPO = "K-Dense-AI/k-dense-byok";
 const VERSION_CACHE_TTL_MS = 60 * 60 * 1000; // re-check at most once per hour
@@ -59,6 +60,10 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
       return { latestVersion: null };
     }
   });
+
+  // Live host-resource snapshot for the header monitor. Global (not
+  // project-scoped); polled by the UI every few seconds.
+  app.get("/system/resources", async () => getSystemStats());
 
   app.get("/skills", async () => {
     return listProjectSkills(activePaths()).map((s) => ({

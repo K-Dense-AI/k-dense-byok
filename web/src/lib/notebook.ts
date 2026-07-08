@@ -15,6 +15,8 @@ const ENTRY_TYPES: readonly NotebookEntryType[] = [
   "hypothesis", "method", "observation", "decision", "note",
 ];
 
+export type NotebookStance = "supports" | "refutes" | "neutral";
+
 export interface NotebookEntry {
   id: string;
   type: NotebookEntryType;
@@ -26,13 +28,25 @@ export interface NotebookEntry {
   tags?: string[];
   timestamp: number;
   role?: string;
+  /** Id of an earlier entry this one responds to (threading). */
+  relatesTo?: string;
+  stance?: NotebookStance;
+  /** Id of an earlier entry this one amends/replaces. */
+  supersedes?: string;
+  /** Server-stamped id of the /run invocation (run dividers). */
+  runId?: string;
+  /** Present only in project-scope responses. */
+  sessionId?: string;
 }
 
 function isEntryType(v: unknown): v is NotebookEntryType {
   return typeof v === "string" && (ENTRY_TYPES as readonly string[]).includes(v);
 }
 
-export function parseNotebookFrame(frame: AgentFrame): NotebookEntry | null {
+export function parseNotebookFrame(
+  frame: AgentFrame,
+  runId?: string,
+): NotebookEntry | null {
   if (frame.type !== "tool_start" || frame.toolName !== "notebook") return null;
   const a = frame.args as Record<string, unknown> | undefined;
   if (!a || !isEntryType(a.type)) return null;
@@ -58,7 +72,18 @@ export function parseNotebookFrame(frame: AgentFrame): NotebookEntry | null {
         ? a.confidence
         : undefined,
     tags: Array.isArray(a.tags) ? a.tags.map(String) : undefined,
+    relatesTo:
+      typeof a.relatesTo === "string" && a.relatesTo.trim() ? a.relatesTo.trim() : undefined,
+    stance:
+      a.stance === "supports" || a.stance === "refutes" || a.stance === "neutral"
+        ? a.stance
+        : undefined,
+    supersedes:
+      typeof a.supersedes === "string" && a.supersedes.trim() ? a.supersedes.trim() : undefined,
     timestamp: Date.now(),
+    // Provisional stamp from the run_start frame; the authoritative refetch
+    // (server-stamped runId) wins on merge.
+    ...(runId ? { runId } : {}),
   };
 }
 

@@ -13,6 +13,8 @@ import { activePaths, resolvePaths } from "../projects.ts";
 export type NotebookEntryType =
   | "hypothesis" | "method" | "observation" | "decision" | "note";
 
+export type NotebookStance = "supports" | "refutes" | "neutral";
+
 export interface NotebookCode {
   source: string;
   lang?: string;
@@ -26,17 +28,29 @@ export interface NotebookEntryInput {
   code?: NotebookCode;
   confidence?: "low" | "medium" | "high";
   tags?: string[];
+  /** Id of an earlier entry this one responds to (threading). */
+  relatesTo?: string;
+  /** How this entry bears on relatesTo. */
+  stance?: NotebookStance;
+  /** Id of an earlier entry this one amends/replaces (append-only history). */
+  supersedes?: string;
 }
 
 export interface NotebookEntry extends NotebookEntryInput {
   id: string;
   timestamp: number;
   role: string;
+  /** Server-stamped id of the /run invocation that produced this entry. */
+  runId?: string;
+}
+
+/** Session ids become filenames; they arrive raw from URLs. Reject traversal. */
+export function isValidSessionId(sessionId: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sessionId);
 }
 
 export function notebookPath(sessionId: string, projectId?: string): string {
-  // Session id becomes a filename; it arrives raw from the URL. Reject traversal.
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(sessionId)) {
+  if (!isValidSessionId(sessionId)) {
     throw new Error(`Invalid session id: ${sessionId}`);
   }
   const paths = projectId ? resolvePaths(projectId) : activePaths();
@@ -53,11 +67,7 @@ export function appendNotebookEntry(
   fs.appendFileSync(file, JSON.stringify(entry) + "\n", "utf-8");
 }
 
-export function readNotebookEntries(
-  sessionId: string,
-  projectId?: string,
-): NotebookEntry[] {
-  const file = notebookPath(sessionId, projectId);
+function parseNotebookFile(file: string): NotebookEntry[] {
   let raw: string;
   try {
     raw = fs.readFileSync(file, "utf-8");
@@ -73,6 +83,39 @@ export function readNotebookEntries(
     } catch {
       // Skip a truncated/corrupt row rather than failing the whole read.
     }
+  }
+  return out;
+}
+
+export function readNotebookEntries(
+  sessionId: string,
+  projectId?: string,
+): NotebookEntry[] {
+  return parseNotebookFile(notebookPath(sessionId, projectId));
+}
+
+export interface SessionNotebook {
+  sessionId: string;
+  entries: NotebookEntry[];
+}
+
+/** All per-session notebooks in a project, one array per JSONL file. */
+export function readProjectNotebooks(projectId: string): SessionNotebook[] {
+  const dir = resolvePaths(projectId).notebookDir;
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir);
+  } catch (exc) {
+    if ((exc as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw exc;
+  }
+  const out: SessionNotebook[] = [];
+  // The .jsonl filter also excludes the <id>.annotations.json sidecars.
+  for (const f of files.sort()) {
+    if (!f.endsWith(".jsonl")) continue;
+    const sessionId = f.slice(0, -".jsonl".length);
+    if (!isValidSessionId(sessionId)) continue;
+    out.push({ sessionId, entries: parseNotebookFile(path.join(dir, f)) });
   }
   return out;
 }

@@ -61,6 +61,22 @@ function entryFromArgs(
         ? args.confidence
         : undefined,
     tags: Array.isArray(args.tags) ? args.tags.map(String) : undefined,
+    // Link targets are the child's own (raw) tool-call ids; namespace them the
+    // same way entry ids are namespaced below so intra-subagent threads still
+    // resolve after harvest. `runId` is never read from args — it is stamped
+    // by the parent at append time (notebook-bridge).
+    relatesTo:
+      typeof args.relatesTo === "string" && args.relatesTo.trim()
+        ? `${role}:${args.relatesTo.trim()}`
+        : undefined,
+    stance:
+      args.stance === "supports" || args.stance === "refutes" || args.stance === "neutral"
+        ? args.stance
+        : undefined,
+    supersedes:
+      typeof args.supersedes === "string" && args.supersedes.trim()
+        ? `${role}:${args.supersedes.trim()}`
+        : undefined,
   };
 }
 

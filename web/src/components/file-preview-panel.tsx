@@ -1828,6 +1828,10 @@ export interface FilePreviewPanelProps {
   notebookStreaming: boolean;
   notebookSubagentCompletions: number;
   onOpenNotebookFile: (path: string) => void;
+  /** Deep-link target from a chat notebook chip (token forces re-focus). */
+  notebookFocus?: { id: string; token: number } | null;
+  /** Scroll the chat transcript to a notebook entry's tool call. */
+  onNotebookJumpToChat?: (entryId: string) => void;
 }
 
 export function FilePreviewPanel({
@@ -1848,6 +1852,8 @@ export function FilePreviewPanel({
   notebookStreaming,
   notebookSubagentCompletions,
   onOpenNotebookFile,
+  notebookFocus,
+  onNotebookJumpToChat,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
   const [tabModes, setTabModes] = useState<Record<string, PanelMode>>({});
@@ -1929,6 +1935,8 @@ export function FilePreviewPanel({
           streaming={notebookStreaming}
           subagentCompletions={notebookSubagentCompletions}
           onOpenFile={onOpenNotebookFile}
+          focusEntry={notebookFocus}
+          onJumpToChat={onNotebookJumpToChat}
         />
       ) : (
       <>

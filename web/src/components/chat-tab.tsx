@@ -20,6 +20,7 @@ import {
   PromptInputFooter,
   PromptInputSubmit,
   PromptInputProvider,
+  usePromptInputAttachments,
   usePromptInputController,
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
@@ -41,10 +42,17 @@ import { buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { CitationBadge } from "@/components/citation-badge";
-import { ReasoningBlock, ToolActivityList } from "@/components/tool-activity";
+import { NotebookEntryChip, ReasoningBlock, ToolActivityList } from "@/components/tool-activity";
 import { InterviewCard } from "@/components/interview-form";
 import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
+import {
+  INLINE_IMAGE_ACCEPT,
+  isInlineImage,
+  MAX_PROMPT_IMAGES,
+  promptImagesFromParts,
+  type PromptImage,
+} from "@/lib/image-attachments";
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
 import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
 import type { NotebookEntry } from "@/lib/notebook";
@@ -54,6 +62,7 @@ import {
   CheckIcon,
   CopyIcon,
   DatabaseIcon,
+  ImageIcon,
   ListOrderedIcon,
   PaperclipIcon,
   SparklesIcon,
@@ -84,6 +93,8 @@ interface QueuedMessage {
   databases: Database[];
   skills: Skill[];
   files: string[];
+  /** Inline image attachments captured at enqueue time. */
+  images: PromptImage[];
   /** Selected Modal compute instance id at enqueue time (null = local). */
   computeTarget: string | null;
   /** Thinking level at enqueue time (null = model doesn't support one). */
@@ -206,7 +217,19 @@ function PromptDropZone({
         const { files, paths } = await traverseDroppedEntries(e.dataTransfer.items);
         if (files.length > 0) onFilesUpload(files, paths);
       } else if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-        onFilesUpload(e.dataTransfer.files);
+        // Viewable images attach inline so the model sees them directly;
+        // data files (TIFF, CSV, h5ad, …) upload into the sandbox as before.
+        const dropped = [...e.dataTransfer.files];
+        const inline = dropped.filter((f) => isInlineImage(f.type));
+        const rest = dropped.filter((f) => !isInlineImage(f.type));
+        const capacity = Math.max(
+          0,
+          MAX_PROMPT_IMAGES - controller.attachments.files.length,
+        );
+        if (inline.length > 0 && capacity > 0) {
+          controller.attachments.add(inline.slice(0, capacity));
+        }
+        if (rest.length > 0) onFilesUpload(rest);
       }
     },
     [controller, onFileDrop, onFilesUpload],
@@ -234,6 +257,40 @@ function PromptDropZone({
       <div className={cn("transition-all duration-150", isOsDrag && "opacity-40 pointer-events-none")}>
         {children}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Thumbnails for images attached to the next message (pasted, dropped, or
+ * picked). They ride the run body as inline image blocks the model sees
+ * directly — unlike file chips, which reference sandbox paths.
+ * Must be rendered inside <PromptInput>.
+ */
+function ImageAttachmentsRow() {
+  const attachments = usePromptInputAttachments();
+  const images = attachments.files.filter((f) => isInlineImage(f.mediaType));
+  if (images.length === 0) return null;
+  return (
+    <div className="flex w-full flex-wrap gap-2 px-3 pt-2.5">
+      {images.map((f) => (
+        <div key={f.id} className="group relative">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={f.url}
+            alt={f.filename ?? "attached image"}
+            className="h-16 w-16 rounded-lg border object-cover"
+          />
+          <button
+            type="button"
+            onClick={() => attachments.remove(f.id)}
+            aria-label={`Remove ${f.filename ?? "attached image"}`}
+            className="absolute -right-1.5 -top-1.5 rounded-full border bg-background p-0.5 text-muted-foreground shadow-sm transition-colors hover:text-destructive"
+          >
+            <XIcon className="size-3" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }
@@ -345,6 +402,12 @@ function MessageQueueDisplay({
                           {item.files.length}
                         </span>
                       )}
+                      {item.images.length > 0 && (
+                        <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <ImageIcon className="size-2.5" />
+                          {item.images.length}
+                        </span>
+                      )}
                       {item.databases.length > 0 && (
                         <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           <DatabaseIcon className="size-2.5" />
@@ -421,7 +484,7 @@ function ChatInput({
   onAddFile: (path: string) => void;
   onRemoveFile: (path: string) => void;
   onClearFiles: () => void;
-  onSend: (text: string, intent: SendIntent) => void;
+  onSend: (text: string, intent: SendIntent, images: PromptImage[]) => void;
   pendingSteers: string[];
   composerRestoreRef: MutableRefObject<((text: string) => void) | null>;
   inlineError: string | null;
@@ -488,22 +551,38 @@ function ChatInput({
     }
   }, [onUploadFiles, onAddFile, allSkills, selectedSkills, onSkillsChange]);
 
-  // Wrap onSubmit to append attached file paths and database/skills context,
-  // then clear chips.
+  // Attachment problems (wrong type, too many, too big) and image-only
+  // submissions surface here, next to the steer error banner.
+  const [attachError, setAttachError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!attachError) return;
+    const t = window.setTimeout(() => setAttachError(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [attachError]);
+
+  // Wrap onSubmit to convert inline image attachments and append attached
+  // file paths and database/skills context, then clear chips. Returning
+  // false keeps the composer text + attachments for a retry.
   const handleSubmit = useCallback<Parameters<typeof PromptInput>[0]["onSubmit"]>(
-    (msg, event) => {
+    async (msg, event) => {
       const intent: SendIntent = queueIntentRef.current ? "queue" : "auto";
       queueIntentRef.current = false;
       if (budgetBlocked) {
         event?.preventDefault();
-        return;
+        return false;
       }
       const refs = attachedFiles.length > 0 ? "\n" + attachedFiles.join("\n") : "";
       const dbCtx = buildDatabaseContext(selectedDbs);
       const skillsCtx = buildSkillsContext(selectedSkills);
       const baseText = msg.text ?? "";
-      if (!baseText.trim() && attachedFiles.length === 0) return;
-      onSend(baseText + refs + dbCtx + skillsCtx, intent);
+      if (!baseText.trim() && attachedFiles.length === 0) {
+        if (msg.files.length > 0) {
+          setAttachError("Add a short note to send with the image.");
+        }
+        return false;
+      }
+      const images = await promptImagesFromParts(msg.files);
+      onSend(baseText + refs + dbCtx + skillsCtx, intent, images);
       onClearFiles();
     },
     [budgetBlocked, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
@@ -658,12 +737,12 @@ function ChatInput({
           <MessageQueueDisplay queue={queuedMessages} steering={pendingSteers} onRemove={onRemoveFromQueue} />
         )}
 
-        {inlineError && (
+        {(inlineError || attachError) && (
           <div
             role="alert"
             className="mb-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
           >
-            {inlineError}
+            {inlineError ?? attachError}
           </div>
         )}
 
@@ -675,7 +754,30 @@ function ChatInput({
           />
         )}
 
-        <PromptInput onSubmit={handleSubmit} className="rounded-xl border shadow-sm">
+        <PromptInput
+          onSubmit={handleSubmit}
+          // Inline attachments are for images the model should SEE; other
+          // files reach the agent through the sandbox-upload path instead.
+          accept={INLINE_IMAGE_ACCEPT}
+          multiple
+          maxFiles={MAX_PROMPT_IMAGES}
+          maxFileSize={20 * 1024 * 1024}
+          // The wrapping PromptDropZone owns drop routing (images inline,
+          // data files to the sandbox); disable the built-in form handler
+          // so drops aren't double-added.
+          disableFormDrop
+          onError={(err) =>
+            setAttachError(
+              err.code === "accept"
+                ? "Only PNG, JPEG, WebP, or GIF attach to the message — use + to add other files to the sandbox."
+                : err.code === "max_files"
+                  ? `At most ${MAX_PROMPT_IMAGES} images per message.`
+                  : "Image is too large (20MB max).",
+            )
+          }
+          className="rounded-xl border shadow-sm"
+        >
+          <ImageAttachmentsRow />
           <ContextChipsBar
             attachedFiles={attachedFiles}
             onRemoveFile={onRemoveFile}
@@ -797,19 +899,21 @@ function AssistantMessageBody({
   message,
   isStreaming,
   sessionId,
+  onViewInNotebook,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   sessionId: string | null;
+  onViewInNotebook?: (entryId: string) => void;
 }) {
   const activities = message.activities ?? [];
   const hasReasoning = Boolean(message.reasoning?.trim());
   const hasAnything =
     Boolean(message.content) || activities.length > 0 || hasReasoning;
 
-  // Interview tool calls render as interactive forms, in stream order between
-  // the surrounding tool cards (consecutive non-interview calls are chunked
-  // into one ToolActivityList).
+  // Interview tool calls render as interactive forms, and notebook calls as
+  // compact pointer chips, in stream order between the surrounding tool cards
+  // (consecutive other calls are chunked into one ToolActivityList).
   const activityBlocks: ReactNode[] = [];
   let chunk: ActivityItem[] = [];
   const flushChunk = () => {
@@ -823,6 +927,11 @@ function AssistantMessageBody({
     if (a.toolName === "interview") {
       flushChunk();
       activityBlocks.push(<InterviewCard key={a.id} item={a} sessionId={sessionId} />);
+    } else if (a.toolName === "notebook") {
+      flushChunk();
+      activityBlocks.push(
+        <NotebookEntryChip key={a.id} item={a} onView={onViewInNotebook} />,
+      );
     } else {
       chunk.push(a);
     }
@@ -887,6 +996,12 @@ export interface ChatTabHandle {
    * nowhere to render its output.
    */
   stop: () => void;
+  /**
+   * Scroll the transcript to a tool call's chip and flash it (notebook →
+   * chat deep link; the notebook entry id IS the tool-call id). Returns
+   * false when the chip isn't in this tab's transcript.
+   */
+  scrollToToolCall: (toolCallId: string) => boolean;
 }
 
 export interface ChatTabProps {
@@ -907,6 +1022,8 @@ export interface ChatTabProps {
   budgetTotalUsd: number;
   budgetLimitUsd: number | null;
   onMetaChange: (tabId: string, meta: ChatTabMeta) => void;
+  /** Open the Lab Notebook panel focused on this entry (chat → notebook). */
+  onViewInNotebook?: (entryId: string) => void;
 }
 
 export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
@@ -924,11 +1041,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     budgetTotalUsd,
     budgetLimitUsd,
     onMetaChange,
+    onViewInNotebook,
   },
   ref,
 ) {
   const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession, notebookEntries, subagentCompletions } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
+  // Scopes the deep-link querySelector to THIS tab's transcript.
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // Reopened tab: hydrate the transcript from the stored session before any
   // sends. loadSession refuses to run once the tab is bound to a session, so
@@ -1030,6 +1150,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         next.model.fusionConfig,
         next.computeTarget ?? undefined,
         next.thinkingLevel ?? undefined,
+        next.images.length > 0 ? next.images : undefined,
       );
     }, 0);
     return () => window.clearTimeout(id);
@@ -1065,7 +1186,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   ]);
 
   const enqueue = useCallback(
-    (trimmed: string) => {
+    (trimmed: string, images: PromptImage[] = []) => {
       if (messageQueue.length >= MAX_QUEUE) return;
       setMessageQueue((prev) => [
         ...prev,
@@ -1081,6 +1202,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           databases: [...selectedDbs],
           skills: [...selectedSkills],
           files: [...attachedFiles],
+          images,
           computeTarget: selectedComputeTarget?.id ?? null,
           thinkingLevel: thinkingDisabled ? null : thinkingLevel,
           timestamp: Date.now(),
@@ -1091,7 +1213,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   );
 
   const handleSend = useCallback(
-    async (text: string, intent: SendIntent) => {
+    async (text: string, intent: SendIntent, images: PromptImage[] = []) => {
       if (budgetState === "exceeded") return;
       const trimmed = text.trim();
       if (!trimmed) return;
@@ -1107,10 +1229,16 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           selectedModel.fusionConfig,
           selectedComputeTarget?.id,
           thinkingDisabled ? undefined : thinkingLevel,
+          images.length > 0 ? images : undefined,
         );
-      const route = routeSubmit(isStreaming, intent);
+      // Steering is a text-only side channel; an image message sent during a
+      // live run waits its turn in the queue instead.
+      const route =
+        images.length > 0 && routeSubmit(isStreaming, intent) === "steer"
+          ? "queue"
+          : routeSubmit(isStreaming, intent);
       if (route === "queue") {
-        enqueue(trimmed);
+        enqueue(trimmed, images);
         return;
       }
       if (route === "steer") {
@@ -1155,6 +1283,16 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     ref,
     () => ({
       stop,
+      scrollToToolCall: (toolCallId: string) => {
+        const el = rootRef.current?.querySelector(
+          `[data-tool-call-id="${CSS.escape(toolCallId)}"]`,
+        );
+        if (!el) return false;
+        el.scrollIntoView({ block: "center", behavior: "smooth" });
+        el.classList.add("kady-flash");
+        setTimeout(() => el.classList.remove("kady-flash"), 1800);
+        return true;
+      },
       sendQuick: async (prompt: string) => {
         if (budgetState === "exceeded") return;
         await send(
@@ -1206,6 +1344,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   // instance alive, so all hooks above this branch keep running.
   return (
     <div
+      ref={rootRef}
       className={cn(
         "flex flex-1 flex-col min-h-0 overflow-hidden",
         !isActive && "hidden",
@@ -1227,9 +1366,25 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                       message={message}
                       isStreaming={isStreaming}
                       sessionId={sessionId}
+                      onViewInNotebook={onViewInNotebook}
                     />
                   ) : (
-                    <MessageResponse>{message.content}</MessageResponse>
+                    <>
+                      {message.images && message.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {message.images.map((img, i) => (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={i}
+                              src={`data:${img.mimeType};base64,${img.data}`}
+                              alt={`Attached image ${i + 1}`}
+                              className="max-h-56 max-w-64 rounded-lg border object-contain"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      <MessageResponse>{message.content}</MessageResponse>
+                    </>
                   )}
                   {message.role === "assistant" && message.modelVersion && (
                     <span className="text-xs text-muted-foreground mt-1">

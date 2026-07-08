@@ -22,6 +22,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { resolvePaths, type ProjectPaths } from "../projects.ts";
 import { appendNotebookEntry } from "./notebook-store.ts";
 import { notebookEntriesFromSessionFile } from "./notebook-harvest.ts";
+import { currentRunId } from "./run-ids.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -178,6 +179,13 @@ export function makeSubagentNotebookExtension(
     const parentSession = getSessionId();
     if (!parentSession) return;
     const sandboxRoot = resolvePaths(projectId).sandbox;
+    // Attribute harvested entries to the parent's in-flight run. Sync harvests
+    // always happen mid-run; an async child that completes after the run ends
+    // is left unstamped — and one that completes during a LATER run of this
+    // session gets that run's id (no correlation exists in the payload; see
+    // run-ids.ts). Dedup means an entry harvested unstamped is never
+    // re-appended with a runId later.
+    const runId = currentRunId(parentSession);
     for (const r of results ?? []) {
       if (!r.agent || !r.sessionFile) continue;
       const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent, sandboxRoot);
@@ -186,7 +194,7 @@ export function makeSubagentNotebookExtension(
         if (harvestedIds.has(dedupKey)) continue;
         harvestedIds.add(dedupKey);
         if (harvestedIds.size > 5000) harvestedIds.clear();
-        appendNotebookEntry(parentSession, entry, projectId);
+        appendNotebookEntry(parentSession, runId ? { ...entry, runId } : entry, projectId);
       }
     }
   };

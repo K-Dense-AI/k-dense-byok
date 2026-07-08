@@ -34,3 +34,57 @@ describe("notebookToMarkdown", () => {
     expect(md).toContain("print('hi')");
   });
 });
+
+describe("notebookToMarkdown attribution + thread links", () => {
+  const linked: NotebookEntry[] = [
+    { id: "h1", type: "hypothesis", title: "Six types", timestamp: 1000, role: "agent" },
+    { id: "o1", type: "observation", title: "ARI 0.99", timestamp: 2000, role: "stats-checker",
+      relatesTo: "h1", stance: "supports" },
+    { id: "d1", type: "decision", title: "Use k=6", timestamp: 3000, role: "agent",
+      supersedes: "h1" },
+  ];
+  const md = notebookToMarkdown(linked, { sessionId: "sess-2" });
+
+  it("attributes each entry with `by <role>`", () => {
+    expect(md).toMatch(/by agent/);
+    expect(md).toMatch(/by stats-checker/);
+  });
+
+  it("renders a relatesTo line with the stance and target title", () => {
+    expect(md).toContain("↳ supports “Six types” (h1)");
+  });
+
+  it("renders a supersedes line with the target title", () => {
+    expect(md).toContain("↺ supersedes “Six types” (h1)");
+  });
+
+  it("marks the superseded target entry", () => {
+    expect(md).toContain("⚠ superseded by “Use k=6”");
+  });
+});
+
+describe("notebookToMarkdown artifact rewriting", () => {
+  const withArtifacts: NotebookEntry[] = [
+    { id: "x", type: "observation", title: "fig", timestamp: 1, role: "agent",
+      artifacts: ["figures/a.png", "data/t.csv"] },
+  ];
+
+  it("rewrites artifact link targets via artifactHref", () => {
+    const md = notebookToMarkdown(withArtifacts, {
+      sessionId: "s",
+      artifactHref: (p) => `artifacts/${p}`,
+    });
+    expect(md).toContain("![a.png](artifacts/figures/a.png)");
+    expect(md).toContain("[data/t.csv](artifacts/data/t.csv)");
+  });
+
+  it("notes a missing artifact instead of linking it", () => {
+    const md = notebookToMarkdown(
+      [{ id: "x", type: "observation", title: "fig", timestamp: 1, role: "agent",
+         artifacts: ["figures/gone.png"] }],
+      { sessionId: "s", missingArtifacts: new Set(["figures/gone.png"]) },
+    );
+    expect(md).toContain("`figures/gone.png` _(artifact missing at export time)_");
+    expect(md).not.toContain("![gone.png]");
+  });
+});

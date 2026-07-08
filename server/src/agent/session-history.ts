@@ -19,6 +19,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   /** Prompt text — user messages only. */
   content?: string;
+  /** Inline image attachments (base64 + mime type) — user messages only. */
+  images?: { data: string; mimeType: string }[];
   /** Ordered replay frames — assistant messages only. */
   frames?: ClientFrame[];
   /** Wall-clock ms of the underlying log row, when recorded. */
@@ -35,6 +37,19 @@ function capResult(parts: { type: string; text?: string }[] | undefined): string
     .join("")
     .trim();
   return text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) + "…" : text;
+}
+
+/** Inline image parts of a user message (prompt attachments). */
+function imagesOf(content: { type: string }[]): { data: string; mimeType: string }[] {
+  const out: { data: string; mimeType: string }[] = [];
+  for (const part of content ?? []) {
+    if (part.type !== "image") continue;
+    const { data, mimeType } = part as { data?: unknown; mimeType?: unknown };
+    if (typeof data === "string" && typeof mimeType === "string") {
+      out.push({ data, mimeType });
+    }
+  }
+  return out;
 }
 
 export function toHistory(file: string, sandboxRoot = ""): HistoryMessage[] {
@@ -54,8 +69,14 @@ export function toHistory(file: string, sandboxRoot = ""): HistoryMessage[] {
     const m = row.message;
     if (m.role === "user") {
       const text = textOf(m.content);
-      if (!text) continue;
-      out.push({ role: "user", content: text, timestamp: m.timestamp });
+      const images = imagesOf(m.content);
+      if (!text && images.length === 0) continue;
+      out.push({
+        role: "user",
+        content: text,
+        ...(images.length > 0 ? { images } : {}),
+        timestamp: m.timestamp,
+      });
       assistant = null;
       continue;
     }

@@ -76,4 +76,44 @@ describe("notebookEntriesFromSessionFile", () => {
     const got = notebookEntriesFromSessionFile(f, "a");
     expect(got.map((e) => e.title)).toEqual(["kept"]);
   });
+
+  it("namespaces relatesTo/supersedes with the agent name, keeps a valid stance, ignores runId", () => {
+    const f = writeSession("s3.jsonl", [
+      asstRow([
+        toolCall("toolu_10", "notebook", {
+          type: "observation",
+          title: "linked",
+          relatesTo: "toolu_1",
+          stance: "supports",
+          supersedes: "toolu_0",
+          runId: "run_injected",
+        }),
+      ]),
+    ]);
+    const got = notebookEntriesFromSessionFile(f, "scout");
+    expect(got[0]).toMatchObject({
+      relatesTo: "scout:toolu_1",
+      supersedes: "scout:toolu_0",
+      stance: "supports",
+    });
+    // runId is stamped by the parent at append time — never read from child args.
+    expect("runId" in got[0]).toBe(false);
+    expect(got[0].runId).toBeUndefined();
+  });
+
+  it("drops an invalid stance value", () => {
+    const f = writeSession("s4.jsonl", [
+      asstRow([
+        toolCall("toolu_11", "notebook", {
+          type: "observation",
+          title: "bad stance",
+          relatesTo: "toolu_1",
+          stance: "maybe",
+        }),
+      ]),
+    ]);
+    const got = notebookEntriesFromSessionFile(f, "scout");
+    expect(got[0].relatesTo).toBe("scout:toolu_1");
+    expect(got[0].stance).toBeUndefined();
+  });
 });

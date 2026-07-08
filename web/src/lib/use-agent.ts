@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch, onProjectChange } from "@/lib/projects";
 
+import type { PromptImage } from "./image-attachments";
 import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./notebook";
 
 // Keep the full tool-call trace per message: scientists rely on it to see and
@@ -52,6 +53,8 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** Inline image attachments — user messages only. */
+  images?: PromptImage[];
   activities?: ActivityItem[];
   reasoning?: string;
   modelVersion?: string;
@@ -232,6 +235,7 @@ export function applyFrameToTranscript(
 interface HistoryItem {
   role: "user" | "assistant";
   content?: string;
+  images?: PromptImage[];
   frames?: AgentFrame[];
   timestamp?: number;
 }
@@ -248,14 +252,16 @@ export function buildRunBody(opts: {
   fusionConfig?: Record<string, unknown>;
   computeTarget?: string;
   thinkingLevel?: string;
+  images?: PromptImage[];
 }): Record<string, unknown> {
-  const { message, model, fusionConfig, computeTarget, thinkingLevel } = opts;
+  const { message, model, fusionConfig, computeTarget, thinkingLevel, images } = opts;
   return {
     message,
     ...(model ? { model } : {}),
     ...(fusionConfig ? { fusionConfig } : {}),
     ...(computeTarget && computeTarget !== "local" ? { computeTarget } : {}),
     ...(thinkingLevel ? { thinkingLevel } : {}),
+    ...(images && images.length > 0 ? { images } : {}),
   };
 }
 
@@ -304,6 +310,7 @@ export function useAgent() {
             id: nextId(),
             role: "user",
             content: item.content ?? "",
+            ...(item.images && item.images.length > 0 ? { images: item.images } : {}),
             timestamp,
           });
           continue;
@@ -378,6 +385,7 @@ export function useAgent() {
     // into the prompt text by the caller. `computeTarget` is the selected Modal
     // instance id, forwarded so the modal_run tool defaults to it. `thinkingLevel`
     // is the extended-thinking level ("off" / "minimal" / "low" / "medium" / "high" / "xhigh").
+    // `images` are inline attachments that ride the user message as image blocks.
     async (
       text: string,
       model?: string,
@@ -385,6 +393,7 @@ export function useAgent() {
       fusionConfig?: Record<string, unknown>,
       computeTarget?: string,
       thinkingLevel?: string,
+      images?: PromptImage[],
     ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
       sendClaimRef.current = true;
@@ -396,7 +405,13 @@ export function useAgent() {
       setMessages((prev) => {
         transcript = [
           ...prev,
-          { id: userMsgId, role: "user", content: text, timestamp: Date.now() },
+          {
+            id: userMsgId,
+            role: "user",
+            content: text,
+            ...(images && images.length > 0 ? { images } : {}),
+            timestamp: Date.now(),
+          },
           { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
         ];
         return transcript;
@@ -413,7 +428,14 @@ export function useAgent() {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(
-              buildRunBody({ message: text, model, fusionConfig, computeTarget, thinkingLevel }),
+              buildRunBody({
+                message: text,
+                model,
+                fusionConfig,
+                computeTarget,
+                thinkingLevel,
+                images,
+              }),
             ),
             signal: controller.signal,
           });
@@ -432,6 +454,9 @@ export function useAgent() {
         if (!reader) throw new Error("No response body");
         const decoder = new TextDecoder();
         let buffer = "";
+        // Synthetic route-level frame at stream open; provisional notebook
+        // entries are stamped with it so run dividers render live.
+        let currentRunId: string | undefined;
 
         while (true) {
           const { done, value } = await reader.read();
@@ -445,7 +470,10 @@ export function useAgent() {
             if (!jsonStr) continue;
             try {
               const frame = JSON.parse(jsonStr) as AgentFrame;
-              const nb = parseNotebookFrame(frame);
+              if (frame.type === "run_start" && typeof frame.runId === "string") {
+                currentRunId = frame.runId;
+              }
+              const nb = parseNotebookFrame(frame, currentRunId);
               if (nb) setNotebookEntries((prev) => mergeNotebookEntries(prev, [nb]));
               if (frame.type === "tool_end" && frame.toolName === "subagent") {
                 setSubagentCompletions((n) => n + 1);

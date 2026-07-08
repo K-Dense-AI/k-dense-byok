@@ -159,3 +159,18 @@
 .animate-sync-flash {
   animation: sync-flash 2s ease-out forwards;
 }
+/* Brief highlight for deep-link targets (chat tool chips / notebook entries). */
+.kady-flash {
+  box-shadow: 0 0 0 2px var(--ring);
+  border-radius: 0.5rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .kady-flash {
+    animation: kady-flash-pulse 1.6s ease-out forwards;
+  }
+  @keyframes kady-flash-pulse {
+    0% { box-shadow: 0 0 0 3px var(--ring); }
+    50% { box-shadow: 0 0 0 2px var(--ring); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+}

@@ -48,6 +48,12 @@ describe("buildRunBody", () => {
       fusionConfig,
     });
   });
+
+  it("includes images when present and omits an empty list", () => {
+    const images = [{ data: "aGVsbG8=", mimeType: "image/png" }];
+    expect(buildRunBody({ message: "hi", images })).toEqual({ message: "hi", images });
+    expect(buildRunBody({ message: "hi", images: [] })).toEqual({ message: "hi" });
+  });
 });
 
 describe("useAgent notebook accumulation", () => {

@@ -8,7 +8,7 @@ export interface CostEntry {
   entryId: string;
   ts: number;
   sessionId: string;
-  role: "agent" | "subagent" | string;
+  role: "agent" | "subagent" | "compute" | string;
   model: string;
   promptTokens: number;
   completionTokens: number;
@@ -23,6 +23,7 @@ export interface SessionCostSummary {
   totalTokens: number;
   agentUsd: number;
   subagentUsd: number;
+  computeUsd: number;
   entries: CostEntry[];
 }
 
@@ -32,6 +33,7 @@ const EMPTY: SessionCostSummary = {
   totalTokens: 0,
   agentUsd: 0,
   subagentUsd: 0,
+  computeUsd: 0,
   entries: [],
 };
 

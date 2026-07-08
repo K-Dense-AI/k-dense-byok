@@ -17,6 +17,7 @@ function makeSummary(overrides: Partial<SessionCostSummary> = {}): SessionCostSu
     totalTokens: 0,
     agentUsd: 0,
     subagentUsd: 0,
+    computeUsd: 0,
     entries: [],
     ...overrides,
   };
