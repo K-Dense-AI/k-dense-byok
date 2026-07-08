@@ -46,7 +46,20 @@ export function useNotebookAnnotations(sessionId: string | null, enabled: boolea
         if (!res.ok) return; // absent sidecar → keep empty envelope
         const data = normalizeDoc(await res.json());
         if (!cancelled && sessionId === currentSessionRef.current) {
-          setDoc(data);
+          // Merge rather than replace: an optimistic mutation made while this
+          // GET was in flight (e.g. a note added right after opening the
+          // notebook) must not be clobbered by the server's older copy.
+          setDoc((cur) => {
+            if (cur.annotations.length === 0) return data;
+            const serverIds = new Set(data.annotations.map((a) => a.id));
+            return {
+              version: 1,
+              annotations: [
+                ...data.annotations,
+                ...cur.annotations.filter((a) => !serverIds.has(a.id)),
+              ],
+            };
+          });
           lastModifiedRef.current = res.headers.get("Last-Modified");
         }
       } catch {

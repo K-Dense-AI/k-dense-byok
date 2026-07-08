@@ -25,6 +25,31 @@ if (typeof Element !== "undefined" && typeof Element.prototype.scrollIntoView ==
   Element.prototype.scrollIntoView = () => {};
 }
 
+// On Node >= 22 with experimental WebStorage, Node's own `localStorage`
+// global shadows jsdom's implementation; without --localstorage-file it is
+// undefined, breaking every test that touches window.localStorage.
+if (typeof window !== "undefined" && !window.localStorage) {
+  const store = new Map<string, string>();
+  const localStorageShim: Storage = {
+    get length() {
+      return store.size;
+    },
+    clear: () => store.clear(),
+    getItem: (key: string) => (store.has(key) ? store.get(key)! : null),
+    key: (index: number) => [...store.keys()][index] ?? null,
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      store.set(key, String(value));
+    },
+  };
+  Object.defineProperty(window, "localStorage", {
+    configurable: true,
+    value: localStorageShim,
+  });
+}
+
 if (typeof window !== "undefined" && typeof window.matchMedia === "undefined") {
   Object.defineProperty(window, "matchMedia", {
     writable: true,

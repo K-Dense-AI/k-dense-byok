@@ -898,11 +898,13 @@ function ChatInput({
 function AssistantMessageBody({
   message,
   isStreaming,
+  isLast,
   sessionId,
   onViewInNotebook,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
+  isLast: boolean;
   sessionId: string | null;
   onViewInNotebook?: (entryId: string) => void;
 }) {
@@ -910,6 +912,11 @@ function AssistantMessageBody({
   const hasReasoning = Boolean(message.reasoning?.trim());
   const hasAnything =
     Boolean(message.content) || activities.length > 0 || hasReasoning;
+  // Some models occasionally end a turn right after a tool call with no
+  // closing text, which used to leave the chat silently "done". Surface that
+  // explicitly on the final bubble so the user knows the run ended.
+  const endedWithoutReply =
+    !isStreaming && isLast && !message.content && (activities.length > 0 || hasReasoning);
 
   // Interview tool calls render as interactive forms, and notebook calls as
   // compact pointer chips, in stream order between the surrounding tool cards
@@ -948,6 +955,11 @@ function AssistantMessageBody({
         <Shimmer className="text-sm" duration={1.5}>
           Thinking...
         </Shimmer>
+      ) : endedWithoutReply ? (
+        <p className="text-xs italic text-muted-foreground">
+          The model finished this turn without a closing message. The tool
+          results above are the outcome; ask a follow-up if you want a summary.
+        </p>
       ) : null}
       {message.citations && (
         <div className="flex flex-wrap items-center gap-2">
@@ -1358,13 +1370,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
               description="I can research topics, write code, and analyze data."
             />
           ) : (
-            messages.map((message) => (
+            messages.map((message, i) => (
               <Message from={message.role} key={message.id}>
                 <MessageContent>
                   {message.role === "assistant" ? (
                     <AssistantMessageBody
                       message={message}
                       isStreaming={isStreaming}
+                      isLast={i === messages.length - 1}
                       sessionId={sessionId}
                       onViewInNotebook={onViewInNotebook}
                     />
