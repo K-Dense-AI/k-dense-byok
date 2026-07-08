@@ -28,6 +28,44 @@ describe("parseNotebookFrame", () => {
   it("returns null when title is missing", () => {
     expect(parseNotebookFrame(frame({ type: "note" }))).toBeNull();
   });
+
+  it("parses relatesTo, stance, and supersedes", () => {
+    const e = parseNotebookFrame(
+      frame({
+        type: "observation",
+        title: "Peak at 42",
+        relatesTo: "tc_h1",
+        stance: "supports",
+        supersedes: "tc_old",
+      }),
+    );
+    expect(e).toMatchObject({ relatesTo: "tc_h1", stance: "supports", supersedes: "tc_old" });
+  });
+
+  it("drops an invalid stance but keeps the rest of the entry", () => {
+    const e = parseNotebookFrame(
+      frame({ type: "observation", title: "x", relatesTo: "tc_h1", stance: "maybe" }),
+    );
+    expect(e).not.toBeNull();
+    expect(e!.stance).toBeUndefined();
+    expect(e!.relatesTo).toBe("tc_h1");
+  });
+
+  it("drops empty-string link fields", () => {
+    const e = parseNotebookFrame(
+      frame({ type: "observation", title: "x", relatesTo: "", supersedes: "   " }),
+    );
+    expect(e!.relatesTo).toBeUndefined();
+    expect(e!.supersedes).toBeUndefined();
+  });
+
+  it("stamps the provisional runId only when one is given", () => {
+    const stamped = parseNotebookFrame(frame({ type: "note", title: "x" }), "run_1");
+    expect(stamped!.runId).toBe("run_1");
+    const unstamped = parseNotebookFrame(frame({ type: "note", title: "x" }));
+    expect(unstamped).not.toBeNull();
+    expect("runId" in unstamped!).toBe(false);
+  });
 });
 
 describe("mergeNotebookEntries", () => {
@@ -45,5 +83,27 @@ describe("mergeNotebookEntries", () => {
   it("sorts the union by timestamp", () => {
     const merged = mergeNotebookEntries([mk("a", { timestamp: 3 })], [mk("b", { timestamp: 1 })]);
     expect(merged.map((e) => e.id)).toEqual(["b", "a"]);
+  });
+
+  it("preserves the new link/run fields, with the authoritative (b) side winning", () => {
+    const live = [mk("tc_1", { relatesTo: "tc_h", stance: "supports", runId: "run_live" })];
+    const fetched = [
+      mk("tc_1", {
+        relatesTo: "tc_h",
+        stance: "refutes",
+        supersedes: "tc_old",
+        runId: "run_srv",
+        sessionId: "s1",
+      }),
+    ];
+    const merged = mergeNotebookEntries(live, fetched);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]).toMatchObject({
+      relatesTo: "tc_h",
+      stance: "refutes",
+      supersedes: "tc_old",
+      runId: "run_srv",
+      sessionId: "s1",
+    });
   });
 });
