@@ -18,6 +18,8 @@ export interface ActivityItem {
   timestamp: number;
   /** Raw tool name (e.g. "bash", "write") for icon + summary rendering. */
   toolName?: string;
+  /** Frontmatter skill name when this read is a skill activation (server-resolved). */
+  skillName?: string;
   /** Tool arguments captured from tool_start (e.g. the bash command). */
   args?: unknown;
   /** Tool result text captured from tool_end (truncated server-side). */
@@ -70,6 +72,8 @@ export interface AgentFrame {
   type: string;
   delta?: string;
   toolName?: string;
+  /** Frontmatter skill name attached to tool_start when the read is a skill activation. */
+  skill?: string;
   toolCallId?: string;
   isError?: boolean;
   message?: string;
@@ -123,6 +127,7 @@ export function applyFrameToMessage(
             status: "running" as const,
             timestamp: now,
             toolName: frame.toolName ? String(frame.toolName) : undefined,
+            skillName: typeof frame.skill === "string" ? frame.skill : undefined,
             args: frame.args,
           },
         ].slice(-MAX_ACTIVITY_ITEMS),

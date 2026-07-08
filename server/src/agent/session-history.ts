@@ -6,7 +6,7 @@
  * a reopened transcript renders exactly like it did while streaming — prose,
  * reasoning blocks, and tool activity rows with args and capped results.
  */
-import { relativizeSandboxPaths, type ClientFrame } from "./events.ts";
+import { relativizeSandboxPaths, skillFieldFor, type ClientFrame } from "./events.ts";
 import {
   readRows,
   textOf,
@@ -88,6 +88,7 @@ export function toHistory(file: string, sandboxRoot = ""): HistoryMessage[] {
             toolCallId: call.id,
             toolName: call.name,
             args: relativizeSandboxPaths(call.arguments ?? {}, sandboxRoot),
+            ...skillFieldFor(call.name, call.arguments, sandboxRoot),
           },
           m.timestamp,
         );

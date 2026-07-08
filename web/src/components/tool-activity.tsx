@@ -11,6 +11,7 @@ import {
   SearchIcon,
   TerminalIcon,
   UsersIcon,
+  WandSparklesIcon,
   WrenchIcon,
   XIcon,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
+import { skillNameFromRead } from "@/lib/skill-invocation";
 import type { ActivityItem } from "@/lib/use-agent";
 import { cn } from "@/lib/utils";
 
@@ -92,9 +94,13 @@ function fullArgs(args: unknown): string {
 
 function ToolCard({ item }: { item: ActivityItem }) {
   const [open, setOpen] = useState(false);
-  const Icon = iconFor(item.toolName);
-  const name = item.toolName ?? item.label;
-  const summary = summarize(item.toolName, item.args);
+  // A read of a SKILL.md is Pi's skill activation — surface the skill's name
+  // instead of a generic file read (the path stays visible under Input). The
+  // server resolves the frontmatter name; the path-derived name is a fallback.
+  const skill = item.skillName ?? skillNameFromRead(item.toolName, item.args);
+  const Icon = skill ? WandSparklesIcon : iconFor(item.toolName);
+  const name = skill ? "skill" : (item.toolName ?? item.label);
+  const summary = skill ?? summarize(item.toolName, item.args);
   const args = fullArgs(item.args);
   const hasDetail = Boolean(args || item.result);
 

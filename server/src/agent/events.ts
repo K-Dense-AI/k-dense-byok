@@ -4,10 +4,23 @@
  * Pi-internal lifecycle noise so the client contract stays small.
  */
 import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import { skillLabelForRead } from "./skill-label.ts";
 
 export interface ClientFrame {
   type: string;
   [k: string]: unknown;
+}
+
+/** Frontmatter skill name when a `read` call is a skill activation. */
+export function skillFieldFor(
+  toolName: string,
+  args: unknown,
+  sandboxRoot: string,
+): { skill: string } | undefined {
+  if (toolName !== "read") return undefined;
+  const p = (args as { path?: unknown } | null | undefined)?.path;
+  const skill = skillLabelForRead(p, sandboxRoot);
+  return skill ? { skill } : undefined;
 }
 
 /**
@@ -190,6 +203,7 @@ export function toClientFrame(
         toolCallId: ev.toolCallId,
         toolName: ev.toolName,
         args: relativizeSandboxPaths(ev.args, sandboxRoot),
+        ...skillFieldFor(ev.toolName, ev.args, sandboxRoot),
       };
     case "tool_execution_update":
       return { type: "tool_update", toolCallId: ev.toolCallId, toolName: ev.toolName };
