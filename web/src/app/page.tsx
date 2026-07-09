@@ -8,6 +8,7 @@ import { ChatTabsBar, type ChatTabDescriptor } from "@/components/chat-tabs-bar"
 import { SettingsDialog } from "@/components/settings-dialog";
 import { WorkflowsPanel } from "@/components/workflows-panel";
 import { ProjectSwitcher } from "@/components/project-switcher";
+import { ProjectView } from "@/components/project-view";
 import { SessionCostPill } from "@/components/session-cost-pill";
 import { ResourceMonitor } from "@/components/resource-monitor";
 import { useSessionCost } from "@/lib/use-session-cost";
@@ -72,7 +73,21 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
   );
 }
 
-export default function ChatPage() {
+export default function HomePage() {
+  const [screen, setScreen] = useState<"projects" | "workspace">("projects");
+
+  if (screen === "projects") {
+    return <ProjectView onOpenProject={() => setScreen("workspace")} />;
+  }
+
+  return <WorkspacePage onOpenProjectView={() => setScreen("projects")} />;
+}
+
+function WorkspacePage({
+  onOpenProjectView,
+}: {
+  onOpenProjectView: () => void;
+}) {
   const sandbox = useSandbox(false);
   const { updateAvailable } = useUpdateCheck();
   const { skills: allSkills } = useSkills();
@@ -483,7 +498,7 @@ export default function ChatPage() {
             </InfoTooltip>
           )}
           <span className="mx-1 h-4 w-px bg-border/60" aria-hidden />
-          <ProjectSwitcher />
+          <ProjectSwitcher onOpenProjectView={onOpenProjectView} />
         </div>
         <p className="absolute left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/60 tracking-wide select-none">
           Brought to you by K-Dense, Inc.

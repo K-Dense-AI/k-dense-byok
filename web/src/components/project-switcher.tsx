@@ -6,6 +6,7 @@ import {
   CheckIcon,
   ChevronsUpDownIcon,
   FolderIcon,
+  LayoutGridIcon,
   PencilIcon,
   PlusIcon,
   Trash2Icon,
@@ -71,7 +72,11 @@ function formatProjectId(id: string): string {
     .join(" ");
 }
 
-export function ProjectSwitcher() {
+interface ProjectSwitcherProps {
+  onOpenProjectView?: () => void;
+}
+
+export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
   const {
     projects,
     activeProjectId,
@@ -284,6 +289,19 @@ export function ProjectSwitcher() {
               )}
               <CommandSeparator />
               <CommandGroup>
+                {onOpenProjectView && (
+                  <CommandItem
+                    value="__view_all_projects__"
+                    onSelect={() => {
+                      setPopoverOpen(false);
+                      onOpenProjectView();
+                    }}
+                    className="gap-2 text-foreground"
+                  >
+                    <LayoutGridIcon className="size-4" />
+                    View all projects
+                  </CommandItem>
+                )}
                 <CommandItem
                   // Value tracks the live query so cmdk never filters this row
                   // out — typing a brand-new name keeps "Create …" reachable
