@@ -119,6 +119,41 @@ describe("LabNotebookEntryCard", () => {
     expect(screen.getByText("refuted")).toBeInTheDocument();
   });
 
+  it("summarizes linked evidence on a hypothesis", () => {
+    renderCard(
+      <LabNotebookEntryCard
+        entry={entry()}
+        onOpenFile={() => {}}
+        thread={{
+          status: "supported",
+          incoming: [
+            { id: "o1", stance: "supports" },
+            { id: "o2", stance: "supports" },
+            { id: "o3", stance: "refutes" },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("2 supports")).toBeInTheDocument();
+    expect(screen.getByText("1 challenge")).toBeInTheDocument();
+  });
+
+  it("lets readers expand and collapse long entries", () => {
+    renderCard(
+      <LabNotebookEntryCard
+        entry={entry({ body: "Detailed result. ".repeat(40) })}
+        onOpenFile={() => {}}
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: "Read full entry" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: "Collapse entry" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+
   it("dims a superseded card and links to its successor", () => {
     const onJumpToEntry = vi.fn();
     renderCard(

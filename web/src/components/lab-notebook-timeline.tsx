@@ -1,5 +1,6 @@
 "use client";
 import { useMemo } from "react";
+import { ChevronDownIcon, NetworkIcon, SparklesIcon } from "lucide-react";
 import {
   Conversation,
   ConversationContent,
@@ -10,7 +11,40 @@ import { buildTimeline, type TimelineItem } from "@/lib/notebook-timeline";
 import { agentAccent, roleLabel } from "@/lib/notebook-filters";
 import type { ThreadInfo } from "@/lib/notebook-threads";
 import type { NotebookAnnotation } from "@/lib/notebook-annotations";
-import type { NotebookEntry } from "@/lib/notebook";
+import type { NotebookEntry, NotebookEntryType } from "@/lib/notebook";
+import { cn } from "@/lib/utils";
+
+const STORY_PHASES: {
+  type: NotebookEntryType;
+  title: string;
+  description: string;
+}[] = [
+  {
+    type: "hypothesis",
+    title: "Questions & hypotheses",
+    description: "What the team thinks might be true",
+  },
+  {
+    type: "method",
+    title: "Methods & experiments",
+    description: "What was tried and how",
+  },
+  {
+    type: "observation",
+    title: "Findings & evidence",
+    description: "What the work revealed",
+  },
+  {
+    type: "decision",
+    title: "Decisions & direction",
+    description: "What changed because of the evidence",
+  },
+  {
+    type: "note",
+    title: "Researcher notes",
+    description: "Context and annotations added by the team",
+  },
+];
 
 export interface TimelineCallbacks {
   onOpenFile: (path: string) => void;
@@ -39,12 +73,18 @@ function EntryRow({
 }) {
   const thread = ctx.threads.get(entry.id);
   const isUserNote = entry.role === "you";
+  const meta = TYPE_META[entry.type];
   return (
     <div className="relative motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 [content-visibility:auto] [contain-intrinsic-size:auto_11rem]">
       <span
-        className={`absolute -left-[21px] top-3 size-2.5 rounded-full ring-2 ring-background ${TYPE_META[entry.type].spine}`}
+        className={cn(
+          "absolute -left-[34px] top-3 flex size-7 items-center justify-center rounded-full border-2 border-background shadow-sm ring-1 ring-border",
+          meta.spine,
+        )}
         aria-hidden
-      />
+      >
+        <meta.Icon className="size-3.5 text-white drop-shadow-sm" />
+      </span>
       <LabNotebookEntryCard
         entry={entry}
         onOpenFile={ctx.cb.onOpenFile}
@@ -70,25 +110,29 @@ function EntryRow({
 function Divider({ item }: { item: Exclude<TimelineItem, { kind: "entry" }> }) {
   if (item.kind === "day") {
     return (
-      <div className="-ml-6 flex items-center gap-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-        <span className="h-px flex-1 bg-border" />
-        {item.label}
-        <span className="h-px flex-1 bg-border" />
+      <div className="-ml-10 flex items-center gap-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+        <span className="h-px flex-1 bg-gradient-to-r from-transparent to-border" />
+        <span className="rounded-full border bg-background px-2.5 py-1 shadow-xs">{item.label}</span>
+        <span className="h-px flex-1 bg-gradient-to-l from-transparent to-border" />
       </div>
     );
   }
   if (item.kind === "run") {
     return (
-      <div className="-ml-6 flex items-center gap-2 py-0.5 text-[10px] text-muted-foreground/70">
+      <div className="-ml-10 flex items-center gap-2 py-0.5 text-[10px] text-muted-foreground/70">
         <span className="h-px flex-1 border-t border-dashed border-border" />
-        new run
+        <span className="inline-flex items-center gap-1">
+          <SparklesIcon className="size-3" />
+          new run
+        </span>
         <span className="h-px flex-1 border-t border-dashed border-border" />
       </div>
     );
   }
   return (
-    <div className="-ml-6 border-t pt-2 text-xs font-medium">
-      {item.name}
+    <div className="-ml-10 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium">
+      <NetworkIcon className="size-3.5 text-muted-foreground" />
+      <span className="truncate">{item.name}</span>
     </div>
   );
 }
@@ -96,7 +140,7 @@ function Divider({ item }: { item: Exclude<TimelineItem, { kind: "entry" }> }) {
 /** Rail container: continuous vertical line the entry nodes sit on. */
 function Rail({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative space-y-3 pl-6 before:absolute before:bottom-1 before:left-[7px] before:top-1 before:w-px before:bg-border">
+    <div className="relative flex flex-col gap-4 pl-10 before:absolute before:bottom-1 before:left-[19px] before:top-1 before:w-px before:bg-gradient-to-b before:from-border/20 before:via-border before:to-border/20">
       {children}
     </div>
   );
@@ -117,7 +161,7 @@ export function LabNotebookTimeline({
 }: {
   /** Already filtered, time-sorted. */
   entries: NotebookEntry[];
-  viewMode: "agents" | "chrono";
+  viewMode: "story" | "agents" | "chrono";
   scope: "session" | "project";
   sessionNames?: ReadonlyMap<string, string>;
   threads: ReadonlyMap<string, ThreadInfo>;
@@ -130,6 +174,7 @@ export function LabNotebookTimeline({
 }) {
   const ctx = { threads, entryById, pinnedIds, commentsByEntry, canAnnotate, cb: callbacks };
   const chrono = viewMode === "chrono" || scope === "project";
+  const story = viewMode === "story" && scope === "session";
 
   const chronoItems = useMemo(
     () =>
@@ -145,7 +190,7 @@ export function LabNotebookTimeline({
   // By-agent lanes: lead first, then by earliest entry. Day dividers only
   // (run/session dividers are chronological-view concepts).
   const lanes = useMemo(() => {
-    if (chrono) return [];
+    if (chrono || story) return [];
     const byRole = new Map<string, NotebookEntry[]>();
     for (const e of entries) {
       const role = e.role ?? "agent";
@@ -165,24 +210,108 @@ export function LabNotebookTimeline({
       items: buildTimeline(byRole.get(role)!).filter((i) => i.kind !== "run"),
       count: byRole.get(role)!.length,
     }));
-  }, [chrono, entries]);
+  }, [chrono, entries, story]);
+
+  const storyPhases = useMemo(() => {
+    if (!story) return [];
+    return STORY_PHASES.map((phase) => ({
+      ...phase,
+      entries: entries.filter((entry) => entry.type === phase.type),
+    })).filter((phase) => phase.entries.length > 0);
+  }, [entries, story]);
+  const storyHasMultipleAuthors = useMemo(
+    () => new Set(entries.map((entry) => entry.role ?? "agent")).size > 1,
+    [entries],
+  );
 
   if (entries.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-        No entries match the current filters.
+      <div className="flex flex-1 items-center justify-center p-8 text-center">
+        <div className="flex max-w-xs flex-col items-center gap-2">
+          <div className="flex size-10 items-center justify-center rounded-xl border bg-muted/30">
+            <NetworkIcon className="size-4 text-muted-foreground" />
+          </div>
+          <p className="text-sm font-medium">No matching entries</p>
+          <p className="text-xs text-muted-foreground">
+            Try another entry type, tag, or search phrase.
+          </p>
+        </div>
       </div>
     );
   }
 
-  const motionProps = reducedMotion
-    ? ({ initial: "instant", resize: "instant" } as const)
-    : {};
+  const motionProps = story
+    ? ({ initial: false, resize: "instant" } as const)
+    : reducedMotion
+      ? ({ initial: "instant", resize: "instant" } as const)
+      : {};
 
   return (
-    <Conversation {...motionProps} className="flex-1">
-      <ConversationContent className="gap-0 space-y-4 p-4">
-        {chrono ? (
+    <Conversation
+      key={`${scope}:${viewMode}`}
+      {...motionProps}
+      className="flex-1 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--chart-2)_5%,transparent),transparent_38%)]"
+    >
+      <ConversationContent className="@container/story flex flex-col gap-4 p-4">
+        {story ? (
+          <div className="grid items-start gap-4 @4xl/story:grid-cols-2">
+            {storyPhases.map((phase) => {
+              const meta = TYPE_META[phase.type];
+              return (
+                <section
+                  key={phase.type}
+                  className={cn(
+                    "overflow-hidden rounded-2xl border bg-card/80 shadow-sm",
+                    meta.border,
+                    phase.type === "note" && "@4xl/story:col-span-2",
+                  )}
+                >
+                  <div className="relative flex items-center gap-3 border-b px-4 py-3">
+                    <div
+                      className={cn(
+                        "absolute inset-0 bg-gradient-to-r via-transparent to-transparent opacity-70",
+                        meta.wash,
+                      )}
+                      aria-hidden
+                    />
+                    <span
+                      className={cn(
+                        "relative flex size-9 shrink-0 items-center justify-center rounded-xl border",
+                        meta.iconSurface,
+                        meta.chip,
+                      )}
+                    >
+                      <meta.Icon className="size-4" />
+                    </span>
+                    <span className="relative min-w-0 flex-1">
+                      <span className="block text-sm font-semibold tracking-tight">
+                        {phase.title}
+                      </span>
+                      <span className="block truncate text-[10px] text-muted-foreground">
+                        {phase.description}
+                      </span>
+                    </span>
+                    <span className="relative text-2xl font-semibold tabular-nums text-muted-foreground/30">
+                      {phase.entries.length.toString().padStart(2, "0")}
+                    </span>
+                  </div>
+                  <div className="bg-muted/5 p-3">
+                    <Rail>
+                      {phase.entries.map((entry) => (
+                        <EntryRow
+                          key={entry.id}
+                          entry={entry}
+                          showAgentBadge={storyHasMultipleAuthors || entry.role === "you"}
+                          ctx={ctx}
+                        />
+                      ))}
+                    </Rail>
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        ) : chrono ? (
           <Rail>
             {chronoItems.map((item) =>
               item.kind === "entry" ? (
@@ -209,13 +338,28 @@ export function LabNotebookTimeline({
           </Rail>
         ) : (
           lanes.map((lane) => (
-            <details key={lane.role} open className="rounded-lg border">
-              <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-xs font-medium">
-                <span className={`size-2 rounded-full ${lane.accent.dot}`} aria-hidden />
-                {lane.label}
-                <span className="text-muted-foreground">{lane.count}</span>
+            <details
+              key={lane.role}
+              open
+              className="group/lane overflow-hidden rounded-xl border bg-card shadow-sm"
+            >
+              <summary className="flex cursor-pointer list-none select-none items-center gap-2.5 px-3.5 py-3 text-xs font-medium transition-colors hover:bg-muted/35 [&::-webkit-details-marker]:hidden">
+                <span
+                  className={cn(
+                    "flex size-6 items-center justify-center rounded-full bg-background ring-2",
+                    lane.accent.ring,
+                  )}
+                  aria-hidden
+                >
+                  <span className={cn("size-2 rounded-full", lane.accent.dot)} />
+                </span>
+                <span className="truncate">{lane.label}</span>
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                  {lane.count}
+                </span>
+                <ChevronDownIcon className="ml-auto size-3.5 text-muted-foreground transition-transform group-open/lane:rotate-180" />
               </summary>
-              <div className="p-3 pt-0">
+              <div className="border-t bg-muted/10 p-4">
                 <Rail>
                   {lane.items.map((item) =>
                     item.kind === "entry" ? (

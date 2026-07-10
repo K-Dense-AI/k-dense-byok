@@ -1,7 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PencilLineIcon } from "lucide-react";
+import { ArrowUpIcon, FlaskConicalIcon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { apiFetch, getActiveProjectId } from "@/lib/projects";
 import { mergeNotebookEntries, type NotebookEntry } from "@/lib/notebook";
 import { deriveThreads } from "@/lib/notebook-threads";
@@ -19,12 +21,13 @@ import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import {
   LabNotebookHeader,
   type NotebookExportFormat,
+  type NotebookOverview,
   type NotebookScope,
   type NotebookViewMode,
 } from "./lab-notebook-header";
 import { LabNotebookTimeline } from "./lab-notebook-timeline";
 
-const VIEW_MODE_KEY = "kady:notebook:view";
+const VIEW_MODE_KEY = "kady:notebook:view:v2";
 const FOCUS_DEADLINE_MS = 4000;
 
 interface SessionInfo {
@@ -59,7 +62,7 @@ export function LabNotebookView({
 }) {
   const [fetched, setFetched] = useState<NotebookEntry[]>([]);
   const [scope, setScope] = useState<NotebookScope>("session");
-  const [viewMode, setViewMode] = useState<NotebookViewMode>("agents");
+  const [viewMode, setViewMode] = useState<NotebookViewMode>("story");
   const [filters, setFilters] = useState<NotebookFilterState>(EMPTY_FILTERS);
   const [projectEntries, setProjectEntries] = useState<NotebookEntry[]>([]);
   const [sessionNames, setSessionNames] = useState<Map<string, string>>(new Map());
@@ -78,7 +81,7 @@ export function LabNotebookView({
   useEffect(() => {
     try {
       const v = localStorage.getItem(VIEW_MODE_KEY);
-      if (v === "chrono" || v === "agents") setViewMode(v);
+      if (v === "story" || v === "chrono" || v === "agents") setViewMode(v);
     } catch {
       /* localStorage unavailable */
     }
@@ -234,6 +237,46 @@ export function LabNotebookView({
     () => new Map(displayEntries.map((e) => [e.id, e])),
     [displayEntries],
   );
+  const overview = useMemo<NotebookOverview>(() => {
+    const artifacts = new Set<string>();
+    const collaborators = new Set<string>();
+    const tags = new Map<string, number>();
+    const hypotheses = { open: 0, supported: 0, refuted: 0 };
+    let latestObservation: NotebookOverview["latestObservation"];
+    let latestDecision: NotebookOverview["latestDecision"];
+    let updatedAt: number | undefined;
+
+    for (const entry of displayEntries) {
+      for (const artifact of entry.artifacts ?? []) artifacts.add(artifact);
+      collaborators.add(entry.role ?? "agent");
+      for (const tag of entry.tags ?? []) tags.set(tag, (tags.get(tag) ?? 0) + 1);
+      if (entry.type === "hypothesis") {
+        const status = threads.get(entry.id)?.status ?? "open";
+        hypotheses[status]++;
+      }
+      if (entry.type === "observation") {
+        latestObservation = { id: entry.id, title: entry.title };
+      }
+      if (entry.type === "decision") {
+        latestDecision = { id: entry.id, title: entry.title };
+      }
+      updatedAt = updatedAt === undefined ? entry.timestamp : Math.max(updatedAt, entry.timestamp);
+    }
+
+    return {
+      artifactCount: artifacts.size,
+      collaboratorCount: collaborators.size,
+      pinnedCount: displayEntries.filter((entry) => pinnedIds.has(entry.id)).length,
+      hypotheses,
+      topTags: [...tags.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 4)
+        .map(([label, count]) => ({ label, count })),
+      latestObservation,
+      latestDecision,
+      updatedAt,
+    };
+  }, [displayEntries, pinnedIds, threads]);
   const visible = useMemo(
     () => filterEntries(displayEntries, filters, pinnedIds),
     [displayEntries, filters, pinnedIds],
@@ -405,9 +448,12 @@ export function LabNotebookView({
         typeCounts={typeCounts}
         totalCount={displayEntries.length}
         filteredCount={visible.length}
+        overview={overview}
         canAnnotate={canAnnotate}
         onExport={handleExport}
         onPrint={handlePrint}
+        onTagClick={(tag) => setFilters((current) => ({ ...current, query: tag }))}
+        onEntryJump={focusById}
         methods={{
           enabled: Boolean(sessionId) && sessionEntries.length > 0,
           busy: methodsBusy,
@@ -415,10 +461,33 @@ export function LabNotebookView({
         }}
       />
       {displayEntries.length === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-          {scope === "project"
-            ? "No notebook entries in this project yet."
-            : "Kady’s notebook — entries appear here as it works."}
+        <div className="relative flex flex-1 items-center justify-center overflow-hidden p-8 text-center">
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--chart-2)_10%,transparent),transparent_58%)]"
+            aria-hidden
+          />
+          <div className="relative flex max-w-sm flex-col items-center gap-4">
+            <div className="relative flex size-16 items-center justify-center rounded-2xl border bg-card shadow-lg">
+              <FlaskConicalIcon className="size-7" />
+              <SparklesIcon className="absolute -right-2 -top-2 size-5 text-amber-500" />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <h3 className="font-semibold tracking-tight">
+                {scope === "project" ? "Your project story starts here" : "The experiment starts here"}
+              </h3>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {scope === "project"
+                  ? "No notebook entries in this project yet. Findings from every chat will collect here."
+                  : "Kady’s notebook — entries appear here as it works, connecting hypotheses to evidence and decisions."}
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-1.5 text-[10px] text-muted-foreground">
+              <span className="rounded-full border bg-card px-2 py-1">Hypotheses</span>
+              <span className="rounded-full border bg-card px-2 py-1">Methods</span>
+              <span className="rounded-full border bg-card px-2 py-1">Observations</span>
+              <span className="rounded-full border bg-card px-2 py-1">Decisions</span>
+            </div>
+          </div>
         </div>
       ) : (
         <LabNotebookTimeline
@@ -443,27 +512,44 @@ export function LabNotebookView({
         />
       )}
       {canAnnotate && (
-        <div className="flex items-center gap-2 border-t px-4 py-2">
-          <PencilLineIcon className="size-3.5 shrink-0 text-muted-foreground" />
-          <input
+        <form
+          className="flex items-center gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitNote();
+          }}
+        >
+          <div className="relative flex min-w-0 flex-1 items-center">
+            <SparklesIcon className="pointer-events-none absolute left-3 size-3.5 text-muted-foreground" />
+            <Input
             value={noteDraft}
-            onChange={(e) => setNoteDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") submitNote();
-            }}
-            placeholder="Add a note to the lab notebook… (Enter to save)"
-            aria-label="Add a note"
-            className="flex-1 rounded border bg-background px-2 py-1 text-xs outline-none placeholder:text-muted-foreground/70 focus:border-foreground/30"
+              onChange={(event) => setNoteDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitNote();
+                }
+              }}
+              placeholder="Capture your own observation…"
+              aria-label="Add a note"
+              className="h-9 rounded-xl bg-muted/35 pl-9 pr-14 text-xs shadow-none"
           />
-          <button
+            <kbd className="pointer-events-none absolute right-3 rounded border bg-background px-1.5 py-0.5 text-[9px] text-muted-foreground shadow-xs">
+              Enter
+            </kbd>
+          </div>
+          <Button
             type="button"
-            onClick={submitNote}
+            size="icon-sm"
             disabled={!noteDraft.trim()}
-            className="rounded border px-2 py-1 text-xs hover:bg-muted disabled:opacity-50"
+            aria-label="Save note"
+            title="Save note"
+            onClick={submitNote}
+            className="rounded-xl"
           >
-            Add note
-          </button>
-        </div>
+            <ArrowUpIcon />
+          </Button>
+        </form>
       )}
     </div>
   );

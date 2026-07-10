@@ -277,6 +277,27 @@ describe("LabNotebookView", () => {
     }
   });
 
+  it("defaults to a research story grouped by scientific phase", () => {
+    render(
+      <LabNotebookView
+        {...baseProps}
+        liveEntries={[
+          e({ id: "m1", type: "method", title: "Run the assay" }),
+          e({ id: "o1", type: "observation", title: "Signal increased" }),
+          e({ id: "d1", type: "decision", title: "Advance the candidate" }),
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Research story" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("Methods & experiments")).toBeInTheDocument();
+    expect(screen.getByText("Findings & evidence")).toBeInTheDocument();
+    expect(screen.getByText("Decisions & direction")).toBeInTheDocument();
+  });
+
   it("filters entries by type via the header chips", () => {
     render(
       <LabNotebookView
