@@ -10,7 +10,7 @@ import type { FastifyInstance } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
-import { toClientFrame, type ClientFrame } from "../agent/events.ts";
+import { contextUsageFrame, toClientFrame, type ClientFrame } from "../agent/events.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
   pendingInterviewFor,
@@ -113,7 +113,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "No such session" };
       }
-      return { messages: toHistory(file, paths.sandbox) };
+      const session = await getSession(currentProjectId(), paths, req.params.id);
+      return {
+        messages: toHistory(file, paths.sandbox),
+        contextUsage: session?.getContextUsage() ?? null,
+      };
     } catch (err) {
       reply.code(400);
       return { detail: (err as Error).message };
@@ -484,10 +488,15 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         const write = (frame: ClientFrame) => {
           if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(frame)}\n\n`);
         };
+        const writeContextUsage = () => {
+          const frame = contextUsageFrame(session.getContextUsage());
+          if (frame) write(frame);
+        };
         // Synthetic route-level frame (Pi events carry no run id): lets the
         // client stamp provisional notebook entries with this run before the
         // authoritative refetch.
         write({ type: "run_start", runId });
+        writeContextUsage();
 
         // Hard budget cap: refuse to run if the project has reached its limit.
         const budget = isBudgetExceeded(projectId);
@@ -518,6 +527,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           }
           const frame = toClientFrame(ev, sandboxRoot);
           if (frame) write(frame);
+          if (ev.type === "turn_end") writeContextUsage();
         });
 
         req.raw.on("close", () => {
@@ -559,6 +569,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             // restart/compaction-proof); `tokens` is Pi's in-context cumulative;
             // `runCost`/`runTokens` are the delta for THIS turn, so the UI can
             // attribute a price to the message that just completed.
+            writeContextUsage();
             write({
               type: "cost",
               cost: sessionCostSummary(req.params.id, projectId).totalUsd,

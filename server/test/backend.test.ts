@@ -31,7 +31,11 @@ import {
 } from "../src/agent/web-access-bridge.ts";
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
 import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
-import { toClientFrame, relativizeSandboxPaths } from "../src/agent/events.ts";
+import {
+  contextUsageFrame,
+  toClientFrame,
+  relativizeSandboxPaths,
+} from "../src/agent/events.ts";
 import { helperPython, HELPERS_DIR } from "../src/helpers-env.ts";
 import { sciHelperFor } from "../src/api/sci-helpers.ts";
 
@@ -255,6 +259,22 @@ describe("skills", () => {
 });
 
 describe("events → client frames", () => {
+  it("maps Pi context utilization onto the client wire shape", () => {
+    expect(
+      contextUsageFrame({
+        tokens: 42_000,
+        contextWindow: 200_000,
+        percent: 21,
+      }),
+    ).toEqual({
+      type: "context_usage",
+      tokens: 42_000,
+      contextWindow: 200_000,
+      percent: 21,
+    });
+    expect(contextUsageFrame(undefined)).toBeNull();
+  });
+
   it("maps text/thinking deltas and tool/lifecycle events", () => {
     expect(toClientFrame({ type: "agent_start" } as never)).toEqual({ type: "agent_start" });
     expect(

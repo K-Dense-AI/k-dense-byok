@@ -68,6 +68,33 @@ export interface ChatMessage {
   citations?: CitationReport;
 }
 
+export interface ContextUsage {
+  /** Pi cannot estimate this immediately after compaction. */
+  tokens: number | null;
+  contextWindow: number;
+  /** Percentage of the current model's context window, null while recalculating. */
+  percent: number | null;
+}
+
+export function parseContextUsage(value: unknown): ContextUsage | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const tokens = candidate.tokens;
+  const contextWindow = candidate.contextWindow;
+  const percent = candidate.percent;
+  if (
+    typeof contextWindow !== "number" ||
+    !Number.isFinite(contextWindow) ||
+    contextWindow <= 0 ||
+    (tokens !== null && (typeof tokens !== "number" || !Number.isFinite(tokens) || tokens < 0)) ||
+    (percent !== null &&
+      (typeof percent !== "number" || !Number.isFinite(percent) || percent < 0))
+  ) {
+    return null;
+  }
+  return { tokens, contextWindow, percent } as ContextUsage;
+}
+
 type Status = "ready" | "submitted" | "streaming" | "error";
 
 /** A frame from the backend SSE stream (see server/src/agent/events.ts). */
@@ -267,6 +294,7 @@ export function buildRunBody(opts: {
 
 export function useAgent() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [subagentCompletions, setSubagentCompletions] = useState(0);
   const [status, setStatus] = useState<Status>("ready");
@@ -296,7 +324,7 @@ export function useAgent() {
         `/sessions/${encodeURIComponent(sessionId)}/history`,
       );
       if (!res.ok) return false;
-      const data = (await res.json()) as { messages?: HistoryItem[] };
+      const data = (await res.json()) as { messages?: HistoryItem[]; contextUsage?: unknown };
       // Re-check after the awaits: a message sent while the history fetch was
       // in flight claims the tab (and will bind a fresh session), which must
       // win over hydration.
@@ -335,6 +363,7 @@ export function useAgent() {
       }
       sessionIdRef.current = sessionId;
       setMessages(restored);
+      setContextUsage(parseContextUsage(data.contextUsage));
       setStatus("ready");
       return true;
     } catch {
@@ -473,6 +502,10 @@ export function useAgent() {
               if (frame.type === "run_start" && typeof frame.runId === "string") {
                 currentRunId = frame.runId;
               }
+              if (frame.type === "context_usage") {
+                const usage = parseContextUsage(frame);
+                if (usage) setContextUsage(usage);
+              }
               const nb = parseNotebookFrame(frame, currentRunId);
               if (nb) setNotebookEntries((prev) => mergeNotebookEntries(prev, [nb]));
               if (frame.type === "tool_end" && frame.toolName === "subagent") {
@@ -556,6 +589,7 @@ export function useAgent() {
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
+    setContextUsage(null);
     setNotebookEntries([]);
     setSubagentCompletions(0);
     setPendingSteers([]);
@@ -569,6 +603,7 @@ export function useAgent() {
 
   return {
     messages,
+    contextUsage,
     status,
     send,
     stop,

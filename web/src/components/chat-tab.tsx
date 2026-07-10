@@ -41,6 +41,7 @@ import { onChatPrefill } from "@/lib/chat-prefill";
 import { buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
+import { ContextUsageIndicator } from "@/components/context-usage-indicator";
 import { CitationBadge } from "@/components/citation-badge";
 import { NotebookEntryChip, ReasoningBlock, ToolActivityList } from "@/components/tool-activity";
 import { InterviewCard } from "@/components/interview-form";
@@ -54,7 +55,12 @@ import {
   type PromptImage,
 } from "@/lib/image-attachments";
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
-import { useAgent, type ActivityItem, type ChatMessage } from "@/lib/use-agent";
+import {
+  useAgent,
+  type ActivityItem,
+  type ChatMessage,
+  type ContextUsage,
+} from "@/lib/use-agent";
 import type { NotebookEntry } from "@/lib/notebook";
 import { routeSubmit, steerNotStreamingFallback, type SendIntent } from "@/lib/chat-routing";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
@@ -462,6 +468,7 @@ function ChatInput({
   onDbsChange,
   selectedModel,
   onModelChange,
+  contextUsage,
   selectedComputeTarget,
   onComputeTargetChange,
   thinkingLevel,
@@ -495,6 +502,7 @@ function ChatInput({
   onDbsChange: (dbs: Database[]) => void;
   selectedModel: Model;
   onModelChange: (model: Model) => void;
+  contextUsage: ContextUsage | null;
   selectedComputeTarget: ModalInstance | null;
   onComputeTargetChange: (instance: ModalInstance | null) => void;
   thinkingLevel: ThinkingLevel;
@@ -823,6 +831,7 @@ function ChatInput({
                 onChange={onComputeTargetChange}
                 modalConfigured={modalConfigured}
               />
+              <ContextUsageIndicator usage={contextUsage} />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <InfoTooltip
@@ -1057,7 +1066,19 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   },
   ref,
 ) {
-  const { messages, status, send, stop, steer, pendingSteers, getSessionId, loadSession, notebookEntries, subagentCompletions } = useAgent();
+  const {
+    messages,
+    contextUsage,
+    status,
+    send,
+    stop,
+    steer,
+    pendingSteers,
+    getSessionId,
+    loadSession,
+    notebookEntries,
+    subagentCompletions,
+  } = useAgent();
   const isStreaming = status === "streaming" || status === "submitted";
   // Scopes the deep-link querySelector to THIS tab's transcript.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1468,6 +1489,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onDbsChange={setSelectedDbs}
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
+            contextUsage={contextUsage}
             selectedComputeTarget={selectedComputeTarget}
             onComputeTargetChange={setSelectedComputeTarget}
             thinkingLevel={thinkingLevel}

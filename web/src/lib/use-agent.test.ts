@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as projects from "@/lib/projects";
-import { buildRunBody, useAgent } from "@/lib/use-agent";
+import { buildRunBody, parseContextUsage, useAgent } from "@/lib/use-agent";
 
 /** Build an SSE response body streaming one `data: <json>\n\n` frame per entry. */
 function sseStream(frames: unknown[]): ReadableStream<Uint8Array> {
@@ -56,6 +56,22 @@ describe("buildRunBody", () => {
   });
 });
 
+describe("parseContextUsage", () => {
+  it("accepts known and post-compaction Pi usage", () => {
+    expect(
+      parseContextUsage({ tokens: 42_000, contextWindow: 200_000, percent: 21 }),
+    ).toEqual({ tokens: 42_000, contextWindow: 200_000, percent: 21 });
+    expect(
+      parseContextUsage({ tokens: null, contextWindow: 200_000, percent: null }),
+    ).toEqual({ tokens: null, contextWindow: 200_000, percent: null });
+  });
+
+  it("rejects malformed usage", () => {
+    expect(parseContextUsage({ tokens: -1, contextWindow: 200_000, percent: -1 })).toBeNull();
+    expect(parseContextUsage({ tokens: 1, contextWindow: 0, percent: 1 })).toBeNull();
+  });
+});
+
 describe("useAgent notebook accumulation", () => {
   afterEach(() => vi.restoreAllMocks());
 
@@ -86,5 +102,38 @@ describe("useAgent notebook accumulation", () => {
     });
 
     expect(result.current.notebookEntries.map((e) => e.id)).toEqual(["tc_1"]);
+  });
+
+  it("tracks Pi context utilization from the SSE stream", async () => {
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      if (path === "/sessions") {
+        return new Response(JSON.stringify({ id: "s1" }), { status: 200 });
+      }
+      if (path === "/sessions/s1/run") {
+        return new Response(
+          sseStream([
+            {
+              type: "context_usage",
+              tokens: 42_000,
+              contextWindow: 200_000,
+              percent: 21,
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+
+    const { result } = renderHook(() => useAgent());
+    await act(async () => {
+      await result.current.send("hi");
+    });
+
+    expect(result.current.contextUsage).toEqual({
+      tokens: 42_000,
+      contextWindow: 200_000,
+      percent: 21,
+    });
   });
 });

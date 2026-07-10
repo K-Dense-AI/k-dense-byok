@@ -3,12 +3,23 @@
  * frontend consumes. We deliberately flatten the streaming deltas and drop
  * Pi-internal lifecycle noise so the client contract stays small.
  */
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionEvent, ContextUsage } from "@earendil-works/pi-coding-agent";
 import { skillLabelForRead } from "./skill-label.ts";
 
 export interface ClientFrame {
   type: string;
   [k: string]: unknown;
+}
+
+/** Keep Pi's context-utilization shape explicit on the wire. */
+export function contextUsageFrame(usage: ContextUsage | undefined): ClientFrame | null {
+  if (!usage) return null;
+  return {
+    type: "context_usage",
+    tokens: usage.tokens,
+    contextWindow: usage.contextWindow,
+    percent: usage.percent,
+  };
 }
 
 /** Frontmatter skill name when a `read` call is a skill activation. */
