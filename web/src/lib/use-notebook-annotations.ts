@@ -23,7 +23,11 @@ function normalizeDoc(data: unknown): AnnotationsDoc {
  * chain; a 412 (concurrent write) rebases the op on the fresh doc and retries
  * once, after which the local state reverts to the server's copy.
  */
-export function useNotebookAnnotations(sessionId: string | null, enabled: boolean) {
+export function useNotebookAnnotations(
+  sessionId: string | null,
+  enabled: boolean,
+  projectId?: string,
+) {
   const [doc, setDoc] = useState<AnnotationsDoc>(EMPTY_DOC);
   const [saving, setSaving] = useState(false);
   const docRef = useRef(doc);
@@ -42,6 +46,8 @@ export function useNotebookAnnotations(sessionId: string | null, enabled: boolea
       try {
         const res = await apiFetch(
           `/sessions/${encodeURIComponent(sessionId)}/notebook/annotations`,
+          {},
+          projectId,
         );
         if (!res.ok) return; // absent sidecar → keep empty envelope
         const data = normalizeDoc(await res.json());
@@ -69,7 +75,7 @@ export function useNotebookAnnotations(sessionId: string | null, enabled: boolea
     return () => {
       cancelled = true;
     };
-  }, [sessionId, enabled]);
+  }, [sessionId, enabled, projectId]);
 
   const mutate = useCallback((op: AnnotationOp) => {
     const sid = currentSessionRef.current;
@@ -89,12 +95,12 @@ export function useNotebookAnnotations(sessionId: string | null, enabled: boolea
               : {}),
           },
           body: JSON.stringify(payload),
-        });
+        }, projectId);
       try {
         let res = await put(docRef.current);
         if (res.status === 412) {
           // Someone else wrote the sidecar: rebase this op on their copy.
-          const fres = await apiFetch(url);
+          const fres = await apiFetch(url, {}, projectId);
           const fresh = fres.ok ? normalizeDoc(await fres.json()) : EMPTY_DOC;
           lastModifiedRef.current = fres.ok ? fres.headers.get("Last-Modified") : null;
           const rebased = applyOp(fresh, op);
@@ -109,7 +115,7 @@ export function useNotebookAnnotations(sessionId: string | null, enabled: boolea
       } catch {
         toast.error("Couldn't save your annotation — reloaded from disk.");
         try {
-          const fres = await apiFetch(url);
+          const fres = await apiFetch(url, {}, projectId);
           if (fres.ok && sid === currentSessionRef.current) {
             setDoc(normalizeDoc(await fres.json()));
             lastModifiedRef.current = fres.headers.get("Last-Modified");
@@ -121,7 +127,7 @@ export function useNotebookAnnotations(sessionId: string | null, enabled: boolea
         setSaving(false);
       }
     });
-  }, []);
+  }, [projectId]);
 
   const derived = useMemo(() => derive(doc), [doc]);
 

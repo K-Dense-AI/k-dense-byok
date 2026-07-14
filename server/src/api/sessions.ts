@@ -412,7 +412,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // (lead tool + subagent harvest) are stamped with it. Cleared in the
       // outer finally so it covers every exit path.
       const runId = mintRunId();
-      setSessionRunId(session.sessionId, runId);
+      setSessionRunId(projectId, session.sessionId, runId);
       // For a Fusion run we disable Pi's local tools for the turn (see below).
       // Remember the real active set so we can restore it in the finally; `null`
       // means "not a fusion run, nothing to restore".
@@ -420,7 +420,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       try {
         // Stash this run's selected compute instance so the modal_run tool uses
         // it as the default when the agent doesn't name one ("local"/unset clears it).
-        setSessionComputeTarget(session.sessionId, body.computeTarget ?? null);
+        setSessionComputeTarget(projectId, session.sessionId, body.computeTarget ?? null);
         const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
         if (isFusion) {
           // Fusion is load-bearing for the spend cap: the cost-bearing Model
@@ -432,7 +432,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             await session.setModel(
               resolveModel(body.model, getModelRegistry(), body.fusionConfig),
             );
-            setFusionConfig(session.sessionId, body.fusionConfig ?? null);
+            setFusionConfig(projectId, session.sessionId, body.fusionConfig ?? null);
             // Disable Pi's local agentic tools for this turn so OpenRouter Fusion
             // runs deterministically. Stripping `tools` from the wire body (in
             // fusion-bridge's before_provider_request) is NOT enough: Pi executes
@@ -451,7 +451,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           } catch (err) {
             // Make sure no stale fusion config rewrites this run's body.
             // (The outer finally releases the activeRuns claim on return.)
-            setFusionConfig(session.sessionId, null);
+            setFusionConfig(projectId, session.sessionId, null);
             reply.code(400);
             return {
               detail: `Fusion model could not be prepared: ${(err as Error).message}`,
@@ -460,7 +460,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         } else {
           // Non-fusion run: clear any fusion config so the extension passes the
           // payload through untouched.
-          setFusionConfig(session.sessionId, null);
+          setFusionConfig(projectId, session.sessionId, null);
           if (body.model) {
             try {
               await session.setModel(resolveModel(body.model, getModelRegistry()));
@@ -590,7 +590,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         if (savedToolNames !== null) {
           session.setActiveToolsByName(savedToolNames);
         }
-        setSessionRunId(session.sessionId, null);
+        setSessionRunId(projectId, session.sessionId, null);
         activeRuns.delete(runKey);
       }
     },

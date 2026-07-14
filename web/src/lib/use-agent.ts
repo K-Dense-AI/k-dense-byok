@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiFetch, onProjectChange } from "@/lib/projects";
+import { apiFetch, useProjectScopeId } from "@/lib/projects";
 
 import type { PromptImage } from "./image-attachments";
 import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./notebook";
@@ -96,6 +96,7 @@ export function parseContextUsage(value: unknown): ContextUsage | null {
 }
 
 type Status = "ready" | "submitted" | "streaming" | "error";
+export type AgentRunState = "idle" | "running" | "done" | "error" | "blocked";
 
 /** A frame from the backend SSE stream (see server/src/agent/events.ts). */
 export interface AgentFrame {
@@ -106,6 +107,7 @@ export interface AgentFrame {
   skill?: string;
   toolCallId?: string;
   isError?: boolean;
+  kind?: string;
   message?: string;
   args?: unknown;
   result?: string;
@@ -292,12 +294,15 @@ export function buildRunBody(opts: {
   };
 }
 
-export function useAgent() {
+export function useAgent(projectId?: string) {
+  const contextProjectId = useProjectScopeId();
+  const scopedProjectId = projectId ?? contextProjectId;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [subagentCompletions, setSubagentCompletions] = useState(0);
   const [status, setStatus] = useState<Status>("ready");
+  const [runState, setRunState] = useState<AgentRunState>("idle");
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const sessionIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -322,6 +327,8 @@ export function useAgent() {
     try {
       const res = await apiFetch(
         `/sessions/${encodeURIComponent(sessionId)}/history`,
+        {},
+        scopedProjectId,
       );
       if (!res.ok) return false;
       const data = (await res.json()) as { messages?: HistoryItem[]; contextUsage?: unknown };
@@ -365,22 +372,23 @@ export function useAgent() {
       setMessages(restored);
       setContextUsage(parseContextUsage(data.contextUsage));
       setStatus("ready");
+      setRunState("idle");
       return true;
     } catch {
       return false;
     }
-  }, []);
+  }, [scopedProjectId]);
 
   const ensureSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
     const res = await apiFetch(`/sessions`, {
       method: "POST",
-    });
+    }, scopedProjectId);
     if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
     const session = await res.json();
     sessionIdRef.current = session.id;
     return session.id as string;
-  }, []);
+  }, [scopedProjectId]);
 
   /** Queue a message into the live run. "not_streaming" = the run ended
    *  first; the caller should fall back to a normal send. */
@@ -393,7 +401,7 @@ export function useAgent() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text }),
-        });
+        }, scopedProjectId);
         if (res.ok) {
           const data = (await res.json()) as { pending?: unknown };
           if (Array.isArray(data.pending)) setPendingSteers(data.pending.map(String));
@@ -404,7 +412,7 @@ export function useAgent() {
         return "error";
       }
     },
-    [],
+    [scopedProjectId],
   );
 
   const send = useCallback(
@@ -446,6 +454,7 @@ export function useAgent() {
         return transcript;
       });
       setStatus("submitted");
+      setRunState("running");
 
       try {
         const sessionId = await ensureSession();
@@ -467,7 +476,7 @@ export function useAgent() {
               }),
             ),
             signal: controller.signal,
-          });
+          }, scopedProjectId);
         let res = await startRun();
         // 409 = previous run still unwinding server-side (e.g. right after
         // Stop, whose abort completes asynchronously). Retry briefly instead
@@ -486,6 +495,7 @@ export function useAgent() {
         // Synthetic route-level frame at stream open; provisional notebook
         // entries are stamped with it so run dividers render live.
         let currentRunId: string | undefined;
+        let outcome: AgentRunState = "done";
 
         while (true) {
           const { done, value } = await reader.read();
@@ -499,6 +509,10 @@ export function useAgent() {
             if (!jsonStr) continue;
             try {
               const frame = JSON.parse(jsonStr) as AgentFrame;
+              if (frame.type === "error") {
+                outcome = frame.kind === "budget" ? "blocked" : "error";
+                setRunState(outcome);
+              }
               if (frame.type === "run_start" && typeof frame.runId === "string") {
                 currentRunId = frame.runId;
               }
@@ -535,6 +549,7 @@ export function useAgent() {
         setMessages(transcript);
         setPendingSteers([]);
         setStatus("ready");
+        setRunState(outcome);
       } catch (err: unknown) {
         const aborted = err instanceof DOMException && err.name === "AbortError";
         transcript = transcript.map((m) => {
@@ -556,6 +571,7 @@ export function useAgent() {
         setMessages(transcript);
         setPendingSteers([]);
         setStatus(aborted ? "ready" : "error");
+        setRunState(aborted ? "idle" : "error");
       } finally {
         sendClaimRef.current = false;
         abortRef.current = null;
@@ -563,7 +579,7 @@ export function useAgent() {
 
       return userMsgId;
     },
-    [status, ensureSession],
+    [status, ensureSession, scopedProjectId],
   );
 
   const stop = useCallback(async (): Promise<string[]> => {
@@ -572,7 +588,11 @@ export function useAgent() {
     let restored: string[] = [];
     if (id) {
       try {
-        const res = await apiFetch(`/sessions/${id}/abort`, { method: "POST" });
+        const res = await apiFetch(
+          `/sessions/${id}/abort`,
+          { method: "POST" },
+          scopedProjectId,
+        );
         if (res.ok) {
           const data = (await res.json()) as { restored?: unknown };
           if (Array.isArray(data.restored)) restored = data.restored.map(String);
@@ -583,8 +603,9 @@ export function useAgent() {
     }
     setPendingSteers([]);
     setStatus("ready");
+    setRunState("idle");
     return restored;
-  }, []);
+  }, [scopedProjectId]);
 
   const reset = useCallback(() => {
     abortRef.current?.abort();
@@ -594,10 +615,13 @@ export function useAgent() {
     setSubagentCompletions(0);
     setPendingSteers([]);
     setStatus("ready");
+    setRunState("idle");
     sessionIdRef.current = null;
   }, []);
 
-  useEffect(() => onProjectChange(() => reset()), [reset]);
+  // Project workspaces stay mounted while inactive. Only a real unmount (app
+  // close or project deletion) should sever the SSE and abort the server run.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 
@@ -605,6 +629,7 @@ export function useAgent() {
     messages,
     contextUsage,
     status,
+    runState,
     send,
     stop,
     reset,

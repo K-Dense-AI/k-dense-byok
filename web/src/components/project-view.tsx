@@ -3,6 +3,8 @@
 import {
   ArchiveIcon,
   ArchiveRestoreIcon,
+  ArrowUpRightIcon,
+  ChevronRightIcon,
   FolderIcon,
   MoreHorizontalIcon,
   MoonIcon,
@@ -12,6 +14,7 @@ import {
   SettingsIcon,
   SunIcon,
   Trash2Icon,
+  XIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -31,6 +34,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -49,16 +57,28 @@ import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
 } from "@/components/ui/input-group";
 import { Spinner } from "@/components/ui/spinner";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PROJECT_ID, type Project } from "@/lib/projects";
+import type { ProjectActivitySummary } from "@/lib/project-activity";
 import { useProjects } from "@/lib/use-projects";
+import { cn } from "@/lib/utils";
 import { APP_VERSION, isVersioned } from "@/lib/version";
 
 interface ProjectViewProps {
   onOpenProject: (projectId: string) => void;
+  projectActivities?: Readonly<Record<string, ProjectActivitySummary>>;
 }
 
 interface ProjectFormState {
@@ -70,6 +90,8 @@ interface ProjectFormState {
   tags: string;
   spendLimit: string;
 }
+
+type ProjectSort = "recent" | "name" | "status";
 
 const EMPTY_FORM: ProjectFormState = {
   open: false,
@@ -84,6 +106,17 @@ function projectActivityLabel(project: Project): string {
   const value = project.updatedAt || project.createdAt;
   const date = new Date(value);
   if (!value || Number.isNaN(date.getTime())) return "No recent activity";
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const then = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDifference = Math.round(
+    (today.getTime() - then.getTime()) / 86_400_000,
+  );
+  if (dayDifference === 0) return "Updated today";
+  if (dayDifference === 1) return "Updated yesterday";
+  if (dayDifference > 1 && dayDifference < 7) {
+    return `Updated ${dayDifference} days ago`;
+  }
   return `Updated ${new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
@@ -91,7 +124,52 @@ function projectActivityLabel(project: Project): string {
   }).format(date)}`;
 }
 
-export function ProjectView({ onOpenProject }: ProjectViewProps) {
+function projectActivityPriority(
+  activity: ProjectActivitySummary | undefined,
+): number {
+  if (!activity) return 0;
+  if (activity.needsInput > 0) return 5;
+  if (activity.errors > 0) return 4;
+  if (activity.blocked > 0) return 3;
+  if (activity.running > 0) return 2;
+  if (activity.done > 0) return 1;
+  return 0;
+}
+
+function projectTimestamp(project: Project): number {
+  const timestamp = Date.parse(project.updatedAt || project.createdAt);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+export function sortProjects(
+  projects: Project[],
+  sort: ProjectSort,
+  activities: Readonly<Record<string, ProjectActivitySummary>>,
+): Project[] {
+  return [...projects].sort((a, b) => {
+    if (sort === "name") return a.name.localeCompare(b.name);
+    if (sort === "status") {
+      const priority =
+        projectActivityPriority(activities[b.id]) -
+        projectActivityPriority(activities[a.id]);
+      if (priority !== 0) return priority;
+    }
+    return projectTimestamp(b) - projectTimestamp(a);
+  });
+}
+
+function projectBudgetLabel(limit: number): string {
+  return `${new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: limit % 1 === 0 ? 0 : 2,
+  }).format(limit)} budget`;
+}
+
+export function ProjectView({
+  onOpenProject,
+  projectActivities = {},
+}: ProjectViewProps) {
   const {
     projects,
     activeProjectId,
@@ -107,6 +185,8 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<ProjectSort>("recent");
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const [form, setForm] = useState<ProjectFormState>(EMPTY_FORM);
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -126,10 +206,19 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
         )
       : projects;
     return {
-      visibleProjects: matching.filter((project) => !project.archived),
-      archivedProjects: matching.filter((project) => project.archived),
+      visibleProjects: sortProjects(
+        matching.filter((project) => !project.archived),
+        sort,
+        projectActivities,
+      ),
+      archivedProjects: sortProjects(
+        matching.filter((project) => project.archived),
+        sort,
+        projectActivities,
+      ),
     };
-  }, [projects, search]);
+  }, [projectActivities, projects, search, sort]);
+  const showArchived = archivedOpen || search.trim().length > 0;
 
   const openCreate = useCallback(() => {
     setForm({ ...EMPTY_FORM, open: true });
@@ -301,8 +390,8 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-8 px-6 py-12 lg:py-16">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:py-10">
+        <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div className="flex max-w-2xl flex-col gap-2">
             <p className="text-sm font-medium text-muted-foreground">
               Kady research workspace
@@ -321,17 +410,45 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
           </Button>
         </div>
 
-        <InputGroup className="max-w-md bg-background">
-          <InputGroupAddon>
-            <SearchIcon />
-          </InputGroupAddon>
-          <InputGroupInput
-            aria-label="Search projects"
-            placeholder="Search projects…"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </InputGroup>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <InputGroup className="max-w-sm bg-background">
+            <InputGroupAddon>
+              <SearchIcon />
+            </InputGroupAddon>
+            <InputGroupInput
+              aria-label="Search projects"
+              placeholder="Search projects…"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            {search && (
+              <InputGroupAddon align="inline-end">
+                <InputGroupButton
+                  size="icon-xs"
+                  aria-label="Clear project search"
+                  onClick={() => setSearch("")}
+                >
+                  <XIcon />
+                </InputGroupButton>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
+          <Select
+            value={sort}
+            onValueChange={(value) => setSort(value as ProjectSort)}
+          >
+            <SelectTrigger className="w-full sm:w-44" aria-label="Sort projects">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end">
+              <SelectGroup>
+                <SelectItem value="recent">Recent activity</SelectItem>
+                <SelectItem value="name">Project name</SelectItem>
+                <SelectItem value="status">Needs attention</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
 
         {error && (
           <Alert variant="destructive">
@@ -351,10 +468,11 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
             Loading projects…
           </div>
         ) : (
-          <div className="flex flex-col gap-10">
+          <div className="flex flex-col gap-8">
             <ProjectSection
               title="Projects"
               projects={visibleProjects}
+              projectActivities={projectActivities}
               activeProjectId={activeProjectId}
               onOpen={handleOpen}
               onEdit={openEdit}
@@ -371,11 +489,15 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
               <ProjectSection
                 title="Archived"
                 projects={archivedProjects}
+                projectActivities={projectActivities}
                 activeProjectId={activeProjectId}
                 onOpen={handleOpen}
                 onEdit={openEdit}
                 onToggleArchive={handleToggleArchive}
                 onDelete={handleDelete}
+                collapsible
+                open={showArchived}
+                onOpenChange={setArchivedOpen}
               />
             )}
           </div>
@@ -486,24 +608,82 @@ export function ProjectView({ onOpenProject }: ProjectViewProps) {
 interface ProjectSectionProps {
   title: string;
   projects: Project[];
+  projectActivities: Readonly<Record<string, ProjectActivitySummary>>;
   activeProjectId: string;
   emptyMessage?: string;
   onOpen: (projectId: string) => void;
   onEdit: (project: Project) => void;
   onToggleArchive: (project: Project) => void;
   onDelete: (project: Project) => void;
+  collapsible?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 function ProjectSection({
   title,
   projects,
+  projectActivities,
   activeProjectId,
   emptyMessage,
   onOpen,
   onEdit,
   onToggleArchive,
   onDelete,
+  collapsible = false,
+  open = true,
+  onOpenChange,
 }: ProjectSectionProps) {
+  const content =
+    projects.length === 0 ? (
+      <Card className="border-dashed bg-background/50">
+        <CardContent className="text-sm text-muted-foreground">
+          {emptyMessage ?? "No projects."}
+        </CardContent>
+      </Card>
+    ) : (
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {projects.map((project) => (
+          <ProjectCard
+            key={project.id}
+            project={project}
+            activity={projectActivities[project.id]}
+            active={project.id === activeProjectId}
+            onOpen={() => onOpen(project.id)}
+            onEdit={() => onEdit(project)}
+            onToggleArchive={() => onToggleArchive(project)}
+            onDelete={() => onDelete(project)}
+          />
+        ))}
+      </div>
+    );
+
+  if (collapsible) {
+    return (
+      <section aria-labelledby={`${title}-heading`}>
+        <Collapsible open={open} onOpenChange={onOpenChange}>
+          <h2 id={`${title}-heading`}>
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="group -ml-3 text-muted-foreground"
+                aria-label={`${open ? "Hide" : "Show"} archived projects (${projects.length})`}
+              >
+                <ChevronRightIcon className="transition-transform group-data-[state=open]:rotate-90" />
+                <span className="text-xs font-semibold uppercase tracking-wider">
+                  {title}
+                </span>
+                <Badge variant="secondary">{projects.length}</Badge>
+              </Button>
+            </CollapsibleTrigger>
+          </h2>
+          <CollapsibleContent className="pt-3">{content}</CollapsibleContent>
+        </Collapsible>
+      </section>
+    );
+  }
+
   return (
     <section className="flex flex-col gap-4" aria-labelledby={`${title}-heading`}>
       <div className="flex items-center gap-3">
@@ -513,38 +693,16 @@ function ProjectSection({
         >
           {title}
         </h2>
-        <span className="text-xs text-muted-foreground/60">
-          {projects.length}
-        </span>
+        <span className="text-xs text-muted-foreground/60">{projects.length}</span>
       </div>
-
-      {projects.length === 0 ? (
-        <Card className="border-dashed bg-background/50">
-          <CardContent className="text-sm text-muted-foreground">
-            {emptyMessage ?? "No projects."}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              active={project.id === activeProjectId}
-              onOpen={() => onOpen(project.id)}
-              onEdit={() => onEdit(project)}
-              onToggleArchive={() => onToggleArchive(project)}
-              onDelete={() => onDelete(project)}
-            />
-          ))}
-        </div>
-      )}
+      {content}
     </section>
   );
 }
 
 interface ProjectCardProps {
   project: Project;
+  activity?: ProjectActivitySummary;
   active: boolean;
   onOpen: () => void;
   onEdit: () => void;
@@ -554,26 +712,60 @@ interface ProjectCardProps {
 
 function ProjectCard({
   project,
+  activity,
   active,
   onOpen,
   onEdit,
   onToggleArchive,
   onDelete,
 }: ProjectCardProps) {
+  const hasAttention = Boolean(
+    activity &&
+      (activity.needsInput > 0 || activity.errors > 0 || activity.blocked > 0),
+  );
+  const isRunning = Boolean(activity && activity.running > 0);
+  const isDone = Boolean(
+    activity &&
+      !hasAttention &&
+      !isRunning &&
+      activity.done > 0,
+  );
+  const visibleTagLimit = project.spendLimitUsd == null ? 3 : 2;
+
   return (
-    <Card className="gap-4 bg-background transition-shadow hover:shadow-md">
-      <CardHeader>
-        <div className="mb-2 flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <FolderIcon className="size-5" />
+    <Card
+      className={cn(
+        "group/card relative gap-3 overflow-hidden bg-background py-4 transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-md",
+        activity?.errors ? "border-red-500/50" : "",
+        !activity?.errors && activity?.needsInput ? "border-amber-500/50" : "",
+        !activity?.errors && !activity?.needsInput && activity?.blocked
+          ? "border-orange-500/50"
+          : "",
+        !hasAttention && isRunning ? "border-blue-500/50" : "",
+        isDone ? "border-emerald-500/50" : "",
+      )}
+    >
+      <button
+        type="button"
+        className="absolute inset-0 rounded-xl outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        aria-label={`Open project ${project.name}`}
+        onClick={onOpen}
+      />
+      <CardHeader className="pointer-events-none gap-1.5 px-4">
+        <div className="mb-1 flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground transition-colors group-hover/card:text-foreground">
+          <FolderIcon className="size-4" />
         </div>
-        <CardTitle className="flex min-w-0 items-center gap-2">
+        <CardTitle className="flex min-w-0 items-center gap-1.5 text-sm">
           <span className="truncate">{project.name}</span>
           {active && <Badge variant="secondary">Current</Badge>}
         </CardTitle>
-        <CardDescription className="line-clamp-2 min-h-10">
+        <CardDescription className="line-clamp-2 min-h-8 text-xs leading-relaxed">
           {project.description || "No description yet."}
         </CardDescription>
-        <CardAction>
+        {activity && (
+          <ProjectActivityBadges activity={activity} />
+        )}
+        <CardAction className="pointer-events-auto relative z-10">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
@@ -610,25 +802,108 @@ function ProjectCard({
         </CardAction>
       </CardHeader>
 
-      <CardContent className="flex min-h-6 flex-wrap gap-1.5">
-        {project.tags.slice(0, 3).map((tag) => (
-          <Badge key={tag} variant="outline">
-            {tag}
-          </Badge>
-        ))}
-        {project.tags.length > 3 && (
-          <Badge variant="outline">+{project.tags.length - 3}</Badge>
-        )}
-      </CardContent>
+      {(project.tags.length > 0 || project.spendLimitUsd != null) && (
+        <CardContent className="pointer-events-none flex min-h-5 flex-wrap gap-1 px-4">
+          {project.spendLimitUsd != null && (
+            <Badge variant="secondary">
+              {projectBudgetLabel(project.spendLimitUsd)}
+            </Badge>
+          )}
+          {project.tags.slice(0, visibleTagLimit).map((tag) => (
+            <Badge key={tag} variant="outline">
+              {tag}
+            </Badge>
+          ))}
+          {project.tags.length > visibleTagLimit && (
+            <Badge variant="outline">
+              +{project.tags.length - visibleTagLimit}
+            </Badge>
+          )}
+        </CardContent>
+      )}
 
-      <CardFooter className="justify-between gap-3">
+      <CardFooter className="pointer-events-none mt-auto justify-between gap-3 px-4">
         <span className="truncate text-xs text-muted-foreground">
           {projectActivityLabel(project)}
         </span>
-        <Button size="sm" variant="outline" onClick={onOpen}>
+        <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground transition-colors group-hover/card:text-foreground">
           Open
-        </Button>
+          <ArrowUpRightIcon className="size-3.5 transition-transform group-hover/card:translate-x-0.5 group-hover/card:-translate-y-0.5" />
+        </span>
       </CardFooter>
     </Card>
+  );
+}
+
+function ProjectActivityBadges({
+  activity,
+}: {
+  activity: ProjectActivitySummary;
+}) {
+  const activeOrAttention =
+    activity.running > 0 ||
+    activity.needsInput > 0 ||
+    activity.errors > 0 ||
+    activity.blocked > 0;
+  const items = [
+    activity.needsInput > 0
+      ? {
+          key: "input",
+          label:
+            activity.needsInput === 1
+              ? "Needs your input"
+              : `${activity.needsInput} need your input`,
+          className: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+          dot: "bg-amber-500 animate-pulse",
+        }
+      : null,
+    activity.errors > 0
+      ? {
+          key: "error",
+          label: activity.errors === 1 ? "Error" : `${activity.errors} errors`,
+          className: "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300",
+          dot: "bg-red-500",
+        }
+      : null,
+    activity.blocked > 0
+      ? {
+          key: "blocked",
+          label: activity.blocked === 1 ? "Blocked" : `${activity.blocked} blocked`,
+          className: "border-orange-500/30 bg-orange-500/10 text-orange-700 dark:text-orange-300",
+          dot: "bg-orange-500",
+        }
+      : null,
+    activity.running > 0
+      ? {
+          key: "running",
+          label: activity.running === 1 ? "Running" : `${activity.running} running`,
+          className: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300",
+          dot: "bg-blue-500 animate-pulse",
+        }
+      : null,
+    !activeOrAttention && activity.done > 0
+      ? {
+          key: "done",
+          label: "Done",
+          className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+          dot: "bg-emerald-500",
+        }
+      : null,
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
+
+  if (items.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5" aria-label="Project activity">
+      {items.map((item) => (
+        <Badge
+          key={item.key}
+          variant="outline"
+          className={cn("gap-1.5", item.className)}
+        >
+          <span className={cn("size-1.5 rounded-full", item.dot)} aria-hidden />
+          {item.label}
+        </Badge>
+      ))}
+    </div>
   );
 }

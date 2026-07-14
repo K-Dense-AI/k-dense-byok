@@ -34,6 +34,7 @@ export interface ChatTabDescriptor {
 }
 
 export interface ChatTabsBarProps {
+  projectId: string;
   tabs: ChatTabDescriptor[];
   activeTabId: string;
   view: "chat" | "workflows";
@@ -81,8 +82,10 @@ function relativeTime(value: string | number): string {
 /** Clock menu listing the project's stored sessions; picking one reopens it
  *  (or focuses the tab that already has it). */
 function HistoryMenu({
+  projectId,
   onOpenSession,
 }: {
+  projectId: string;
   onOpenSession: (sessionId: string, title: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -91,7 +94,7 @@ function HistoryMenu({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    apiFetch("/sessions")
+    apiFetch("/sessions", {}, projectId)
       .then((r) => (r.ok ? r.json() : []))
       .then((list: SessionListItem[]) => {
         if (cancelled) return;
@@ -109,7 +112,7 @@ function HistoryMenu({
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open, projectId]);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -168,10 +171,16 @@ function HistoryMenu({
 }
 
 /** Fetch an export and trigger a browser download (X-Project-Id via apiFetch). */
-async function downloadExport(sessionId: string, format: "sh" | "md") {
+async function downloadExport(
+  projectId: string,
+  sessionId: string,
+  format: "sh" | "md",
+) {
   try {
     const res = await apiFetch(
       `/sessions/${encodeURIComponent(sessionId)}/export?format=${format}`,
+      {},
+      projectId,
     );
     if (!res.ok) return;
     const blob = await res.blob();
@@ -188,7 +197,7 @@ async function downloadExport(sessionId: string, format: "sh" | "md") {
   }
 }
 
-function ExportMenu({ sessionId }: { sessionId: string }) {
+function ExportMenu({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   return (
     <DropdownMenu>
       <InfoTooltip
@@ -215,7 +224,7 @@ function ExportMenu({ sessionId }: { sessionId: string }) {
       <DropdownMenuContent align="end" className="w-60">
         <DropdownMenuLabel>Reproducibility export</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => downloadExport(sessionId, "sh")}>
+        <DropdownMenuItem onClick={() => downloadExport(projectId, sessionId, "sh")}>
           <TerminalIcon className="size-4" />
           <div className="flex flex-col">
             <span>Shell script (.sh)</span>
@@ -224,7 +233,7 @@ function ExportMenu({ sessionId }: { sessionId: string }) {
             </span>
           </div>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => downloadExport(sessionId, "md")}>
+        <DropdownMenuItem onClick={() => downloadExport(projectId, sessionId, "md")}>
           <FileTextIcon className="size-4" />
           <div className="flex flex-col">
             <span>Lab notebook (.md)</span>
@@ -239,6 +248,7 @@ function ExportMenu({ sessionId }: { sessionId: string }) {
 }
 
 export function ChatTabsBar({
+  projectId,
   tabs,
   activeTabId,
   view,
@@ -413,12 +423,12 @@ export function ChatTabsBar({
             <PlusIcon className="size-3.5" />
           </button>
         </InfoTooltip>
-        <HistoryMenu onOpenSession={onOpenSession} />
+        <HistoryMenu projectId={projectId} onOpenSession={onOpenSession} />
       </div>
 
       <div className="shrink-0 flex items-center gap-1 pl-2 border-l">
         {view === "chat" && canExport && activeSessionId && (
-          <ExportMenu sessionId={activeSessionId} />
+          <ExportMenu projectId={projectId} sessionId={activeSessionId} />
         )}
         <InfoTooltip
           content={

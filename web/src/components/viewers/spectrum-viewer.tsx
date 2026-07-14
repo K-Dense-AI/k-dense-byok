@@ -124,7 +124,7 @@ function SpectrumChart({ config }: { config: Record<string, unknown> }) {
   return <canvas ref={canvasRef} />;
 }
 
-export default function SpectrumViewer({ path }: ViewerProps) {
+export default function SpectrumViewer({ path, projectId }: ViewerProps) {
   const [summary, setSummary] = useState<MassSpecSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -134,7 +134,7 @@ export default function SpectrumViewer({ path }: ViewerProps) {
     setSummary(null);
     setError(null);
     setSelectedId(null);
-    fetch(sciSummaryUrl(path, "massspec"))
+    fetch(sciSummaryUrl(path, "massspec", projectId))
       .then(async (r) => {
         if (!r.ok) {
           const detail = (await r.json().catch(() => ({}))) as { detail?: string };
@@ -153,7 +153,7 @@ export default function SpectrumViewer({ path }: ViewerProps) {
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, projectId]);
 
   if (error) {
     return (

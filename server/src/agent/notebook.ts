@@ -115,7 +115,7 @@ export function makeNotebookTool(
         id: toolCallId,
         timestamp: Date.now(),
         role: "agent",
-        runId: currentRunId(getSessionId()),
+        runId: currentRunId(projectId, getSessionId()),
       };
       try {
         appendNotebookEntry(getSessionId(), entry, projectId);

@@ -16,7 +16,7 @@ import { MessageResponse } from "@/components/ai-elements/message";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { API_BASE, apiFetch } from "@/lib/projects";
+import { API_BASE, apiFetch, useProjectScopeId } from "@/lib/projects";
 import type { ActivityItem } from "@/lib/use-agent";
 import { cn } from "@/lib/utils";
 
@@ -90,11 +90,11 @@ function fence(source: string, lang = ""): string {
   return `${f}${lang}\n${source}\n${f}`;
 }
 
-/** Resolve a media image src: URLs/data URIs pass through, sandbox paths go
- *  through the backend raw endpoint (project scoping rides the cookie). */
-function imageSrc(src: string): string {
+/** Resolve a media image src: URLs/data URIs pass through, sandbox paths are
+ * pinned to the interview's project so background workspaces stay isolated. */
+function imageSrc(src: string, projectId: string): string {
   if (/^(https?:|data:|blob:)/.test(src)) return src;
-  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(src)}`;
+  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(src)}&project=${encodeURIComponent(projectId)}`;
 }
 
 function ChartMedia({ config }: { config: unknown }) {
@@ -123,12 +123,13 @@ function ChartMedia({ config }: { config: unknown }) {
 }
 
 function MediaBlock({ media }: { media: InterviewMedia }) {
+  const projectId = useProjectScopeId();
   switch (media.type) {
     case "image":
       return media.src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={imageSrc(media.src)}
+          src={imageSrc(media.src, projectId)}
           alt={media.caption ?? "interview media"}
           className="max-h-80 rounded-md border object-contain"
         />
@@ -513,10 +514,14 @@ function SubmittedSummary({
 export function InterviewCard({
   item,
   sessionId,
+  projectId,
 }: {
   item: ActivityItem;
   sessionId: string | null;
+  projectId?: string;
 }) {
+  const contextProjectId = useProjectScopeId();
+  const scopedProjectId = projectId ?? contextProjectId;
   const payload = useMemo(() => parseInterviewPayload(item.args), [item.args]);
   const [states, setStates] = useState<Record<string, QuestionState>>(() => {
     const init: Record<string, QuestionState> = {};
@@ -540,7 +545,7 @@ export function InterviewCard({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      });
+      }, scopedProjectId);
       if (!res.ok) {
         const detail = (await res.json().catch(() => null)) as { detail?: string } | null;
         setError(detail?.detail ?? `Submission failed (${res.status})`);

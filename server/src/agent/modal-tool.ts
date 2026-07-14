@@ -45,16 +45,33 @@ const MAX_TIMEOUT_S = 3600;
 /** Cap each stream in the tool result so a chatty job can't blow the context. */
 const MAX_OUTPUT_CHARS = 16000;
 
-// Per-session default compute instance, stashed by the /run handler before a
-// run (mirrors fusion-bridge's setFusionConfig). Module-level because the tool
-// is constructed before the session exists and reads the live value by id.
-// `null` means no Modal default selected ("local") — the tool then falls back
-// to DEFAULT_INSTANCE_ID when the agent doesn't name an instance.
+// Per-project/session default compute instance, stashed by the /run handler
+// before a run (mirrors fusion-bridge's setFusionConfig). Module-level because
+// the tool is constructed before the session exists and reads the live value
+// by composite key. `null` means no Modal default selected ("local") — the tool
+// then falls back to DEFAULT_INSTANCE_ID when the agent doesn't name an
+// instance.
 const sessionComputeTargets = new Map<string, string | null>();
+const keyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
-/** Stash (or clear, with `null`/"local") the default compute instance for a session. */
-export function setSessionComputeTarget(sessionId: string, instanceId: string | null): void {
-  sessionComputeTargets.set(sessionId, instanceId && instanceId !== "local" ? instanceId : null);
+/** Stash (or clear, with `null`/"local") the default for a project session. */
+export function setSessionComputeTarget(
+  projectId: string,
+  sessionId: string,
+  instanceId: string | null,
+): void {
+  sessionComputeTargets.set(
+    keyFor(projectId, sessionId),
+    instanceId && instanceId !== "local" ? instanceId : null,
+  );
+}
+
+/** Return the selected default compute instance for a project session. */
+export function getSessionComputeTarget(
+  projectId: string,
+  sessionId: string,
+): string | null | undefined {
+  return sessionComputeTargets.get(keyFor(projectId, sessionId));
 }
 
 export const ModalRunParams = Type.Object({
@@ -154,7 +171,8 @@ export function makeModalTool(
         );
       }
 
-      const instanceId = params.instance ?? sessionComputeTargets.get(sessionId) ?? DEFAULT_INSTANCE_ID;
+      const instanceId =
+        params.instance ?? getSessionComputeTarget(projectId, sessionId) ?? DEFAULT_INSTANCE_ID;
       const spec = resolveInstance(instanceId);
       if (!spec) {
         return textResult(

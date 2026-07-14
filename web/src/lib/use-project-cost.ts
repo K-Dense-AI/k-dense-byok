@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { apiFetch, getActiveProjectId, onProjectChange } from "@/lib/projects";
+import { apiFetch, useProjectScopeId } from "@/lib/projects";
 
 export type BudgetState = "ok" | "warn" | "exceeded";
 
@@ -44,34 +44,32 @@ function emptySummary(projectId: string): ProjectCostSummary {
  */
 export function useProjectCost(
   refreshKey: number,
+  projectId?: string,
 ): { summary: ProjectCostSummary; loading: boolean } {
-  const [projectId, setProjectId] = useState<string>(() => getActiveProjectId());
+  const contextProjectId = useProjectScopeId();
+  const scopedProjectId = projectId ?? contextProjectId;
   const [summary, setSummary] = useState<ProjectCostSummary>(() =>
-    emptySummary(getActiveProjectId()),
+    emptySummary(scopedProjectId),
   );
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    return onProjectChange((id) => {
-      setProjectId(id);
-      setSummary(emptySummary(id));
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!projectId) return;
+    if (!scopedProjectId) return;
     let cancelled = false;
+    setSummary(emptySummary(scopedProjectId));
 
     const fetchOnce = async () => {
       setLoading(true);
       try {
         const r = await apiFetch(
-          `/projects/${encodeURIComponent(projectId)}/costs`,
+          `/projects/${encodeURIComponent(scopedProjectId)}/costs`,
+          {},
+          scopedProjectId,
         );
         if (!r.ok) return;
         const data = await r.json();
         if (cancelled || !data || typeof data !== "object") return;
-        setSummary({ ...emptySummary(projectId), ...data });
+        setSummary({ ...emptySummary(scopedProjectId), ...data });
       } catch {
         // swallow -- next refreshKey bump or project change will retry
       } finally {
@@ -84,7 +82,7 @@ export function useProjectCost(
     return () => {
       cancelled = true;
     };
-  }, [projectId, refreshKey]);
+  }, [scopedProjectId, refreshKey]);
 
   return { summary, loading };
 }

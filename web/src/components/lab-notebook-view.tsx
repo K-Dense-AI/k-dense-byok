@@ -4,7 +4,7 @@ import { ArrowUpIcon, FlaskConicalIcon, SparklesIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { apiFetch, getActiveProjectId } from "@/lib/projects";
+import { apiFetch, useProjectScopeId } from "@/lib/projects";
 import { mergeNotebookEntries, type NotebookEntry } from "@/lib/notebook";
 import { deriveThreads } from "@/lib/notebook-threads";
 import {
@@ -42,6 +42,7 @@ function sessionDisplayName(s: SessionInfo): string {
 }
 
 export function LabNotebookView({
+  projectId,
   sessionId,
   liveEntries,
   streaming,
@@ -50,6 +51,7 @@ export function LabNotebookView({
   onJumpToChat,
   focusEntry,
 }: {
+  projectId?: string;
   sessionId: string | null;
   liveEntries: NotebookEntry[];
   streaming: boolean;
@@ -60,6 +62,8 @@ export function LabNotebookView({
   /** Deep-link target from the chat side; token forces re-focus on repeat. */
   focusEntry?: { id: string; token: number } | null;
 }) {
+  const contextProjectId = useProjectScopeId();
+  const scopedProjectId = projectId ?? contextProjectId;
   const [fetched, setFetched] = useState<NotebookEntry[]>([]);
   const [scope, setScope] = useState<NotebookScope>("session");
   const [viewMode, setViewMode] = useState<NotebookViewMode>("story");
@@ -107,7 +111,11 @@ export function LabNotebookView({
     inFlightRef.current = true;
     (async () => {
       try {
-        const res = await apiFetch(`/sessions/${encodeURIComponent(sessionId)}/notebook`);
+        const res = await apiFetch(
+          `/sessions/${encodeURIComponent(sessionId)}/notebook`,
+          {},
+          scopedProjectId,
+        );
         if (!res.ok) return;
         const data = (await res.json()) as { entries?: NotebookEntry[] };
         // Guard against a response for a session we've since navigated away
@@ -125,7 +133,7 @@ export function LabNotebookView({
       }
     })();
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, scopedProjectId]);
 
   // Cold-open/reload on session change, and re-pull when a subagent completes
   // (its harvested entries are now in the durable notebook).
@@ -165,7 +173,7 @@ export function LabNotebookView({
     togglePin,
     addComment,
     addNote,
-  } = useNotebookAnnotations(sessionId, canAnnotate);
+  } = useNotebookAnnotations(sessionId, canAnnotate, scopedProjectId);
 
   // Poll while async subagent work may still land entries post-run.
   const hasSubagentActivity =
@@ -183,10 +191,13 @@ export function LabNotebookView({
     let cancelled = false;
     (async () => {
       try {
-        const pid = getActiveProjectId();
         const [nbRes, sessRes] = await Promise.all([
-          apiFetch(`/projects/${encodeURIComponent(pid)}/notebook`),
-          apiFetch(`/sessions`),
+          apiFetch(
+            `/projects/${encodeURIComponent(scopedProjectId)}/notebook`,
+            {},
+            scopedProjectId,
+          ),
+          apiFetch(`/sessions`, {}, scopedProjectId),
         ]);
         if (!nbRes.ok) throw new Error(`project notebook failed: ${nbRes.status}`);
         const nb = (await nbRes.json()) as { entries?: NotebookEntry[] };
@@ -209,7 +220,7 @@ export function LabNotebookView({
       }
     })();
     return () => { cancelled = true; };
-  }, [scope]);
+  }, [scope, scopedProjectId]);
 
   // User notes render as synthetic entries so they flow through the timeline.
   const noteEntries = useMemo<NotebookEntry[]>(
@@ -355,6 +366,8 @@ export function LabNotebookView({
     try {
       const res = await apiFetch(
         `/sessions/${encodeURIComponent(sessionId)}/notebook/export?format=${format}`,
+        {},
+        scopedProjectId,
       );
       if (!res.ok) throw new Error(`export failed: ${res.status}`);
       const blob = await res.blob();
@@ -377,6 +390,7 @@ export function LabNotebookView({
       scope,
       sessionNames: scope === "project" ? sessionNames : undefined,
       annotations,
+      projectId: scopedProjectId,
     });
     const win = window.open("", "_blank");
     if (!win) {
@@ -401,6 +415,7 @@ export function LabNotebookView({
       const res = await apiFetch(
         `/sessions/${encodeURIComponent(sessionId)}/notebook/methods-draft`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+        scopedProjectId,
       );
       const data = (await res.json().catch(() => ({}))) as {
         path?: string;

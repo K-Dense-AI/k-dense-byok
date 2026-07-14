@@ -16,7 +16,7 @@ function fmtForName(name: string): string {
   return "pdb"; // pdb/ent/gro/pdbqt handled as pdb-ish by 3Dmol
 }
 
-export default function StructureViewer({ path, name }: ViewerProps) {
+export default function StructureViewer({ path, name, projectId }: ViewerProps) {
   const [summary, setSummary] = useState<StructSummary | null>(null);
   const [summaryErr, setSummaryErr] = useState<string | null>(null);
   const [viewerErr, setViewerErr] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export default function StructureViewer({ path, name }: ViewerProps) {
   useEffect(() => {
     let alive = true;
     setSummary(null); setSummaryErr(null);
-    fetch(sciSummaryUrl(path, "structure"))
+    fetch(sciSummaryUrl(path, "structure", projectId))
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
         return r.json() as Promise<StructSummary>;
@@ -33,7 +33,7 @@ export default function StructureViewer({ path, name }: ViewerProps) {
       .then((d) => { if (alive) setSummary(d); })
       .catch((e) => { if (alive) setSummaryErr(String(e.message ?? e)); });
     return () => { alive = false; };
-  }, [path]);
+  }, [path, projectId]);
 
   useEffect(() => {
     setViewerErr(null);
@@ -41,7 +41,7 @@ export default function StructureViewer({ path, name }: ViewerProps) {
     let disposed = false;
     let viewer: { clear(): void } | null = null;
     Promise.all([
-      fetch(rawFileUrl(path)).then((r) => {
+      fetch(rawFileUrl(path, projectId)).then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.text();
       }),
@@ -58,7 +58,7 @@ export default function StructureViewer({ path, name }: ViewerProps) {
       })
       .catch((e) => { if (!disposed) setViewerErr(String(e?.message ?? e)); });
     return () => { disposed = true; viewer?.clear?.(); };
-  }, [path, name]);
+  }, [path, name, projectId]);
 
   return (
     <div className="flex h-full flex-col">

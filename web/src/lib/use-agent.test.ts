@@ -136,4 +136,90 @@ describe("useAgent notebook accumulation", () => {
       percent: 21,
     });
   });
+
+  it("keeps a project-pinned stream alive when the visible project changes", async () => {
+    let streamController!: ReadableStreamDefaultController<Uint8Array>;
+    let markStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const calls: Array<{ path: string; projectId?: string; signal?: AbortSignal | null }> = [];
+
+    vi.spyOn(projects, "apiFetch").mockImplementation(
+      async (path: string, init?: RequestInit, projectId?: string) => {
+        calls.push({ path, projectId, signal: init?.signal });
+        if (path === "/sessions") {
+          return new Response(JSON.stringify({ id: "s1" }), { status: 200 });
+        }
+        if (path === "/sessions/s1/run") {
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                streamController = controller;
+                markStarted();
+              },
+            }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected apiFetch path: ${path}`);
+      },
+    );
+
+    const { result } = renderHook(() => useAgent("project-a"));
+    let sendPromise!: Promise<string | undefined>;
+    act(() => {
+      sendPromise = result.current.send("keep going");
+    });
+    await act(async () => {
+      await started;
+    });
+
+    const runCall = calls.find((call) => call.path.endsWith("/run"));
+    expect(runCall?.projectId).toBe("project-a");
+    expect(runCall?.signal?.aborted).toBe(false);
+    expect(result.current.status).toBe("streaming");
+
+    act(() => {
+      projects.setActiveProjectId("project-b");
+    });
+    expect(runCall?.signal?.aborted).toBe(false);
+    expect(result.current.messages[0]?.content).toBe("keep going");
+
+    await act(async () => {
+      streamController.close();
+      await sendPromise;
+    });
+    expect(result.current.status).toBe("ready");
+    expect(result.current.runState).toBe("done");
+  });
+
+  it("marks budget refusals as blocked project activity", async () => {
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      if (path === "/sessions") {
+        return new Response(JSON.stringify({ id: "s1" }), { status: 200 });
+      }
+      if (path === "/sessions/s1/run") {
+        return new Response(
+          sseStream([
+            {
+              type: "error",
+              kind: "budget",
+              message: "Project spend limit reached",
+            },
+          ]),
+          { status: 200 },
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+
+    const { result } = renderHook(() => useAgent("project-a"));
+    await act(async () => {
+      await result.current.send("continue");
+    });
+
+    expect(result.current.status).toBe("ready");
+    expect(result.current.runState).toBe("blocked");
+  });
 });

@@ -185,7 +185,7 @@ export function makeSubagentNotebookExtension(
     // session gets that run's id (no correlation exists in the payload; see
     // run-ids.ts). Dedup means an entry harvested unstamped is never
     // re-appended with a runId later.
-    const runId = currentRunId(parentSession);
+    const runId = currentRunId(projectId, parentSession);
     for (const r of results ?? []) {
       if (!r.agent || !r.sessionFile) continue;
       const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent, sandboxRoot);

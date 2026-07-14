@@ -94,9 +94,14 @@ export interface FetchResult {
   lastModified: string | null;
 }
 
-export async function fetchAnnotations(path: string): Promise<FetchResult> {
+export async function fetchAnnotations(
+  path: string,
+  projectId?: string,
+): Promise<FetchResult> {
   const res = await apiFetch(
     `/sandbox/annotations?path=${encodeURIComponent(path)}`,
+    {},
+    projectId,
   );
   if (!res.ok) {
     return { doc: { ...EMPTY_DOC }, lastModified: null };
@@ -119,6 +124,7 @@ export async function saveAnnotations(
   path: string,
   doc: AnnotationsDoc,
   ifUnmodifiedSince: string | null,
+  projectId?: string,
 ): Promise<SaveResult> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -132,6 +138,7 @@ export async function saveAnnotations(
       headers,
       body: JSON.stringify(doc),
     },
+    projectId,
   );
   if (res.status === 412) {
     return { ok: false, conflict: true, lastModified: null };
@@ -151,6 +158,7 @@ export function subscribeAnnotations(
   initialLastModified: string | null,
   onChange: (result: FetchResult) => void,
   intervalMs = 3000,
+  projectId?: string,
 ): () => void {
   let cancelled = false;
   let last = initialLastModified;
@@ -160,6 +168,8 @@ export function subscribeAnnotations(
     try {
       const res = await apiFetch(
         `/sandbox/annotations?path=${encodeURIComponent(path)}`,
+        {},
+        projectId,
       );
       if (!res.ok) return;
       const lastModified = res.headers.get("Last-Modified");

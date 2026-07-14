@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { apiFetch } from "@/lib/projects";
+import { apiFetch, useProjectScopeId } from "@/lib/projects";
 
 export interface CostEntry {
   entryId: string;
@@ -47,7 +47,10 @@ const EMPTY: SessionCostSummary = {
 export function useSessionCost(
   sessionId: string | null | undefined,
   refreshKey: number,
+  projectId?: string,
 ): { summary: SessionCostSummary; loading: boolean } {
+  const contextProjectId = useProjectScopeId();
+  const scopedProjectId = projectId ?? contextProjectId;
   const [summary, setSummary] = useState<SessionCostSummary>(EMPTY);
   const [loading, setLoading] = useState(false);
 
@@ -63,6 +66,8 @@ export function useSessionCost(
       try {
         const r = await apiFetch(
           `/sessions/${encodeURIComponent(sessionId)}/costs`,
+          {},
+          scopedProjectId,
         );
         if (!r.ok) return;
         const data = await r.json();
@@ -80,7 +85,7 @@ export function useSessionCost(
     return () => {
       cancelled = true;
     };
-  }, [sessionId, refreshKey]);
+  }, [sessionId, refreshKey, scopedProjectId]);
 
   return { summary, loading };
 }

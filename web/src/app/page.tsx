@@ -13,10 +13,17 @@ import { SessionCostPill } from "@/components/session-cost-pill";
 import { ResourceMonitor } from "@/components/resource-monitor";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
+import { useProjects } from "@/lib/use-projects";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
-import { onProjectChange } from "@/lib/projects";
+import { ProjectScopeProvider } from "@/lib/projects";
+import {
+  hasProjectActivity,
+  sameProjectActivity,
+  summarizeProjectActivity,
+  type ProjectActivitySummary,
+} from "@/lib/project-activity";
 import { onChatPrefill } from "@/lib/chat-prefill";
 import { isJunkFilePath } from "@/lib/utils";
 import {
@@ -75,22 +82,112 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
 
 export default function HomePage() {
   const [screen, setScreen] = useState<"projects" | "workspace">("projects");
+  const [openedProjectIds, setOpenedProjectIds] = useState<string[]>([]);
+  const [projectActivities, setProjectActivities] = useState<
+    Record<string, ProjectActivitySummary>
+  >({});
+  const { activeProjectId, projects, loading: projectsLoading } = useProjects();
 
-  if (screen === "projects") {
-    return <ProjectView onOpenProject={() => setScreen("workspace")} />;
-  }
+  const rememberProject = useCallback((projectId: string) => {
+    setOpenedProjectIds((prev) => (
+      prev.includes(projectId) ? prev : [...prev, projectId]
+    ));
+  }, []);
 
-  return <WorkspacePage onOpenProjectView={() => setScreen("projects")} />;
+  const openProject = useCallback((projectId: string) => {
+    rememberProject(projectId);
+    setScreen("workspace");
+  }, [rememberProject]);
+
+  const handleProjectActivityChange = useCallback(
+    (projectId: string, activity: ProjectActivitySummary) => {
+      setProjectActivities((prev) => {
+        const existing = prev[projectId];
+        if (!hasProjectActivity(activity)) {
+          if (!existing) return prev;
+          const next = { ...prev };
+          delete next[projectId];
+          return next;
+        }
+        if (sameProjectActivity(existing, activity)) return prev;
+        return { ...prev, [projectId]: activity };
+      });
+    },
+    [],
+  );
+
+  // ProjectSwitcher changes the global selection from inside the currently
+  // visible workspace. Mount the destination workspace without unmounting the
+  // source, so any live SSE stream in the source keeps running.
+  useEffect(() => {
+    if (screen === "workspace") rememberProject(activeProjectId);
+  }, [activeProjectId, rememberProject, screen]);
+
+  // A deleted project must release its mounted workspace; useAgent's unmount
+  // cleanup closes any stream, which in turn aborts the server-side session.
+  useEffect(() => {
+    if (projectsLoading) return;
+    const existing = new Set(projects.map((project) => project.id));
+    setOpenedProjectIds((prev) => {
+      const next = prev.filter((id) => existing.has(id));
+      return next.length === prev.length ? prev : next;
+    });
+    setProjectActivities((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([id]) => existing.has(id)),
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [projects, projectsLoading]);
+
+  return (
+    <>
+      <div
+        className={screen === "projects" ? "contents" : "hidden"}
+        aria-hidden={screen !== "projects"}
+      >
+        <ProjectView
+          onOpenProject={openProject}
+          projectActivities={projectActivities}
+        />
+      </div>
+      {openedProjectIds.map((projectId) => {
+        const isActive = screen === "workspace" && projectId === activeProjectId;
+        return (
+          <ProjectScopeProvider key={projectId} value={projectId}>
+            <div className={isActive ? "contents" : "hidden"} aria-hidden={!isActive}>
+              <WorkspacePage
+                projectId={projectId}
+                isActive={isActive}
+                onProjectActivityChange={handleProjectActivityChange}
+                onOpenProjectView={() => setScreen("projects")}
+              />
+            </div>
+          </ProjectScopeProvider>
+        );
+      })}
+    </>
+  );
 }
 
 function WorkspacePage({
+  projectId,
+  isActive,
+  onProjectActivityChange,
   onOpenProjectView,
 }: {
+  projectId: string;
+  isActive: boolean;
+  onProjectActivityChange: (
+    projectId: string,
+    activity: ProjectActivitySummary,
+  ) => void;
   onOpenProjectView: () => void;
 }) {
-  const sandbox = useSandbox(false);
+  const sandbox = useSandbox(isActive);
   const { updateAvailable } = useUpdateCheck();
   const { skills: allSkills } = useSkills();
+  const { projects: projectDirectory } = useProjects();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   // The two side panels collapse independently so the center pane (file
@@ -178,6 +275,7 @@ function WorkspacePage({
           existing &&
           existing.sessionId === meta.sessionId &&
           existing.status === meta.status &&
+          existing.runState === meta.runState &&
           existing.isStreaming === meta.isStreaming &&
           existing.userMessageCount === meta.userMessageCount &&
           existing.messages === meta.messages
@@ -266,28 +364,12 @@ function WorkspacePage({
     };
   }, []);
 
-  // Switching projects nukes every tab's session, so we reduce the tab list
-  // back to one fresh tab. Each <ChatTab>'s own useAgent listens for the
-  // same event and clears its messages, so this is just bookkeeping for
-  // the strip.
-  useEffect(
-    () =>
-      onProjectChange(() => {
-        const id = makeTabId();
-        tabHandles.current.clear();
-        tabRefCallbacks.current.clear();
-        setTabsMeta({});
-        setTabs([{ id, title: defaultTabTitle(0) }]);
-        setActiveTabId(id);
-        setView("chat");
-        setCostRefreshKey((k) => k + 1);
-      }),
-    [],
-  );
-
   // Ask Kady handoff: the active tab's composer (mounted even behind the
   // Workflows view) appends the text; this listener makes it visible.
-  useEffect(() => onChatPrefill(() => setView("chat")), []);
+  useEffect(() => {
+    if (!isActive) return;
+    return onChatPrefill(() => setView("chat"));
+  }, [isActive]);
 
   // Flat list of all sandbox file paths for @ mentions (shared across tabs).
   // Cache artifacts are excluded — mentioning __pycache__/*.pyc is never useful.
@@ -441,6 +523,38 @@ function WorkspacePage({
   );
   const { summary: projectCost, loading: projectCostLoading } =
     useProjectCost(costRefreshKey);
+  const directorySpendLimit = projectDirectory.find(
+    (project) => project.id === projectId,
+  )?.spendLimitUsd;
+  const budgetBlocked =
+    directorySpendLimit === undefined
+      ? projectCost.budget.state === "exceeded"
+      : directorySpendLimit !== null &&
+        projectCost.totalUsd >= directorySpendLimit;
+  const projectActivity = useMemo(
+    () =>
+      summarizeProjectActivity(
+        Object.values(tabsMeta).map((meta) => ({
+          isStreaming: meta.isStreaming,
+          runState: meta.runState,
+          needsInput:
+            meta.isStreaming &&
+            meta.messages.some((message) =>
+              message.activities?.some(
+                (activity) =>
+                  activity.toolName === "interview" &&
+                  activity.status === "running",
+              ),
+            ),
+        })),
+        budgetBlocked,
+      ),
+    [budgetBlocked, tabsMeta],
+  );
+
+  useEffect(() => {
+    onProjectActivityChange(projectId, projectActivity);
+  }, [onProjectActivityChange, projectActivity, projectId]);
 
   const tabDescriptors: ChatTabDescriptor[] = useMemo(
     () =>
@@ -458,7 +572,12 @@ function WorkspacePage({
       {/* Header */}
       <header className="relative flex items-center justify-between border-b px-6 py-3">
         <div className="flex items-center gap-2">
-          <a href="https://www.k-dense.ai" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onOpenProjectView}
+            aria-label="Back to projects"
+            className="flex items-center gap-2"
+          >
             {/* Plain <img> to avoid Next/Image's aspect-ratio warning when we
                 set height via CSS and let width autosize. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -468,7 +587,7 @@ function WorkspacePage({
               className="h-7 w-auto object-contain dark:invert"
             />
             <span className="text-sm font-semibold tracking-tight text-foreground/80">BYOK</span>
-          </a>
+          </button>
           {isVersioned && (
             <InfoTooltip
               content={
@@ -643,6 +762,7 @@ function WorkspacePage({
             side panels make room for (e.g. the LaTeX editor + PDF). */}
         <div className="flex-1 min-w-0 overflow-hidden">
           <FilePreviewPanel
+            projectId={projectId}
             tabs={sandbox.tabs}
             activeTabPath={sandbox.activeTabPath}
             onTabSelect={handleFileSelect}
@@ -678,6 +798,7 @@ function WorkspacePage({
         >
 
           <ChatTabsBar
+            projectId={projectId}
             tabs={tabDescriptors}
             activeTabId={activeTabId}
             view={view}
@@ -698,10 +819,11 @@ function WorkspacePage({
             <ChatTab
               key={t.id}
               ref={getTabRefCallback(t.id)}
+              projectId={projectId}
               tabId={t.id}
               initialSessionId={t.sessionId ?? null}
-              isActive={view === "chat" && t.id === activeTabId}
-              isActiveTab={t.id === activeTabId}
+              isActive={isActive && view === "chat" && t.id === activeTabId}
+              isActiveTab={isActive && t.id === activeTabId}
               allFiles={allFiles}
               uploadFiles={sandbox.uploadFiles}
               onSandboxRefresh={handleSandboxRefresh}

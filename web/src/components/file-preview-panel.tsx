@@ -403,12 +403,16 @@ function ReadOnlyCodeView({
   );
 }
 
-function resolveMarkdownImageUrls(content: string, filePath: string): string {
+function resolveMarkdownImageUrls(
+  content: string,
+  filePath: string,
+  projectId: string,
+): string {
   const dir = filePath.substring(0, filePath.lastIndexOf("/") + 1) || "";
   const isAbsolute = (u: string) =>
     /^https?:\/\//.test(u) || u.startsWith("data:") || u.startsWith("blob:");
   const resolve = (u: string) =>
-    rawFileUrl(u.startsWith("/") ? u : dir + u);
+    rawFileUrl(u.startsWith("/") ? u : dir + u, projectId);
 
   let out = content.replace(
     /!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g,
@@ -457,21 +461,24 @@ function FileLoadError({
 function MarkdownViewer({
   path,
   content,
+  projectId,
 }: {
   path: string;
   content: string;
+  projectId: string;
 }) {
   return (
     <div className="h-full overflow-auto p-6 text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-      <MessageResponse>{resolveMarkdownImageUrls(content, path)}</MessageResponse>
+      <MessageResponse>{resolveMarkdownImageUrls(content, path, projectId)}</MessageResponse>
     </div>
   );
 }
 
 function FileViewer({
-  path, name, content, loading, onRetry, onSave, revealLine, revealCell, revealToken,
+  path, name, content, loading, projectId, onRetry, onSave, revealLine, revealCell, revealToken,
 }: {
   path: string; name: string | null; content: string | null; loading: boolean;
+  projectId: string;
   onRetry?: () => void;
   onSave?: (content: string) => Promise<boolean>;
   revealLine?: number;
@@ -504,22 +511,29 @@ function FileViewer({
     const Viewer = def.Viewer;
     return (
       <Suspense fallback={<div className="flex h-full items-center justify-center"><div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" /></div>}>
-        <Viewer key={path} path={path} name={name ?? ""} content={content} onRetry={onRetry} />
+        <Viewer
+          key={path}
+          path={path}
+          name={name ?? ""}
+          content={content}
+          projectId={projectId}
+          onRetry={onRetry}
+        />
       </Suspense>
     );
   }
   if (cat === "image") {
-    return <ImageViewer path={path} name={name} />;
+    return <ImageViewer path={path} name={name} projectId={projectId} />;
   }
   if (cat === "pdf") {
-    return <PdfViewer path={path} />;
+    return <PdfViewer path={path} projectId={projectId} />;
   }
   if (cat === "anndata") {
-    return <AnnDataViewer path={path} />;
+    return <AnnDataViewer path={path} projectId={projectId} />;
   }
   if (content === null) return null;
   if (cat === "markdown") {
-    return <MarkdownViewer path={path} content={content} />;
+    return <MarkdownViewer path={path} content={content} projectId={projectId} />;
   }
   if (cat === "csv") return <CsvViewer content={content} />;
   if (cat === "notebook") return (
@@ -1188,10 +1202,12 @@ type Point = { x: number; y: number };
 
 function ImageAnnotator({
   path,
+  projectId,
   onSave,
   onDiscard,
 }: {
   path: string;
+  projectId: string;
   onSave: (blob: Blob) => Promise<boolean>;
   onDiscard: () => void;
 }) {
@@ -1234,7 +1250,7 @@ function ImageAnnotator({
   useEffect(() => {
     const img = new window.Image();
     img.crossOrigin = "anonymous";
-    img.src = `${rawFileUrl(path)}&_t=${Date.now()}`;
+    img.src = `${rawFileUrl(path, projectId)}&_t=${Date.now()}`;
     img.onload = () => {
       imgRef.current = img;
       if (canvasRef.current) {
@@ -1244,7 +1260,7 @@ function ImageAnnotator({
       }
       setLoaded(true);
     };
-  }, [path, redrawAll]);
+  }, [path, projectId, redrawAll]);
 
   const getPos = useCallback((e: React.MouseEvent<HTMLCanvasElement>): Point => {
     const canvas = canvasRef.current!;
@@ -1562,7 +1578,15 @@ function KeyChips({ title, keys }: { title: string; keys: string[] }) {
 /** Image preview that fills the panel and toggles between fit-to-panel and
  *  actual-size (1:1, scrollable) on click — so a scientist can scrutinise a
  *  plot instead of squinting at a thumbnail. */
-function ImageViewer({ path, name }: { path: string; name?: string | null }) {
+function ImageViewer({
+  path,
+  name,
+  projectId,
+}: {
+  path: string;
+  name?: string | null;
+  projectId: string;
+}) {
   const [zoomed, setZoomed] = useState(false);
   return (
     <div
@@ -1573,7 +1597,7 @@ function ImageViewer({ path, name }: { path: string; name?: string | null }) {
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={rawFileUrl(path)}
+        src={rawFileUrl(path, projectId)}
         alt={name ?? ""}
         onClick={() => setZoomed((z) => !z)}
         title={zoomed ? "Click to fit" : "Click to view actual size"}
@@ -1586,7 +1610,7 @@ function ImageViewer({ path, name }: { path: string; name?: string | null }) {
   );
 }
 
-function AnnDataViewer({ path }: { path: string }) {
+function AnnDataViewer({ path, projectId }: { path: string; projectId: string }) {
   const [summary, setSummary] = useState<AnnDataSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1600,7 +1624,7 @@ function AnnDataViewer({ path }: { path: string }) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch(anndataSummaryUrl(path), { signal: controller.signal });
+      const res = await fetch(anndataSummaryUrl(path, projectId), { signal: controller.signal });
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         let detail = `${res.status} ${res.statusText}`;
@@ -1623,7 +1647,7 @@ function AnnDataViewer({ path }: { path: string }) {
       clearTimeout(timeout);
       setLoading(false);
     }
-  }, [path]);
+  }, [path, projectId]);
 
   useEffect(() => {
     fetchSummary();
@@ -1757,7 +1781,12 @@ function AnnDataViewer({ path }: { path: string }) {
                 /* eslint-disable-next-line @next/next/no-img-element */
                 <img
                   key={`${activeKey}:${colorCol}:${imgBust}`}
-                  src={anndataEmbeddingUrl(path, activeKey, colorCol || null)}
+                  src={anndataEmbeddingUrl(
+                    path,
+                    activeKey,
+                    colorCol || null,
+                    projectId,
+                  )}
                   alt={`${activeKey} embedding`}
                   className="h-full w-full object-contain"
                 />
@@ -1811,6 +1840,7 @@ export interface RevealTarget {
 }
 
 export interface FilePreviewPanelProps {
+  projectId: string;
   tabs: Tab[];
   activeTabPath: string | null;
   onTabSelect: (path: string) => void;
@@ -1835,6 +1865,7 @@ export interface FilePreviewPanelProps {
 }
 
 export function FilePreviewPanel({
+  projectId,
   tabs,
   activeTabPath,
   onTabSelect,
@@ -1930,6 +1961,7 @@ export function FilePreviewPanel({
 
       {showNotebook ? (
         <LabNotebookView
+          projectId={projectId}
           sessionId={notebookSessionId}
           liveEntries={notebookEntries}
           streaming={notebookStreaming}
@@ -1996,6 +2028,7 @@ export function FilePreviewPanel({
           <div className="flex-1 min-h-0">
             <ImageAnnotator
               path={selectedPath}
+              projectId={projectId}
               onSave={(blob) => onSaveImageBlob(selectedPath, blob)}
               onDiscard={() => setMode(selectedPath, "view")}
             />
@@ -2016,6 +2049,7 @@ export function FilePreviewPanel({
           )}>
             <FileViewer
               path={selectedPath}
+              projectId={projectId}
               name={selectedName}
               content={fileContent}
               loading={loadingFile}
