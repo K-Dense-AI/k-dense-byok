@@ -21,7 +21,7 @@ import {
   latexSpellLinter,
   type SpellWorkerClient,
 } from "@/lib/latex/spellcheck";
-import { getActiveProjectId } from "@/lib/projects";
+import { useProjectScopeId } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import CodeMirror, { EditorView } from "@uiw/react-codemirror";
 import { loadLanguage } from "@uiw/codemirror-extensions-langs";
@@ -78,6 +78,7 @@ export function LatexEditor({
   onDiscard,
   onOpenFile,
 }: LatexEditorProps) {
+  const projectId = useProjectScopeId();
   // --- document state: content lives in CodeMirror, not React state -------
   const contentRef = useRef(initialContent);
   const lastSavedRef = useRef(initialContent);
@@ -139,7 +140,7 @@ export function LatexEditor({
   );
   const spellWorkerRef = useRef<SpellWorkerClient | null>(null);
   const ignoredRef = useRef<Set<string>>(new Set());
-  const dictKey = `kady:latex:dict:${getActiveProjectId()}`;
+  const dictKey = `kady:latex:dict:${projectId}`;
   const dictKeyRef = useRef(dictKey);
   dictKeyRef.current = dictKey;
 
@@ -207,11 +208,11 @@ export function LatexEditor({
     }
     const keys: string[] = [];
     for (const f of files) {
-      const text = await readSandboxFile(resolveRelative(path, f));
+      const text = await readSandboxFile(resolveRelative(path, f), projectId);
       if (text) keys.push(...scanBibKeys(text));
     }
     bibKeysRef.current = [...new Set(keys)];
-  }, [path]);
+  }, [path, projectId]);
 
   useEffect(() => {
     void refreshBibKeys();
@@ -370,14 +371,14 @@ export function LatexEditor({
     // Claim the token before the await: if a newer jump starts while this one
     // is in flight, the stale response is dropped instead of winning the race.
     const token = ++syncTokenRef.current;
-    const box = await fetchSynctexForward(path, line, pdf);
+    const box = await fetchSynctexForward(path, line, pdf, projectId);
     if (token !== syncTokenRef.current) return;
     if (box === "unavailable" || box === null) {
       showSyncNotice(box === "unavailable" ? "SyncTeX not available (recompile first)" : "No PDF location found for this line");
       return;
     }
     setSyncHighlight({ ...box, token });
-  }, [path, showSyncNotice]);
+  }, [path, projectId, showSyncNotice]);
   const jumpToPdfRef = useRef(jumpToPdf);
   jumpToPdfRef.current = jumpToPdf;
 
@@ -389,7 +390,7 @@ export function LatexEditor({
     async (pos: PdfSyncClick) => {
       const pdf = pdfPathRef.current;
       if (!pdf) return;
-      const loc = await fetchSynctexInverse(pdf, pos.page, pos.x, pos.y);
+      const loc = await fetchSynctexInverse(pdf, pos.page, pos.x, pos.y, projectId);
       if (loc === "unavailable" || loc === null || !loc.file) {
         showSyncNotice("No source location found");
         return;
@@ -407,7 +408,7 @@ export function LatexEditor({
       onOpenFile?.(loc.file);
       showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
     },
-    [path, jumpToLine, onOpenFile, showSyncNotice, isDirty, modKey],
+    [path, projectId, jumpToLine, onOpenFile, showSyncNotice, isDirty, modKey],
   );
 
   const toggleOutline = useCallback(() => {
@@ -472,7 +473,7 @@ export function LatexEditor({
       const ctrl = new AbortController();
       aiAbortRef.current = ctrl;
       try {
-        return await postLatexAssist(payload, ctrl.signal);
+        return await postLatexAssist(payload, ctrl.signal, projectId);
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           onError(err instanceof LatexAssistError ? err.message : "AI request failed");
@@ -483,7 +484,7 @@ export function LatexEditor({
         if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
       }
     },
-    [],
+    [projectId],
   );
 
   const runAiEdit = useCallback(

@@ -13,7 +13,7 @@
  *  1. `buildFusionRequestBody()` — the PURE transform (no network, no Pi state),
  *     so it is unit-testable in isolation.
  *  2. `makeFusionRequestExtension()` — an ExtensionFactory that reads the
- *     stashed per-session Fusion config and applies the transform to each
+ *     stashed per-project/session Fusion config and applies the transform to each
  *     outgoing payload. `setFusionConfig()` lets the /run handler stash the
  *     config for the session before a run (and clear it for non-fusion runs).
  *
@@ -108,16 +108,22 @@ export function buildFusionRequestBody(
   return next;
 }
 
-// Per-session Fusion config, stashed by the /run handler for the duration of a
-// run. Module-level because the extension is constructed before the session
-// exists (same holder pattern as subagent-bridge.ts), so it reads the live
-// value here keyed by sessionId. `null` means "this session is not running a
-// Fusion preset" — the extension then passes payloads through untouched.
+// Per-project/session Fusion config, stashed by the /run handler for the
+// duration of a run. Module-level because the extension is constructed before
+// the session exists (same holder pattern as subagent-bridge.ts), so it reads
+// the live value here by composite key. `null` means "this session is not
+// running a Fusion preset" — the extension then passes payloads through
+// untouched.
 const sessionFusionConfigs = new Map<string, FusionConfig | null>();
+const keyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
-/** Stash (or clear, with `null`) the Fusion config for a session's next run. */
-export function setFusionConfig(sessionId: string, config: FusionConfig | null): void {
-  sessionFusionConfigs.set(sessionId, config);
+/** Stash (or clear, with `null`) the Fusion config for a project session's next run. */
+export function setFusionConfig(
+  projectId: string,
+  sessionId: string,
+  config: FusionConfig | null,
+): void {
+  sessionFusionConfigs.set(keyFor(projectId, sessionId), config);
 }
 
 /**
@@ -127,10 +133,13 @@ export function setFusionConfig(sessionId: string, config: FusionConfig | null):
  * `getSessionId` is lazy because the extension is constructed before the
  * session exists (same as makeSubagentLedgerExtension).
  */
-export function makeFusionRequestExtension(getSessionId: () => string): ExtensionFactory {
+export function makeFusionRequestExtension(
+  projectId: string,
+  getSessionId: () => string,
+): ExtensionFactory {
   return (pi) => {
     pi.on("before_provider_request", async (event) => {
-      const fusionConfig = sessionFusionConfigs.get(getSessionId());
+      const fusionConfig = sessionFusionConfigs.get(keyFor(projectId, getSessionId()));
       if (!fusionConfig) return event.payload;
       return buildFusionRequestBody(
         event.payload as Record<string, unknown>,

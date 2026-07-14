@@ -9,14 +9,14 @@ interface MolInfo {
 }
 interface ChemSummary { format: string; count: number; molecules: MolInfo[] }
 
-export default function MoleculeViewer({ path }: ViewerProps) {
+export default function MoleculeViewer({ path, projectId }: ViewerProps) {
   const [summary, setSummary] = useState<ChemSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
     setSummary(null); setError(null);
-    fetch(sciSummaryUrl(path, "chem"))
+    fetch(sciSummaryUrl(path, "chem", projectId))
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
         return r.json() as Promise<ChemSummary>;
@@ -24,7 +24,7 @@ export default function MoleculeViewer({ path }: ViewerProps) {
       .then((d) => { if (alive) setSummary(d); })
       .catch((e) => { if (alive) setError(String(e.message ?? e)); });
     return () => { alive = false; };
-  }, [path]);
+  }, [path, projectId]);
 
   if (error) {
     return (
@@ -49,7 +49,11 @@ export default function MoleculeViewer({ path }: ViewerProps) {
         {summary.molecules.map((m) => (
           <div key={m.index} className="overflow-hidden rounded-md border">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={sciRenderUrl(path, "chem", m.index)} alt={m.name || m.smiles} className="w-full bg-white" />
+            <img
+              src={sciRenderUrl(path, "chem", m.index, undefined, projectId)}
+              alt={m.name || m.smiles}
+              className="w-full bg-white"
+            />
             <div className="space-y-0.5 border-t p-2 text-xs">
               {m.name && <div className="font-semibold">{m.name}</div>}
               <div className="font-mono text-muted-foreground">{m.formula}</div>

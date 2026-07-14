@@ -24,16 +24,18 @@ export function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function resolveSrc(href: string): string {
-  return /^(https?:|data:)/i.test(href) ? href : rawFileUrl(href.replace(/^\.?\//, ""));
+function resolveSrc(href: string, projectId?: string): string {
+  return /^(https?:|data:)/i.test(href)
+    ? href
+    : rawFileUrl(href.replace(/^\.?\//, ""), projectId);
 }
 
-function mdToHtml(md: string): string {
+function mdToHtml(md: string, projectId?: string): string {
   const marked = new Marked({ gfm: true, async: false });
   marked.use({
     renderer: {
       image({ href, title, text }) {
-        const src = escapeHtml(resolveSrc(href));
+        const src = escapeHtml(resolveSrc(href, projectId));
         const t = title ? ` title="${escapeHtml(title)}"` : "";
         return `<img src="${src}" alt="${escapeHtml(text)}"${t} />`;
       },
@@ -53,6 +55,7 @@ const TYPE_LABEL: Record<NotebookEntry["type"], string> = {
 export interface NotebookPrintOpts {
   scope?: "session" | "project";
   sessionNames?: ReadonlyMap<string, string>;
+  projectId?: string;
   /** Pins + comments; user notes should already be merged as entries. */
   annotations?: NotebookAnnotation[];
 }
@@ -65,6 +68,7 @@ function entryHtml(
     pinnedIds: Set<string>;
     commentsByEntry: Map<string, NotebookAnnotation[]>;
     showRole: boolean;
+    projectId?: string;
   },
 ): string {
   const thread = ctx.threads.get(entry.id);
@@ -101,13 +105,15 @@ function entryHtml(
   const tags = entry.tags?.length
     ? `<div class="tags">${entry.tags.map((t) => `<span class="tag">#${escapeHtml(t)}</span>`).join(" ")}</div>`
     : "";
-  const body = entry.body ? `<div class="body">${mdToHtml(entry.body)}</div>` : "";
+  const body = entry.body
+    ? `<div class="body">${mdToHtml(entry.body, ctx.projectId)}</div>`
+    : "";
   const code = entry.code
     ? `<pre class="code"><code>${escapeHtml(entry.code.source)}</code></pre>`
     : "";
   const artifacts = (entry.artifacts ?? [])
     .map((p) => {
-      const url = escapeHtml(rawFileUrl(p));
+      const url = escapeHtml(rawFileUrl(p, ctx.projectId));
       if (fileCategory(p) === "image") {
         return `<figure class="artifact"><img src="${url}" alt="${escapeHtml(p)}" /><figcaption>${escapeHtml(p)}</figcaption></figure>`;
       }
@@ -117,7 +123,7 @@ function entryHtml(
   const comments = (ctx.commentsByEntry.get(entry.id) ?? [])
     .map(
       (c) =>
-        `<div class="comment"><span class="comment-author">You</span> <span class="entry-time">${escapeHtml(new Date(c.createdAt).toLocaleString())}</span><div>${mdToHtml(c.body ?? "")}</div></div>`,
+        `<div class="comment"><span class="comment-author">You</span> <span class="entry-time">${escapeHtml(new Date(c.createdAt).toLocaleString())}</span><div>${mdToHtml(c.body ?? "", ctx.projectId)}</div></div>`,
     )
     .join("\n");
 
@@ -164,7 +170,16 @@ export function buildNotebookPrintHtml(
         const name = opts.sessionNames?.get(sid) ?? sid;
         const inner = bySession
           .get(sid)!
-          .map((e) => entryHtml(e, { byId, threads, pinnedIds, commentsByEntry, showRole: true }))
+          .map((e) =>
+            entryHtml(e, {
+              byId,
+              threads,
+              pinnedIds,
+              commentsByEntry,
+              showRole: true,
+              projectId: opts.projectId,
+            }),
+          )
           .join("\n");
         return `<h2 class="lane">${escapeHtml(name)}</h2>\n${inner}`;
       })
@@ -188,7 +203,14 @@ export function buildNotebookPrintHtml(
         const inner = byRole
           .get(role)!
           .map((e) =>
-            entryHtml(e, { byId, threads, pinnedIds, commentsByEntry, showRole: !multiLane }),
+            entryHtml(e, {
+              byId,
+              threads,
+              pinnedIds,
+              commentsByEntry,
+              showRole: !multiLane,
+              projectId: opts.projectId,
+            }),
           )
           .join("\n");
         return multiLane ? `<h2 class="lane">${escapeHtml(roleLabel(role))}</h2>\n${inner}` : inner;

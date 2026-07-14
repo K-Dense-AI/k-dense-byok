@@ -26,6 +26,7 @@ import {
 
 import { ExternalLinkIcon } from "lucide-react";
 import { rawFileUrl } from "@/lib/use-sandbox";
+import { useProjectScopeId } from "@/lib/projects";
 import {
   type Annotation,
   type AnnotationsDoc,
@@ -155,6 +156,7 @@ export interface PdfSyncClick {
 } // top-left PDF points
 export interface PdfViewerProps {
   path: string;
+  projectId?: string;
   className?: string;
   reloadToken?: number; // bump to re-fetch the same path in place (scroll/zoom preserved)
   syncHighlight?: PdfSyncHighlight | null; // scroll to + flash this box (synctex view coords)
@@ -164,12 +166,15 @@ export interface PdfViewerProps {
 
 export function PdfViewer({
   path,
+  projectId,
   className,
   reloadToken = 0,
   syncHighlight = null,
   onSyncClick,
   hideAnnotationUi = false,
 }: PdfViewerProps) {
+  const contextProjectId = useProjectScopeId();
+  const scopedProjectId = projectId ?? contextProjectId;
   const [pdfjs, setPdfjs] = useState<PdfjsModule | null>(null);
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -228,7 +233,7 @@ export function PdfViewer({
     // canvases up until the new document is ready, then restores scroll.
     const isReload = docRef.current !== null && loadedPathRef.current === path;
     const savedScroll = isReload ? (containerRef.current?.scrollTop ?? null) : null;
-    const url = rawFileUrl(path) + (reloadToken ? `&_r=${reloadToken}` : "");
+    const url = rawFileUrl(path, scopedProjectId) + (reloadToken ? `&_r=${reloadToken}` : "");
     const task = pdfjs.getDocument({ url, withCredentials: true });
     if (!isReload) {
       Promise.resolve().then(() => {
@@ -284,7 +289,7 @@ export function PdfViewer({
         () => {},
       );
     };
-  }, [pdfjs, path, reloadToken]);
+  }, [pdfjs, path, reloadToken, scopedProjectId]);
 
   useEffect(
     () => () => {
@@ -304,7 +309,7 @@ export function PdfViewer({
   useEffect(() => {
     if (hideAnnotationUi) return;
     let cancelled = false;
-    fetchAnnotations(path).then((res) => {
+    fetchAnnotations(path, scopedProjectId).then((res) => {
       if (cancelled) return;
       setAnnotations(res.doc);
       setLastModified(res.lastModified);
@@ -312,7 +317,7 @@ export function PdfViewer({
     return () => {
       cancelled = true;
     };
-  }, [path, hideAnnotationUi]);
+  }, [path, hideAnnotationUi, scopedProjectId]);
 
   useEffect(() => {
     if (hideAnnotationUi) return;
@@ -323,9 +328,11 @@ export function PdfViewer({
         setAnnotations(newDoc);
         setLastModified(newMtime);
       },
+      3000,
+      scopedProjectId,
     );
     return unsub;
-  }, [path, hideAnnotationUi]);
+  }, [path, hideAnnotationUi, scopedProjectId]);
 
   // --------------------------------------------------------------------
   // Persistence (debounced per keystroke is overkill — we save on every
@@ -338,9 +345,10 @@ export function PdfViewer({
         path,
         next,
         lastModifiedRef.current,
+        scopedProjectId,
       );
       if (res.conflict) {
-        const fresh = await fetchAnnotations(path);
+        const fresh = await fetchAnnotations(path, scopedProjectId);
         // Merge: start from disk, then re-apply our local changes that
         // aren't present there (by id). Disk wins on id collisions.
         const byId = new Map<string, Annotation>();
@@ -358,13 +366,14 @@ export function PdfViewer({
           path,
           merged,
           fresh.lastModified,
+          scopedProjectId,
         );
         if (retry.ok) setLastModified(retry.lastModified);
         return;
       }
       if (res.ok) setLastModified(res.lastModified);
     },
-    [path],
+    [path, scopedProjectId],
   );
 
   const mutate = useCallback(
@@ -647,7 +656,7 @@ export function PdfViewer({
         showExpert={showExpert}
         setShowExpert={setShowExpert}
         hideAnnotationUi={hideAnnotationUi}
-        openHref={rawFileUrl(path)}
+        openHref={rawFileUrl(path, scopedProjectId)}
         onJumpPage={(p) => {
           const el = containerRef.current?.querySelector<HTMLElement>(
             `[data-pdf-page="${p}"]`,

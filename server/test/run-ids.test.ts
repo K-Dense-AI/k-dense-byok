@@ -11,20 +11,22 @@ describe("run-ids", () => {
   });
 
   it("returns undefined for a session with no live run", () => {
-    expect(currentRunId("run-ids-none")).toBeUndefined();
+    expect(currentRunId("project-a", "run-ids-none")).toBeUndefined();
   });
 
-  it("stores and retrieves a run id per session", () => {
-    setSessionRunId("run-ids-a", "run_x");
-    setSessionRunId("run-ids-b", "run_y");
-    expect(currentRunId("run-ids-a")).toBe("run_x");
-    expect(currentRunId("run-ids-b")).toBe("run_y");
+  it("isolates the same session id across projects", () => {
+    const sessionId = "shared-session";
+    setSessionRunId("project-a", sessionId, "run_x");
+    setSessionRunId("project-b", sessionId, "run_y");
+
+    expect(currentRunId("project-a", sessionId)).toBe("run_x");
+    expect(currentRunId("project-b", sessionId)).toBe("run_y");
   });
 
   it("clears the run id when set to null", () => {
-    setSessionRunId("run-ids-c", "run_z");
-    expect(currentRunId("run-ids-c")).toBe("run_z");
-    setSessionRunId("run-ids-c", null);
-    expect(currentRunId("run-ids-c")).toBeUndefined();
+    setSessionRunId("project-a", "run-ids-c", "run_z");
+    expect(currentRunId("project-a", "run-ids-c")).toBe("run_z");
+    setSessionRunId("project-a", "run-ids-c", null);
+    expect(currentRunId("project-a", "run-ids-c")).toBeUndefined();
   });
 });

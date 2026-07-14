@@ -83,10 +83,10 @@ describe("notebook tool", () => {
     // No run set: the stored row must carry no runId key at all.
     await run(tool, "tc_a", { type: "note", title: "before run" });
     // Run live: the row is stamped with the in-flight run id.
-    setSessionRunId(s, "run_x");
+    setSessionRunId("default", s, "run_x");
     await run(tool, "tc_b", { type: "note", title: "during run" });
     // Cleared: back to no runId key.
-    setSessionRunId(s, null);
+    setSessionRunId("default", s, null);
     await run(tool, "tc_c", { type: "note", title: "after run" });
 
     const entries = readNotebookEntries(s);
@@ -95,9 +95,29 @@ describe("notebook tool", () => {
     expect("runId" in entries[2]).toBe(false);
   });
 
+  it("uses the owning project's run id when session ids overlap", async () => {
+    const s = "sess-tool-shared";
+    setSessionRunId("project-a", s, "run_project_a");
+    setSessionRunId("project-b", s, "run_project_b");
+
+    await run(makeNotebookTool("project-a", () => s), "tc_a", {
+      type: "note",
+      title: "project A",
+    });
+    await run(makeNotebookTool("project-b", () => s), "tc_b", {
+      type: "note",
+      title: "project B",
+    });
+
+    expect(readNotebookEntries(s, "project-a")[0].runId).toBe("run_project_a");
+    expect(readNotebookEntries(s, "project-b")[0].runId).toBe("run_project_b");
+    setSessionRunId("project-a", s, null);
+    setSessionRunId("project-b", s, null);
+  });
+
   it("overwrites a model-injected id/role/runId with server stamps", async () => {
     const s = "sess-tool-inject";
-    setSessionRunId(s, "run_server");
+    setSessionRunId("default", s, "run_server");
     const tool = makeNotebookTool("default", () => s);
     await run(tool, "tc_real", {
       type: "note",
@@ -106,7 +126,7 @@ describe("notebook tool", () => {
       role: "evil_role",
       runId: "run_injected",
     });
-    setSessionRunId(s, null);
+    setSessionRunId("default", s, null);
     const entries = readNotebookEntries(s);
     expect(entries[0].id).toBe("tc_real");
     expect(entries[0].role).toBe("agent");

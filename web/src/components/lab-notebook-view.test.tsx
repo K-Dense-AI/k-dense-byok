@@ -8,6 +8,7 @@ vi.mock("@/lib/projects", () => ({
   apiFetch: vi.fn(),
   API_BASE: "http://x",
   getActiveProjectId: () => "default",
+  useProjectScopeId: () => "default",
   onProjectChange: () => () => {},
 }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));

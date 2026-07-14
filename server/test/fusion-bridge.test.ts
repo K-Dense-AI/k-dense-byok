@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildFusionRequestBody } from "../src/agent/fusion-bridge.ts";
+import {
+  buildFusionRequestBody,
+  makeFusionRequestExtension,
+  setFusionConfig,
+} from "../src/agent/fusion-bridge.ts";
 
 // A representative chat/completions payload Pi assembles for a normal turn.
 // model:"openrouter/anthropic/claude-opus-4.8" stands in for the resolved
@@ -88,5 +92,37 @@ describe("buildFusionRequestBody", () => {
   it("returns the base payload unchanged when fusionConfig has no plugins", () => {
     const out = buildFusionRequestBody(basePayload, { reasoning_effort: "xhigh" });
     expect(out).toBe(basePayload);
+  });
+});
+
+describe("makeFusionRequestExtension", () => {
+  it("isolates Fusion configs for the same session id across projects", async () => {
+    const sessionId = "shared-session";
+    const configA = { ...fusionConfig, temperature: 0.2 };
+    const configB = { ...fusionConfig, temperature: 0.9 };
+    setFusionConfig("project-a", sessionId, configA);
+    setFusionConfig("project-b", sessionId, configB);
+
+    const handlerFor = (projectId: string) => {
+      let handler:
+        | ((event: { payload: Record<string, unknown> }) => Promise<Record<string, unknown>>)
+        | undefined;
+      const pi = {
+        on: (name: string, callback: typeof handler) => {
+          if (name === "before_provider_request") handler = callback;
+        },
+      };
+      makeFusionRequestExtension(projectId, () => sessionId)(pi as never);
+      if (!handler) throw new Error("before_provider_request handler was not registered");
+      return handler;
+    };
+
+    const outA = await handlerFor("project-a")({ payload: basePayload });
+    const outB = await handlerFor("project-b")({ payload: basePayload });
+    expect((outA.plugins as Array<Record<string, unknown>>)[0].temperature).toBe(0.2);
+    expect((outB.plugins as Array<Record<string, unknown>>)[0].temperature).toBe(0.9);
+
+    setFusionConfig("project-a", sessionId, null);
+    setFusionConfig("project-b", sessionId, null);
   });
 });

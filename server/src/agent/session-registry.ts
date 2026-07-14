@@ -110,7 +110,7 @@ async function build(
       makeSubagentLedgerExtension(projectId, () => holder.session?.sessionId ?? ""),
       // Rewrites the outgoing provider body to an OpenRouter Fusion request when
       // the /run handler stashed a Fusion config for this session (setFusionConfig).
-      makeFusionRequestExtension(() => holder.session?.sessionId ?? ""),
+      makeFusionRequestExtension(projectId, () => holder.session?.sessionId ?? ""),
       // Harvest notebook entries the roster's subagents logged (child pi
       // processes get the notebook tool via seedNotebookPackage above) into
       // the parent notebook — the parent is the single writer.

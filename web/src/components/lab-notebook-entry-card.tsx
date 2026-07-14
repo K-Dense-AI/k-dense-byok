@@ -33,6 +33,7 @@ import { agentAccent, roleLabel } from "@/lib/notebook-filters";
 import type { NotebookAnnotation } from "@/lib/notebook-annotations";
 import type { NotebookEntry, NotebookEntryType } from "@/lib/notebook";
 import type { ThreadInfo } from "@/lib/notebook-threads";
+import { useProjectScopeId } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { fileCategory, rawFileUrl } from "@/lib/use-sandbox";
 
@@ -185,6 +186,7 @@ export function LabNotebookEntryCard({
   onJumpToEntry?: (entryId: string) => void;
   onTagClick?: (tag: string) => void;
 }) {
+  const projectId = useProjectScopeId();
   const meta = TYPE_META[entry.type];
   const [codeOpen, setCodeOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -481,7 +483,7 @@ export function LabNotebookEntryCard({
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={rawFileUrl(path)}
+                    src={rawFileUrl(path, projectId)}
                     alt={path.split("/").pop() ?? path}
                     loading="lazy"
                     className="h-40 w-full bg-white object-contain p-1 transition-transform duration-300 group-hover/image:scale-[1.01]"

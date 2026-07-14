@@ -103,6 +103,21 @@ describe("projects.ts", () => {
       expect(headers.get("X-Project-Id")).toBe("explicit");
     });
 
+    it("pins a request to an inactive workspace project", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response("{}", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      projectsModule.setActiveProjectId("visible-project");
+      await projectsModule.apiFetch("/sessions/background/run", {}, "background-project");
+
+      const headers = new Headers(
+        (fetchMock.mock.calls[0][1] as RequestInit).headers,
+      );
+      expect(headers.get("X-Project-Id")).toBe("background-project");
+    });
+
     it("passes absolute URLs through untouched", async () => {
       const fetchMock = vi
         .fn()

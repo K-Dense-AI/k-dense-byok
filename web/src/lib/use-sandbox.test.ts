@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { fileCategory, sciSummaryUrl, sciRenderUrl } from "./use-sandbox";
+import {
+  fileCategory,
+  rawFileUrl,
+  sciSummaryUrl,
+  sciRenderUrl,
+} from "./use-sandbox";
 
 describe("fileCategory — chemistry & structures", () => {
   it("classifies 2D molecule formats", () => {
@@ -90,5 +95,15 @@ describe("sci url builders", () => {
     expect(u).toContain("kind=imaging");
     expect(u).toContain("index=5");
     expect(u).toContain("axis=coronal");
+  });
+
+  it("pins raw and scientific URLs to an owning project", () => {
+    expect(rawFileUrl("figures/a.png", "project-a")).toContain("project=project-a");
+    expect(sciSummaryUrl("a.pdb", "structure", "project-a")).toContain(
+      "project=project-a",
+    );
+    expect(
+      sciRenderUrl("a.nii", "imaging", 5, "coronal", "project-a"),
+    ).toContain("project=project-a");
   });
 });

@@ -1,5 +1,7 @@
 "use client";
 
+import { createContext, useContext } from "react";
+
 /**
  * Project types, storage, and the `apiFetch` wrapper used by every hook.
  *
@@ -48,6 +50,18 @@ export const API_BASE =
 
 const STORAGE_KEY = "kady:activeProjectId";
 const CHANGE_EVENT = "kady:project-changed";
+const ProjectScopeContext = createContext<string | null>(null);
+
+/**
+ * Pins descendants to one project even while the globally-visible project
+ * changes. Used by mounted background workspaces whose streams must keep
+ * talking to their owning project.
+ */
+export const ProjectScopeProvider = ProjectScopeContext.Provider;
+
+export function useProjectScopeId(): string {
+  return useContext(ProjectScopeContext) ?? getActiveProjectId();
+}
 
 /**
  * Read the active project id.
@@ -126,12 +140,13 @@ export function onProjectChange(
  */
 export function apiFetch(
   path: string,
-  init: RequestInit = {}
+  init: RequestInit = {},
+  projectId?: string,
 ): Promise<Response> {
   const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
   const headers = new Headers(init.headers);
   if (!headers.has("X-Project-Id")) {
-    headers.set("X-Project-Id", getActiveProjectId());
+    headers.set("X-Project-Id", projectId?.trim() || getActiveProjectId());
   }
   return fetch(url, { ...init, headers });
 }

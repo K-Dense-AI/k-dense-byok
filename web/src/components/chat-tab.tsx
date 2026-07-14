@@ -57,6 +57,7 @@ import {
 import { suggestSkillsForFiles } from "@/lib/skill-suggestions";
 import {
   useAgent,
+  type AgentRunState,
   type ActivityItem,
   type ChatMessage,
   type ContextUsage,
@@ -909,12 +910,14 @@ function AssistantMessageBody({
   isStreaming,
   isLast,
   sessionId,
+  projectId,
   onViewInNotebook,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
   isLast: boolean;
   sessionId: string | null;
+  projectId: string;
   onViewInNotebook?: (entryId: string) => void;
 }) {
   const activities = message.activities ?? [];
@@ -942,7 +945,14 @@ function AssistantMessageBody({
   for (const a of activities) {
     if (a.toolName === "interview") {
       flushChunk();
-      activityBlocks.push(<InterviewCard key={a.id} item={a} sessionId={sessionId} />);
+      activityBlocks.push(
+        <InterviewCard
+          key={a.id}
+          item={a}
+          sessionId={sessionId}
+          projectId={projectId}
+        />,
+      );
     } else if (a.toolName === "notebook") {
       flushChunk();
       activityBlocks.push(
@@ -988,6 +998,7 @@ function AssistantMessageBody({
 export interface ChatTabMeta {
   sessionId: string | null;
   status: "ready" | "submitted" | "streaming" | "error";
+  runState: AgentRunState;
   isStreaming: boolean;
   messages: ChatMessage[];
   userMessageCount: number;
@@ -1027,6 +1038,7 @@ export interface ChatTabHandle {
 
 export interface ChatTabProps {
   tabId: string;
+  projectId: string;
   isActive: boolean;
   /** True when this is the selected tab, even if the Workflows view hides the
    * chat column — the Ask Kady prefill targets the tab, not the view. */
@@ -1050,6 +1062,7 @@ export interface ChatTabProps {
 export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   {
     tabId,
+    projectId,
     isActive,
     isActiveTab,
     initialSessionId,
@@ -1070,6 +1083,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     messages,
     contextUsage,
     status,
+    runState,
     send,
     stop,
     steer,
@@ -1078,7 +1092,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     loadSession,
     notebookEntries,
     subagentCompletions,
-  } = useAgent();
+  } = useAgent(projectId);
   const isStreaming = status === "streaming" || status === "submitted";
   // Scopes the deep-link querySelector to THIS tab's transcript.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1200,6 +1214,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     onMetaChange(tabId, {
       sessionId,
       status,
+      runState,
       isStreaming,
       messages,
       userMessageCount,
@@ -1210,6 +1225,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     tabId,
     sessionId,
     status,
+    runState,
     isStreaming,
     messages,
     userMessageCount,
@@ -1400,6 +1416,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                       isStreaming={isStreaming}
                       isLast={i === messages.length - 1}
                       sessionId={sessionId}
+                      projectId={projectId}
                       onViewInNotebook={onViewInNotebook}
                     />
                   ) : (

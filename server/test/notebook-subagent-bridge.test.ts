@@ -89,14 +89,14 @@ describe("makeSubagentNotebookExtension", () => {
     // suppresses a fresh harvest.
     const childFile = writeChildSession(projectId, "child-sync.jsonl");
 
-    setSessionRunId(parentSession, "run_y");
+    setSessionRunId(projectId, parentSession, "run_y");
     const pi = fakePi();
     makeSubagentNotebookExtension(projectId, () => parentSession)(pi.api as never);
     pi.onHandlers["tool_result"]({
       toolName: "subagent",
       details: { results: [{ agent: "stats-checker", sessionFile: childFile }] },
     });
-    setSessionRunId(parentSession, null);
+    setSessionRunId(projectId, parentSession, null);
 
     const entries = readNotebookEntries(parentSession, projectId);
     expect(entries).toHaveLength(1);
@@ -108,17 +108,43 @@ describe("makeSubagentNotebookExtension", () => {
     const parentSession = "parent-run-async";
     const childFile = writeChildSession(projectId, "child-async.jsonl");
 
-    setSessionRunId(parentSession, "run_z");
+    setSessionRunId(projectId, parentSession, "run_z");
     const pi = fakePi();
     makeSubagentNotebookExtension(projectId, () => parentSession)(pi.api as never);
     pi.eventHandlers["subagent:async-complete"]({
       results: [{ agent: "scout", sessionFile: childFile }],
     });
-    setSessionRunId(parentSession, null);
+    setSessionRunId(projectId, parentSession, null);
 
     const entries = readNotebookEntries(parentSession, projectId);
     expect(entries).toHaveLength(1);
     expect(entries[0].runId).toBe("run_z");
+  });
+
+  it("uses the owning project's run id when parent session ids overlap", () => {
+    const parentSession = "parent-shared";
+    const childA = writeChildSession("project-a", "child-shared-a.jsonl");
+    const childB = writeChildSession("project-b", "child-shared-b.jsonl");
+    setSessionRunId("project-a", parentSession, "run_project_a");
+    setSessionRunId("project-b", parentSession, "run_project_b");
+
+    const piA = fakePi();
+    const piB = fakePi();
+    makeSubagentNotebookExtension("project-a", () => parentSession)(piA.api as never);
+    makeSubagentNotebookExtension("project-b", () => parentSession)(piB.api as never);
+    piA.onHandlers["tool_result"]({
+      toolName: "subagent",
+      details: { results: [{ agent: "worker", sessionFile: childA }] },
+    });
+    piB.onHandlers["tool_result"]({
+      toolName: "subagent",
+      details: { results: [{ agent: "worker", sessionFile: childB }] },
+    });
+
+    expect(readNotebookEntries(parentSession, "project-a")[0].runId).toBe("run_project_a");
+    expect(readNotebookEntries(parentSession, "project-b")[0].runId).toBe("run_project_b");
+    setSessionRunId("project-a", parentSession, null);
+    setSessionRunId("project-b", parentSession, null);
   });
 
   it("leaves harvested entries unstamped when no run is live", () => {
@@ -126,7 +152,7 @@ describe("makeSubagentNotebookExtension", () => {
     const parentSession = "parent-no-run";
     const childFile = writeChildSession(projectId, "child-norun.jsonl");
 
-    setSessionRunId(parentSession, null); // explicit: no run in flight
+    setSessionRunId(projectId, parentSession, null); // explicit: no run in flight
     const pi = fakePi();
     makeSubagentNotebookExtension(projectId, () => parentSession)(pi.api as never);
     pi.onHandlers["tool_result"]({

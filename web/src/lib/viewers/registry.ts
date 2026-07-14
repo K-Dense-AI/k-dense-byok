@@ -7,6 +7,7 @@ export interface ViewerProps {
   path: string;
   name: string;
   content: string | null;
+  projectId?: string;
   onRetry?: () => void;
 }
 

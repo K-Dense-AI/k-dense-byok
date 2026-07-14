@@ -1,9 +1,16 @@
 /** Thin client helpers for the LaTeX editor's backend endpoints. */
 import { apiFetch } from "@/lib/projects";
 
-export async function readSandboxFile(path: string): Promise<string | null> {
+export async function readSandboxFile(
+  path: string,
+  projectId?: string,
+): Promise<string | null> {
   try {
-    const res = await apiFetch(`/sandbox/file?path=${encodeURIComponent(path)}`);
+    const res = await apiFetch(
+      `/sandbox/file?path=${encodeURIComponent(path)}`,
+      {},
+      projectId,
+    );
     return res.ok ? await res.text() : null;
   } catch {
     return null;
@@ -13,9 +20,16 @@ export async function readSandboxFile(path: string): Promise<string | null> {
 export type SynctexBoxDto = { page: number; h: number; v: number; W: number; H: number };
 export type SynctexLocDto = { file: string | null; line: number; column: number };
 
-async function synctexRequest<T>(params: URLSearchParams): Promise<T | "unavailable" | null> {
+async function synctexRequest<T>(
+  params: URLSearchParams,
+  projectId?: string,
+): Promise<T | "unavailable" | null> {
   try {
-    const res = await apiFetch(`/sandbox/synctex?${params.toString()}`);
+    const res = await apiFetch(
+      `/sandbox/synctex?${params.toString()}`,
+      {},
+      projectId,
+    );
     if (res.status === 424) return "unavailable";
     if (!res.ok) return null;
     return (await res.json()) as T;
@@ -28,9 +42,11 @@ export function fetchSynctexForward(
   tex: string,
   line: number,
   pdf: string,
+  projectId?: string,
 ): Promise<SynctexBoxDto | "unavailable" | null> {
   return synctexRequest<SynctexBoxDto>(
     new URLSearchParams({ dir: "forward", path: tex, line: String(line), col: "0", pdf }),
+    projectId,
   );
 }
 
@@ -39,11 +55,13 @@ export function fetchSynctexInverse(
   page: number,
   x: number,
   y: number,
+  projectId?: string,
 ): Promise<SynctexLocDto | "unavailable" | null> {
   return synctexRequest<SynctexLocDto>(
     new URLSearchParams({
       dir: "inverse", pdf, page: String(page), x: x.toFixed(2), y: y.toFixed(2),
     }),
+    projectId,
   );
 }
 
@@ -64,13 +82,14 @@ export interface LatexAssistResult {
 export async function postLatexAssist(
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  projectId?: string,
 ): Promise<LatexAssistResult> {
   const res = await apiFetch(`/sandbox/latex-assist`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     signal,
-  });
+  }, projectId);
   if (!res.ok) {
     let message = `AI assist failed (${res.status})`;
     try {

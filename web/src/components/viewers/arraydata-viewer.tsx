@@ -305,7 +305,7 @@ function VariablesView({ summary }: { summary: VariablesSummary }) {
 // Root viewer
 // ---------------------------------------------------------------------------
 
-export default function ArrayDataViewer({ path }: ViewerProps) {
+export default function ArrayDataViewer({ path, projectId }: ViewerProps) {
   const [summary, setSummary] = useState<ArraysSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -313,7 +313,7 @@ export default function ArrayDataViewer({ path }: ViewerProps) {
     let alive = true;
     setSummary(null);
     setError(null);
-    fetch(sciSummaryUrl(path, "arrays"))
+    fetch(sciSummaryUrl(path, "arrays", projectId))
       .then(async (r) => {
         if (!r.ok) {
           const detail = (await r.json().catch(() => ({}))) as { detail?: string };
@@ -330,7 +330,7 @@ export default function ArrayDataViewer({ path }: ViewerProps) {
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, projectId]);
 
   if (error) {
     return (

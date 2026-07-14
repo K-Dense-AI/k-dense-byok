@@ -49,7 +49,7 @@ function fmtMetaValue(v: unknown): string {
 // Root viewer
 // ---------------------------------------------------------------------------
 
-export default function ImagingViewer({ path }: ViewerProps) {
+export default function ImagingViewer({ path, projectId }: ViewerProps) {
   const [summary, setSummary] = useState<ImagingSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeAxis, setActiveAxis] = useState<string | null>(null);
@@ -61,7 +61,7 @@ export default function ImagingViewer({ path }: ViewerProps) {
     setError(null);
     setActiveAxis(null);
     setIndex(0);
-    fetch(sciSummaryUrl(path, "imaging"))
+    fetch(sciSummaryUrl(path, "imaging", projectId))
       .then(async (r) => {
         if (!r.ok) {
           const detail = (await r.json().catch(() => ({}))) as { detail?: string };
@@ -83,7 +83,7 @@ export default function ImagingViewer({ path }: ViewerProps) {
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, projectId]);
 
   if (error) {
     return (
@@ -170,7 +170,7 @@ export default function ImagingViewer({ path }: ViewerProps) {
           <div className="flex flex-1 items-center justify-center overflow-auto rounded-md border bg-muted/10 p-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={sciRenderUrl(path, "imaging", index, activeAxis)}
+              src={sciRenderUrl(path, "imaging", index, activeAxis, projectId)}
               alt={`${summary.format} slice ${index} (${activeAxis})`}
               className="max-h-full max-w-full object-contain"
             />
