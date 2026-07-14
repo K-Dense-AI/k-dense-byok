@@ -1,19 +1,5 @@
 [
   {
-    "id": "openrouter/openai/gpt-5.4-pro",
-    "label": "GPT-5.4 Pro",
-    "provider": "OpenAI",
-    "tier": "flagship",
-    "context_length": 1050000,
-    "pricing": {
-      "prompt": 30.0,
-      "completion": 180.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 Pro is OpenAI's most advanced model, building on GPT-5.4's unified architecture with enhanced reasoning capabilities for complex, high-stakes tasks. It features a 1M+ token context window (922K input, 128K...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/openai/gpt-5.5",
     "label": "GPT-5.5",
     "provider": "OpenAI",
@@ -39,6 +25,34 @@
     },
     "modality": "text+image+file->text",
     "description": "GPT-5.5 Pro is OpenAI\u2019s high-capability model optimized for deep reasoning and accuracy on complex, high-stakes workloads. It features a 1M+ token context window (922K input, 128K output) with support for...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/openai/gpt-5.6-sol",
+    "label": "GPT-5.6 Sol",
+    "provider": "OpenAI",
+    "tier": "flagship",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 5.0,
+      "completion": 30.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.6 Sol is the flagship model in OpenAI's GPT-5.6 series. It is suited for complex reasoning, coding, and agentic workflows, and is particularly strong at command-line and multi-step coding tasks...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/openai/gpt-5.6-sol-pro",
+    "label": "GPT-5.6 Sol Pro",
+    "provider": "OpenAI",
+    "tier": "flagship",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 5.0,
+      "completion": 30.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.6 Sol Pro is the same underlying model as [GPT-5.6 Sol](https://openrouter.ai/openai/gpt-5.6-sol), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
     "isFusion": false
   },
   {
@@ -81,20 +95,6 @@
     },
     "modality": "text+image+file->text",
     "description": "This model always redirects to the latest model in the Claude Fable family.",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/anthropic/claude-opus-4.6",
-    "label": "Claude Opus 4.6",
-    "provider": "Anthropic",
-    "tier": "flagship",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 5.0,
-      "completion": 25.0
-    },
-    "modality": "text+image+file->text",
-    "description": "Opus 4.6 is Anthropic\u2019s strongest model for coding and long-running professional tasks. It is built for agents that operate across entire workflows rather than single prompts, making it especially effective...",
     "isFusion": false
   },
   {
@@ -211,8 +211,8 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/openai/gpt-5.4",
-    "label": "GPT-5.4",
+    "id": "openrouter/openai/gpt-5.6-terra",
+    "label": "GPT-5.6 Terra",
     "provider": "OpenAI",
     "tier": "high",
     "context_length": 1050000,
@@ -221,35 +221,21 @@
       "completion": 15.0
     },
     "modality": "text+image+file->text",
-    "description": "GPT-5.4 is OpenAI\u2019s latest frontier model, unifying the Codex and GPT lines into a single system. It features a 1M+ token context window (922K input, 128K output) with support for...",
+    "description": "GPT-5.6 Terra is a balanced model in OpenAI's GPT-5.6 series, positioned between the flagship Sol tier and the cost-efficient Luna tier. It is suited for everyday coding, reasoning, and agentic...",
     "isFusion": false
   },
   {
-    "id": "openrouter/google/gemini-3.1-pro-preview-customtools",
-    "label": "Gemini 3.1 Pro Preview Custom Tools",
-    "provider": "Google",
+    "id": "openrouter/openai/gpt-5.6-terra-pro",
+    "label": "GPT-5.6 Terra Pro",
+    "provider": "OpenAI",
     "tier": "high",
-    "context_length": 1048756,
+    "context_length": 1050000,
     "pricing": {
-      "prompt": 2.0,
-      "completion": 12.0
+      "prompt": 2.5,
+      "completion": 15.0
     },
-    "modality": "text+image+file+audio+video->text",
-    "description": "Gemini 3.1 Pro Preview Custom Tools is a variant of Gemini 3.1 Pro that improves tool selection behavior by preventing overuse of a general bash tool when more efficient third-party...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/google/gemini-3.1-pro-preview",
-    "label": "Gemini 3.1 Pro Preview",
-    "provider": "Google",
-    "tier": "high",
-    "context_length": 1048576,
-    "pricing": {
-      "prompt": 2.0,
-      "completion": 12.0
-    },
-    "modality": "text+image+file+audio+video->text",
-    "description": "Gemini 3.1 Pro Preview is Google\u2019s frontier reasoning model, delivering enhanced software engineering performance, improved agentic reliability, and more efficient token usage across complex workflows. Building on the multimodal foundation...",
+    "modality": "text+image+file->text",
+    "description": "GPT-5.6 Terra Pro is the same underlying model as [GPT-5.6 Terra](https://openrouter.ai/openai/gpt-5.6-terra), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
     "isFusion": false
   },
   {
@@ -281,20 +267,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/anthropic/claude-sonnet-4.6",
-    "label": "Claude Sonnet 4.6",
-    "provider": "Anthropic",
-    "tier": "high",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 3.0,
-      "completion": 15.0
-    },
-    "modality": "text+image+file->text",
-    "description": "Sonnet 4.6 is Anthropic's most capable Sonnet-class model yet, with frontier performance across coding, agents, and professional work. It excels at iterative development, complex codebase navigation, end-to-end project management with...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/anthropic/claude-sonnet-5",
     "label": "Claude Sonnet 5",
     "provider": "Anthropic",
@@ -309,17 +281,45 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/openai/gpt-audio",
-    "label": "GPT Audio",
-    "provider": "OpenAI",
+    "id": "openrouter/x-ai/grok-4.5",
+    "label": "Grok 4.5",
+    "provider": "xAI",
     "tier": "high",
-    "context_length": 128000,
+    "context_length": 500000,
     "pricing": {
-      "prompt": 2.5,
-      "completion": 10.0
+      "prompt": 2.0,
+      "completion": 6.0
     },
-    "modality": "text+audio->text+audio",
-    "description": "The gpt-audio model is OpenAI's first generally available audio model. The new snapshot features an upgraded decoder for more natural sounding voices and maintains better voice consistency. Audio is priced...",
+    "modality": "text+image+file->text",
+    "description": "Grok 4.5 is SpaceXAI's smartest model with frontier performance on coding, knowledge work, and STEM.",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/~x-ai/grok-latest",
+    "label": "Grok Latest",
+    "provider": "xAI",
+    "tier": "high",
+    "context_length": 500000,
+    "pricing": {
+      "prompt": 2.0,
+      "completion": 6.0
+    },
+    "modality": "text+image+file->text",
+    "description": "This model always redirects to the latest Grok model from xAI.",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/aion-labs/aion-3.0",
+    "label": "AionLabs: Aion-3.0",
+    "provider": "Aion Labs",
+    "tier": "high",
+    "context_length": 131072,
+    "pricing": {
+      "prompt": 3.0,
+      "completion": 6.0
+    },
+    "modality": "text->text",
+    "description": "Aion-3.0 is a multi-model roleplaying and storytelling system from AionLabs, built on the GLM family of models. It uses a collaborative generation process in which multiple specialized models each contribute...",
     "isFusion": false
   },
   {
@@ -337,17 +337,31 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/x-ai/grok-4.20",
-    "label": "Grok 4.20",
-    "provider": "xAI",
+    "id": "openrouter/openai/gpt-5.6-luna",
+    "label": "GPT-5.6 Luna",
+    "provider": "OpenAI",
     "tier": "mid",
-    "context_length": 2000000,
+    "context_length": 1050000,
     "pricing": {
-      "prompt": 1.25,
-      "completion": 2.5
+      "prompt": 1.0,
+      "completion": 6.0
     },
     "modality": "text+image+file->text",
-    "description": "Grok 4.20 is a reasoning model from xAI with industry-leading speed and agentic tool calling capabilities. It combines the lowest hallucination rate on the market with strict prompt adherance, delivering...",
+    "description": "GPT-5.6 Luna is a fast, cost-efficient model in OpenAI's GPT-5.6 series. It is suited for high-volume, latency-sensitive tasks such as chat, classification, and lightweight agentic workflows, providing capable reasoning for...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/openai/gpt-5.6-luna-pro",
+    "label": "GPT-5.6 Luna Pro",
+    "provider": "OpenAI",
+    "tier": "mid",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 1.0,
+      "completion": 6.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.6 Luna Pro is the same underlying model as [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
     "isFusion": false
   },
   {
@@ -386,8 +400,8 @@
     "tier": "mid",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.756,
-      "completion": 2.376
+      "prompt": 0.91,
+      "completion": 2.86
     },
     "modality": "text->text",
     "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,...",
@@ -433,48 +447,6 @@
     },
     "modality": "text->text",
     "description": "Qwen3.7-Max is the flagship model in Alibaba's Qwen3.7 series. It supports text input and output and is designed for agent-centric workloads, with particular strengths in coding, office and productivity tasks,...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.2-codex",
-    "label": "GPT-5.2-Codex",
-    "provider": "OpenAI",
-    "tier": "mid",
-    "context_length": 400000,
-    "pricing": {
-      "prompt": 1.75,
-      "completion": 14.0
-    },
-    "modality": "text+image->text",
-    "description": "GPT-5.2-Codex is an upgraded version of GPT-5.1-Codex optimized for software engineering and coding workflows. It is designed for both interactive development sessions and long, independent execution of complex engineering tasks....",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.3-codex",
-    "label": "GPT-5.3-Codex",
-    "provider": "OpenAI",
-    "tier": "mid",
-    "context_length": 400000,
-    "pricing": {
-      "prompt": 1.75,
-      "completion": 14.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.3-Codex is OpenAI\u2019s most advanced agentic coding model, combining the frontier software engineering performance of GPT-5.2-Codex with the broader reasoning and professional knowledge capabilities of GPT-5.2. It achieves state-of-the-art results...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.4-mini",
-    "label": "GPT-5.4 Mini",
-    "provider": "OpenAI",
-    "tier": "mid",
-    "context_length": 400000,
-    "pricing": {
-      "prompt": 0.75,
-      "completion": 4.5
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 mini brings the core capabilities of GPT-5.4 to a faster, more efficient model optimized for high-throughput workloads. It supports text and image inputs with strong performance across reasoning, coding,...",
     "isFusion": false
   },
   {
@@ -540,25 +512,11 @@
     "tier": "mid",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.74,
-      "completion": 3.5
+      "prompt": 0.719,
+      "completion": 3.49
     },
     "modality": "text+image->text",
     "description": "MoonshotAI: Kimi K2.7 Code is a coding-focused model in Moonshot AI's Kimi K2 family, built to complete end-to-end programming tasks reliably over long contexts. It uses a native multimodal mixture-of-experts...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3-max-thinking",
-    "label": "Qwen3 Max Thinking",
-    "provider": "Qwen",
-    "tier": "mid",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.78,
-      "completion": 3.9
-    },
-    "modality": "text->text",
-    "description": "Qwen3-Max-Thinking is the flagship reasoning model in the Qwen3 series, designed for high-stakes cognitive tasks that require deep, multi-step reasoning. By significantly scaling model capacity and reinforcement learning compute, it...",
     "isFusion": false
   },
   {
@@ -576,20 +534,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/z-ai/glm-5-turbo",
-    "label": "Z.ai: GLM 5 Turbo",
-    "provider": "Z Ai",
-    "tier": "mid",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 1.2,
-      "completion": 4.0
-    },
-    "modality": "text->text",
-    "description": "GLM-5 Turbo is a new model from Z.ai designed for fast inference and strong performance in agent-driven environments such as OpenClaw scenarios. It is deeply optimized for real-world agent workflows...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/x-ai/grok-build-0.1",
     "label": "Grok Build 0.1",
     "provider": "xAI",
@@ -599,50 +543,22 @@
       "prompt": 1.0,
       "completion": 2.0
     },
-    "modality": "text+image->text",
+    "modality": "text+image+file->text",
     "description": "Grok Build 0.1 is xAI\u2019s fast coding model trained specifically for agentic software engineering workflows. It supports text and image inputs with text output, and is optimized for interactive coding...",
     "isFusion": false
   },
   {
-    "id": "openrouter/z-ai/glm-5",
-    "label": "Z.ai: GLM 5",
-    "provider": "Z Ai",
+    "id": "openrouter/kwaipilot/kat-coder-pro-v2.5",
+    "label": "KAT-Coder-Pro V2.5",
+    "provider": "Kwaipilot",
     "tier": "mid",
-    "context_length": 202752,
+    "context_length": 256000,
     "pricing": {
-      "prompt": 0.6,
-      "completion": 1.92
+      "prompt": 0.74,
+      "completion": 2.96
     },
     "modality": "text->text",
-    "description": "GLM-5 is Z.ai\u2019s flagship open-source foundation model engineered for complex systems design and long-horizon agent workflows. Built for expert developers, it delivers production-grade performance on large-scale programming tasks, rivaling leading...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/z-ai/glm-5.1",
-    "label": "Z.ai: GLM 5.1",
-    "provider": "Z Ai",
-    "tier": "mid",
-    "context_length": 202752,
-    "pricing": {
-      "prompt": 0.966,
-      "completion": 3.036
-    },
-    "modality": "text->text",
-    "description": "GLM-5.1 delivers a major leap in coding capability, with particularly significant gains in handling long-horizon tasks. Unlike previous models built around minute-level interactions, GLM-5.1 can work independently and continuously on...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/z-ai/glm-5v-turbo",
-    "label": "Z.ai: GLM 5V Turbo",
-    "provider": "Z Ai",
-    "tier": "mid",
-    "context_length": 202752,
-    "pricing": {
-      "prompt": 1.2,
-      "completion": 4.0
-    },
-    "modality": "text+image+video->text",
-    "description": "GLM-5V-Turbo is Z.ai\u2019s first native multimodal agent foundation model, built for vision-based coding and agent-driven tasks. It natively handles image, video, and text inputs, excels at long-horizon planning, complex coding,...",
+    "description": "KAT-Coder-Pro V2.5 is a flagship-level Agentic Coding model that can directly hand over an entire issue or an entire business workflow to it, allowing it to autonomously locate and make...",
     "isFusion": false
   },
   {
@@ -660,31 +576,17 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/openai/gpt-audio-mini",
-    "label": "GPT Audio Mini",
-    "provider": "OpenAI",
+    "id": "openrouter/aion-labs/aion-3.0-mini",
+    "label": "AionLabs: Aion-3.0-Mini",
+    "provider": "Aion Labs",
     "tier": "mid",
-    "context_length": 128000,
+    "context_length": 131072,
     "pricing": {
-      "prompt": 0.6,
-      "completion": 2.4
+      "prompt": 0.7,
+      "completion": 1.4
     },
-    "modality": "text+audio->text+audio",
-    "description": "A cost-efficient version of GPT Audio. The new snapshot features an upgraded decoder for more natural sounding voices and maintains better voice consistency. Input is priced at $0.60 per million...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.3-chat",
-    "label": "GPT-5.3 Chat",
-    "provider": "OpenAI",
-    "tier": "mid",
-    "context_length": 128000,
-    "pricing": {
-      "prompt": 1.75,
-      "completion": 14.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.3 Chat is an update to ChatGPT's most-used model that makes everyday conversations smoother, more useful, and more directly helpful. It delivers more accurate answers with better contextualization and significantly...",
+    "modality": "text->text",
+    "description": "Aion-3.0 Mini is a multi-model roleplaying and storytelling system from AionLabs, built on the DeepSeek family of models. It uses a collaborative generation process in which multiple specialized models each...",
     "isFusion": false
   },
   {
@@ -730,20 +632,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/google/gemini-3.1-flash-lite-preview",
-    "label": "Gemini 3.1 Flash Lite Preview",
-    "provider": "Google",
-    "tier": "budget",
-    "context_length": 1048576,
-    "pricing": {
-      "prompt": 0.25,
-      "completion": 1.5
-    },
-    "modality": "text+image+file+audio+video->text",
-    "description": "Gemini 3.1 Flash Lite Preview is Google's high-efficiency model optimized for high-volume use cases. It outperforms Gemini 2.5 Flash Lite on overall quality and approaches Gemini 2.5 Flash performance across...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/xiaomi/mimo-v2.5",
     "label": "MiMo-V2.5",
     "provider": "Xiaomi",
@@ -786,34 +674,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/nvidia/nemotron-3-super-120b-a12b",
-    "label": "Nemotron 3 Super",
-    "provider": "NVIDIA",
-    "tier": "budget",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.08,
-      "completion": 0.45
-    },
-    "modality": "text->text",
-    "description": "NVIDIA Nemotron 3 Super is a 120B-parameter open hybrid MoE model, activating just 12B parameters for maximum compute efficiency and accuracy in complex multi-agent applications. Built on a hybrid Mamba-Transformer...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
-    "label": "Nemotron 3 Super (free)",
-    "provider": "NVIDIA",
-    "tier": "budget",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "NVIDIA Nemotron 3 Super is a 120B-parameter open hybrid MoE model, activating just 12B parameters for maximum compute efficiency and accuracy in complex multi-agent applications. Built on a hybrid Mamba-Transformer...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
     "label": "Nemotron 3 Ultra (free)",
     "provider": "NVIDIA",
@@ -825,20 +685,6 @@
     },
     "modality": "text->text",
     "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid Transformer-Mamba mixture-of-experts architecture, it...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.5-plus-02-15",
-    "label": "Qwen3.5 Plus 2026-02-15",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.26,
-      "completion": 1.56
-    },
-    "modality": "text+image+video->text",
-    "description": "The Qwen3.5 native vision-language series Plus models are built on a hybrid architecture that integrates linear attention mechanisms with sparse mixture-of-experts models, achieving higher inference efficiency. In a variety of...",
     "isFusion": false
   },
   {
@@ -856,20 +702,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/qwen/qwen3.5-flash-02-23",
-    "label": "Qwen3.5-Flash",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.065,
-      "completion": 0.26
-    },
-    "modality": "text+image+video->text",
-    "description": "The Qwen3.5 native vision-language Flash models are built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. Compared to the...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/qwen/qwen3.6-flash",
     "label": "Qwen3.6 Flash",
     "provider": "Qwen",
@@ -881,20 +713,6 @@
     },
     "modality": "text+image+video->text",
     "description": "Qwen3.6 Flash is a fast, efficient language model from Alibaba's Qwen 3.6 series. It supports text, image, and video input with a 1M token context window. Tiered pricing kicks in...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.6-plus",
-    "label": "Qwen3.6 Plus",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.325,
-      "completion": 1.95
-    },
-    "modality": "text+image+video->text",
-    "description": "Qwen 3.6 Plus builds on a hybrid architecture that combines efficient linear attention with sparse mixture-of-experts routing, enabling strong scalability and high-performance inference. Compared to the 3.5 series, it delivers...",
     "isFusion": false
   },
   {
@@ -912,115 +730,31 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/openai/gpt-5.4-nano",
-    "label": "GPT-5.4 Nano",
-    "provider": "OpenAI",
-    "tier": "budget",
-    "context_length": 400000,
-    "pricing": {
-      "prompt": 0.2,
-      "completion": 1.25
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 nano is the most lightweight and cost-efficient variant of the GPT-5.4 family, optimized for speed-critical and high-volume tasks. It supports text and image inputs and is designed for low-latency...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/arcee-ai/trinity-large-thinking",
-    "label": "Arcee AI: Trinity Large Thinking",
-    "provider": "Arcee Ai",
+    "id": "openrouter/tencent/hy3",
+    "label": "Hy3",
+    "provider": "Tencent",
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.25,
-      "completion": 0.8
+      "prompt": 0.14,
+      "completion": 0.58
     },
     "modality": "text->text",
-    "description": "Trinity Large Thinking is a powerful open source reasoning model from the team at Arcee AI. It shows strong performance in PinchBench, agentic workloads, and reasoning tasks. Launch video: https://youtu.be/Gc82AXLa0Rg?si=4RLn6WBz33qT--B7...",
+    "description": "Hy3 is a 295B-parameter Mixture-of-Experts model from Tencent (21B active, 192 experts with top-8 routing) built for reasoning, agentic workflows, and real-world production use. It supports a configurable reasoning effort:...",
     "isFusion": false
   },
   {
-    "id": "openrouter/bytedance-seed/seed-2.0-lite",
-    "label": "ByteDance Seed: Seed-2.0-Lite",
-    "provider": "Bytedance Seed",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.25,
-      "completion": 2.0
-    },
-    "modality": "text+image+video->text",
-    "description": "Seed-2.0-Lite is a versatile, cost\u2011efficient enterprise workhorse that delivers strong multimodal and agent capabilities while offering noticeably lower latency, making it a practical default choice for most production workloads across...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/bytedance-seed/seed-2.0-mini",
-    "label": "ByteDance Seed: Seed-2.0-Mini",
-    "provider": "Bytedance Seed",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.1,
-      "completion": 0.4
-    },
-    "modality": "text+image+video->text",
-    "description": "Seed-2.0-mini targets latency-sensitive, high-concurrency, and cost-sensitive scenarios, emphasizing fast response and flexible inference deployment. It delivers performance comparable to ByteDance-Seed-1.6, supports 256k context, four reasoning effort modes (minimal/low/medium/high), multimodal understanding,...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/google/gemma-4-26b-a4b-it",
-    "label": "Gemma 4 26B A4B ",
-    "provider": "Google",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.06,
-      "completion": 0.33
-    },
-    "modality": "text+image+video->text",
-    "description": "Gemma 4 26B A4B IT is an instruction-tuned Mixture-of-Experts (MoE) model from Google DeepMind. Despite 25.2B total parameters, only 3.8B activate per token during inference \u2014 delivering near-31B quality at...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/google/gemma-4-26b-a4b-it:free",
-    "label": "Gemma 4 26B A4B  (free)",
-    "provider": "Google",
+    "id": "openrouter/tencent/hy3:free",
+    "label": "Hy3 (free)",
+    "provider": "Tencent",
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
       "prompt": 0.0,
       "completion": 0.0
     },
-    "modality": "text+image+video->text",
-    "description": "Gemma 4 26B A4B IT is an instruction-tuned Mixture-of-Experts (MoE) model from Google DeepMind. Despite 25.2B total parameters, only 3.8B activate per token during inference \u2014 delivering near-31B quality at...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/google/gemma-4-31b-it",
-    "label": "Gemma 4 31B",
-    "provider": "Google",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.12,
-      "completion": 0.35
-    },
-    "modality": "text+image+video->text",
-    "description": "Gemma 4 31B Instruct is Google DeepMind's 30.7B dense multimodal model supporting text and image input with text output. Features a 256K token context window, configurable thinking/reasoning mode, native function...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/google/gemma-4-31b-it:free",
-    "label": "Gemma 4 31B (free)",
-    "provider": "Google",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text+image+video->text",
-    "description": "Gemma 4 31B Instruct is Google DeepMind's 30.7B dense multimodal model supporting text and image input with text output. Features a 256K token context window, configurable thinking/reasoning mode, native function...",
+    "modality": "text->text",
+    "description": "Hy3 is a 295B-parameter Mixture-of-Experts model from Tencent (21B active, 192 experts with top-8 routing) built for reasoning, agentic workflows, and real-world production use. It supports a configurable reasoning effort:...",
     "isFusion": false
   },
   {
@@ -1094,129 +828,31 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/poolside/laguna-xs.2",
-    "label": "Laguna XS.2",
-    "provider": "Poolside",
+    "id": "openrouter/nex-agi/nex-n2-mini",
+    "label": "Nex AGI: Nex-N2-Mini",
+    "provider": "Nex Agi",
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.1,
-      "completion": 0.2
-    },
-    "modality": "text->text",
-    "description": "Laguna XS.2 is the second-generation model in the XS size class from [Poolside](https://poolside.ai/), their efficient coding agent series. It combines tool calling and reasoning capabilities with a compact footprint, offering...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/poolside/laguna-xs.2:free",
-    "label": "Laguna XS.2 (free)",
-    "provider": "Poolside",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "Laguna XS.2 is the second-generation model in the XS size class from [Poolside](https://poolside.ai/), their efficient coding agent series. It combines tool calling and reasoning capabilities with a compact footprint, offering...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/mistralai/mistral-small-2603",
-    "label": "Mistral Small 4",
-    "provider": "Mistral",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.15,
-      "completion": 0.6
+      "prompt": 0.025,
+      "completion": 0.1
     },
     "modality": "text+image->text",
-    "description": "Mistral Small 4 is the next major release in the Mistral Small family, unifying the capabilities of several flagship Mistral models into a single system. It combines strong reasoning from...",
+    "description": "Nex-N2-Mini is an open-source agentic mixture-of-experts model from Nex AGI, the smaller sibling in the Nex-N2 series. It accepts text and image input and is built for coding, tool use,...",
     "isFusion": false
   },
   {
-    "id": "openrouter/moonshotai/kimi-k2.5",
-    "label": "MoonshotAI: Kimi K2.5",
-    "provider": "Moonshotai",
+    "id": "openrouter/nex-agi/nex-n2-pro",
+    "label": "Nex AGI: Nex-N2-Pro",
+    "provider": "Nex Agi",
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.375,
-      "completion": 2.025
-    },
-    "modality": "text+image->text",
-    "description": "Kimi K2.5 is Moonshot AI's native multimodal model, delivering state-of-the-art visual coding capability and a self-directed agent swarm paradigm. Built on Kimi K2 with continued pretraining over approximately 15T mixed...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3-coder-next",
-    "label": "Qwen3 Coder Next",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.11,
-      "completion": 0.8
-    },
-    "modality": "text->text",
-    "description": "Qwen3-Coder-Next is an open-weight causal language model optimized for coding agents and local development workflows. It uses a sparse MoE design with 80B total parameters and only 3B activated per...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.5-122b-a10b",
-    "label": "Qwen3.5-122B-A10B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.26,
-      "completion": 2.08
-    },
-    "modality": "text+image+video->text",
-    "description": "The Qwen3.5 122B-A10B native vision-language model is built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. In terms of...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.5-27b",
-    "label": "Qwen3.5-27B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.195,
-      "completion": 1.56
-    },
-    "modality": "text+image+video->text",
-    "description": "The Qwen3.5 27B native vision-language Dense model incorporates a linear attention mechanism, delivering fast response times while balancing inference speed and performance. Its overall capabilities are comparable to those of...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.5-35b-a3b",
-    "label": "Qwen3.5-35B-A3B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.14,
+      "prompt": 0.25,
       "completion": 1.0
     },
-    "modality": "text+image+video->text",
-    "description": "The Qwen3.5 Series 35B-A3B is a native vision-language model designed with a hybrid architecture that integrates linear attention mechanisms and a sparse mixture-of-experts model, achieving higher inference efficiency. Its overall...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.5-9b",
-    "label": "Qwen3.5-9B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.1,
-      "completion": 0.15
-    },
-    "modality": "text+image+video->text",
-    "description": "Qwen3.5-9B is a multimodal foundation model from the Qwen3.5 family, designed to deliver strong reasoning, coding, and visual understanding in an efficient 9B-parameter architecture. It uses a unified vision-language design...",
+    "modality": "text+image->text",
+    "description": "Nex-N2-Pro is an agentic mixture-of-experts model from Nex AGI, with 17B active parameters out of 397B total. Built on the Qwen3.5 architecture, it accepts text and image input and produces...",
     "isFusion": false
   },
   {
@@ -1226,7 +862,7 @@
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.285,
+      "prompt": 0.289,
       "completion": 2.4
     },
     "modality": "text+image+video->text",
@@ -1245,20 +881,6 @@
     },
     "modality": "text+image+video->text",
     "description": "Qwen3.6-35B-A3B is an open-weight multimodal model from Alibaba Cloud with 35 billion total parameters and 3 billion active parameters per token. It uses a hybrid sparse mixture-of-experts architecture combining Gated...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/stepfun/step-3.5-flash",
-    "label": "StepFun: Step 3.5 Flash",
-    "provider": "Stepfun",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.1,
-      "completion": 0.3
-    },
-    "modality": "text->text",
-    "description": "Step 3.5 Flash is StepFun's most capable open-source foundation model. Built on a sparse Mixture of Experts (MoE) architecture, it selectively activates only 11B of its 196B parameters per token....",
     "isFusion": false
   },
   {
@@ -1304,17 +926,17 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/kwaipilot/kat-coder-pro-v2",
-    "label": "KAT-Coder-Pro V2",
+    "id": "openrouter/kwaipilot/kat-coder-air-v2.5",
+    "label": "KAT-Coder-Air V2.5",
     "provider": "Kwaipilot",
     "tier": "budget",
     "context_length": 256000,
     "pricing": {
-      "prompt": 0.3,
-      "completion": 1.2
+      "prompt": 0.15,
+      "completion": 0.6
     },
     "modality": "text->text",
-    "description": "KAT-Coder-Pro V2 is the latest high-performance model in KwaiKAT\u2019s KAT-Coder series, designed for complex enterprise-grade software engineering and SaaS integration. It builds on the agentic coding strengths of earlier versions,...",
+    "description": "KAT-Coder-Air V2.5 is a flagship-level Agentic Coding model that can directly hand over an entire issue or an entire business workflow to it, allowing it to autonomously locate and make...",
     "isFusion": false
   },
   {
@@ -1346,20 +968,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/qwen/qwen3.5-397b-a17b",
-    "label": "Qwen3.5 397B A17B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 256000,
-    "pricing": {
-      "prompt": 0.385,
-      "completion": 2.45
-    },
-    "modality": "text+image+video->text",
-    "description": "The Qwen3.5 series 397B-A17B native vision-language model is built on a hybrid architecture that integrates a linear attention mechanism with a sparse mixture-of-experts model, achieving higher inference efficiency. It delivers...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/stepfun/step-3.7-flash",
     "label": "StepFun: Step 3.7 Flash",
     "provider": "Stepfun",
@@ -1374,62 +982,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/minimax/minimax-m2.5",
-    "label": "MiniMax M2.5",
-    "provider": "MiniMax",
-    "tier": "budget",
-    "context_length": 204800,
-    "pricing": {
-      "prompt": 0.12,
-      "completion": 0.48
-    },
-    "modality": "text->text",
-    "description": "MiniMax-M2.5 is a SOTA large language model designed for real-world productivity. Trained in a diverse range of complex real-world digital working environments, M2.5 builds upon the coding expertise of M2.1...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/minimax/minimax-m2.7",
-    "label": "MiniMax M2.7",
-    "provider": "MiniMax",
-    "tier": "budget",
-    "context_length": 204800,
-    "pricing": {
-      "prompt": 0.18,
-      "completion": 0.72
-    },
-    "modality": "text->text",
-    "description": "MiniMax-M2.7 is a next-generation large language model designed for autonomous, real-world productivity and continuous improvement. Built to actively participate in its own evolution, M2.7 integrates advanced agentic capabilities through multi-agent...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/z-ai/glm-4.7-flash",
-    "label": "Z.ai: GLM 4.7 Flash",
-    "provider": "Z Ai",
-    "tier": "budget",
-    "context_length": 202752,
-    "pricing": {
-      "prompt": 0.06,
-      "completion": 0.4
-    },
-    "modality": "text->text",
-    "description": "As a 30B-class SOTA model, GLM-4.7-Flash offers a new option that balances performance and efficiency. It is further optimized for agentic coding use cases, strengthening coding capabilities, long-horizon task planning,...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openrouter/free",
-    "label": "Free Models Router",
-    "provider": "Openrouter",
-    "tier": "budget",
-    "context_length": 200000,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text+image->text",
-    "description": "The simplest way to get free inference. openrouter/free is a router that selects free models at random from the models available on OpenRouter. The router smartly filters for models that...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/ibm-granite/granite-4.1-8b",
     "label": "IBM: Granite 4.1 8B",
     "provider": "Ibm Granite",
@@ -1441,62 +993,6 @@
     },
     "modality": "text->text",
     "description": "Granite 4.1 8B is a dense, decoder-only 8-billion-parameter language model from IBM, part of the Granite 4.1 family. It supports a 131K-token context window and is designed for enterprise tasks...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/inception/mercury-2",
-    "label": "Mercury 2",
-    "provider": "Inception",
-    "tier": "budget",
-    "context_length": 128000,
-    "pricing": {
-      "prompt": 0.25,
-      "completion": 0.75
-    },
-    "modality": "text->text",
-    "description": "Mercury 2 is an extremely fast reasoning LLM, and the first reasoning diffusion LLM (dLLM). Instead of generating tokens sequentially, Mercury 2 produces and refines multiple tokens in parallel, achieving...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/upstage/solar-pro-3",
-    "label": "Solar Pro 3",
-    "provider": "Upstage",
-    "tier": "budget",
-    "context_length": 128000,
-    "pricing": {
-      "prompt": 0.15,
-      "completion": 0.6
-    },
-    "modality": "text->text",
-    "description": "Solar Pro 3 is Upstage's powerful Mixture-of-Experts (MoE) language model. With 102B total parameters and 12B active parameters per forward pass, it delivers exceptional performance while maintaining computational efficiency. Optimized...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/liquid/lfm-2.5-1.2b-thinking:free",
-    "label": "LiquidAI: LFM2.5-1.2B-Thinking (free)",
-    "provider": "Liquid",
-    "tier": "budget",
-    "context_length": 32768,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "LFM2.5-1.2B-Thinking is a lightweight reasoning-focused model optimized for agentic tasks, data extraction, and RAG\u2014while still running comfortably on edge devices. It supports long context (up to 32K tokens) and is...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/rekaai/reka-edge",
-    "label": "Reka Edge",
-    "provider": "Rekaai",
-    "tier": "budget",
-    "context_length": 16384,
-    "pricing": {
-      "prompt": 0.1,
-      "completion": 0.1
-    },
-    "modality": "text+image+video->text",
-    "description": "Reka Edge is an extremely efficient 7B multimodal vision-language model that accepts image/video+text inputs and generates text outputs. This model is optimized specifically to deliver industry-leading performance in image understanding,...",
     "isFusion": false
   }
 ]

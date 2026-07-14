@@ -8,7 +8,7 @@ Inclusion rules: every OpenRouter model that
   - has non-negative pricing (the Auto Router advertises -1 as a
     "variable pricing" sentinel, which would corrupt the spend-cap
     accrual in server/src/agent/models.ts), and
-  - was released on OpenRouter within the last MAX_AGE_DAYS (`created`
+  - was released on OpenRouter within the last MAX_AGE_MONTHS (`created`
     timestamp) — the catalogue stays current instead of accumulating
     every legacy model, and old models tend to hit tool-calling compat
     bugs anyway.
@@ -19,10 +19,11 @@ cutoff (dropping the app's default would break new chats), and the
 script warns if one has disappeared from OpenRouter entirely.
 """
 
+import calendar
+from datetime import datetime, timezone
 import json
 import pathlib
 import sys
-import time
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -45,8 +46,16 @@ TIER_ORDER = {"flagship": 0, "high": 1, "mid": 2, "budget": 3}
 
 DESCRIPTION_WORDS = 30
 
-# Only keep models released on OpenRouter within this window (~6 months).
-MAX_AGE_DAYS = 183
+# Only keep models released on OpenRouter within this calendar-month window.
+MAX_AGE_MONTHS = 3
+
+
+def months_ago(value: datetime, months: int) -> datetime:
+    month_index = value.year * 12 + value.month - 1 - months
+    year, month_zero_based = divmod(month_index, 12)
+    month = month_zero_based + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
 
 
 def tier_for(prompt_per_m: float) -> str:
@@ -91,7 +100,7 @@ def main() -> None:
     except FileNotFoundError:
         pass
 
-    cutoff = time.time() - MAX_AGE_DAYS * 86_400
+    cutoff = months_ago(datetime.now(timezone.utc), MAX_AGE_MONTHS).timestamp()
     out = []
     for m in live:
         model_id = m["id"]
