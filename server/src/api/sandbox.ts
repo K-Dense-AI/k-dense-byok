@@ -13,7 +13,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import AdmZip from "adm-zip";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { activePaths, touchProject } from "../projects.ts";
+import { activePaths, getProject, touchProject } from "../projects.ts";
+import { buildProjectArchive } from "../project-archive.ts";
 import { currentProjectId } from "../scope.ts";
 import { apiRelative, guessMime, isUserVisible, isWithin, safePath, SandboxError } from "../sandbox-fs.ts";
 import { helperPython } from "../helpers-env.ts";
@@ -350,19 +351,19 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.get("/sandbox/download-all", async (_req, reply) => {
-    const root = activePaths().sandbox;
-    if (!fs.existsSync(root)) {
-      reply.code(404);
-      return { detail: "Sandbox is empty" };
-    }
-    const buf = zipDir(root, root);
-    if (buf.length <= 22) {
+    const projectId = currentProjectId();
+    const paths = activePaths();
+    const { buffer, entryCount } = await buildProjectArchive({
+      paths,
+      projectName: getProject(projectId)?.name ?? projectId,
+    });
+    if (entryCount === 0) {
       reply.code(404);
       return { detail: "No files to download" };
     }
     reply.type("application/zip");
     reply.header("Content-Disposition", 'attachment; filename="sandbox.zip"');
-    return buf;
+    return buffer;
   });
 
   // --- annotations ---
