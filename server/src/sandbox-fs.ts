@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { activePaths } from "./projects.ts";
 
-export const USER_HIDDEN_NAMES = new Set(["GEMINI.md", "uv.lock"]);
+export const USER_HIDDEN_NAMES = new Set(["AGENTS.md", "GEMINI.md", "uv.lock"]);
 
 // No constructor parameter property here: Node's strip-only TS loading (used
 // when a .ts module is require()d outside a transform, e.g. in tests) cannot

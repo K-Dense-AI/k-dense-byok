@@ -88,3 +88,68 @@ describe("notebookToMarkdown artifact rewriting", () => {
     expect(md).not.toContain("![gone.png]");
   });
 });
+
+describe("notebookToMarkdown user annotations", () => {
+  it("renders pins, comments, standalone notes, and orphaned annotations", () => {
+    const md = notebookToMarkdown(
+      [
+        {
+          id: "entry-1",
+          type: "observation",
+          title: "Result",
+          timestamp: 1,
+          role: "agent",
+        },
+      ],
+      {
+        sessionId: "s",
+        annotations: [
+          {
+            id: "pin-1",
+            kind: "pin",
+            entryId: "entry-1",
+            createdAt: 1_000,
+          },
+          {
+            id: "comment-1",
+            kind: "comment",
+            entryId: "entry-1",
+            body: "Important caveat.",
+            createdAt: 2_000,
+          },
+          {
+            id: "note-1",
+            kind: "note",
+            title: "Next step",
+            body: "Repeat the experiment.",
+            createdAt: 3_000,
+          },
+          {
+            id: "orphan-1",
+            kind: "comment",
+            entryId: "missing",
+            body: "Keep this comment.",
+            createdAt: 4_000,
+          },
+        ],
+      },
+    );
+
+    expect(md).toContain("Pinned by user");
+    expect(md).toContain("### User comments");
+    expect(md).toContain("Important caveat.");
+    expect(md).toContain("## User notes");
+    expect(md).toContain("### Next step");
+    expect(md).toContain("Repeat the experiment.");
+    expect(md).toContain("## Unresolved annotations");
+    expect(md).toContain("missing entry `missing`");
+    expect(md).toContain("Keep this comment.");
+  });
+
+  it("does not change exports when annotations are omitted", () => {
+    const md = notebookToMarkdown(entries, { sessionId: "s" });
+    expect(md).not.toContain("User comments");
+    expect(md).not.toContain("User notes");
+    expect(md).not.toContain("Unresolved annotations");
+  });
+});

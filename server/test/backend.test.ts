@@ -217,6 +217,7 @@ describe("sandbox-fs", () => {
     expect(isUserVisible(path.join(root, "data.csv"), root)).toBe(true);
     expect(isUserVisible(path.join(root, ".kady", "x"), root)).toBe(false);
     expect(isUserVisible(path.join(root, "doc.pdf.annotations.json"), root)).toBe(false);
+    expect(isUserVisible(path.join(root, "AGENTS.md"), root)).toBe(false);
     expect(isUserVisible(path.join(root, "GEMINI.md"), root)).toBe(false);
   });
   it("guesses mime types", () => {
