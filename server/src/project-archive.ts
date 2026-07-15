@@ -7,7 +7,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import AdmZip from "adm-zip";
+import { ZipArchive } from "archiver";
 import type { ProjectPaths } from "./projects.ts";
 import { apiRelative, isUserVisible, isWithin } from "./sandbox-fs.ts";
 import { readNotebookAnnotations } from "./agent/notebook-annotations.ts";
@@ -30,7 +30,7 @@ export interface ProjectArchiveOptions {
 }
 
 export interface ProjectArchiveResult {
-  buffer: Buffer;
+  archive: ZipArchive;
   entryCount: number;
 }
 
@@ -38,16 +38,15 @@ function jsonBuffer(value: unknown): Buffer {
   return Buffer.from(JSON.stringify(value, null, 2) + "\n", "utf-8");
 }
 
-function addLocalFile(zip: AdmZip, file: string, archived: string): void {
-  zip.addLocalFile(
-    file,
-    path.posix.dirname(archived),
-    path.posix.basename(archived),
-  );
+function addLocalFile(zip: ZipArchive, file: string, archived: string): void {
+  zip.file(file, {
+    name: archived,
+    stats: fs.statSync(file),
+  });
 }
 
 function addVisibleSandboxFiles(
-  zip: AdmZip,
+  zip: ZipArchive,
   root: string,
   occupiedRoots: Set<string>,
 ): number {
@@ -153,12 +152,12 @@ function artifactLinks(
   };
 }
 
-async function addChatHistory(
-  zip: AdmZip,
+function addChatHistory(
+  zip: ZipArchive,
   opts: ProjectArchiveOptions,
   occupiedRoots: Set<string>,
-): Promise<number> {
-  const sessions = (opts.sessions ?? await listSessions(opts.paths))
+): number {
+  const sessions = (opts.sessions ?? [])
     .filter((session) => session.messageCount > 0 && isValidSessionId(session.id));
   if (sessions.length === 0) return 0;
 
@@ -180,9 +179,9 @@ async function addChatHistory(
     const raw = `${root}/raw/${session.id}.jsonl`;
     const markdown = `${root}/markdown/${session.id}.md`;
     addLocalFile(zip, session.path, raw);
-    zip.addFile(
-      markdown,
+    zip.append(
       Buffer.from(toNotebook(session.path, session.id, opts.paths.sandbox), "utf-8"),
+      { name: markdown },
     );
     manifest.sessions.push({
       id: session.id,
@@ -197,12 +196,12 @@ async function addChatHistory(
     count += 2;
   }
   if (manifest.sessions.length === 0) return 0;
-  zip.addFile(`${root}/manifest.json`, jsonBuffer(manifest));
+  zip.append(jsonBuffer(manifest), { name: `${root}/manifest.json` });
   return count + 1;
 }
 
 function addNotebooks(
-  zip: AdmZip,
+  zip: ZipArchive,
   opts: ProjectArchiveOptions,
   occupiedRoots: Set<string>,
 ): number {
@@ -253,8 +252,7 @@ function addNotebooks(
       count++;
     }
     const links = artifactLinks(entries, opts.paths.sandbox);
-    zip.addFile(
-      markdown,
+    zip.append(
       Buffer.from(
         notebookToMarkdown(entries, {
           sessionId,
@@ -265,6 +263,7 @@ function addNotebooks(
         }),
         "utf-8",
       ),
+      { name: markdown },
     );
     count++;
     manifest.sessions.push({
@@ -276,21 +275,31 @@ function addNotebooks(
       markdown,
     });
   }
-  zip.addFile(`${root}/manifest.json`, jsonBuffer(manifest));
+  zip.append(jsonBuffer(manifest), { name: `${root}/manifest.json` });
   return count + 1;
 }
 
 export async function buildProjectArchive(
   opts: ProjectArchiveOptions,
 ): Promise<ProjectArchiveResult> {
-  const zip = new AdmZip();
+  // Resolve async metadata before file streams are queued so callers can attach
+  // the archive to the HTTP response before any stream errors are possible.
+  const completeOpts: ProjectArchiveOptions = {
+    ...opts,
+    sessions: opts.sessions ?? await listSessions(opts.paths),
+  };
+  const archive = new ZipArchive({
+    forceZip64: true,
+    zlib: { level: 6 },
+  });
+  archive.on("warning", (err) => archive.destroy(err));
   const occupiedRoots = new Set<string>();
   let entryCount = addVisibleSandboxFiles(
-    zip,
+    archive,
     opts.paths.sandbox,
     occupiedRoots,
   );
-  entryCount += await addChatHistory(zip, opts, occupiedRoots);
-  entryCount += addNotebooks(zip, opts, occupiedRoots);
-  return { buffer: zip.toBuffer(), entryCount };
+  entryCount += addChatHistory(archive, completeOpts, occupiedRoots);
+  entryCount += addNotebooks(archive, completeOpts, occupiedRoots);
+  return { archive, entryCount };
 }
