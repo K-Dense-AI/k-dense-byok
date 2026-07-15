@@ -1,14 +1,17 @@
 "use client";
 
 import {
-  FileTree,
-  FileTreeFile,
-  FileTreeFolder,
   FileTreeIcon,
   FileTreeName,
   FileTreeActions,
 } from "@/components/ai-elements/file-tree";
 import { KadyFileIcon } from "@/components/file-icon";
+import {
+  FILE_TREE_ROW_HEIGHT,
+  flattenVisibleTree,
+  virtualTreeRange,
+  type VisibleTreeRow,
+} from "@/lib/file-tree-virtualization";
 import { cn } from "@/lib/utils";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import { type TreeNode } from "@/lib/use-sandbox";
@@ -20,6 +23,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
+  ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
   FolderPlusIcon,
@@ -34,7 +38,7 @@ import {
   WandSparklesIcon,
   PencilIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 const FILE_DRAG_TYPE = "application/x-kady-filepath";
 
@@ -112,8 +116,9 @@ function InlineInput({
 // Tree renderer
 // ---------------------------------------------------------------------------
 
-interface TreeNodesProps {
-  nodes: TreeNode[];
+interface VirtualTreeRowProps {
+  row: VisibleTreeRow;
+  top: number;
   onSelect: (path: string) => void;
   onDownload: (path: string) => void;
   onDelete: (path: string) => void;
@@ -127,14 +132,16 @@ interface TreeNodesProps {
   onCancelRename: () => void;
   dropTargetPath: string | null;
   setDropTargetPath: (path: string | null) => void;
-  creatingDirIn: string | null;
   onCreateDir: (path: string) => void;
   onCancelCreateDir: () => void;
   onStartCreateDir: (parentPath: string) => void;
+  expandedPaths: ReadonlySet<string>;
+  onToggleDirectory: (path: string) => void;
 }
 
-function TreeNodes({
-  nodes,
+const VirtualTreeRow = memo(function VirtualTreeRow({
+  row,
+  top,
   onSelect,
   onDownload,
   onDelete,
@@ -148,215 +155,237 @@ function TreeNodes({
   onCancelRename,
   dropTargetPath,
   setDropTargetPath,
-  creatingDirIn,
   onCreateDir,
   onCancelCreateDir,
   onStartCreateDir,
-}: TreeNodesProps) {
-  return (
-    <>
-      {nodes.map((node) =>
-        node.type === "directory" ? (
-          <FileTreeFolder
-            key={node.path}
-            path={node.path}
-            name={node.name}
-            className={cn(
-              dropTargetPath === node.path && "ring-2 ring-primary/40 rounded"
-            )}
-            nameContent={
-              renamingPath === node.path ? (
-                <InlineInput
-                  defaultValue={node.name}
-                  onSubmit={(newName) => onRename(node.path, newName)}
-                  onCancel={onCancelRename}
-                />
-              ) : undefined
-            }
-            draggable={renamingPath !== node.path}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              e.dataTransfer.setData(FILE_DRAG_TYPE, node.path);
-              e.dataTransfer.effectAllowed = "copyMove";
-              const ghost = makeDragGhost(node.name, "#3b82f6");
-              e.dataTransfer.setDragImage(ghost, 0, 0);
-              setTimeout(() => ghost.remove(), 0);
-            }}
-            onDragEnd={() => setDropTargetPath(null)}
-            onDragEnter={(e) => {
-              if (!e.dataTransfer.types.includes(FILE_DRAG_TYPE)) return;
-              e.preventDefault();
-              e.stopPropagation();
-              setDropTargetPath(node.path);
-            }}
-            onDragOver={(e) => {
-              if (!e.dataTransfer.types.includes(FILE_DRAG_TYPE)) return;
-              e.preventDefault();
-              e.stopPropagation();
-              e.dataTransfer.dropEffect = "move";
-            }}
-            onDrop={(e) => {
-              if (!e.dataTransfer.types.includes(FILE_DRAG_TYPE)) return;
-              e.preventDefault();
-              e.stopPropagation();
-              setDropTargetPath(null);
-              const srcPath = e.dataTransfer.getData(FILE_DRAG_TYPE);
-              if (!srcPath || srcPath === node.path) return;
-              if (node.path.startsWith(srcPath + "/")) return;
-              const fileName = srcPath.split("/").pop() ?? srcPath;
-              const dest = node.path ? `${node.path}/${fileName}` : fileName;
-              const srcParent = srcPath.includes("/") ? srcPath.slice(0, srcPath.lastIndexOf("/")) : "";
-              if (srcParent === node.path) return;
-              onMove(srcPath, dest);
-            }}
-            onDragLeave={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                setDropTargetPath(null);
-              }
-            }}
-            actions={
-              renamingPath !== node.path ? (
-                <FileTreeActions>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); onStartCreateDir(node.path); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onStartCreateDir(node.path); } }}
-                    className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/folder:opacity-100 cursor-pointer"
-                    title="New folder inside"
-                  >
-                    <FolderPlusIcon className="size-3" />
-                  </div>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); onStartRename(node.path); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onStartRename(node.path); } }}
-                    className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/folder:opacity-100 cursor-pointer"
-                    title={`Rename ${node.name}`}
-                  >
-                    <PencilIcon className="size-3" />
-                  </div>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); onDownloadDir(node.path); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onDownloadDir(node.path); } }}
-                    className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/folder:opacity-100 cursor-pointer"
-                    title={`Download ${node.name} as zip`}
-                  >
-                    <DownloadIcon className="size-3" />
-                  </div>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={(e) => { e.stopPropagation(); onDeleteDir(node.path); }}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onDeleteDir(node.path); } }}
-                    className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/folder:opacity-100 cursor-pointer"
-                    title={`Delete ${node.name}`}
-                  >
-                    <Trash2Icon className="size-3" />
-                  </div>
-                </FileTreeActions>
-              ) : undefined
-            }
-          >
-            {creatingDirIn === node.path && (
-              <div className="flex items-center gap-1 px-2 py-1">
-                <span className="size-4" />
-                <FolderIcon className="size-4 shrink-0 text-blue-500" />
-                <InlineInput
-                  defaultValue=""
-                  placeholder="Folder name"
-                  onSubmit={(name) => onCreateDir(node.path ? `${node.path}/${name}` : name)}
-                  onCancel={onCancelCreateDir}
-                />
-              </div>
-            )}
-            {node.children && node.children.length > 0 && (
-              <TreeNodes
-                nodes={node.children}
-                onSelect={onSelect}
-                onDownload={onDownload}
-                onDelete={onDelete}
-                onDownloadDir={onDownloadDir}
-                onDeleteDir={onDeleteDir}
-                onMove={onMove}
-                selectedPath={selectedPath}
-                renamingPath={renamingPath}
-                onStartRename={onStartRename}
-                onRename={onRename}
-                onCancelRename={onCancelRename}
-                dropTargetPath={dropTargetPath}
-                setDropTargetPath={setDropTargetPath}
-                creatingDirIn={creatingDirIn}
-                onCreateDir={onCreateDir}
-                onCancelCreateDir={onCancelCreateDir}
-                onStartCreateDir={onStartCreateDir}
-              />
-            )}
-          </FileTreeFolder>
+  expandedPaths,
+  onToggleDirectory,
+}: VirtualTreeRowProps) {
+  const style = {
+    height: FILE_TREE_ROW_HEIGHT,
+    transform: `translateY(${top}px)`,
+    paddingLeft: row.depth * 16 + 8,
+  };
+
+  if (row.kind === "create") {
+    return (
+      <div
+        className="absolute inset-x-0 top-0 flex items-center gap-1 pr-2"
+        role="treeitem"
+        aria-level={row.depth + 1}
+        aria-selected={false}
+        style={style}
+      >
+        <span className="size-4 shrink-0" />
+        <FolderIcon className="size-4 shrink-0 text-blue-500" />
+        <InlineInput
+          defaultValue=""
+          placeholder="Folder name"
+          onSubmit={(name) =>
+            onCreateDir(row.parentPath ? `${row.parentPath}/${name}` : name)
+          }
+          onCancel={onCancelCreateDir}
+        />
+      </div>
+    );
+  }
+
+  const { node } = row;
+  const isDirectory = node.type === "directory";
+  const isExpanded = isDirectory && expandedPaths.has(node.path);
+  const isSelected = selectedPath === node.path;
+
+  if (isDirectory) {
+    return (
+      <div
+        className={cn(
+          "group/folder absolute inset-x-0 top-0 flex cursor-pointer items-center gap-1 rounded pr-2 text-left transition-colors hover:bg-muted/50",
+          isSelected && "bg-muted",
+          dropTargetPath === node.path && "ring-2 ring-primary/40",
+        )}
+        role="treeitem"
+        aria-level={row.depth + 1}
+        aria-expanded={isExpanded}
+        aria-selected={isSelected}
+        tabIndex={0}
+        style={style}
+        draggable={renamingPath !== node.path}
+        onClick={() => onToggleDirectory(node.path)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggleDirectory(node.path);
+          }
+        }}
+        onDragStart={(event) => {
+          event.stopPropagation();
+          event.dataTransfer.setData(FILE_DRAG_TYPE, node.path);
+          event.dataTransfer.effectAllowed = "copyMove";
+          const ghost = makeDragGhost(node.name, "#3b82f6");
+          event.dataTransfer.setDragImage(ghost, 0, 0);
+          setTimeout(() => ghost.remove(), 0);
+        }}
+        onDragEnd={() => setDropTargetPath(null)}
+        onDragEnter={(event) => {
+          if (!event.dataTransfer.types.includes(FILE_DRAG_TYPE)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setDropTargetPath(node.path);
+        }}
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes(FILE_DRAG_TYPE)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = "move";
+        }}
+        onDrop={(event) => {
+          if (!event.dataTransfer.types.includes(FILE_DRAG_TYPE)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setDropTargetPath(null);
+          const srcPath = event.dataTransfer.getData(FILE_DRAG_TYPE);
+          if (!srcPath || srcPath === node.path || node.path.startsWith(`${srcPath}/`)) return;
+          const fileName = srcPath.split("/").pop() ?? srcPath;
+          const dest = node.path ? `${node.path}/${fileName}` : fileName;
+          const srcParent = srcPath.includes("/")
+            ? srcPath.slice(0, srcPath.lastIndexOf("/"))
+            : "";
+          if (srcParent !== node.path) onMove(srcPath, dest);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node)) {
+            setDropTargetPath(null);
+          }
+        }}
+      >
+        <ChevronRightIcon
+          className={cn(
+            "size-4 shrink-0 text-muted-foreground transition-transform",
+            isExpanded && "rotate-90",
+          )}
+        />
+        <FileTreeIcon>
+          {isExpanded ? (
+            <FolderOpenIcon className="size-4 text-blue-500" />
+          ) : (
+            <FolderIcon className="size-4 text-blue-500" />
+          )}
+        </FileTreeIcon>
+        {renamingPath === node.path ? (
+          <InlineInput
+            defaultValue={node.name}
+            onSubmit={(newName) => onRename(node.path, newName)}
+            onCancel={onCancelRename}
+          />
         ) : (
-          <FileTreeFile
-            key={node.path}
-            path={node.path}
-            name={node.name}
-            className="group/file"
-            draggable={renamingPath !== node.path}
-            onDragStart={(e) => {
-              e.stopPropagation();
-              e.dataTransfer.setData(FILE_DRAG_TYPE, node.path);
-              e.dataTransfer.effectAllowed = "copyMove";
-              const ghost = makeDragGhost(node.name, "#6366f1");
-              e.dataTransfer.setDragImage(ghost, 0, 0);
-              setTimeout(() => ghost.remove(), 0);
-            }}
-            onDragEnd={() => setDropTargetPath(null)}
-          >
-            <span className="size-4" />
-            <FileTreeIcon>
-              <KadyFileIcon name={node.name} />
-            </FileTreeIcon>
-            {renamingPath === node.path ? (
-              <InlineInput
-                defaultValue={node.name}
-                onSubmit={(newName) => onRename(node.path, newName)}
-                onCancel={onCancelRename}
-              />
-            ) : (
-              <FileTreeName>{node.name}</FileTreeName>
-            )}
-            {renamingPath !== node.path && (
-              <FileTreeActions>
-                <button
-                  onClick={() => onStartRename(node.path)}
-                  className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/file:opacity-100"
-                  title={`Rename ${node.name}`}
-                >
-                  <PencilIcon className="size-3" />
-                </button>
-                <button
-                  onClick={() => onDownload(node.path)}
-                  className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/file:opacity-100"
-                  title={`Download ${node.name}`}
-                >
-                  <DownloadIcon className="size-3" />
-                </button>
-                <button
-                  onClick={() => onDelete(node.path)}
-                  className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/file:opacity-100"
-                  title={`Delete ${node.name}`}
-                >
-                  <Trash2Icon className="size-3" />
-                </button>
-              </FileTreeActions>
-            )}
-          </FileTreeFile>
-        )
+          <FileTreeName>{node.name}</FileTreeName>
+        )}
+        {renamingPath !== node.path && (
+          <FileTreeActions>
+            <button
+              onClick={() => onStartCreateDir(node.path)}
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/folder:opacity-100"
+              title="New folder inside"
+            >
+              <FolderPlusIcon className="size-3" />
+            </button>
+            <button
+              onClick={() => onStartRename(node.path)}
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/folder:opacity-100"
+              title={`Rename ${node.name}`}
+            >
+              <PencilIcon className="size-3" />
+            </button>
+            <button
+              onClick={() => onDownloadDir(node.path)}
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/folder:opacity-100"
+              title={`Download ${node.name} as zip`}
+            >
+              <DownloadIcon className="size-3" />
+            </button>
+            <button
+              onClick={() => onDeleteDir(node.path)}
+              className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/folder:opacity-100"
+              title={`Delete ${node.name}`}
+            >
+              <Trash2Icon className="size-3" />
+            </button>
+          </FileTreeActions>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className={cn(
+        "group/file absolute inset-x-0 top-0 flex cursor-pointer items-center gap-1 rounded pr-2 transition-colors hover:bg-muted/50",
+        isSelected && "bg-muted",
       )}
-    </>
+      role="treeitem"
+      aria-level={row.depth + 1}
+      aria-selected={isSelected}
+      tabIndex={0}
+      style={style}
+      draggable={renamingPath !== node.path}
+      onClick={() => onSelect(node.path)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(node.path);
+        }
+      }}
+      onDragStart={(event) => {
+        event.stopPropagation();
+        event.dataTransfer.setData(FILE_DRAG_TYPE, node.path);
+        event.dataTransfer.effectAllowed = "copyMove";
+        const ghost = makeDragGhost(node.name, "#6366f1");
+        event.dataTransfer.setDragImage(ghost, 0, 0);
+        setTimeout(() => ghost.remove(), 0);
+      }}
+      onDragEnd={() => setDropTargetPath(null)}
+    >
+      <span className="size-4 shrink-0" />
+      <FileTreeIcon>
+        <KadyFileIcon name={node.name} />
+      </FileTreeIcon>
+      {renamingPath === node.path ? (
+        <InlineInput
+          defaultValue={node.name}
+          onSubmit={(newName) => onRename(node.path, newName)}
+          onCancel={onCancelRename}
+        />
+      ) : (
+        <FileTreeName>{node.name}</FileTreeName>
+      )}
+      {renamingPath !== node.path && (
+        <FileTreeActions>
+          <button
+            onClick={() => onStartRename(node.path)}
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/file:opacity-100"
+            title={`Rename ${node.name}`}
+          >
+            <PencilIcon className="size-3" />
+          </button>
+          <button
+            onClick={() => onDownload(node.path)}
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/file:opacity-100"
+            title={`Download ${node.name}`}
+          >
+            <DownloadIcon className="size-3" />
+          </button>
+          <button
+            onClick={() => onDelete(node.path)}
+            className="rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover/file:opacity-100"
+            title={`Delete ${node.name}`}
+          >
+            <Trash2Icon className="size-3" />
+          </button>
+        </FileTreeActions>
+      )}
+    </div>
   );
-}
+});
 
 function countFiles(node: TreeNode): number {
   if (node.type === "file") return 1;
@@ -386,7 +415,7 @@ interface FileTreePanelProps {
   onCreateDir: (path: string) => void;
 }
 
-export function FileTreePanel({
+export const FileTreePanel = memo(function FileTreePanel({
   tree,
   selectedPath,
   uploading,
@@ -467,23 +496,40 @@ export function FileTreePanel({
     return dirs;
   }, [tree]);
 
-  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set([""]));
-  const seenDirPaths = useRef<Set<string>>(new Set([""]));
-  useEffect(() => {
-    const unseen = [...allDirPaths].filter((p) => !seenDirPaths.current.has(p));
-    if (unseen.length === 0) return;
-    for (const p of unseen) seenDirPaths.current.add(p);
+  // Directories start collapsed. On restoration, reveal only the ancestors of
+  // the persisted selected file instead of eagerly opening the entire tree.
+  const [expandedPaths, setExpandedPaths] = useState<Set<string>>(() => {
+    if (!selectedPath) return new Set();
+    const parts = selectedPath.split("/");
+    return new Set(
+      parts.slice(0, -1).map((_, index) => parts.slice(0, index + 1).join("/")),
+    );
+  });
+  const visibleExpandedPaths = useMemo(
+    () => new Set([...expandedPaths].filter((path) => allDirPaths.has(path))),
+    [allDirPaths, expandedPaths],
+  );
+
+  const handleToggleDirectory = useCallback((path: string) => {
     setExpandedPaths((prev) => {
       const next = new Set(prev);
-      for (const p of unseen) next.add(p);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
       return next;
     });
-  }, [allDirPaths]);
+  }, []);
 
-  const handleSelect = useCallback(
-    (path: string) => { if (!allDirPaths.has(path)) onSelect(path); },
-    [allDirPaths, onSelect]
-  );
+  const handleStartCreateDir = useCallback((parentPath: string) => {
+    if (parentPath) {
+      setExpandedPaths((prev) => {
+        if (prev.has(parentPath)) return prev;
+        const next = new Set(prev);
+        next.add(parentPath);
+        return next;
+      });
+    }
+    setCreatingDirIn(parentPath);
+  }, []);
 
   const handleFileChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -505,6 +551,43 @@ export function FileTreePanel({
     setCreatingDirIn(null);
     onCreateDir(path);
   }, [onCreateDir]);
+  const handleCancelRename = useCallback(() => setRenamingPath(null), []);
+  const handleCancelCreateDir = useCallback(() => setCreatingDirIn(null), []);
+
+  const visibleRows = useMemo(
+    () =>
+      flattenVisibleTree(
+        tree?.children ?? [],
+        visibleExpandedPaths,
+        creatingDirIn,
+      ),
+    [creatingDirIn, tree, visibleExpandedPaths],
+  );
+  const treeViewportRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportHeight, setViewportHeight] = useState(480);
+
+  useEffect(() => {
+    const viewport = treeViewportRef.current;
+    if (!viewport) return;
+    const measure = () => {
+      const height = viewport.clientHeight;
+      if (height > 0) setViewportHeight(height);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
+
+  const range = useMemo(
+    () => virtualTreeRange(visibleRows.length, scrollTop, viewportHeight),
+    [scrollTop, viewportHeight, visibleRows.length],
+  );
 
   return (
     <div
@@ -648,8 +731,14 @@ export function FileTreePanel({
         </div>
       </div>
 
-      {/* Tree */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Tree: flatten expanded branches, then mount only the viewport rows. */}
+      <div
+        ref={treeViewportRef}
+        className="flex-1 overflow-y-auto p-2"
+        role="tree"
+        aria-label="Sandbox files"
+        onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      >
         {!tree || ((tree.children ?? []).length === 0 && creatingDirIn === null) ? (
           <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
             <div className="flex size-10 items-center justify-center rounded-xl bg-muted/60">
@@ -661,29 +750,16 @@ export function FileTreePanel({
             </div>
           </div>
         ) : (
-          <div className="p-2">
-            <FileTree
-              onSelect={handleSelect}
-              selectedPath={selectedPath ?? undefined}
-              expanded={expandedPaths}
-              onExpandedChange={setExpandedPaths}
-              className="border-none bg-transparent"
-            >
-              {creatingDirIn === "" && (
-                <div className="flex items-center gap-1 px-2 py-1">
-                  <span className="size-4" />
-                  <FolderIcon className="size-4 shrink-0 text-blue-500" />
-                  <InlineInput
-                    defaultValue=""
-                    placeholder="Folder name"
-                    onSubmit={(name) => handleCreateDir(name)}
-                    onCancel={() => setCreatingDirIn(null)}
-                  />
-                </div>
-              )}
-              <TreeNodes
-                nodes={tree?.children ?? []}
-                onSelect={handleSelect}
+          <div
+            className="relative rounded-lg bg-background font-mono text-sm"
+            style={{ height: range.totalHeight }}
+          >
+            {visibleRows.slice(range.start, range.end).map((row, index) => (
+              <VirtualTreeRow
+                key={row.kind === "node" ? row.node.path : `create:${row.parentPath}`}
+                row={row}
+                top={(range.start + index) * FILE_TREE_ROW_HEIGHT}
+                onSelect={onSelect}
                 onDownload={onDownload}
                 onDelete={onDelete}
                 onDownloadDir={onDownloadDir}
@@ -693,18 +769,19 @@ export function FileTreePanel({
                 renamingPath={renamingPath}
                 onStartRename={setRenamingPath}
                 onRename={handleRename}
-                onCancelRename={() => setRenamingPath(null)}
+                onCancelRename={handleCancelRename}
                 dropTargetPath={dropTargetPath}
                 setDropTargetPath={setDropTargetPath}
-                creatingDirIn={creatingDirIn}
                 onCreateDir={handleCreateDir}
-                onCancelCreateDir={() => setCreatingDirIn(null)}
-                onStartCreateDir={setCreatingDirIn}
+                onCancelCreateDir={handleCancelCreateDir}
+                onStartCreateDir={handleStartCreateDir}
+                expandedPaths={visibleExpandedPaths}
+                onToggleDirectory={handleToggleDirectory}
               />
-            </FileTree>
+            ))}
           </div>
         )}
       </div>
     </div>
   );
-}
+});

@@ -7,6 +7,7 @@
  * cascade on move/delete. AnnData previews shell out to a small Python helper.
  */
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -26,6 +27,14 @@ import { AssistError, runLatexAssist, type AssistRequest } from "../latex/assist
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
 const MAX_PREVIEW_BYTES = 512_000;
+const TREE_EXCLUDED_DIRS = new Set(["__pycache__", "node_modules"]);
+
+function isTreeExcludedDir(name: string): boolean {
+  return (
+    TREE_EXCLUDED_DIRS.has(name) ||
+    /(?:^|[-_.])(?:venv|virtualenv)$/i.test(name)
+  );
+}
 
 interface TreeNode {
   name: string;
@@ -35,7 +44,18 @@ interface TreeNode {
   children?: TreeNode[];
 }
 
-function buildTree(dir: string, sandboxRoot: string, depth = 0): TreeNode {
+interface TreePayload {
+  body: string;
+  etag: string;
+}
+
+const treeBuilds = new Map<string, Promise<TreePayload>>();
+
+async function buildTree(
+  dir: string,
+  sandboxRoot: string,
+  depth = 0,
+): Promise<TreeNode> {
   const node: TreeNode = {
     name: path.basename(dir) || "sandbox",
     type: "directory",
@@ -45,7 +65,7 @@ function buildTree(dir: string, sandboxRoot: string, depth = 0): TreeNode {
   if (depth > 8) return node;
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries = await fs.promises.readdir(dir, { withFileTypes: true });
   } catch {
     return node;
   }
@@ -60,18 +80,38 @@ function buildTree(dir: string, sandboxRoot: string, depth = 0): TreeNode {
     if (!isUserVisible(abs, sandboxRoot)) continue;
     const rel = apiRelative(sandboxRoot, abs);
     if (entry.isDirectory()) {
-      node.children!.push(buildTree(abs, sandboxRoot, depth + 1));
+      // Dependency and interpreter caches can contain tens of thousands of
+      // files and are never useful in the user-facing project browser.
+      if (isTreeExcludedDir(entry.name)) continue;
+      node.children!.push(await buildTree(abs, sandboxRoot, depth + 1));
     } else if (entry.isFile()) {
-      let size = 0;
-      try {
-        size = fs.statSync(abs).size;
-      } catch {
-        /* ignore */
-      }
-      node.children!.push({ name: entry.name, type: "file", path: rel, size });
+      // Size is optional in the wire schema and unused by the UI. Avoiding a
+      // separate stat call per file makes large scientific datasets much
+      // cheaper to enumerate.
+      node.children!.push({ name: entry.name, type: "file", path: rel });
     }
   }
   return node;
+}
+
+async function buildTreePayload(root: string): Promise<TreePayload> {
+  const tree = await buildTree(root, root);
+  const body = JSON.stringify(tree);
+  const digest = createHash("sha256").update(body).digest("base64url");
+  return { body, etag: `"${digest}"` };
+}
+
+function buildTreeOnce(root: string): Promise<TreePayload> {
+  const existing = treeBuilds.get(root);
+  if (existing) return existing;
+
+  const pending = buildTreePayload(root);
+  treeBuilds.set(root, pending);
+  const clear = () => {
+    if (treeBuilds.get(root) === pending) treeBuilds.delete(root);
+  };
+  void pending.then(clear, clear);
+  return pending;
 }
 
 function zipDir(root: string, base: string): Buffer {
@@ -125,10 +165,27 @@ function handle(reply: FastifyReply, err: unknown): { detail: string } {
 }
 
 export async function registerSandboxRoutes(app: FastifyInstance): Promise<void> {
-  app.get("/sandbox/tree", async () => {
+  app.get("/sandbox/tree", async (req, reply) => {
     const root = activePaths().sandbox;
-    if (!fs.existsSync(root)) return { name: "sandbox", type: "directory", path: "", children: [] };
-    return buildTree(root, root);
+    const payload = fs.existsSync(root)
+      ? await buildTreeOnce(root)
+      : (() => {
+          const body = JSON.stringify({
+            name: "sandbox",
+            type: "directory",
+            path: "",
+            children: [],
+          });
+          const digest = createHash("sha256").update(body).digest("base64url");
+          return { body, etag: `"${digest}"` };
+        })();
+
+    reply.header("ETag", payload.etag);
+    reply.header("Cache-Control", "no-cache");
+    if (req.headers["if-none-match"] === payload.etag) {
+      return reply.code(304).send();
+    }
+    return reply.type("application/json; charset=utf-8").send(payload.body);
   });
 
   app.post("/sandbox/upload", async (req, reply) => {
