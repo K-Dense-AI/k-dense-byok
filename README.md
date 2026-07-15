@@ -1,7 +1,7 @@
 # K-Dense BYOK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.7.0-blue.svg)](server/package.json)
+[![Version](https://img.shields.io/badge/Version-0.7.3-blue.svg)](server/package.json)
 [![Skills](https://img.shields.io/badge/Skills-149-brightgreen.svg)](#what-can-it-do)
 [![Workflows](https://img.shields.io/badge/Workflows-326-blueviolet.svg)](#what-can-it-do)
 [![Databases](https://img.shields.io/badge/Databases-229-orange.svg)](#what-can-it-do)
@@ -14,47 +14,63 @@
 
 ![K-Dense BYOK — Kady running an end-to-end single-cell RNA-seq analysis, with the project file browser, a rendered analysis report, and the live chat panel](docs/app-screenshot.png)
 
-K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you **Kady** — an AI research assistant for scientists in any field. Describe a task in plain language — *analyze this dataset*, *review my manuscript*, *search the literature*, *build this figure* — and Kady does the work: it reads and writes your files, writes and runs real analysis code, searches the web, and hands you the results.
+K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you **Kady** — an AI research assistant for scientists in any field. Describe a task in plain language — *analyze this dataset*, *review my manuscript*, *search the literature*, *build this figure* — and Kady works through it in a complete research workspace. It can inspect your files, write and run analysis code, search and read sources, create figures and reports, and keep a living record of what it did.
 
 Three things to know up front:
 
 - **No coding experience required.** You describe what you want; Kady writes and runs the code and shows you its progress as it works.
-- **Your files stay on your computer.** The app runs locally, and your data lives in ordinary folders on your machine — nothing is stored on our servers.
+- **Your workspace stays on your computer.** Projects, conversations, notebooks, and results live in ordinary folders on your machine; K-Dense does not host or store them. When you use a hosted AI model, the material needed for that request is sent directly to the provider you selected under that provider's privacy terms. Use a local Ollama model when data must not leave your machine.
 - **The app is free; you pay only for AI usage.** "Bring your own keys" means you connect your own AI account (a single, prepaid [OpenRouter](https://openrouter.ai/) account covers every major model — a few dollars goes a long way). Every project tracks its spending, and you can set a hard spending cap. Prefer to pay nothing at all? Run [free local models](./docs/local-models-ollama.md) instead.
 
 > **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), and [YouTube](https://www.youtube.com/@K-Dense-Inc) for release notes and tutorials.
 
 ## What can it do?
 
-**Do real research work**
+Kady is designed to carry out research work, not only answer questions. You remain the scientist in charge: you can watch each step, inspect the code and files it creates, redirect it while it works, and stop a run at any time.
 
-- **Take on full research tasks** — data analysis, literature review, manuscript checking, figure generation — in a complete working environment, with progress shown live in the chat.
-- **Delegate to a built-in team of 21 scientific specialists**, such as a `citation-checker`, a `statistical-reviewer`, and a `peer-reviewer` — working one at a time, in parallel, or in sequence. [Learn more](./docs/sub-agents.md).
-- **Search the web and read sources directly** — web pages, PDFs, GitHub repositories, even YouTube videos — with no extra setup or account required.
-- **Ask before it assumes.** When your request is ambiguous, Kady shows a short question form in the chat instead of guessing.
+### From a research question to usable results
 
-**Built for science**
+- **Analyze real datasets.** Ask Kady to clean data, check quality, choose and run statistical methods, compare groups, fit models, or generate publication-ready figures. It writes and runs the code inside the project, so the scripts, intermediate files, tables, figures, and reports remain available for inspection and reuse.
+- **Review evidence and documents.** Kady can search the web and read web pages, PDFs, GitHub repositories, and YouTube videos. It can compare papers, extract methods, audit a manuscript, summarize evidence, or follow links to supporting material. Web search works without an additional account; optional search-provider keys improve capacity.
+- **Work with text, data, and images.** Type or dictate a request, upload files through the project browser, attach project files to a conversation, or paste/drop images directly into a message for a vision-capable model to inspect.
+- **Ask before it assumes.** If a study design, comparison, output format, or other requirement is ambiguous, Kady can pause and show a short in-chat question form — including multiple choice, free text, and image input — rather than silently guessing.
+- **Keep working while it works.** Add up to five follow-up messages to a running conversation, steer the current analysis, or continue in another chat or project.
 
-- **149 pre-installed scientific skills** covering genomics, proteomics, drug discovery, materials science, and more — Kady picks the right ones for each task automatically.
-- **326 ready-made workflow templates** across 22 disciplines: pick one, fill in the blanks, go.
-- **229 scientific and financial databases** in 18 categories, from PubMed-scale biomedical resources to market and climate data.
-- **A Living Lab Notebook that writes itself** — as Kady works, it logs hypotheses, methods, observations, and decisions (from its specialists too) to a notebook you can watch live, review later, and export or print as a PDF. [Learn more](./docs/lab-notebook.md).
-- **Preview 60+ scientific file formats** right in the app — interactive 3D protein structures, 2D chemical structures from SMILES, mass spectra, single-cell/HDF5/Parquet arrays, phylogenetic trees, sequence alignments, DICOM/NIfTI/microscopy imaging, and [more](./docs/file-previews.md) — alongside everyday CSVs, PDFs, notebooks, and genomics tables.
-- **Write in LaTeX** in a full split-pane editor — live PDF compile with your choice of engine, inline error diagnostics, click-to-jump between source and PDF (SyncTeX), and built-in AI assist that rewrites selections or fixes compile errors as diffs you can keep or revert.
+### A scientific toolkit built in
 
-**Choose your AI**
+- **149 scientific skills** cover genomics, proteomics, bioinformatics, drug discovery, chemistry, materials science, clinical research, and more. Kady activates the relevant procedures automatically, and you can browse or disable them in Settings.
+- **326 guided workflow templates across 22 disciplines** turn common analyses into fill-in-the-blank starting points. Choose a workflow, supply the study details, and launch it into the active chat.
+- **229 scientific and financial data resources across 18 categories** give Kady guidance for finding information in biomedical, chemical, scholarly, market, earth-science, climate, and space databases. Some resources require their own free key.
+- **21 scientific specialists** can take focused assignments such as statistical review, citation checking, peer review, data analysis, or literature synthesis. Kady can delegate independent work in parallel and combine the findings, or you can call a specialist by name. [Learn more](./docs/sub-agents.md).
+- **A Living Lab Notebook records the reasoning trail.** As Kady and its specialists work, they can log hypotheses, methods, observations, decisions, confidence, code, and linked artifacts. You can connect evidence to hypotheses, pin and comment on entries, add your own notes, view one chat or the whole project, export Markdown/JSON/a bundle with artifacts, print to PDF, and generate a manuscript-style Methods draft. [Learn more](./docs/lab-notebook.md).
 
-- **Use any major AI model** — OpenAI, Anthropic, Google, xAI, Qwen, and more through one [OpenRouter](https://openrouter.ai/) account, or free models running on your own machine via [Ollama](./docs/local-models-ollama.md). Switch models per chat.
-- **Get several expert opinions at once with [OpenRouter Fusion](./docs/openrouter-fusion.md)** — pick a preset (e.g. *Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro*) and a panel of top models deliberates on your question while a judge model synthesizes one answer. Combined pricing and benchmark scores are shown right in the model picker.
-- **Send heavy jobs to the cloud with [Modal](https://modal.com)** — when a task is too big for your laptop, Kady can run it on an on-demand cloud machine, from an inexpensive CPU box up to H100 GPUs. Results come back into your project automatically, and the compute cost is tracked alongside your model spending. You choose the machine per chat.
+### Read and inspect scientific files without leaving the app
 
-**Stay organized and in control**
+- **Preview 60+ scientific formats** alongside everyday CSV, PDF, Markdown, image, code, and Jupyter notebook files. View interactive 3D protein and molecular structures, 2D chemical structures, spectra and chromatograms, sequence alignments, phylogenetic trees, single-cell and array data, and DICOM/NIfTI/microscopy images. [See the full format list](./docs/file-previews.md).
+- **Edit text and code in place**, inspect tables and notebook outputs, annotate images and PDFs, reveal files cited in chat, ask Kady to organize the project folder, and download an individual result, a folder, or the complete project as a ZIP archive.
+- **Write papers in LaTeX** with a split source/PDF view, automatic compilation, pdfLaTeX/XeLaTeX/LuaLaTeX support, outline and word count, inline errors, autocomplete, spell check, and two-way jumps between source and PDF. AI-assisted edits and compile fixes appear as diffs you can accept or revert.
 
-- **Work in projects** — each with its own files, chat history, up to 10 side-by-side chat tabs, and cost tracking with optional spending caps.
-- **Arrange your workspace** — resize the three panels, or collapse the file browser and chat independently with one click to give the editor and previews the full screen (ideal for writing LaTeX or studying a figure). Your layout is remembered.
-- **Pick up where you left off** — reopen any past chat from the session history menu, full transcript included.
-- **Connect external tools** through [MCP](./docs/mcp-servers.md) (Model Context Protocol — a standard plug-in system for AI assistants): GitHub, reference managers, databases, and hundreds of others.
-- **Manage everything from Settings** — browse and toggle skills, create or disable specialists, connect or disconnect external tools, and manage API keys, all from one in-app panel. No configuration files to edit, and turning something off never deletes it.
+### Run several lines of work at once — and return later
+
+- **Projects are independent research workspaces.** Each project has its own files, chats, notebook, model choices, tags, archive state, and spending policy. Several projects can run at the same time, and the project directory shows which ones are running, finished, waiting for your input, blocked, or errored.
+- **Use up to 10 parallel chat tabs per project.** Each tab has its own conversation, model, thinking level, compute choice, attachments, draft, queue, and cost, while all tabs share the project's files.
+- **Refresh without losing your place.** Open projects, tabs, drafts, queued messages, panel sizes, open files, and active turns are restored after a browser refresh or browser-tab closure. A live turn reconnects to the same run and continues streaming as long as the Kady backend remains running. Completed conversations stay on disk and can be reopened from Chat history.
+- **Arrange the workspace for the task.** Resize or collapse the file browser and chat to focus on a figure, report, notebook, or LaTeX document; Kady remembers the layout.
+
+### Choose the right model and compute for each task
+
+- **Use major hosted models** from OpenAI, Anthropic, Google, xAI, Qwen, and others through one [OpenRouter](https://openrouter.ai/) account. Change the model and reasoning level independently in each chat.
+- **Run free local models with [Ollama](./docs/local-models-ollama.md)** when cost or data locality matters. Local models appear in the same model picker.
+- **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information.
+- **Move demanding computation to [Modal](https://modal.com).** Select an on-demand cloud CPU or GPU, up to H100-class hardware, for a chat. Kady stages the requested inputs, runs the job remotely, brings the outputs back into the local project, and records the compute cost with the rest of the project spend.
+
+### Stay in control
+
+- **See cost as work happens.** Kady records model, specialist, and Modal compute costs by run and project. Set an optional hard dollar limit on any project; once reached, new paid work is blocked.
+- **Watch local resource use.** A compact system monitor shows CPU, memory, and GPU activity while analyses are running on your computer.
+- **Manage capabilities without editing configuration files.** Settings lets you add API keys, enable or disable skills, create or customize specialists, manage Fusion presets, and change appearance. Disabling a capability does not delete it.
+- **Connect your existing research tools** through [MCP](./docs/mcp-servers.md), a plug-in standard for AI assistants. Add reference managers, GitHub, databases, and other services, test the connection in the app, and make their tools available to Kady.
+- **Your work is stored in ordinary local files.** Projects can be backed up, moved, inspected with other software, or archived independently of the app.
 
 ## Get started in 5 minutes
 

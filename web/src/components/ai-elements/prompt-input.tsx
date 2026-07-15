@@ -160,8 +160,22 @@ export const useProviderAttachments = () => {
 const useOptionalProviderAttachments = () =>
   useContext(ProviderAttachmentsContext);
 
+export interface PromptInputAttachmentState {
+  id: string;
+  filename?: string;
+  mediaType?: string;
+  url: string;
+}
+
+export interface PromptInputProviderState {
+  text: string;
+  attachments: PromptInputAttachmentState[];
+}
+
 export type PromptInputProviderProps = PropsWithChildren<{
   initialInput?: string;
+  initialAttachments?: PromptInputAttachmentState[];
+  onStateChange?: (state: PromptInputProviderState) => void;
 }>;
 
 /**
@@ -170,6 +184,8 @@ export type PromptInputProviderProps = PropsWithChildren<{
  */
 export const PromptInputProvider = ({
   initialInput: initialTextInput = "",
+  initialAttachments = [],
+  onStateChange,
   children,
 }: PromptInputProviderProps) => {
   // ----- textInput state
@@ -179,7 +195,15 @@ export const PromptInputProvider = ({
   // ----- attachments state (global when wrapped)
   const [attachmentFiles, setAttachmentFiles] = useState<
     (FileUIPart & { id: string })[]
-  >([]);
+  >(() =>
+    initialAttachments.map((attachment) => ({
+      id: attachment.id,
+      filename: attachment.filename,
+      mediaType: attachment.mediaType ?? "application/octet-stream",
+      type: "file" as const,
+      url: attachment.url,
+    }))
+  );
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // oxlint-disable-next-line eslint(no-empty-function)
   const openRef = useRef<() => void>(() => {});
@@ -229,6 +253,18 @@ export const PromptInputProvider = ({
   useEffect(() => {
     attachmentsRef.current = attachmentFiles;
   }, [attachmentFiles]);
+
+  useEffect(() => {
+    onStateChange?.({
+      text: textInput,
+      attachments: attachmentFiles.map((attachment) => ({
+        id: attachment.id,
+        filename: attachment.filename,
+        mediaType: attachment.mediaType,
+        url: attachment.url,
+      })),
+    });
+  }, [attachmentFiles, onStateChange, textInput]);
 
   // Cleanup blob URLs on unmount to prevent memory leaks
   useEffect(

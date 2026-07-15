@@ -32,12 +32,11 @@ If a task loops or ignores its skill, try a **larger local model** (or temporari
 - **Hard cap of 10 tabs per project.** This keeps the browser snappy and
   bounds the number of parallel SSE streams to the backend. Close an
   existing tab before opening a new one once you hit the limit.
-- **Tab list isn't persisted across reloads.** Refreshing the page resets
-  you to a single new chat tab. Your conversations aren't lost: the clock
-  ("Chat history") button in the tab strip lists every stored session in
-  the project — pick one to reopen its full transcript in a tab and keep
-  chatting. Restoring the whole tab *layout* automatically is still on
-  the roadmap.
+- **Refresh recovery requires the backend to stay running.** Browser refreshes
+  and browser-tab closes preserve project workspaces, chat tabs, drafts,
+  queues, and live turns. Stopping or restarting the Kady backend still ends
+  in-flight turns; completed conversation history remains on disk and can be
+  reopened from Chat history.
 - **Workflows launch into the active tab.** If you have a long-running
   turn streaming in tab A and click Launch on a workflow while tab B is
   active, the workflow runs in tab B. Switch to the tab you want to
@@ -66,4 +65,4 @@ The app now runs natively on Windows 10/11 (no WSL needed) as of this release. I
 
 ## Features deferred during the Pi migration
 
-Literature search (Paperclip), document conversion, remote compute (Modal), browser automation, and citation verification / "Copy as Methods" provenance export are not available yet in the Pi-based backend. They are being re-added in upcoming releases; the keys for them in `.env.example` are currently unused. In the meantime, many of these capabilities (GitHub, reference managers, ...) can be added today by connecting an [MCP server](./mcp-servers.md).
+First-party literature/regulatory search (Paperclip), document conversion, browser automation, citation verification, and the provenance-aware "Copy as Methods" export are not available yet in the Pi-based backend. Web research and Modal remote compute are available now. In the meantime, many additional capabilities (GitHub, reference managers, databases, and more) can be added by connecting an [MCP server](./mcp-servers.md).

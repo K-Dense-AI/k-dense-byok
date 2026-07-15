@@ -20,15 +20,17 @@ When you send a message:
 1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
 2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent runs as its own short-lived `pi` process in the same sandbox, with its spend counted toward the project budget).
 3. Model calls go straight to OpenRouter or Ollama.
-4. Events (text, tool calls, cost) stream back to your browser over SSE in real time.
+4. A backend run broker sequences and buffers events (text, tool calls, cost)
+   and streams them to the browser over SSE. The broker, rather than an
+   individual browser connection, owns the live turn.
 
 ## Chat tabs and sessions
 
 Every chat tab in the UI is backed by its own backend **session**. A session
 is a single conversation: an id, an ordered list of messages, and a cost
-ledger. You can open up to 10 tabs in a project; the list of tabs lives only
-in the browser, but each tab's session is persistent on disk under that
-project.
+ledger. You can open up to 10 tabs in a project. The browser persists the tab
+layout and recoverable workspace state locally, while each tab's conversation
+is persisted on disk under that project.
 
 What a tab owns (per-tab):
 
@@ -36,8 +38,10 @@ What a tab owns (per-tab):
 - The selected model.
 - Attached files for the next message and the queued-message buffer.
 - Cost ledger (`projects/<project>/sandbox/.kady/runs/<sessionId>/costs.jsonl`).
-- The streaming connection — closing a tab aborts the in-flight turn for
-  that session only.
+- The live run subscription. Refreshing or closing the browser only detaches
+  that subscriber; reopening replays buffered frames and resumes the same
+  turn. Clicking Stop (or closing the chat tab inside Kady) explicitly aborts
+  that session's turn.
 
 What every tab in a project shares:
 
@@ -51,7 +55,10 @@ Switching tabs in the UI is purely client-side; the backend doesn't need to
 know which tab is "active" because each request already carries its own
 session id. Inactive tabs stay mounted in the DOM (hidden with CSS) so a
 streaming turn keeps producing output even when you're looking at another
-tab.
+tab. Browser refreshes remount the saved workspaces and reattach each active
+session through the run broker. This recovery boundary is process-local:
+restarting the backend ends active turns, while completed JSONL history and
+cost ledgers remain durable.
 
 ## First-run setup
 

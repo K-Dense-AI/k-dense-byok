@@ -38,6 +38,17 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
+  deletePersistedChatState,
+  loadWorkspaceSnapshot,
+  pruneDeletedProjectState,
+  saveProjectWorkspaceState,
+  saveWorkspaceShellState,
+  type ChatWorkspaceState,
+  type ProjectWorkspaceState,
+  type SandboxWorkspaceState,
+  type WorkspaceScreen,
+} from "@/lib/workspace-persistence";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -81,12 +92,35 @@ function ResizeHandle({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => v
 }
 
 export default function HomePage() {
-  const [screen, setScreen] = useState<"projects" | "workspace">("projects");
+  const [screen, setScreen] = useState<WorkspaceScreen>("projects");
   const [openedProjectIds, setOpenedProjectIds] = useState<string[]>([]);
+  const [restoredProjects, setRestoredProjects] = useState<
+    Record<string, ProjectWorkspaceState>
+  >({});
+  const [workspaceHydrated, setWorkspaceHydrated] = useState(false);
+  const [projectDirectoryHydrated, setProjectDirectoryHydrated] = useState(false);
   const [projectActivities, setProjectActivities] = useState<
     Record<string, ProjectActivitySummary>
   >({});
   const { activeProjectId, projects, loading: projectsLoading } = useProjects();
+
+  useEffect(() => {
+    if (!projectsLoading) setProjectDirectoryHydrated(true);
+  }, [projectsLoading]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadWorkspaceSnapshot().then((snapshot) => {
+      if (cancelled) return;
+      setRestoredProjects(snapshot.projects);
+      setOpenedProjectIds(snapshot.openedProjectIds);
+      setScreen(snapshot.screen);
+      setWorkspaceHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const rememberProject = useCallback((projectId: string) => {
     setOpenedProjectIds((prev) => (
@@ -120,13 +154,14 @@ export default function HomePage() {
   // visible workspace. Mount the destination workspace without unmounting the
   // source, so any live SSE stream in the source keeps running.
   useEffect(() => {
-    if (screen === "workspace") rememberProject(activeProjectId);
-  }, [activeProjectId, rememberProject, screen]);
+    if (workspaceHydrated && screen === "workspace") rememberProject(activeProjectId);
+  }, [activeProjectId, rememberProject, screen, workspaceHydrated]);
 
-  // A deleted project must release its mounted workspace; useAgent's unmount
-  // cleanup closes any stream, which in turn aborts the server-side session.
+  // A deleted project must release its mounted workspace and persisted shell
+  // state. The DELETE endpoint explicitly aborts its server-owned runs first;
+  // this unmount only disconnects browser-side event observers.
   useEffect(() => {
-    if (projectsLoading) return;
+    if (projectsLoading || !workspaceHydrated) return;
     const existing = new Set(projects.map((project) => project.id));
     setOpenedProjectIds((prev) => {
       const next = prev.filter((id) => existing.has(id));
@@ -138,7 +173,31 @@ export default function HomePage() {
       );
       return Object.keys(next).length === Object.keys(prev).length ? prev : next;
     });
-  }, [projects, projectsLoading]);
+    setRestoredProjects((prev) => {
+      const next = Object.fromEntries(
+        Object.entries(prev).filter(([id]) => existing.has(id)),
+      );
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+    void pruneDeletedProjectState(existing);
+  }, [projects, projectsLoading, workspaceHydrated]);
+
+  useEffect(() => {
+    if (!workspaceHydrated) return;
+    const timer = window.setTimeout(() => {
+      void saveWorkspaceShellState(screen, openedProjectIds);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [openedProjectIds, screen, workspaceHydrated]);
+
+  useEffect(() => {
+    if (!workspaceHydrated) return;
+    const flush = () => {
+      void saveWorkspaceShellState(screen, openedProjectIds);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [openedProjectIds, screen, workspaceHydrated]);
 
   return (
     <>
@@ -151,7 +210,7 @@ export default function HomePage() {
           projectActivities={projectActivities}
         />
       </div>
-      {openedProjectIds.map((projectId) => {
+      {projectDirectoryHydrated && openedProjectIds.map((projectId) => {
         const isActive = screen === "workspace" && projectId === activeProjectId;
         return (
           <ProjectScopeProvider key={projectId} value={projectId}>
@@ -159,6 +218,8 @@ export default function HomePage() {
               <WorkspacePage
                 projectId={projectId}
                 isActive={isActive}
+                hydrated={workspaceHydrated}
+                initialState={restoredProjects[projectId]}
                 onProjectActivityChange={handleProjectActivityChange}
                 onOpenProjectView={() => setScreen("projects")}
               />
@@ -173,59 +234,82 @@ export default function HomePage() {
 function WorkspacePage({
   projectId,
   isActive,
+  hydrated,
+  initialState,
   onProjectActivityChange,
   onOpenProjectView,
 }: {
   projectId: string;
   isActive: boolean;
+  hydrated: boolean;
+  initialState?: ProjectWorkspaceState;
   onProjectActivityChange: (
     projectId: string,
     activity: ProjectActivitySummary,
   ) => void;
   onOpenProjectView: () => void;
 }) {
-  const sandbox = useSandbox(isActive);
+  const [sandboxWorkspace, setSandboxWorkspace] = useState<SandboxWorkspaceState>(
+    () => initialState?.sandbox ?? { openPaths: [], activePath: null },
+  );
+  const handleSandboxWorkspaceChange = useCallback((next: SandboxWorkspaceState) => {
+    setSandboxWorkspace((current) =>
+      current.activePath === next.activePath &&
+      current.openPaths.length === next.openPaths.length &&
+      current.openPaths.every((path, index) => path === next.openPaths[index])
+        ? current
+        : next,
+    );
+  }, []);
+  const sandbox = useSandbox(
+    isActive,
+    undefined,
+    initialState?.sandbox,
+    handleSandboxWorkspaceChange,
+  );
   const { updateAvailable } = useUpdateCheck();
-  const { skills: allSkills } = useSkills();
+  const { skills: allSkills, loading: skillsLoading } = useSkills();
   const { projects: projectDirectory } = useProjects();
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
-  // The two side panels collapse independently so the center pane (file
-  // preview / LaTeX editor) can be widened. Default open; both initialize to
-  // `true` (matching SSR) and the saved preference is applied after mount to
-  // avoid a hydration mismatch. Toggling either persists to localStorage.
-  const [sandboxOpen, setSandboxOpen] = useState(true);
-  const [chatOpen, setChatOpen] = useState(true);
-  useEffect(() => {
-    if (typeof localStorage === "undefined") return;
-    if (localStorage.getItem("kady:panel:sandbox") === "0") setSandboxOpen(false);
-    if (localStorage.getItem("kady:panel:chat") === "0") setChatOpen(false);
-  }, []);
-  const toggleSandbox = useCallback(() => {
-    setSandboxOpen((v) => {
-      try { localStorage.setItem("kady:panel:sandbox", v ? "0" : "1"); } catch { /* private mode */ }
-      return !v;
-    });
-  }, []);
-  const toggleChat = useCallback(() => {
-    setChatOpen((v) => {
-      try { localStorage.setItem("kady:panel:chat", v ? "0" : "1"); } catch { /* private mode */ }
-      return !v;
-    });
-  }, []);
+  const [sandboxOpen, setSandboxOpen] = useState(
+    () => initialState?.sandboxOpen ?? true,
+  );
+  const [chatOpen, setChatOpen] = useState(
+    () => initialState?.chatOpen ?? true,
+  );
+  const toggleSandbox = useCallback(() => setSandboxOpen((value) => !value), []);
+  const toggleChat = useCallback(() => setChatOpen((value) => !value), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [showNotebook, setShowNotebook] = useState(false);
+  const [showNotebook, setShowNotebook] = useState(
+    () => initialState?.showNotebook ?? false,
+  );
 
   // Chat tab management. We allocate the initial id once via useRef so it
   // stays stable across React's strict-mode double-invocation of
   // useState's lazy initializer (which would otherwise mint two different
   // ids — one for the tabs array and one for activeTabId).
   const initialTabId = INITIAL_TAB_ID;
-  const [tabs, setTabs] = useState<ChatTabEntry[]>(() => [
-    { id: initialTabId, title: defaultTabTitle(0) },
-  ]);
-  const [activeTabId, setActiveTabId] = useState<string>(() => initialTabId);
-  const [view, setView] = useState<"chat" | "workflows">("chat");
+  const [tabs, setTabs] = useState<ChatTabEntry[]>(() =>
+    initialState?.tabs.length
+      ? initialState.tabs.map(({ id, title, sessionId }) => ({ id, title, sessionId }))
+      : [{ id: initialTabId, title: defaultTabTitle(0) }],
+  );
+  const [activeTabId, setActiveTabId] = useState<string>(
+    () => initialState?.activeTabId ?? initialTabId,
+  );
+  const [view, setView] = useState<"chat" | "workflows">(
+    () => initialState?.view ?? "chat",
+  );
+  const [tabWorkspaceStates, setTabWorkspaceStates] = useState<
+    Record<string, ChatWorkspaceState>
+  >(() =>
+    Object.fromEntries(
+      (initialState?.tabs ?? []).flatMap((tab) =>
+        tab.chat ? [[tab.id, tab.chat] as const] : [],
+      ),
+    ),
+  );
   // Mirror of tabs in a ref so synchronous handlers can read length without
   // putting impure logic inside a setState updater (which strict mode runs
   // twice for purity testing).
@@ -265,6 +349,18 @@ function WorkspacePage({
 
   const handleMetaChange = useCallback(
     (tabId: string, meta: ChatTabMeta) => {
+      if (meta.sessionId) {
+        setTabs((current) => {
+          if (!current.some((tab) => tab.id === tabId && tab.sessionId !== meta.sessionId)) {
+            return current;
+          }
+          return current.map((tab) =>
+            tab.id === tabId && tab.sessionId !== meta.sessionId
+              ? { ...tab, sessionId: meta.sessionId ?? undefined }
+              : tab,
+          );
+        });
+      }
       setTabsMeta((prev) => {
         const existing = prev[tabId];
         // Avoid noisy state updates that would loop back into ChatTab's
@@ -284,6 +380,15 @@ function WorkspacePage({
         }
         return { ...prev, [tabId]: meta };
       });
+    },
+    [],
+  );
+
+  const handleTabWorkspaceStateChange = useCallback(
+    (tabId: string, state: ChatWorkspaceState) => {
+      setTabWorkspaceStates((current) =>
+        current[tabId] === state ? current : { ...current, [tabId]: state },
+      );
     },
     [],
   );
@@ -327,8 +432,12 @@ function WorkspacePage({
     return () => clearInterval(id);
   }, [anyStreaming, sandboxFetchTree, sandboxRefreshOpenTabs]);
 
-  const [treeWidth, setTreeWidth] = useState(320);
-  const [chatWidth, setChatWidth] = useState(640);
+  const [treeWidth, setTreeWidth] = useState(
+    () => initialState?.treeWidth ?? 320,
+  );
+  const [chatWidth, setChatWidth] = useState(
+    () => initialState?.chatWidth ?? 640,
+  );
   const [isResizing, setIsResizing] = useState(false);
   const dragging = useRef<"tree" | "chat" | null>(null);
   const dragStartX = useRef(0);
@@ -363,6 +472,56 @@ function WorkspacePage({
       document.removeEventListener("mouseup", onUp);
     };
   }, []);
+
+  const projectWorkspaceState = useMemo<ProjectWorkspaceState>(
+    () => ({
+      tabs: tabs.map((tab) => ({
+        ...tab,
+        ...(tabWorkspaceStates[tab.id]
+          ? { chat: tabWorkspaceStates[tab.id] }
+          : {}),
+      })),
+      activeTabId,
+      view,
+      showNotebook,
+      sandboxOpen,
+      chatOpen,
+      treeWidth,
+      chatWidth,
+      sandbox: sandboxWorkspace,
+    }),
+    [
+      activeTabId,
+      chatOpen,
+      chatWidth,
+      sandboxOpen,
+      sandboxWorkspace,
+      showNotebook,
+      tabWorkspaceStates,
+      tabs,
+      treeWidth,
+      view,
+    ],
+  );
+  const projectWorkspaceStateRef = useRef(projectWorkspaceState);
+  projectWorkspaceStateRef.current = projectWorkspaceState;
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const timer = window.setTimeout(() => {
+      void saveProjectWorkspaceState(projectId, projectWorkspaceState);
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, projectId, projectWorkspaceState]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const flush = () => {
+      void saveProjectWorkspaceState(projectId, projectWorkspaceStateRef.current);
+    };
+    window.addEventListener("pagehide", flush);
+    return () => window.removeEventListener("pagehide", flush);
+  }, [hydrated, projectId]);
 
   // Ask Kady handoff: the active tab's composer (mounted even behind the
   // Workflows view) appends the text; this listener makes it visible.
@@ -423,7 +582,14 @@ function WorkspacePage({
       void _removed;
       return rest;
     });
-  }, []);
+    setTabWorkspaceStates((prev) => {
+      if (!(id in prev)) return prev;
+      const { [id]: _removed, ...rest } = prev;
+      void _removed;
+      return rest;
+    });
+    void deletePersistedChatState(projectId, id);
+  }, [projectId]);
 
   const renameTab = useCallback((id: string, title: string) => {
     setTabs((prev) =>
@@ -822,17 +988,21 @@ function WorkspacePage({
               projectId={projectId}
               tabId={t.id}
               initialSessionId={t.sessionId ?? null}
+              initialWorkspaceState={tabWorkspaceStates[t.id]}
               isActive={isActive && view === "chat" && t.id === activeTabId}
               isActiveTab={isActive && t.id === activeTabId}
               allFiles={allFiles}
+              sandboxReady={sandbox.tree !== null}
               uploadFiles={sandbox.uploadFiles}
               onSandboxRefresh={handleSandboxRefresh}
               onTurnComplete={handleTurnComplete}
               allSkills={allSkills}
+              skillsReady={!skillsLoading}
               budgetState={projectCost.budget.state}
               budgetTotalUsd={projectCost.budget.totalUsd}
               budgetLimitUsd={projectCost.budget.limitUsd}
               onMetaChange={handleMetaChange}
+              onWorkspaceStateChange={handleTabWorkspaceStateChange}
               onViewInNotebook={handleViewInNotebook}
             />
           ))}
