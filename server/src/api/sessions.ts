@@ -10,7 +10,11 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
-import { contextUsageFrame, toClientFrame } from "../agent/events.ts";
+import {
+  contextUsageForClient,
+  contextUsageFrame,
+  toClientFrame,
+} from "../agent/events.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
   pendingInterviewFor,
@@ -154,7 +158,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const session = await getSession(currentProjectId(), paths, req.params.id);
       return {
         messages: toHistory(file, paths.sandbox),
-        contextUsage: session?.getContextUsage() ?? null,
+        contextUsage: session ? contextUsageForClient(session) ?? null : null,
       };
     } catch (err) {
       reply.code(400);
@@ -479,7 +483,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       const historyFile = findSessionFile(paths, sessionId);
       const baseline = {
         messages: historyFile ? toHistory(historyFile, paths.sandbox) : [],
-        contextUsage: session.getContextUsage() ?? null,
+        contextUsage: contextUsageForClient(session) ?? null,
       };
       // No awaits between the guard above and this claim, so it is atomic.
       activeRuns.add(runKey);
@@ -577,9 +581,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
         // Model selection can change the context window. Refresh the baseline
         // value and publish the configured model's usage before prompt().
-        baseline.contextUsage = session.getContextUsage() ?? null;
+        baseline.contextUsage = contextUsageForClient(session) ?? null;
         const publishContextUsage = () => {
-          const frame = contextUsageFrame(session.getContextUsage());
+          const frame = contextUsageFrame(contextUsageForClient(session));
           if (frame) handle.publish(frame);
         };
         publishContextUsage();

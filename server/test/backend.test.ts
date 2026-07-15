@@ -32,6 +32,7 @@ import {
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
 import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
 import {
+  contextUsageForClient,
   contextUsageFrame,
   toClientFrame,
   relativizeSandboxPaths,
@@ -260,6 +261,35 @@ describe("skills", () => {
 });
 
 describe("events → client frames", () => {
+  it("keeps context usage unknown until the provider has measured the prompt", () => {
+    const rawUsage = { tokens: 0, contextWindow: 200_000, percent: 0 };
+    expect(
+      contextUsageForClient({
+        getContextUsage: () => rawUsage,
+        messages: [],
+      } as never),
+    ).toEqual({ tokens: null, contextWindow: 200_000, percent: null });
+
+    expect(
+      contextUsageForClient({
+        getContextUsage: () => ({ tokens: 120, contextWindow: 200_000, percent: 0.06 }),
+        messages: [
+          {
+            role: "assistant",
+            stopReason: "stop",
+            usage: {
+              input: 100,
+              output: 20,
+              cacheRead: 0,
+              cacheWrite: 0,
+              totalTokens: 120,
+            },
+          },
+        ],
+      } as never),
+    ).toEqual({ tokens: 120, contextWindow: 200_000, percent: 0.06 });
+  });
+
   it("maps Pi context utilization onto the client wire shape", () => {
     expect(
       contextUsageFrame({
