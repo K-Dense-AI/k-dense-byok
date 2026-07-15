@@ -895,7 +895,7 @@ function ChatInput({
   );
 }
 
-function AssistantMessageBody({
+export function AssistantMessageBody({
   message,
   isStreaming,
   isLast,
@@ -920,22 +920,21 @@ function AssistantMessageBody({
   const endedWithoutReply =
     !isStreaming && isLast && !message.content && (activities.length > 0 || hasReasoning);
 
-  // Interview tool calls render as interactive forms, and notebook calls as
-  // compact pointer chips, in stream order between the surrounding tool cards
-  // (consecutive other calls are chunked into one ToolActivityList).
-  const activityBlocks: ReactNode[] = [];
+  // Prose and activities share one ordered timeline so a preamble stays above
+  // the tool it introduced and the post-tool answer stays below it.
+  const orderedBlocks: ReactNode[] = [];
   let chunk: ActivityItem[] = [];
   const flushChunk = () => {
     if (!chunk.length) return;
-    activityBlocks.push(
+    orderedBlocks.push(
       <ToolActivityList key={`tools-${chunk[0].id}`} activities={chunk} />,
     );
     chunk = [];
   };
-  for (const a of activities) {
+  const appendActivity = (a: ActivityItem) => {
     if (a.toolName === "interview") {
       flushChunk();
-      activityBlocks.push(
+      orderedBlocks.push(
         <InterviewCard
           key={a.id}
           item={a}
@@ -945,22 +944,45 @@ function AssistantMessageBody({
       );
     } else if (a.toolName === "notebook") {
       flushChunk();
-      activityBlocks.push(
+      orderedBlocks.push(
         <NotebookEntryChip key={a.id} item={a} onView={onViewInNotebook} />,
       );
     } else {
       chunk.push(a);
     }
+  };
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  const segments = message.segments?.length
+    ? message.segments
+    : [
+        ...activities.map((activity) => ({
+          type: "activity" as const,
+          activityId: activity.id,
+        })),
+        ...(message.content
+          ? [{ type: "text" as const, content: message.content }]
+          : []),
+      ];
+  for (const [index, segment] of segments.entries()) {
+    if (segment.type === "text") {
+      flushChunk();
+      if (segment.content) {
+        orderedBlocks.push(
+          <MessageResponse key={`text-${index}`}>{segment.content}</MessageResponse>,
+        );
+      }
+      continue;
+    }
+    const activity = activityById.get(segment.activityId);
+    if (activity) appendActivity(activity);
   }
   flushChunk();
 
   return (
     <>
       {hasReasoning && <ReasoningBlock reasoning={message.reasoning ?? ""} />}
-      {activityBlocks}
-      {message.content ? (
-        <MessageResponse>{message.content}</MessageResponse>
-      ) : isStreaming && !hasAnything ? (
+      {orderedBlocks}
+      {isStreaming && !hasAnything ? (
         <Shimmer className="text-sm" duration={1.5}>
           Thinking...
         </Shimmer>

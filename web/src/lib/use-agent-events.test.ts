@@ -44,6 +44,30 @@ describe("applyFrameToMessage", () => {
     expect(done.activities?.[0]).toMatchObject({ id: "t1", status: "complete" });
   });
 
+  it("preserves text and tool calls in stream order", () => {
+    let message = applyFrameToMessage(
+      baseMessage(),
+      { type: "text_delta", delta: "I’ll check that." },
+      10,
+    );
+    message = applyFrameToMessage(
+      message,
+      { type: "tool_start", toolCallId: "t1", toolName: "bash" },
+      11,
+    );
+    message = applyFrameToMessage(
+      message,
+      { type: "text_delta", delta: "The check passed." },
+      12,
+    );
+
+    expect(message.segments).toEqual([
+      { type: "text", content: "I’ll check that.\n\n" },
+      { type: "activity", activityId: "t1" },
+      { type: "text", content: "The check passed." },
+    ]);
+  });
+
   it("labels the subagent tool specially and marks errors", () => {
     const running = applyFrameToMessage(
       baseMessage(),
