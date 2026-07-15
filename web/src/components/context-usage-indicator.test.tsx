@@ -20,7 +20,7 @@ describe("ContextUsageIndicator", () => {
     );
   });
 
-  it("shows the post-compaction unknown state and hides without usage", () => {
+  it("shows the unmeasured state and hides without usage", () => {
     const { rerender } = render(
       <TooltipProvider>
         <ContextUsageIndicator
@@ -29,6 +29,9 @@ describe("ContextUsageIndicator", () => {
       </TooltipProvider>,
     );
     expect(screen.getByRole("status")).toHaveTextContent("?%");
+    expect(screen.getByRole("status")).toHaveAccessibleName(
+      "Model context usage awaiting provider measurement, 200,000 token window",
+    );
 
     rerender(
       <TooltipProvider>

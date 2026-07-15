@@ -18,7 +18,7 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage | null })
   const value = known ? `${Math.round(percent)}%` : "?%";
   const ariaLabel = known
     ? `Model context ${percent.toFixed(1)} percent, ${tokens.toLocaleString()} of ${usage.contextWindow.toLocaleString()} tokens`
-    : `Model context usage recalculating, ${usage.contextWindow.toLocaleString()} token window`;
+    : `Model context usage awaiting provider measurement, ${usage.contextWindow.toLocaleString()} token window`;
 
   return (
     <InfoTooltip
@@ -28,10 +28,11 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage | null })
           <br />
           {known
             ? `${formatCompactTokens(tokens)} of ${formatCompactTokens(usage.contextWindow)} tokens (${percent.toFixed(1)}%)`
-            : `Recalculating after compaction · ${formatCompactTokens(usage.contextWindow)} token window`}
+            : `Awaiting provider measurement · ${formatCompactTokens(usage.contextWindow)} token window`}
           <br />
-          Pi estimates how much of the selected model&apos;s context window this
-          conversation currently uses.
+          {known
+            ? "Pi estimates how much of the selected model's context window this conversation currently uses."
+            : "Available after the first model response and temporarily unavailable after compaction."}
         </>
       }
     >

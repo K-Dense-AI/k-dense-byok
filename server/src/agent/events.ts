@@ -3,7 +3,12 @@
  * frontend consumes. We deliberately flatten the streaming deltas and drop
  * Pi-internal lifecycle noise so the client contract stays small.
  */
-import type { AgentSessionEvent, ContextUsage } from "@earendil-works/pi-coding-agent";
+import {
+  calculateContextTokens,
+  type AgentSession,
+  type AgentSessionEvent,
+  type ContextUsage,
+} from "@earendil-works/pi-coding-agent";
 import { skillLabelForRead } from "./skill-label.ts";
 
 export interface ClientFrame {
@@ -20,6 +25,29 @@ export function contextUsageFrame(usage: ContextUsage | undefined): ClientFrame 
     contextWindow: usage.contextWindow,
     percent: usage.percent,
   };
+}
+
+/**
+ * Pi estimates a pristine session from conversation messages alone, which
+ * yields a misleading zero before the first provider response has measured
+ * the system prompt and tool schemas. Keep that state unknown until a
+ * successful assistant response supplies real usage.
+ */
+export function contextUsageForClient(
+  session: Pick<AgentSession, "getContextUsage" | "messages">,
+): ContextUsage | undefined {
+  const usage = session.getContextUsage();
+  if (!usage || usage.tokens === null) return usage;
+
+  const hasProviderUsage = session.messages.some((message) => {
+    if (message.role !== "assistant") return false;
+    if (message.stopReason === "aborted" || message.stopReason === "error") return false;
+    return calculateContextTokens(message.usage) > 0;
+  });
+
+  return hasProviderUsage
+    ? usage
+    : { tokens: null, contextWindow: usage.contextWindow, percent: null };
 }
 
 /** Frontmatter skill name when a `read` call is a skill activation. */

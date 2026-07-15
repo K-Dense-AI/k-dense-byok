@@ -69,10 +69,10 @@ export interface ChatMessage {
 }
 
 export interface ContextUsage {
-  /** Pi cannot estimate this immediately after compaction. */
+  /** Unknown before the first provider measurement and immediately after compaction. */
   tokens: number | null;
   contextWindow: number;
-  /** Percentage of the current model's context window, null while recalculating. */
+  /** Percentage of the current model's context window, null while unmeasured. */
   percent: number | null;
 }
 
