@@ -137,6 +137,31 @@ describe("RunBroker", () => {
     broker.clear();
   });
 
+  it("summarizes retained run outcomes without copying replay frames", () => {
+    const broker = new RunBroker();
+    const running = broker.start("p1", "running", metadata("running"));
+    const failed = broker.start("p1", "failed", metadata("failed"));
+    failed.publish({ type: "error", message: "provider failed" });
+    failed.complete();
+    const blocked = broker.start("p1", "blocked", metadata("blocked"));
+    blocked.publish({ type: "error", kind: "budget", message: "budget exceeded" });
+    blocked.complete();
+
+    expect(broker.activityForProject("p1")).toEqual([
+      { sessionId: "running", state: "running" },
+      { sessionId: "failed", state: "error" },
+      { sessionId: "blocked", state: "blocked" },
+    ]);
+
+    running.publish({ type: "done" });
+    running.complete();
+    expect(broker.activityForProject("p1")[0]).toEqual({
+      sessionId: "running",
+      state: "done",
+    });
+    broker.clear();
+  });
+
   it("retains completed handles briefly without expiring active handles", () => {
     vi.useFakeTimers();
     const broker = new RunBroker({ completedRetentionMs: 1_000 });

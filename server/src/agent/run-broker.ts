@@ -33,6 +33,13 @@ export interface RunState {
   };
 }
 
+export type RunActivityState = "running" | "done" | "error" | "blocked";
+
+export interface RunActivity {
+  sessionId: string;
+  state: RunActivityState;
+}
+
 export interface RunSubscription {
   after?: number;
   onFrame: (frame: SequencedClientFrame) => void;
@@ -69,6 +76,7 @@ export class RunHandle {
   private nextSeq = 1;
   private completed = false;
   private abortRequested = false;
+  private failure: "error" | "blocked" | null = null;
   private dispatching = false;
   private readonly completion: Promise<void>;
   private resolveCompletion!: () => void;
@@ -103,6 +111,11 @@ export class RunHandle {
     return this.abortRequested;
   }
 
+  get activityState(): RunActivityState {
+    if (this.failure) return this.failure;
+    return this.completed ? "done" : "running";
+  }
+
   requestAbort(): void {
     this.abortRequested = true;
   }
@@ -114,6 +127,9 @@ export class RunHandle {
   publish(frame: ClientFrame): SequencedClientFrame {
     if (this.completed) {
       throw new Error(`Cannot publish to completed run ${this.runId}`);
+    }
+    if (frame.type === "error") {
+      this.failure = frame.kind === "budget" ? "blocked" : "error";
     }
     const sequenced = { ...frame, seq: this.nextSeq++ } as SequencedClientFrame;
     this.frames.push(sequenced);
@@ -270,6 +286,15 @@ export class RunBroker {
     return [...this.handles.values()].filter(
       (handle) => handle.projectId === projectId && !handle.isComplete,
     );
+  }
+
+  activityForProject(projectId: string): RunActivity[] {
+    return [...this.handles.values()]
+      .filter((handle) => handle.projectId === projectId)
+      .map((handle) => ({
+        sessionId: handle.sessionId,
+        state: handle.activityState,
+      }));
   }
 
   state(projectId: string, sessionId: string): RunState {
