@@ -12,7 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import AdmZip from "adm-zip";
+import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { buildProjectArchive } from "../project-archive.ts";
@@ -114,18 +114,29 @@ function buildTreeOnce(root: string): Promise<TreePayload> {
   return pending;
 }
 
-function zipDir(root: string, base: string): Buffer {
-  const zip = new AdmZip();
+function zipDir(root: string, base: string): { archive: ZipArchive; entryCount: number } {
+  const archive = new ZipArchive({
+    forceZip64: true,
+    zlib: { level: 6 },
+  });
+  let entryCount = 0;
+  archive.on("warning", (err) => archive.destroy(err));
   const walk = (dir: string) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       if (!isUserVisible(abs, base)) continue;
       if (entry.isDirectory()) walk(abs);
-      else if (entry.isFile()) zip.addLocalFile(abs, path.posix.dirname(apiRelative(base, abs)));
+      else if (entry.isFile()) {
+        archive.file(abs, {
+          name: apiRelative(base, abs),
+          stats: fs.statSync(abs),
+        });
+        entryCount++;
+      }
     }
   };
   walk(root);
-  return zip.toBuffer();
+  return { archive, entryCount };
 }
 
 function sidecarFor(pdfRel: string): string {
@@ -366,7 +377,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       }
       reply.type(guessMime(path.basename(target)));
       reply.header("Content-Disposition", `inline; filename="${path.basename(target)}"`);
-      return fs.readFileSync(target);
+      return reply.send(fs.createReadStream(target));
     } catch (err) {
       return handle(reply, err);
     }
@@ -381,7 +392,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       }
       reply.type("application/octet-stream");
       reply.header("Content-Disposition", `attachment; filename="${path.basename(target)}"`);
-      return fs.readFileSync(target);
+      return reply.send(fs.createReadStream(target));
     } catch (err) {
       return handle(reply, err);
     }
@@ -394,14 +405,18 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "Directory not found" };
       }
-      const buf = zipDir(target, target);
-      if (buf.length <= 22) {
+      const { archive, entryCount } = zipDir(target, target);
+      if (entryCount === 0) {
+        archive.abort();
         reply.code(404);
         return { detail: "Directory is empty" };
       }
       reply.type("application/zip");
       reply.header("Content-Disposition", `attachment; filename="${path.basename(target)}.zip"`);
-      return buf;
+      const response = reply.send(archive);
+      // Archiver emits the same failure on the stream, which Fastify handles.
+      void archive.finalize().catch(() => undefined);
+      return response;
     } catch (err) {
       return handle(reply, err);
     }
@@ -410,17 +425,20 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.get("/sandbox/download-all", async (_req, reply) => {
     const projectId = currentProjectId();
     const paths = activePaths();
-    const { buffer, entryCount } = await buildProjectArchive({
+    const { archive, entryCount } = await buildProjectArchive({
       paths,
       projectName: getProject(projectId)?.name ?? projectId,
     });
     if (entryCount === 0) {
+      archive.abort();
       reply.code(404);
       return { detail: "No files to download" };
     }
     reply.type("application/zip");
     reply.header("Content-Disposition", 'attachment; filename="sandbox.zip"');
-    return buffer;
+    const response = reply.send(archive);
+    void archive.finalize().catch(() => undefined);
+    return response;
   });
 
   // --- annotations ---

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { buffer as consumeBuffer } from "node:stream/consumers";
 import AdmZip from "adm-zip";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { buildApp } from "../src/index.ts";
@@ -34,6 +35,15 @@ function zipText(zip: AdmZip, entry: string): string {
   const found = zip.getEntry(entry);
   expect(found, `missing ${entry}`).not.toBeNull();
   return found!.getData().toString("utf-8");
+}
+
+async function finishArchive(
+  opts: ProjectArchiveOptions,
+): Promise<Buffer> {
+  const { archive } = await buildProjectArchive(opts);
+  const result = consumeBuffer(archive);
+  await archive.finalize();
+  return result;
 }
 
 type ArchiveSession = NonNullable<ProjectArchiveOptions["sessions"]>[number];
@@ -85,7 +95,7 @@ describe("buildProjectArchive", () => {
       "utf-8",
     );
 
-    const { buffer } = await buildProjectArchive({
+    const buffer = await finishArchive({
       paths,
       projectName: "Archive test",
       sessions: [
@@ -181,7 +191,7 @@ describe("buildProjectArchive", () => {
       "default",
     );
 
-    const { buffer } = await buildProjectArchive({
+    const buffer = await finishArchive({
       paths,
       projectName: "Notebook test",
       sessions: [],
@@ -253,6 +263,34 @@ describe("GET /sandbox/download-all", () => {
     expect(unchanged.body).toBe("");
   });
 
+  it("streams a directory ZIP through the folder download endpoint", async () => {
+    const paths = ensureProjectExists("alpha");
+    const directory = path.join(paths.sandbox, "dataset", "nested");
+    fs.mkdirSync(directory, { recursive: true });
+    fs.writeFileSync(path.join(paths.sandbox, "dataset", "samples.csv"), "sample\n1\n");
+    fs.writeFileSync(path.join(directory, "results.txt"), "complete");
+    fs.writeFileSync(path.join(directory, ".hidden"), "private");
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/sandbox/download-dir?path=dataset",
+      headers: { "x-project-id": "alpha" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["content-type"]).toContain("application/zip");
+    expect(response.headers["content-length"]).toBeUndefined();
+    expect(response.headers["content-disposition"]).toContain(
+      'filename="dataset.zip"',
+    );
+    const names = new AdmZip(response.rawPayload)
+      .getEntries()
+      .map((entry) => entry.entryName);
+    expect(names).toContain("samples.csv");
+    expect(names).toContain("nested/results.txt");
+    expect(names).not.toContain("nested/.hidden");
+  });
+
   it("returns a scoped project archive through the existing download contract", async () => {
     const alpha = ensureProjectExists("alpha");
     const beta = ensureProjectExists("beta");
@@ -267,6 +305,7 @@ describe("GET /sandbox/download-all", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.headers["content-type"]).toContain("application/zip");
+    expect(response.headers["content-length"]).toBeUndefined();
     expect(response.headers["content-disposition"]).toContain(
       'filename="sandbox.zip"',
     );
