@@ -27,6 +27,10 @@ export interface ActivityItem {
   result?: string;
 }
 
+export type AssistantMessageSegment =
+  | { type: "text"; content: string }
+  | { type: "activity"; activityId: string };
+
 // Retained for backwards-compatible imports; citation verification is deferred
 // in the Pi migration and these are no longer populated.
 export type CitationKind = "doi" | "arxiv" | "pubmed" | "url";
@@ -56,6 +60,8 @@ export interface ChatMessage {
   /** Inline image attachments — user messages only. */
   images?: PromptImage[];
   activities?: ActivityItem[];
+  /** Stream-ordered assistant prose and tool references. */
+  segments?: AssistantMessageSegment[];
   reasoning?: string;
   modelVersion?: string;
   timestamp: number;
@@ -121,6 +127,37 @@ export interface AgentFrame {
 
 const humanizeToolName = (name: string) => name.replace(/_/g, " ");
 
+function existingSegments(message: ChatMessage): AssistantMessageSegment[] {
+  if (message.segments) return message.segments;
+  // Compatibility for any message created before ordered segments existed.
+  return [
+    ...(message.activities ?? []).map(
+      (activity): AssistantMessageSegment => ({
+        type: "activity",
+        activityId: activity.id,
+      }),
+    ),
+    ...(message.content
+      ? [{ type: "text" as const, content: message.content }]
+      : []),
+  ];
+}
+
+function appendTextSegment(
+  segments: AssistantMessageSegment[],
+  text: string,
+): AssistantMessageSegment[] {
+  if (!text) return segments;
+  const last = segments[segments.length - 1];
+  if (last?.type === "text") {
+    return [
+      ...segments.slice(0, -1),
+      { ...last, content: last.content + text },
+    ];
+  }
+  return [...segments, { type: "text", content: text }];
+}
+
 /** Apply one SSE frame to the in-progress assistant message. */
 export function applyFrameToMessage(
   message: ChatMessage,
@@ -128,8 +165,14 @@ export function applyFrameToMessage(
   now = Date.now(),
 ): ChatMessage {
   switch (frame.type) {
-    case "text_delta":
-      return { ...message, content: message.content + (frame.delta ?? "") };
+    case "text_delta": {
+      const delta = frame.delta ?? "";
+      return {
+        ...message,
+        content: message.content + delta,
+        segments: appendTextSegment(existingSegments(message), delta),
+      };
+    }
     case "thinking_delta":
       return { ...message, reasoning: (message.reasoning ?? "") + (frame.delta ?? "") };
     case "tool_start": {
@@ -148,6 +191,8 @@ export function applyFrameToMessage(
         message.content && !message.content.endsWith("\n")
           ? message.content + "\n\n"
           : message.content;
+      const paragraphBreak = content.slice(message.content.length);
+      const segments = appendTextSegment(existingSegments(message), paragraphBreak);
       return {
         ...message,
         content,
@@ -163,6 +208,7 @@ export function applyFrameToMessage(
             args: frame.args,
           },
         ].slice(-MAX_ACTIVITY_ITEMS),
+        segments: [...segments, { type: "activity", activityId: id }],
       };
     }
     case "tool_end": {
@@ -191,9 +237,11 @@ export function applyFrameToMessage(
       // Append rather than replace: an error after partial output (mid-stream
       // provider failure) must not be silently dropped.
       const errorText = `Error: ${frame.message ?? "request failed"}`;
+      const text = message.content ? `\n\n${errorText}` : errorText;
       return {
         ...message,
-        content: message.content ? `${message.content}\n\n${errorText}` : errorText,
+        content: message.content + text,
+        segments: appendTextSegment(existingSegments(message), text),
       };
     }
     default:
