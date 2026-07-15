@@ -118,6 +118,23 @@ describe("projects.ts", () => {
       expect(headers.get("X-Project-Id")).toBe("background-project");
     });
 
+    it("uses a separate loopback connection pool for SSE streams", async () => {
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(new Response("{}", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      await projectsModule.apiFetch("/sessions/live/run", {}, "project-a", "stream");
+
+      expect(fetchMock.mock.calls[0][0]).toBe(
+        "http://127.0.0.1:8000/sessions/live/run",
+      );
+      const headers = new Headers(
+        (fetchMock.mock.calls[0][1] as RequestInit).headers,
+      );
+      expect(headers.get("X-Project-Id")).toBe("project-a");
+    });
+
     it("passes absolute URLs through untouched", async () => {
       const fetchMock = vi
         .fn()

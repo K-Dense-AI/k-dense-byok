@@ -49,6 +49,33 @@ export const DEFAULT_PROJECT_ID = "default";
 export const API_BASE =
   process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
 
+/**
+ * Put long-lived SSE requests on a separate browser connection pool from
+ * ordinary API calls. Chrome permits only six HTTP/1.1 connections per
+ * origin; several background chat streams can otherwise consume all six and
+ * leave interview/abort/steer requests queued indefinitely.
+ *
+ * localhost and 127.0.0.1 reach the same local backend but are distinct
+ * origins/connection pools. Non-local deployments keep their configured URL.
+ */
+function streamApiBase(base: string): string {
+  try {
+    const url = new URL(base);
+    if (url.hostname === "localhost") {
+      url.hostname = "127.0.0.1";
+    } else if (url.hostname === "127.0.0.1" || url.hostname === "[::1]") {
+      url.hostname = "localhost";
+    } else {
+      return base;
+    }
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return base;
+  }
+}
+
+export const STREAM_API_BASE = streamApiBase(API_BASE);
+
 const STORAGE_KEY = "kady:activeProjectId";
 const CHANGE_EVENT = "kady:project-changed";
 const ProjectScopeContext = createContext<string | null>(null);
@@ -143,8 +170,10 @@ export function apiFetch(
   path: string,
   init: RequestInit = {},
   projectId?: string,
+  lane: "default" | "stream" = "default",
 ): Promise<Response> {
-  const url = path.startsWith("http") ? path : `${API_BASE}${path}`;
+  const base = lane === "stream" ? STREAM_API_BASE : API_BASE;
+  const url = path.startsWith("http") ? path : `${base}${path}`;
   const headers = new Headers(init.headers);
   if (!headers.has("X-Project-Id")) {
     headers.set("X-Project-Id", projectId?.trim() || getActiveProjectId());
