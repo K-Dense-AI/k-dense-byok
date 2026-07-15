@@ -47,7 +47,6 @@ describe("project activity", () => {
       ],
       hasPendingInterview: (sessionId) => sessionId === "running",
       budgetBlocked: true,
-      hasCompletedSession: true,
     })).toEqual({
       running: 0,
       needsInput: 1,
@@ -90,6 +89,7 @@ describe("project activity", () => {
           message: {
             role: "assistant",
             content: [{ type: "text", text: "Done" }],
+            stopReason: "stop",
             timestamp: 2,
           },
         }),
