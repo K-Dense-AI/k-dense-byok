@@ -22,6 +22,7 @@ import {
   PromptInputProvider,
   usePromptInputAttachments,
   usePromptInputController,
+  type PromptInputProviderState,
 } from "@/components/ai-elements/prompt-input";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { buildDatabaseContext, type Database } from "@/components/database-selector";
@@ -64,6 +65,10 @@ import {
 } from "@/lib/use-agent";
 import type { NotebookEntry } from "@/lib/notebook";
 import { routeSubmit, steerNotStreamingFallback, type SendIntent } from "@/lib/chat-routing";
+import {
+  type ChatWorkspaceState,
+  type WorkspaceQueuedMessage,
+} from "@/lib/workspace-persistence";
 import { SpeechInput } from "@/components/ai-elements/speech-input";
 import {
   CheckIcon,
@@ -92,22 +97,7 @@ import {
 
 const MAX_QUEUE = 5;
 
-interface QueuedMessage {
-  id: string;
-  rawText: string;
-  text: string;
-  model: { id: string; label: string; fusionConfig?: Record<string, unknown> };
-  databases: Database[];
-  skills: Skill[];
-  files: string[];
-  /** Inline image attachments captured at enqueue time. */
-  images: PromptImage[];
-  /** Selected Modal compute instance id at enqueue time (null = local). */
-  computeTarget: string | null;
-  /** Thinking level at enqueue time (null = model doesn't support one). */
-  thinkingLevel: ThinkingLevel | null;
-  timestamp: number;
-}
+type QueuedMessage = WorkspaceQueuedMessage;
 
 /** Models whose runs must NOT carry a thinkingLevel: Ollama models are built
  *  with reasoning:false (Pi clamps to off) and Fusion rewrites the wire body,
@@ -1045,16 +1035,21 @@ export interface ChatTabProps {
   isActiveTab: boolean;
   /** Stored session to reopen into this tab (History menu / reload recovery). */
   initialSessionId?: string | null;
+  /** Browser-persisted controls, queue, and composer state for this tab. */
+  initialWorkspaceState?: ChatWorkspaceState;
   // Shared sandbox/state passed in (one instance for the whole project)
   allFiles: string[];
+  sandboxReady: boolean;
   uploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   onSandboxRefresh: () => void;
   onTurnComplete: () => void;
   allSkills: Skill[];
+  skillsReady: boolean;
   budgetState: "ok" | "warn" | "exceeded";
   budgetTotalUsd: number;
   budgetLimitUsd: number | null;
   onMetaChange: (tabId: string, meta: ChatTabMeta) => void;
+  onWorkspaceStateChange?: (tabId: string, state: ChatWorkspaceState) => void;
   /** Open the Lab Notebook panel focused on this entry (chat → notebook). */
   onViewInNotebook?: (entryId: string) => void;
 }
@@ -1066,15 +1061,19 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     isActive,
     isActiveTab,
     initialSessionId,
+    initialWorkspaceState,
     allFiles,
+    sandboxReady,
     uploadFiles,
     onSandboxRefresh,
     onTurnComplete,
     allSkills,
+    skillsReady,
     budgetState,
     budgetTotalUsd,
     budgetLimitUsd,
     onMetaChange,
+    onWorkspaceStateChange,
     onViewInNotebook,
   },
   ref,
@@ -1100,23 +1099,57 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   // Reopened tab: hydrate the transcript from the stored session before any
   // sends. loadSession refuses to run once the tab is bound to a session, so
   // this fires meaningfully only on first mount.
+  const [initialSessionReady, setInitialSessionReady] = useState(!initialSessionId);
   useEffect(() => {
-    if (initialSessionId) void loadSession(initialSessionId);
+    if (!initialSessionId) {
+      setInitialSessionReady(true);
+      return;
+    }
+    let cancelled = false;
+    void loadSession(initialSessionId).then(() => {
+      if (cancelled) return;
+      setInitialSessionReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [initialSessionId, loadSession]);
 
   const prevMessageCount = useRef(0);
 
   // Per-tab settings
-  const [selectedModel, setSelectedModel] = useState<Model>(DEFAULT_MODEL);
-  const [selectedComputeTarget, setSelectedComputeTarget] = useState<ModalInstance | null>(null);
-  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(DEFAULT_THINKING_LEVEL);
+  const [selectedModel, setSelectedModel] = useState<Model>(
+    () => initialWorkspaceState?.selectedModel ?? DEFAULT_MODEL,
+  );
+  const [selectedComputeTarget, setSelectedComputeTarget] = useState<ModalInstance | null>(
+    () => initialWorkspaceState?.selectedComputeTarget ?? null,
+  );
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(
+    () => initialWorkspaceState?.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
+  );
   const thinkingDisabled = thinkingUnsupported(selectedModel);
   const [modalConfigured, setModalConfigured] = useState(false);
-  const [attachedFiles, setAttachedFiles] = useState<string[]>([]);
-  const [selectedDbs, setSelectedDbs] = useState<Database[]>([]);
-  const [selectedSkills, setSelectedSkills] = useState<Skill[]>([]);
-  const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
-  const queueIdCounter = useRef(0);
+  const [attachedFiles, setAttachedFiles] = useState<string[]>(
+    () => initialWorkspaceState?.attachedFiles ?? [],
+  );
+  const [selectedDbs, setSelectedDbs] = useState<Database[]>(
+    () => initialWorkspaceState?.selectedDatabases ?? [],
+  );
+  const [selectedSkills, setSelectedSkills] = useState<Skill[]>(
+    () => initialWorkspaceState?.selectedSkills ?? [],
+  );
+  const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>(
+    () => initialWorkspaceState?.queuedMessages ?? [],
+  );
+  const queueIdCounter = useRef(
+    initialWorkspaceState?.queuedMessages.reduce(
+      (maximum, message) => Math.max(maximum, Number.parseInt(message.id, 10) || 0),
+      0,
+    ) ?? 0,
+  );
+  const [composerDraft, setComposerDraft] = useState<PromptInputProviderState>(
+    () => initialWorkspaceState?.composer ?? { text: "", attachments: [] },
+  );
   // Mirrored every render so async continuations (the steer fallback) read
   // the CURRENT queue length, not the one closed over before the await.
   const messageQueueLengthRef = useRef(0);
@@ -1157,6 +1190,44 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   }, []);
   const clearAttachedFiles = useCallback(() => setAttachedFiles([]), []);
 
+  useEffect(() => {
+    if (!sandboxReady) return;
+    const available = new Set(allFiles);
+    setAttachedFiles((current) => {
+      const next = current.filter((path) => available.has(path));
+      return next.length === current.length ? current : next;
+    });
+    setMessageQueue((current) => {
+      let changed = false;
+      const next = current.map((message) => {
+        const files = message.files.filter((path) => available.has(path));
+        if (files.length === message.files.length) return message;
+        changed = true;
+        return { ...message, files };
+      });
+      return changed ? next : current;
+    });
+  }, [allFiles, sandboxReady]);
+
+  useEffect(() => {
+    if (!skillsReady || allSkills.length === 0) return;
+    const available = new Set(allSkills.map((skill) => skill.id));
+    setSelectedSkills((current) => {
+      const next = current.filter((skill) => available.has(skill.id));
+      return next.length === current.length ? current : next;
+    });
+    setMessageQueue((current) => {
+      let changed = false;
+      const next = current.map((message) => {
+        const skills = message.skills.filter((skill) => available.has(skill.id));
+        if (skills.length === message.skills.length) return message;
+        changed = true;
+        return { ...message, skills };
+      });
+      return changed ? next : current;
+    });
+  }, [allSkills, skillsReady]);
+
   const removeFromQueue = useCallback((id: string) => {
     setMessageQueue((prev) => prev.filter((item) => item.id !== id));
   }, []);
@@ -1182,7 +1253,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
 
   // Auto-send the next queued message when the agent becomes ready
   useEffect(() => {
-    if (status !== "ready" || messageQueue.length === 0) return;
+    if (!initialSessionReady || status !== "ready" || messageQueue.length === 0) return;
     const [next, ...rest] = messageQueue;
     const id = window.setTimeout(() => {
       setMessageQueue(rest);
@@ -1201,7 +1272,31 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       );
     }, 0);
     return () => window.clearTimeout(id);
-  }, [status, messageQueue, send]);
+  }, [initialSessionReady, status, messageQueue, send]);
+
+  useEffect(() => {
+    onWorkspaceStateChange?.(tabId, {
+      selectedModel,
+      thinkingLevel,
+      selectedComputeTarget,
+      attachedFiles,
+      selectedDatabases: selectedDbs,
+      selectedSkills,
+      queuedMessages: messageQueue,
+      composer: composerDraft,
+    });
+  }, [
+    attachedFiles,
+    composerDraft,
+    messageQueue,
+    onWorkspaceStateChange,
+    selectedComputeTarget,
+    selectedDbs,
+    selectedModel,
+    selectedSkills,
+    tabId,
+    thinkingLevel,
+  ]);
 
   // Bubble meta up to parent so the page can drive the cost pill and tab
   // strip badges from the active tab.
@@ -1487,7 +1582,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       </Conversation>
 
       <div className="px-4 pb-6 pt-2">
-        <PromptInputProvider>
+        <PromptInputProvider
+          initialInput={initialWorkspaceState?.composer.text}
+          initialAttachments={initialWorkspaceState?.composer.attachments}
+          onStateChange={setComposerDraft}
+        >
           <ChatInput
             isActiveTab={isActiveTab}
             allFiles={allFiles}

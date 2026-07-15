@@ -3,6 +3,7 @@
  * Costs and sandbox/init endpoints are added in later phases.
  */
 import type { FastifyInstance } from "fastify";
+import { DEFAULT_PROJECT_ID } from "../config.ts";
 import {
   createProject,
   deleteProject,
@@ -17,6 +18,11 @@ import { projectCostSummary } from "../cost/ledger.ts";
 import { readProjectNotebooks } from "../agent/notebook-store.ts";
 import { disposeMcpClients } from "../agent/mcp.ts";
 import { seedProjectSkills } from "../agent/skills.ts";
+import { runBroker } from "../agent/run-broker.ts";
+import {
+  abortProjectSessions,
+  disposeProjectSessions,
+} from "../agent/session-registry.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
@@ -115,8 +121,17 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
 
   app.delete<{ Params: { projectId: string } }>("/projects/:projectId", async (req, reply) => {
     try {
-      await disposeMcpClients(req.params.projectId);
-      deleteProject(req.params.projectId);
+      const projectId = req.params.projectId;
+      if (projectId === DEFAULT_PROJECT_ID) {
+        throw new Error("The default project cannot be deleted");
+      }
+      const activeRuns = runBroker.activeForProject(projectId);
+      for (const run of activeRuns) run.requestAbort();
+      await abortProjectSessions(projectId);
+      await Promise.all(activeRuns.map((run) => run.waitForCompletion()));
+      disposeProjectSessions(projectId);
+      await disposeMcpClients(projectId);
+      deleteProject(projectId);
       reply.code(204);
       return null;
     } catch (err) {

@@ -393,9 +393,6 @@ export function ProjectView({
       <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-6 px-4 py-8 sm:px-6 lg:py-10">
         <div className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div className="flex max-w-2xl flex-col gap-2">
-            <p className="text-sm font-medium text-muted-foreground">
-              Kady research workspace
-            </p>
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Choose a project
             </h1>

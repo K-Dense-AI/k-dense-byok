@@ -152,6 +152,11 @@ export interface Tab {
   loading: boolean;
 }
 
+export interface SandboxPersistenceState {
+  openPaths: string[];
+  activePath: string | null;
+}
+
 export interface LatexCompileResult {
   success: boolean;
   pdf_path: string | null;
@@ -160,7 +165,12 @@ export interface LatexCompileResult {
   synctex: boolean;
 }
 
-export function useSandbox(isActive = false, projectId?: string) {
+export function useSandbox(
+  isActive = false,
+  projectId?: string,
+  initialState?: SandboxPersistenceState,
+  onStateChange?: (state: SandboxPersistenceState) => void,
+) {
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
   const scopedFetch = useCallback(
@@ -169,15 +179,31 @@ export function useSandbox(isActive = false, projectId?: string) {
     [scopedProjectId],
   );
   const [tree, setTree] = useState<TreeNode | null>(null);
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activeTabPath, setActiveTabPath] = useState<string | null>(null);
+  const initialOpenPaths = useRef(
+    [...new Set(initialState?.openPaths ?? [])].filter((path) => !!path.trim()),
+  );
+  const initialActivePath =
+    initialState?.activePath && initialOpenPaths.current.includes(initialState.activePath)
+      ? initialState.activePath
+      : initialOpenPaths.current[0] ?? null;
+  const [tabs, setTabs] = useState<Tab[]>(() =>
+    initialOpenPaths.current.map((path) => ({ path, content: null, loading: true })),
+  );
+  const [activeTabPath, setActiveTabPath] = useState<string | null>(initialActivePath);
   const [uploading, setUploading] = useState(false);
 
   // Refs for synchronous reads inside callbacks (avoids stale closures)
-  const tabsRef = useRef<Tab[]>([]);
-  const openPathsRef = useRef<Set<string>>(new Set());
+  const tabsRef = useRef<Tab[]>(tabs);
+  const openPathsRef = useRef<Set<string>>(new Set(initialOpenPaths.current));
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
+
+  useEffect(() => {
+    onStateChange?.({
+      openPaths: tabs.map((tab) => tab.path),
+      activePath: activeTabPath,
+    });
+  }, [activeTabPath, onStateChange, tabs]);
 
   const fetchTree = useCallback(async () => {
     const controller = new AbortController();
@@ -187,8 +213,19 @@ export function useSandbox(isActive = false, projectId?: string) {
         signal: controller.signal,
       });
       if (!res.ok) return;
-      const data = await res.json();
+      const data = await res.json() as TreeNode;
       setTree(data);
+      const existingPaths = new Set(flattenFiles(data));
+      const current = tabsRef.current;
+      const next = current.filter((tab) => existingPaths.has(tab.path));
+      if (next.length !== current.length) {
+        tabsRef.current = next;
+        openPathsRef.current = new Set(next.map((tab) => tab.path));
+        setTabs(next);
+        setActiveTabPath((active) =>
+          active && existingPaths.has(active) ? active : next[0]?.path ?? null,
+        );
+      }
     } catch {
       // silently fail -- sandbox may not exist yet, or request timed out
     } finally {
@@ -242,6 +279,30 @@ export function useSandbox(isActive = false, projectId?: string) {
       clearTimeout(timeout);
     }
   }, [scopedFetch]);
+
+  useEffect(() => {
+    for (const path of initialOpenPaths.current) {
+      const name = path.split("/").pop() ?? "";
+      const category = fileCategory(name);
+      const definition = getViewerDef(category);
+      const loadMode = definition
+        ? definition.loadMode
+        : category === "image" || category === "pdf" || category === "anndata"
+          ? "none"
+          : "text";
+      if (loadMode === "text") {
+        void fetchFileContent(path);
+      } else {
+        setTabs((current) => {
+          const next = current.map((tab) =>
+            tab.path === path ? { ...tab, loading: false } : tab,
+          );
+          tabsRef.current = next;
+          return next;
+        });
+      }
+    }
+  }, [fetchFileContent]);
 
   const selectFile = useCallback(async (path: string) => {
     setActiveTabPath(path);

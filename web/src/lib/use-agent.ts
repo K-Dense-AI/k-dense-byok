@@ -261,12 +261,42 @@ export function applyFrameToTranscript(
 }
 
 /** One transcript entry from GET /sessions/:id/history. */
-interface HistoryItem {
+export interface HistoryItem {
   role: "user" | "assistant";
   content?: string;
   images?: PromptImage[];
   frames?: AgentFrame[];
   timestamp?: number;
+}
+
+export interface SequencedAgentFrame extends AgentFrame {
+  seq: number;
+}
+
+interface RunSnapshot {
+  runId: string;
+  prompt: string;
+  images: PromptImage[];
+  baseline: {
+    messages: HistoryItem[];
+    contextUsage: unknown;
+  };
+  frames: SequencedAgentFrame[];
+  lastSeq: number;
+}
+
+interface RunStateResponse {
+  status: "none" | "running" | "complete";
+  run?: RunSnapshot;
+}
+
+interface RunConsumer {
+  transcript: ChatMessage[];
+  transcriptState: TranscriptRunState;
+  lastSeq: number;
+  currentRunId?: string;
+  outcome: AgentRunState;
+  sawDone: boolean;
 }
 
 /**
@@ -294,6 +324,109 @@ export function buildRunBody(opts: {
   };
 }
 
+function restoreHistory(
+  items: HistoryItem[],
+  nextId: () => string,
+  closeRunningActivities = true,
+): ChatMessage[] {
+  const restored: ChatMessage[] = [];
+  const fallbackTs = Date.now();
+  for (const item of items) {
+    const timestamp = item.timestamp ?? fallbackTs;
+    if (item.role === "user") {
+      restored.push({
+        id: nextId(),
+        role: "user",
+        content: item.content ?? "",
+        ...(item.images && item.images.length > 0 ? { images: item.images } : {}),
+        timestamp,
+      });
+      continue;
+    }
+    let message: ChatMessage = {
+      id: nextId(),
+      role: "assistant",
+      content: "",
+      timestamp,
+    };
+    for (const frame of item.frames ?? []) {
+      message = applyFrameToMessage(message, frame, timestamp);
+    }
+    if (closeRunningActivities) {
+      message = {
+        ...message,
+        activities: (message.activities ?? []).map((activity) =>
+          activity.status === "running"
+            ? { ...activity, status: "complete" as const }
+            : activity,
+        ),
+      };
+    }
+    restored.push(message);
+  }
+  return restored;
+}
+
+function finishActivities(
+  messages: ChatMessage[],
+  status: ActivityItem["status"],
+): ChatMessage[] {
+  return messages.map((message) =>
+    message.role === "assistant" &&
+    message.activities?.some((activity) => activity.status === "running")
+      ? {
+          ...message,
+          activities: message.activities.map((activity) =>
+            activity.status === "running" ? { ...activity, status } : activity,
+          ),
+        }
+      : message,
+  );
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    (error instanceof DOMException && error.name === "AbortError") ||
+    (error instanceof Error && error.name === "AbortError")
+  );
+}
+
+/** Parse one SSE response and feed each JSON data frame to a shared consumer. */
+async function consumeSse(
+  response: Response,
+  onFrame: (frame: AgentFrame) => void,
+): Promise<void> {
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const consumeLine = (rawLine: string) => {
+    const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+    if (!line.startsWith("data:")) return;
+    const json = line.slice(5).trim();
+    if (!json) return;
+    let frame: AgentFrame;
+    try {
+      frame = JSON.parse(json) as AgentFrame;
+    } catch {
+      return;
+    }
+    onFrame(frame);
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) consumeLine(line);
+  }
+  buffer += decoder.decode();
+  if (buffer) consumeLine(buffer);
+}
+
 export function useAgent(projectId?: string) {
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
@@ -304,110 +437,298 @@ export function useAgent(projectId?: string) {
   const [status, setStatus] = useState<Status>("ready");
   const [runState, setRunState] = useState<AgentRunState>("idle");
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
+  const clientFetchRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
   // send() claims the tab synchronously BEFORE its first await: a loadSession
-  // resolving mid-run must not replace the transcript, because the run's
-  // plain-value setMessages(transcript) writes would clobber it.
+  // resolving mid-run must not replace the transcript.
   const sendClaimRef = useRef(false);
   const messageCounter = useRef(0);
 
-  const nextId = () => String(++messageCounter.current);
+  const nextId = useCallback(() => String(++messageCounter.current), []);
+
+  const bindSession = useCallback((id: string | null) => {
+    sessionIdRef.current = id;
+    setSessionId(id);
+  }, []);
+
+  const applyRunFrame = useCallback(
+    (consumer: RunConsumer, frame: AgentFrame): boolean => {
+      const sequence = typeof frame.seq === "number" &&
+        Number.isSafeInteger(frame.seq) &&
+        frame.seq >= 0
+        ? frame.seq
+        : null;
+      if (sequence !== null) {
+        if (sequence <= consumer.lastSeq) return false;
+        consumer.lastSeq = sequence;
+      }
+
+      if (frame.type === "error") {
+        consumer.outcome = frame.kind === "budget" ? "blocked" : "error";
+        setRunState(consumer.outcome);
+      } else if (frame.type === "done") {
+        consumer.sawDone = true;
+      } else if (frame.type === "run_start" && typeof frame.runId === "string") {
+        consumer.currentRunId = frame.runId;
+      }
+
+      if (frame.type === "context_usage") {
+        const usage = parseContextUsage(frame);
+        if (usage) setContextUsage(usage);
+      }
+      const notebook = parseNotebookFrame(frame, consumer.currentRunId);
+      if (notebook) {
+        setNotebookEntries((previous) => mergeNotebookEntries(previous, [notebook]));
+      }
+      if (frame.type === "tool_end" && frame.toolName === "subagent") {
+        setSubagentCompletions((count) => count + 1);
+      }
+
+      const result = applyFrameToTranscript(
+        consumer.transcript,
+        consumer.transcriptState,
+        frame,
+        nextId,
+      );
+      consumer.transcript = result.messages;
+      consumer.transcriptState = result.state;
+      if (result.steering) setPendingSteers(result.steering);
+      if (frame.type !== "done") setMessages(consumer.transcript);
+      return true;
+    },
+    [nextId],
+  );
+
+  const finalizeRun = useCallback((consumer: RunConsumer) => {
+    consumer.transcript = finishActivities(consumer.transcript, "complete");
+    setMessages(consumer.transcript);
+    setPendingSteers([]);
+    setStatus("ready");
+    setRunState(consumer.outcome);
+  }, []);
+
+  const failRun = useCallback((consumer: RunConsumer, aborted: boolean) => {
+    consumer.transcript = finishActivities(
+      consumer.transcript,
+      aborted ? "complete" : "error",
+    ).map((message) =>
+      message.id === consumer.transcriptState.assistantId && !aborted && !message.content
+        ? { ...message, content: "Something went wrong. Please try again." }
+        : message,
+    );
+    setMessages(consumer.transcript);
+    setPendingSteers([]);
+    setStatus(aborted ? "ready" : "error");
+    setRunState(aborted ? "idle" : "error");
+  }, []);
+
+  const consumeRunResponse = useCallback(
+    async (response: Response, consumer: RunConsumer) => {
+      await consumeSse(response, (frame) => {
+        if (mountedRef.current) applyRunFrame(consumer, frame);
+      });
+    },
+    [applyRunFrame],
+  );
+
+  const restorePendingInterview = useCallback(
+    async (id: string, consumer: RunConsumer, signal: AbortSignal) => {
+      const alreadyPresent = consumer.transcript.some((message) =>
+        message.activities?.some(
+          (activity) => activity.toolName === "interview" && activity.status === "running",
+        ),
+      );
+      if (alreadyPresent) return;
+      try {
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/interview`,
+          { signal },
+          scopedProjectId,
+        );
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          pending?: { toolCallId?: unknown; payload?: unknown } | null;
+        };
+        const pending = data.pending;
+        if (!pending || typeof pending.toolCallId !== "string") return;
+        const appearedMeanwhile = consumer.transcript.some((message) =>
+          message.activities?.some((activity) => activity.id === pending.toolCallId),
+        );
+        if (appearedMeanwhile) return;
+        applyRunFrame(consumer, {
+          type: "tool_start",
+          toolName: "interview",
+          toolCallId: pending.toolCallId,
+          args: pending.payload,
+        });
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        // The run event stream remains authoritative; this endpoint is only a
+        // fallback for a pending form whose original tool_start was missed.
+      }
+    },
+    [applyRunFrame, scopedProjectId],
+  );
 
   /**
-   * Hydrate this (untouched) tab from a stored session's transcript, and bind
-   * the tab to that session so follow-up sends continue the conversation.
-   * The server replays the JSONL log as the same frames the live stream
-   * emits, so the restored transcript renders identically.
+   * Bind an untouched tab to a stored session. The run snapshot is checked
+   * before history so a refresh can rebuild an in-flight transcript from its
+   * baseline and attach to the sequenced replay/live stream without duplicates.
    */
-  const loadSession = useCallback(async (sessionId: string): Promise<boolean> => {
-    // Never swap the session out from under a tab that already has one, or
-    // one where a send has already claimed the transcript.
-    if (sessionIdRef.current || sendClaimRef.current) return false;
-    try {
-      const res = await apiFetch(
-        `/sessions/${encodeURIComponent(sessionId)}/history`,
-        {},
-        scopedProjectId,
-      );
-      if (!res.ok) return false;
-      const data = (await res.json()) as { messages?: HistoryItem[]; contextUsage?: unknown };
-      // Re-check after the awaits: a message sent while the history fetch was
-      // in flight claims the tab (and will bind a fresh session), which must
-      // win over hydration.
+  const loadSession = useCallback(
+    async (id: string): Promise<boolean> => {
       if (sessionIdRef.current || sendClaimRef.current) return false;
-      const restored: ChatMessage[] = [];
-      const fallbackTs = Date.now();
-      for (const item of data.messages ?? []) {
-        const timestamp = item.timestamp ?? fallbackTs;
-        if (item.role === "user") {
-          restored.push({
-            id: nextId(),
-            role: "user",
-            content: item.content ?? "",
-            ...(item.images && item.images.length > 0 ? { images: item.images } : {}),
-            timestamp,
-          });
-          continue;
-        }
-        let msg: ChatMessage = {
-          id: nextId(),
-          role: "assistant",
-          content: "",
-          timestamp,
-        };
-        for (const frame of item.frames ?? []) {
-          msg = applyFrameToMessage(msg, frame, timestamp);
-        }
-        // A stored log has no live spinner left to resolve.
-        msg = {
-          ...msg,
-          activities: (msg.activities ?? []).map((a) =>
-            a.status === "running" ? { ...a, status: "complete" as const } : a,
-          ),
-        };
-        restored.push(msg);
-      }
-      sessionIdRef.current = sessionId;
-      setMessages(restored);
-      setContextUsage(parseContextUsage(data.contextUsage));
-      setStatus("ready");
-      setRunState("idle");
-      return true;
-    } catch {
-      return false;
-    }
-  }, [scopedProjectId]);
+      clientFetchRef.current?.abort();
+      const controller = new AbortController();
+      clientFetchRef.current = controller;
+      let activeConsumer: RunConsumer | null = null;
+      try {
+        const stateResponse = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/run/state`,
+          { signal: controller.signal },
+          scopedProjectId,
+        );
+        if (!stateResponse.ok) return false;
+        const state = (await stateResponse.json()) as RunStateResponse;
+        if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) return false;
 
-  const ensureSession = useCallback(async () => {
+        if (state.status === "none") {
+          const historyResponse = await apiFetch(
+            `/sessions/${encodeURIComponent(id)}/history`,
+            { signal: controller.signal },
+            scopedProjectId,
+          );
+          if (!historyResponse.ok) return false;
+          const history = (await historyResponse.json()) as {
+            messages?: HistoryItem[];
+            contextUsage?: unknown;
+          };
+          if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) return false;
+          bindSession(id);
+          setMessages(restoreHistory(history.messages ?? [], nextId));
+          setContextUsage(parseContextUsage(history.contextUsage));
+          setStatus("ready");
+          setRunState("idle");
+          return true;
+        }
+
+        const snapshot = state.run;
+        if (!snapshot) return false;
+        bindSession(id);
+        const transcript = restoreHistory(snapshot.baseline.messages ?? [], nextId);
+        const timestamp = Date.now();
+        const assistantId = nextId();
+        const consumer: RunConsumer = {
+          transcript: [
+            ...transcript,
+            {
+              id: nextId(),
+              role: "user",
+              content: snapshot.prompt,
+              ...(snapshot.images?.length ? { images: snapshot.images } : {}),
+              timestamp,
+            },
+            { id: assistantId, role: "assistant", content: "", timestamp },
+          ],
+          transcriptState: { assistantId, sawPromptEcho: false },
+          lastSeq: -1,
+          currentRunId: snapshot.runId,
+          outcome: "done",
+          sawDone: false,
+        };
+        activeConsumer = consumer;
+        setContextUsage(parseContextUsage(snapshot.baseline.contextUsage));
+        setMessages(consumer.transcript);
+        setStatus(state.status === "running" ? "streaming" : "ready");
+        setRunState(state.status === "running" ? "running" : "done");
+
+        for (const frame of snapshot.frames ?? []) applyRunFrame(consumer, frame);
+        if (Number.isSafeInteger(snapshot.lastSeq)) {
+          consumer.lastSeq = Math.max(consumer.lastSeq, snapshot.lastSeq);
+        }
+
+        if (state.status === "complete") {
+          finalizeRun(consumer);
+          return true;
+        }
+
+        await restorePendingInterview(id, consumer, controller.signal);
+        const eventsResponse = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/run/events?after=${encodeURIComponent(
+            String(Math.max(0, consumer.lastSeq)),
+          )}`,
+          { signal: controller.signal },
+          scopedProjectId,
+        );
+        if (!eventsResponse.ok) {
+          throw new Error(`run reconnect failed: ${eventsResponse.status}`);
+        }
+        await consumeRunResponse(eventsResponse, consumer);
+        if (clientFetchRef.current === controller && mountedRef.current) finalizeRun(consumer);
+        return true;
+      } catch (error) {
+        if (
+          clientFetchRef.current === controller &&
+          mountedRef.current &&
+          activeConsumer
+        ) {
+          failRun(activeConsumer, isAbortError(error));
+        }
+        return false;
+      } finally {
+        if (clientFetchRef.current === controller) clientFetchRef.current = null;
+      }
+    },
+    [
+      applyRunFrame,
+      bindSession,
+      consumeRunResponse,
+      failRun,
+      finalizeRun,
+      nextId,
+      restorePendingInterview,
+      scopedProjectId,
+    ],
+  );
+
+  const ensureSession = useCallback(async (signal?: AbortSignal) => {
     if (sessionIdRef.current) return sessionIdRef.current;
-    const res = await apiFetch(`/sessions`, {
-      method: "POST",
-    }, scopedProjectId);
-    if (!res.ok) throw new Error(`Failed to create session: ${res.status}`);
-    const session = await res.json();
-    sessionIdRef.current = session.id;
-    return session.id as string;
-  }, [scopedProjectId]);
+    const response = await apiFetch(
+      "/sessions",
+      { method: "POST", signal },
+      scopedProjectId,
+    );
+    if (!response.ok) throw new Error(`Failed to create session: ${response.status}`);
+    const session = (await response.json()) as { id: string };
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+    bindSession(session.id);
+    return session.id;
+  }, [bindSession, scopedProjectId]);
 
   /** Queue a message into the live run. "not_streaming" = the run ended
-   *  first; the caller should fall back to a normal send. */
+   * first; the caller should fall back to a normal send. */
   const steer = useCallback(
     async (text: string): Promise<"ok" | "not_streaming" | "error"> => {
       const id = sessionIdRef.current;
       if (!id) return "not_streaming";
       try {
-        const res = await apiFetch(`/sessions/${id}/steer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
-        }, scopedProjectId);
-        if (res.ok) {
-          const data = (await res.json()) as { pending?: unknown };
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/steer`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text }),
+          },
+          scopedProjectId,
+        );
+        if (response.ok) {
+          const data = (await response.json()) as { pending?: unknown };
           if (Array.isArray(data.pending)) setPendingSteers(data.pending.map(String));
           return "ok";
         }
-        return res.status === 409 ? "not_streaming" : "error";
+        return response.status === 409 ? "not_streaming" : "error";
       } catch {
         return "error";
       }
@@ -416,13 +737,6 @@ export function useAgent(projectId?: string) {
   );
 
   const send = useCallback(
-    // The optional third arg (expert model / attachments / skills / databases)
-    // is accepted for call-site compatibility but no longer used: the Pi
-    // backend runs a single flat agent. Skill/database hints are still injected
-    // into the prompt text by the caller. `computeTarget` is the selected Modal
-    // instance id, forwarded so the modal_run tool defaults to it. `thinkingLevel`
-    // is the extended-thinking level ("off" / "minimal" / "low" / "medium" / "high" / "xhigh").
-    // `images` are inline attachments that ride the user message as image blocks.
     async (
       text: string,
       model?: string,
@@ -434,171 +748,108 @@ export function useAgent(projectId?: string) {
     ): Promise<string | undefined> => {
       if (!text.trim() || status === "submitted" || status === "streaming") return;
       sendClaimRef.current = true;
+      clientFetchRef.current?.abort();
+      const controller = new AbortController();
+      clientFetchRef.current = controller;
 
       const userMsgId = nextId();
       const assistantId = nextId();
-      let runState: TranscriptRunState = { assistantId, sawPromptEcho: false };
-      let transcript: ChatMessage[] = [];
-      setMessages((prev) => {
-        transcript = [
-          ...prev,
+      const timestamp = Date.now();
+      const consumer: RunConsumer = {
+        transcript: [
+          ...messages,
           {
             id: userMsgId,
             role: "user",
             content: text,
             ...(images && images.length > 0 ? { images } : {}),
-            timestamp: Date.now(),
+            timestamp,
           },
-          { id: assistantId, role: "assistant", content: "", timestamp: Date.now() },
-        ];
-        return transcript;
-      });
+          { id: assistantId, role: "assistant", content: "", timestamp },
+        ],
+        transcriptState: { assistantId, sawPromptEcho: false },
+        lastSeq: -1,
+        outcome: "done",
+        sawDone: false,
+      };
+      setMessages(consumer.transcript);
       setStatus("submitted");
       setRunState("running");
 
       try {
-        const sessionId = await ensureSession();
-        const controller = new AbortController();
-        abortRef.current = controller;
-
+        const id = await ensureSession(controller.signal);
         const startRun = () =>
-          apiFetch(`/sessions/${sessionId}/run`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(
-              buildRunBody({
-                message: text,
-                model,
-                fusionConfig,
-                computeTarget,
-                thinkingLevel,
-                images,
-              }),
-            ),
-            signal: controller.signal,
-          }, scopedProjectId);
-        let res = await startRun();
-        // 409 = previous run still unwinding server-side (e.g. right after
-        // Stop, whose abort completes asynchronously). Retry briefly instead
-        // of losing the message.
-        for (let attempt = 0; res.status === 409 && attempt < 4; attempt++) {
-          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
-          res = await startRun();
-        }
-        if (!res.ok) throw new Error(`run failed: ${res.status}`);
-        setStatus("streaming");
-
-        const reader = res.body?.getReader();
-        if (!reader) throw new Error("No response body");
-        const decoder = new TextDecoder();
-        let buffer = "";
-        // Synthetic route-level frame at stream open; provisional notebook
-        // entries are stamped with it so run dividers render live.
-        let currentRunId: string | undefined;
-        let outcome: AgentRunState = "done";
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
-          buffer = lines.pop() ?? "";
-          for (const line of lines) {
-            if (!line.startsWith("data: ")) continue;
-            const jsonStr = line.slice(6).trim();
-            if (!jsonStr) continue;
-            try {
-              const frame = JSON.parse(jsonStr) as AgentFrame;
-              if (frame.type === "error") {
-                outcome = frame.kind === "budget" ? "blocked" : "error";
-                setRunState(outcome);
-              }
-              if (frame.type === "run_start" && typeof frame.runId === "string") {
-                currentRunId = frame.runId;
-              }
-              if (frame.type === "context_usage") {
-                const usage = parseContextUsage(frame);
-                if (usage) setContextUsage(usage);
-              }
-              const nb = parseNotebookFrame(frame, currentRunId);
-              if (nb) setNotebookEntries((prev) => mergeNotebookEntries(prev, [nb]));
-              if (frame.type === "tool_end" && frame.toolName === "subagent") {
-                setSubagentCompletions((n) => n + 1);
-              }
-              const r = applyFrameToTranscript(transcript, runState, frame, nextId);
-              transcript = r.messages;
-              runState = r.state;
-              if (r.steering) setPendingSteers(r.steering);
-              setMessages(transcript);
-            } catch {
-              /* skip malformed line */
-            }
-          }
-        }
-
-        transcript = transcript.map((m) =>
-          m.role === "assistant" && m.activities?.some((a) => a.status === "running")
-            ? {
-                ...m,
-                activities: m.activities.map((a) =>
-                  a.status === "running" ? { ...a, status: "complete" as const } : a,
-                ),
-              }
-            : m,
-        );
-        setMessages(transcript);
-        setPendingSteers([]);
-        setStatus("ready");
-        setRunState(outcome);
-      } catch (err: unknown) {
-        const aborted = err instanceof DOMException && err.name === "AbortError";
-        transcript = transcript.map((m) => {
-          const isCurrent = m.id === runState.assistantId;
-          const activities = (m.activities ?? []).map((a) =>
-            a.status === "running"
-              ? { ...a, status: (aborted ? "complete" : "error") as ActivityItem["status"] }
-              : a,
+          apiFetch(
+            `/sessions/${encodeURIComponent(id)}/run`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(
+                buildRunBody({
+                  message: text,
+                  model,
+                  fusionConfig,
+                  computeTarget,
+                  thinkingLevel,
+                  images,
+                }),
+              ),
+              signal: controller.signal,
+            },
+            scopedProjectId,
           );
-          if (!isCurrent) return m.activities ? { ...m, activities } : m;
-          return {
-            ...m,
-            content: aborted
-              ? m.content
-              : m.content || "Something went wrong. Please try again.",
-            activities,
-          };
-        });
-        setMessages(transcript);
-        setPendingSteers([]);
-        setStatus(aborted ? "ready" : "error");
-        setRunState(aborted ? "idle" : "error");
+        let response = await startRun();
+        for (let attempt = 0; response.status === 409 && attempt < 4; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+          response = await startRun();
+        }
+        if (!response.ok) throw new Error(`run failed: ${response.status}`);
+        setStatus("streaming");
+        await consumeRunResponse(response, consumer);
+        if (clientFetchRef.current === controller && mountedRef.current) finalizeRun(consumer);
+      } catch (error) {
+        if (
+          mountedRef.current &&
+          clientFetchRef.current === controller
+        ) {
+          failRun(consumer, isAbortError(error));
+        }
       } finally {
         sendClaimRef.current = false;
-        abortRef.current = null;
+        if (clientFetchRef.current === controller) clientFetchRef.current = null;
       }
 
       return userMsgId;
     },
-    [status, ensureSession, scopedProjectId],
+    [
+      consumeRunResponse,
+      ensureSession,
+      failRun,
+      finalizeRun,
+      messages,
+      nextId,
+      scopedProjectId,
+      status,
+    ],
   );
 
   const stop = useCallback(async (): Promise<string[]> => {
-    abortRef.current?.abort();
+    clientFetchRef.current?.abort();
     const id = sessionIdRef.current;
     let restored: string[] = [];
     if (id) {
       try {
-        const res = await apiFetch(
-          `/sessions/${id}/abort`,
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/abort`,
           { method: "POST" },
           scopedProjectId,
         );
-        if (res.ok) {
-          const data = (await res.json()) as { restored?: unknown };
+        if (response.ok) {
+          const data = (await response.json()) as { restored?: unknown };
           if (Array.isArray(data.restored)) restored = data.restored.map(String);
         }
       } catch {
-        /* abort is best-effort; restore is a bonus */
+        // Server abort is best-effort; returning queued text is a bonus.
       }
     }
     setPendingSteers([]);
@@ -608,7 +859,8 @@ export function useAgent(projectId?: string) {
   }, [scopedProjectId]);
 
   const reset = useCallback(() => {
-    abortRef.current?.abort();
+    clientFetchRef.current?.abort();
+    clientFetchRef.current = null;
     setMessages([]);
     setContextUsage(null);
     setNotebookEntries([]);
@@ -616,12 +868,18 @@ export function useAgent(projectId?: string) {
     setPendingSteers([]);
     setStatus("ready");
     setRunState("idle");
-    sessionIdRef.current = null;
-  }, []);
+    bindSession(null);
+  }, [bindSession]);
 
-  // Project workspaces stay mounted while inactive. Only a real unmount (app
-  // close or project deletion) should sever the SSE and abort the server run.
-  useEffect(() => () => abortRef.current?.abort(), []);
+  // Disconnecting this browser consumer must not abort the durable server run.
+  // Explicit stop() is the only path that calls POST /abort.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      clientFetchRef.current?.abort();
+    };
+  }, []);
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 
@@ -630,6 +888,7 @@ export function useAgent(projectId?: string) {
     contextUsage,
     status,
     runState,
+    sessionId,
     send,
     stop,
     reset,

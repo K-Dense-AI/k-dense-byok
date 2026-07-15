@@ -6,11 +6,11 @@
  * compact client schema from agent/events.ts, then emits a terminal `cost`
  * frame sourced from Pi's per-session usage accounting.
  */
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
-import { contextUsageFrame, toClientFrame, type ClientFrame } from "../agent/events.ts";
+import { contextUsageFrame, toClientFrame } from "../agent/events.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
   pendingInterviewFor,
@@ -31,6 +31,7 @@ import {
 } from "../agent/notebook-annotations.ts";
 import { MethodsDraftError, runMethodsDraft } from "../agent/methods-draft.ts";
 import { mintRunId, setSessionRunId } from "../agent/run-ids.ts";
+import { runBroker, type RunHandle } from "../agent/run-broker.ts";
 import { SandboxError } from "../sandbox-fs.ts";
 import {
   findSessionFile,
@@ -84,6 +85,43 @@ interface RunBody {
 // otherwise both pass the guard and the loser's close handler would abort the
 // winner's live turn.
 const activeRuns = new Set<string>();
+
+/** Attach one HTTP response to a broker-owned run. Closing the response only
+ * removes this observer; the run itself remains owned by the broker. */
+function streamRun(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  handle: RunHandle,
+  after = 0,
+): void {
+  reply.hijack();
+  const raw = reply.raw;
+  raw.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+    ...corsResponseHeaders(req.headers.origin),
+  });
+
+  let unsubscribe = () => {};
+  const detach = () => unsubscribe();
+  raw.on("close", detach);
+  unsubscribe = handle.subscribe({
+    after,
+    onFrame(frame) {
+      if (!raw.writableEnded && !raw.destroyed) {
+        raw.write(`data: ${JSON.stringify(frame)}\n\n`);
+      }
+    },
+    onComplete() {
+      if (!raw.writableEnded && !raw.destroyed) raw.end();
+    },
+  });
+  // The socket may have closed while a completed handle replayed
+  // synchronously, before `unsubscribe` received its real function.
+  if (raw.destroyed) unsubscribe();
+}
 
 export async function registerSessionRoutes(app: FastifyInstance): Promise<void> {
   app.post("/sessions", async () => {
@@ -319,8 +357,35 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     return { pending: pendingInterviewFor(currentProjectId(), req.params.id) };
   });
 
+  app.get<{ Params: { id: string } }>("/sessions/:id/run/state", async (req, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return runBroker.state(currentProjectId(), req.params.id);
+  });
+
+  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+    "/sessions/:id/run/events",
+    async (req, reply) => {
+      const rawAfter = req.query.after;
+      const after = rawAfter === undefined ? 0 : Number(rawAfter);
+      if (!Number.isSafeInteger(after) || after < 0) {
+        reply.code(400);
+        return { detail: "after must be a non-negative integer" };
+      }
+      const handle = runBroker.get(currentProjectId(), req.params.id);
+      if (!handle) {
+        reply.code(404);
+        return { detail: "No retained run for this session" };
+      }
+      streamRun(req, reply, handle, after);
+    },
+  );
+
   app.post<{ Params: { id: string } }>("/sessions/:id/abort", async (req) => {
-    const session = await getSession(currentProjectId(), activePaths(), req.params.id);
+    const projectId = currentProjectId();
+    // Mark first so an abort racing with pre-prompt model setup prevents that
+    // detached owner from entering prompt() after session.abort() returns.
+    runBroker.get(projectId, req.params.id)?.requestAbort();
+    const session = await getSession(projectId, activePaths(), req.params.id);
     if (!session) return { ok: true, restored: [] };
     // Clear BEFORE abort so a pending steer can't be delivered into the
     // dying loop; the texts go back to the composer client-side.
@@ -390,8 +455,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // is streaming, so this is a guard against races/double-submits rather
       // than a normal path. (Pi's followUp queueing returns immediately, which
       // would orphan the SSE stream and abort the live turn — so we reject.)
-      const runKey = `${projectId}:${req.params.id}`;
-      if (session.isStreaming || activeRuns.has(runKey)) {
+      const sessionId = req.params.id;
+      const runKey = `${projectId}:${sessionId}`;
+      const retained = runBroker.get(projectId, sessionId);
+      if (session.isStreaming || activeRuns.has(runKey) || (retained && !retained.isComplete)) {
         reply.code(409);
         return { detail: "Session is already streaming a response" };
       }
@@ -401,22 +468,51 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "message is required" };
       }
+      const prompt = body.message;
       const parsedImages = parseRunImages(body.images);
       if ("error" in parsedImages) {
         reply.code(400);
         return { detail: parsedImages.error };
       }
+      // This baseline remains valid through model/thinking setup because Pi
+      // does not append conversation messages until prompt() starts.
+      const historyFile = findSessionFile(paths, sessionId);
+      const baseline = {
+        messages: historyFile ? toHistory(historyFile, paths.sandbox) : [],
+        contextUsage: session.getContextUsage() ?? null,
+      };
       // No awaits between the guard above and this claim, so it is atomic.
       activeRuns.add(runKey);
       // One id per run invocation; notebook entries appended during this run
       // (lead tool + subagent harvest) are stamped with it. Cleared in the
-      // outer finally so it covers every exit path.
+      // owner cleanup so it covers every exit path.
       const runId = mintRunId();
       setSessionRunId(projectId, session.sessionId, runId);
+      const handle = runBroker.start(projectId, sessionId, {
+        runId,
+        prompt,
+        images: parsedImages.images.map(({ data, mimeType }) => ({ data, mimeType })),
+        baseline,
+      });
+      // Publish immediately, before any awaited model setup, so refresh recovery
+      // can discover the accepted run during that setup window.
+      handle.publish({ type: "run_start", runId });
       // For a Fusion run we disable Pi's local tools for the turn (see below).
       // Remember the real active set so we can restore it in the finally; `null`
       // means "not a fusion run, nothing to restore".
       let savedToolNames: string[] | null = null;
+      let detachedOwner = false;
+      const log = req.log;
+      const cleanup = () => {
+        // Restore the local tool set disabled for a fusion run. No-op for
+        // non-fusion runs (savedToolNames stays null).
+        if (savedToolNames !== null) {
+          session.setActiveToolsByName(savedToolNames);
+          savedToolNames = null;
+        }
+        setSessionRunId(projectId, session.sessionId, null);
+        activeRuns.delete(runKey);
+      };
       try {
         // Stash this run's selected compute instance so the modal_run tool uses
         // it as the default when the agent doesn't name one ("local"/unset clears it).
@@ -452,6 +548,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             // Make sure no stale fusion config rewrites this run's body.
             // (The outer finally releases the activeRuns claim on return.)
             setFusionConfig(projectId, session.sessionId, null);
+            handle.publish({
+              type: "error",
+              message: `Fusion model could not be prepared: ${(err as Error).message}`,
+            });
             reply.code(400);
             return {
               detail: `Fusion model could not be prepared: ${(err as Error).message}`,
@@ -475,123 +575,138 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           else req.log.warn({ thinkingLevel: body.thinkingLevel }, "ignoring invalid thinkingLevel");
         }
 
-        // Take over the socket for Server-Sent Events.
-        reply.hijack();
-        const raw = reply.raw;
-        raw.writeHead(200, {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache, no-transform",
-          Connection: "keep-alive",
-          "X-Accel-Buffering": "no",
-          ...corsResponseHeaders(req.headers.origin),
-        });
-        const write = (frame: ClientFrame) => {
-          if (!raw.writableEnded) raw.write(`data: ${JSON.stringify(frame)}\n\n`);
-        };
-        const writeContextUsage = () => {
+        // Model selection can change the context window. Refresh the baseline
+        // value and publish the configured model's usage before prompt().
+        baseline.contextUsage = session.getContextUsage() ?? null;
+        const publishContextUsage = () => {
           const frame = contextUsageFrame(session.getContextUsage());
-          if (frame) write(frame);
+          if (frame) handle.publish(frame);
         };
-        // Synthetic route-level frame (Pi events carry no run id): lets the
-        // client stamp provisional notebook entries with this run before the
-        // authoritative refetch.
-        write({ type: "run_start", runId });
-        writeContextUsage();
+        publishContextUsage();
 
-        // Hard budget cap: refuse to run if the project has reached its limit.
-        const budget = isBudgetExceeded(projectId);
-        if (budget.exceeded) {
-          write({
-            type: "error",
-            kind: "budget",
-            message:
-              `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
-              `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project ` +
-              `settings and retry.`,
-          });
-          write({ type: "done" });
-          raw.end();
-          return;
-        }
-
-        const sandboxRoot = activePaths().sandbox;
-        // Usage tallied straight from turn_end events. getSessionStats() is
-        // recomputed from the in-context messages, so auto-compaction mid-run
-        // can shrink the cumulative stats and make the before/after delta lie
-        // low; the per-turn events are immune to that.
-        const turnTally = emptySnapshot();
-        const unsub = session.subscribe((ev) => {
-          if (ev.type === "turn_end") {
-            const usage = (ev.message as { usage?: Parameters<typeof addTurnUsage>[1] }).usage;
-            if (usage) addTurnUsage(turnTally, usage);
-          }
-          const frame = toClientFrame(ev, sandboxRoot);
-          if (frame) write(frame);
-          if (ev.type === "turn_end") writeContextUsage();
-        });
-
-        req.raw.on("close", () => {
-          if (session.isStreaming) session.abort().catch(() => {});
-        });
-
-        // errorMessage is sticky on the session; only report it if THIS run set it.
-        const priorError = session.state.errorMessage;
-        const before = snapshot(session);
-        try {
-          await session.prompt(
-            body.message ?? "",
-            parsedImages.images.length > 0 ? { images: parsedImages.images } : undefined,
-          );
-          // Surface a provider/agent error that didn't already stream as a frame
-          // (e.g. an auth failure that produced an empty assistant turn).
-          const errorMessage = session.state.errorMessage;
-          if (errorMessage && errorMessage !== priorError) {
-            write({ type: "error", message: errorMessage });
-          }
-        } catch (err) {
-          write({ type: "error", message: (err as Error).message });
-        } finally {
-          unsub();
-          // Ledger in the finally: a run that threw mid-turn still spent real
-          // tokens. The stats delta catches a partial turn that never reached
-          // turn_end; the tally catches compaction — take the max of the two.
+        // The detached task owns the Pi run and every finalizer. HTTP responses
+        // below are observers only, so browser refresh/socket close cannot abort
+        // or skip ledger/tool restoration. projectId/paths/sessionId are already
+        // captured; no AsyncLocalStorage-backed project lookup occurs here.
+        detachedOwner = true;
+        void (async () => {
+          let unsubscribePi: (() => void) | null = null;
           try {
-            const run = snapshotMax(snapshotDelta(before, snapshot(session)), turnTally);
-            recordRun({
-              sessionId: req.params.id,
-              projectId,
-              model: session.model?.id ?? "unknown",
-              before: emptySnapshot(),
-              after: run,
+            // Explicit POST /abort may have raced with awaited model setup.
+            // In that case abort is authoritative and prompt must never start.
+            if (handle.isAbortRequested) return;
+
+            // Hard budget cap: refuse to run if the project has reached its limit.
+            const budget = isBudgetExceeded(projectId);
+            if (budget.exceeded) {
+              handle.publish({
+                type: "error",
+                kind: "budget",
+                message:
+                  `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+                  `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project ` +
+                  `settings and retry.`,
+              });
+              return;
+            }
+
+            // Usage tallied straight from turn_end events. getSessionStats() is
+            // recomputed from the in-context messages, so auto-compaction mid-run
+            // can shrink the cumulative stats and make the before/after delta lie
+            // low; the per-turn events are immune to that.
+            const turnTally = emptySnapshot();
+            unsubscribePi = session.subscribe((ev) => {
+              if (ev.type === "turn_end") {
+                const usage = (ev.message as {
+                  usage?: Parameters<typeof addTurnUsage>[1];
+                }).usage;
+                if (usage) addTurnUsage(turnTally, usage);
+              }
+              const frame = toClientFrame(ev, paths.sandbox);
+              if (frame) handle.publish(frame);
+              if (ev.type === "turn_end") publishContextUsage();
             });
-            const stats = session.getSessionStats();
-            // `cost` is the session's full ledgered spend (subagents included,
-            // restart/compaction-proof); `tokens` is Pi's in-context cumulative;
-            // `runCost`/`runTokens` are the delta for THIS turn, so the UI can
-            // attribute a price to the message that just completed.
-            writeContextUsage();
-            write({
-              type: "cost",
-              cost: sessionCostSummary(req.params.id, projectId).totalUsd,
-              tokens: stats.tokens,
-              runCost: run.costUsd,
-              runTokens: run.total,
-            });
-            write({ type: "done" });
+
+            // errorMessage is sticky on the session; only report it if THIS run set it.
+            const priorError = session.state.errorMessage;
+            const before = snapshot(session);
+            try {
+              await session.prompt(
+                prompt,
+                parsedImages.images.length > 0 ? { images: parsedImages.images } : undefined,
+              );
+              // Surface a provider/agent error that didn't already stream as a
+              // frame (e.g. auth failure with an empty assistant turn).
+              const errorMessage = session.state.errorMessage;
+              if (errorMessage && errorMessage !== priorError) {
+                handle.publish({ type: "error", message: errorMessage });
+              }
+            } catch (err) {
+              handle.publish({ type: "error", message: (err as Error).message });
+            } finally {
+              unsubscribePi();
+              unsubscribePi = null;
+              // Ledger in the finally: a run that threw mid-turn still spent real
+              // tokens. The stats delta catches a partial turn that never reached
+              // turn_end; the tally catches compaction — take the max of the two.
+              try {
+                const run = snapshotMax(snapshotDelta(before, snapshot(session)), turnTally);
+                recordRun({
+                  sessionId,
+                  projectId,
+                  model: session.model?.id ?? "unknown",
+                  before: emptySnapshot(),
+                  after: run,
+                });
+                const stats = session.getSessionStats();
+                // `cost` is the session's full ledgered spend (subagents included,
+                // restart/compaction-proof); `tokens` is Pi's in-context cumulative;
+                // `runCost`/`runTokens` are the delta for THIS turn.
+                publishContextUsage();
+                handle.publish({
+                  type: "cost",
+                  cost: sessionCostSummary(sessionId, projectId).totalUsd,
+                  tokens: stats.tokens,
+                  runCost: run.costUsd,
+                  runTokens: run.total,
+                });
+              } catch (err) {
+                log.warn({ err }, "failed to ledger run cost");
+              }
+            }
           } catch (err) {
-            req.log.warn({ err }, "failed to ledger run cost");
+            log.error({ err }, "detached run failed");
+            if (!handle.isComplete) {
+              handle.publish({ type: "error", message: (err as Error).message });
+            }
+          } finally {
+            unsubscribePi?.();
+            if (!handle.isComplete) {
+              handle.publish({ type: "done" });
+              handle.complete();
+            }
+            cleanup();
           }
-          if (!raw.writableEnded) raw.end();
+        })();
+
+        // POST /run remains an SSE endpoint, now subscribed to the same replay
+        // buffer used by reconnecting GET /run/events clients.
+        streamRun(req, reply, handle);
+      } catch (err) {
+        if (!detachedOwner && !handle.isComplete) {
+          handle.publish({ type: "error", message: (err as Error).message });
         }
+        throw err;
       } finally {
-        // Restore the local tool set disabled for a fusion run (covers every
-        // exit path, including early returns like the budget cap). No-op for
-        // non-fusion runs (savedToolNames stays null).
-        if (savedToolNames !== null) {
-          session.setActiveToolsByName(savedToolNames);
+        // Once handed off, the detached owner performs cleanup after Pi and
+        // ledger finalization. Preparation failures still clean up here.
+        if (!detachedOwner) {
+          if (!handle.isComplete) {
+            handle.publish({ type: "done" });
+            handle.complete();
+          }
+          cleanup();
         }
-        setSessionRunId(projectId, session.sessionId, null);
-        activeRuns.delete(runKey);
       }
     },
   );

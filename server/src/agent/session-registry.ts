@@ -201,3 +201,25 @@ export function disposeSession(projectId: string, sessionId: string): void {
     live.delete(k);
   }
 }
+
+/** Stop every live session before its project directory is removed. */
+export async function abortProjectSessions(projectId: string): Promise<void> {
+  const prefix = `${projectId}:`;
+  const sessions = [...live.entries()].filter(([key]) => key.startsWith(prefix));
+  await Promise.all(
+    sessions.map(async ([, session]) => {
+      session.clearQueue();
+      await session.abort();
+    }),
+  );
+}
+
+/** Release every live session after its project runs have finalized. */
+export function disposeProjectSessions(projectId: string): void {
+  const prefix = `${projectId}:`;
+  const sessions = [...live.entries()].filter(([key]) => key.startsWith(prefix));
+  for (const [key, session] of sessions) {
+    session.dispose();
+    live.delete(key);
+  }
+}
