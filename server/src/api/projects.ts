@@ -24,9 +24,15 @@ import {
   disposeProjectSessions,
 } from "../agent/session-registry.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
+import { listProjectActivities } from "../project-activity.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
   app.get("/projects", async () => listProjects());
+
+  app.get("/projects/activity", async (_req, reply) => {
+    reply.header("Cache-Control", "no-store");
+    return { activities: await listProjectActivities() };
+  });
 
   app.post("/projects", async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;

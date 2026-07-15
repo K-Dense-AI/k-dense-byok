@@ -13,6 +13,7 @@ import { SessionCostPill } from "@/components/session-cost-pill";
 import { ResourceMonitor } from "@/components/resource-monitor";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
+import { useProjectActivities } from "@/lib/use-project-activities";
 import { useProjects } from "@/lib/use-projects";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
@@ -103,6 +104,13 @@ export default function HomePage() {
     Record<string, ProjectActivitySummary>
   >({});
   const { activeProjectId, projects, loading: projectsLoading } = useProjects();
+  const serverProjectActivities = useProjectActivities(
+    workspaceHydrated && screen === "projects",
+  );
+  const displayedProjectActivities = useMemo(
+    () => ({ ...serverProjectActivities, ...projectActivities }),
+    [projectActivities, serverProjectActivities],
+  );
 
   useEffect(() => {
     if (!projectsLoading) setProjectDirectoryHydrated(true);
@@ -212,7 +220,7 @@ export default function HomePage() {
       >
         <ProjectView
           onOpenProject={openProject}
-          projectActivities={projectActivities}
+          projectActivities={displayedProjectActivities}
         />
       </div>
       {projectDirectoryHydrated && openedProjectIds.map((projectId) => {

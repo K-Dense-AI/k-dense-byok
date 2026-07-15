@@ -151,6 +151,19 @@ describe("projects.ts", () => {
       await expect(projectsModule.listProjects()).rejects.toThrow(/500/);
     });
 
+    it("listProjectActivities parses the lightweight status map", async () => {
+      const activities = {
+        alpha: { running: 1, needsInput: 0, errors: 0, blocked: 0, done: 0 },
+      };
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ activities }), { status: 200 }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      await expect(projectsModule.listProjectActivities()).resolves.toEqual(activities);
+      expect(fetchMock.mock.calls[0][0]).toMatch(/\/projects\/activity$/);
+    });
+
     it("createProject serialises the input as JSON", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ id: "new", name: "N" }), { status: 201 })

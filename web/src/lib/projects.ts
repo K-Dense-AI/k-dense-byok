@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import type { ProjectActivitySummary } from "@/lib/project-activity";
 
 /**
  * Project types, storage, and the `apiFetch` wrapper used by every hook.
@@ -159,6 +160,17 @@ export async function listProjects(): Promise<Project[]> {
   const res = await apiFetch("/projects");
   if (!res.ok) throw new Error(`listProjects ${res.status}`);
   return (await res.json()) as Project[];
+}
+
+export async function listProjectActivities(): Promise<
+  Record<string, ProjectActivitySummary>
+> {
+  const res = await apiFetch("/projects/activity");
+  if (!res.ok) throw new Error(`listProjectActivities ${res.status}`);
+  const body = (await res.json()) as {
+    activities?: Record<string, ProjectActivitySummary>;
+  };
+  return body.activities ?? {};
 }
 
 export async function createProject(
