@@ -661,6 +661,7 @@ export function useAgent(projectId?: string) {
           )}`,
           { signal: controller.signal },
           scopedProjectId,
+          "stream",
         );
         if (!eventsResponse.ok) {
           throw new Error(`run reconnect failed: ${eventsResponse.status}`);
@@ -797,6 +798,7 @@ export function useAgent(projectId?: string) {
               signal: controller.signal,
             },
             scopedProjectId,
+            "stream",
           );
         let response = await startRun();
         for (let attempt = 0; response.status === 409 && attempt < 4; attempt++) {
