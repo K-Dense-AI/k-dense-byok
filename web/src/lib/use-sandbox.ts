@@ -195,6 +195,8 @@ export function useSandbox(
   // Refs for synchronous reads inside callbacks (avoids stale closures)
   const tabsRef = useRef<Tab[]>(tabs);
   const openPathsRef = useRef<Set<string>>(new Set(initialOpenPaths.current));
+  const treeRequestRef = useRef<Promise<void> | null>(null);
+  const treeEtagRef = useRef<string | null>(null);
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
 
@@ -205,32 +207,50 @@ export function useSandbox(
     });
   }, [activeTabPath, onStateChange, tabs]);
 
-  const fetchTree = useCallback(async () => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    try {
-      const res = await scopedFetch(`/sandbox/tree`, {
-        signal: controller.signal,
-      });
-      if (!res.ok) return;
-      const data = await res.json() as TreeNode;
-      setTree(data);
-      const existingPaths = new Set(flattenFiles(data));
-      const current = tabsRef.current;
-      const next = current.filter((tab) => existingPaths.has(tab.path));
-      if (next.length !== current.length) {
-        tabsRef.current = next;
-        openPathsRef.current = new Set(next.map((tab) => tab.path));
-        setTabs(next);
-        setActiveTabPath((active) =>
-          active && existingPaths.has(active) ? active : next[0]?.path ?? null,
-        );
+  const fetchTree = useCallback((): Promise<void> => {
+    // Streaming and manual refreshes can land close together. Reuse the
+    // current request instead of making the backend walk the same tree twice.
+    if (treeRequestRef.current) return treeRequestRef.current;
+
+    const request = (async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      try {
+        const res = await scopedFetch(`/sandbox/tree`, {
+          signal: controller.signal,
+          headers: treeEtagRef.current
+            ? { "If-None-Match": treeEtagRef.current }
+            : undefined,
+        });
+        if (res.status === 304) return;
+        if (!res.ok) return;
+        const etag = res.headers?.get?.("etag");
+        if (etag) treeEtagRef.current = etag;
+        const data = await res.json() as TreeNode;
+        setTree(data);
+        const existingPaths = new Set(flattenFiles(data));
+        const current = tabsRef.current;
+        const next = current.filter((tab) => existingPaths.has(tab.path));
+        if (next.length !== current.length) {
+          tabsRef.current = next;
+          openPathsRef.current = new Set(next.map((tab) => tab.path));
+          setTabs(next);
+          setActiveTabPath((active) =>
+            active && existingPaths.has(active) ? active : next[0]?.path ?? null,
+          );
+        }
+      } catch {
+        // silently fail -- sandbox may not exist yet, or request timed out
+      } finally {
+        clearTimeout(timeout);
       }
-    } catch {
-      // silently fail -- sandbox may not exist yet, or request timed out
-    } finally {
-      clearTimeout(timeout);
-    }
+    })();
+
+    treeRequestRef.current = request;
+    void request.finally(() => {
+      if (treeRequestRef.current === request) treeRequestRef.current = null;
+    });
+    return request;
   }, [scopedFetch]);
 
   const closeTab = useCallback((path: string) => {
@@ -598,6 +618,12 @@ export function useSandbox(
   }, [scopedFetch]);
 
   useEffect(() => {
+    // Hidden project workspaces stay mounted so their live chat streams can
+    // finish, but they must not keep scanning their sandboxes in the
+    // background. React reruns this effect and performs an immediate catch-up
+    // when the project becomes active again.
+    if (!isActive) return;
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout>;
 
@@ -616,8 +642,8 @@ export function useSandbox(
         return;
       }
       await fetchTree();
-      if (isActive && !cancelled) await refreshOpenTabs();
-      if (!cancelled) timer = setTimeout(tick, isActive ? 1500 : IDLE_MS);
+      if (!cancelled) await refreshOpenTabs();
+      if (!cancelled) timer = setTimeout(tick, IDLE_MS);
     };
 
     tick();
@@ -628,12 +654,13 @@ export function useSandbox(
   }, [isActive, fetchTree, refreshOpenTabs]);
 
   useEffect(() => {
+    if (!isActive) return;
     const onVisible = () => {
       if (document.visibilityState === "visible") fetchTree();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [fetchTree]);
+  }, [fetchTree, isActive]);
 
   return {
     tree,

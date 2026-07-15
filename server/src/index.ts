@@ -67,6 +67,7 @@ export async function buildApp() {
       cb(null, isCorsOriginAllowed(origin));
     },
     credentials: true,
+    exposedHeaders: ["ETag"],
   });
 
   await app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });

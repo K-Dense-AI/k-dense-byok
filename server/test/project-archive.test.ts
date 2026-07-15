@@ -214,8 +214,15 @@ describe("buildProjectArchive", () => {
 });
 
 describe("GET /sandbox/download-all", () => {
-  it("keeps AGENTS.md on disk but hides it from the sandbox tree", async () => {
+  it("hides system files and dependency caches from the sandbox tree", async () => {
     const paths = ensureProjectExists("alpha");
+    fs.mkdirSync(path.join(paths.sandbox, "node_modules", "package"), { recursive: true });
+    fs.mkdirSync(path.join(paths.sandbox, "__pycache__"), { recursive: true });
+    fs.mkdirSync(path.join(paths.sandbox, "analysis-venv", "lib"), { recursive: true });
+    fs.writeFileSync(path.join(paths.sandbox, "node_modules", "package", "index.js"), "");
+    fs.writeFileSync(path.join(paths.sandbox, "__pycache__", "module.pyc"), "");
+    fs.writeFileSync(path.join(paths.sandbox, "analysis-venv", "lib", "dependency.py"), "");
+    fs.writeFileSync(path.join(paths.sandbox, "results.csv"), "value\n1\n");
     expect(fs.existsSync(path.join(paths.sandbox, "AGENTS.md"))).toBe(true);
 
     const response = await app.inject({
@@ -225,7 +232,25 @@ describe("GET /sandbox/download-all", () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(JSON.stringify(response.json())).not.toContain("AGENTS.md");
+    const tree = JSON.stringify(response.json());
+    expect(tree).toContain("results.csv");
+    expect(tree).not.toContain("AGENTS.md");
+    expect(tree).not.toContain("node_modules");
+    expect(tree).not.toContain("__pycache__");
+    expect(tree).not.toContain("analysis-venv");
+
+    const etag = response.headers.etag;
+    expect(etag).toMatch(/^"[A-Za-z0-9_-]+"$/);
+    const unchanged = await app.inject({
+      method: "GET",
+      url: "/sandbox/tree",
+      headers: {
+        "x-project-id": "alpha",
+        "if-none-match": etag,
+      },
+    });
+    expect(unchanged.statusCode).toBe(304);
+    expect(unchanged.body).toBe("");
   });
 
   it("returns a scoped project archive through the existing download contract", async () => {

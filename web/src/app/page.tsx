@@ -17,7 +17,7 @@ import { useProjects } from "@/lib/use-projects";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
-import { ProjectScopeProvider } from "@/lib/projects";
+import { getActiveProjectId, ProjectScopeProvider } from "@/lib/projects";
 import {
   hasProjectActivity,
   sameProjectActivity,
@@ -113,7 +113,12 @@ export default function HomePage() {
     void loadWorkspaceSnapshot().then((snapshot) => {
       if (cancelled) return;
       setRestoredProjects(snapshot.projects);
-      setOpenedProjectIds(snapshot.openedProjectIds);
+      // Project workspace state is restored lazily. Hydrating every project
+      // visited in a previous browser session eagerly reopened all of its chat
+      // tabs, file viewers, and polling hooks on startup.
+      setOpenedProjectIds(
+        snapshot.screen === "workspace" ? [getActiveProjectId()] : [],
+      );
       setScreen(snapshot.screen);
       setWorkspaceHydrated(true);
     });
@@ -401,8 +406,11 @@ function WorkspacePage({
   // Destructuring keeps the deps stable below — useSandbox returns a new
   // object literal each render, so depending on `sandbox` directly would
   // make `handleSandboxRefresh` change identity every render.
-  const { fetchTree: sandboxFetchTree, refreshOpenTabs: sandboxRefreshOpenTabs } =
-    sandbox;
+  const {
+    fetchTree: sandboxFetchTree,
+    refreshOpenTabs: sandboxRefreshOpenTabs,
+    selectFile: sandboxSelectFile,
+  } = sandbox;
   const handleSandboxRefresh = useCallback(() => {
     sandboxFetchTree();
     sandboxRefreshOpenTabs();
@@ -420,17 +428,17 @@ function WorkspacePage({
     () => Object.values(tabsMeta).some((m) => m.isStreaming),
     [tabsMeta],
   );
-  // While any tab is streaming, poll the sandbox more aggressively so the
-  // file tree + open previews update as the agent writes files. The base
-  // 3s poll inside useSandbox keeps running independently.
+  // While any tab is streaming, poll the active sandbox more aggressively so
+  // the file tree + open previews update as the agent writes files. Hidden
+  // projects keep their SSE streams mounted but catch up when reopened.
   useEffect(() => {
-    if (!anyStreaming) return;
+    if (!isActive || !anyStreaming) return;
     const id = setInterval(() => {
       sandboxFetchTree();
       sandboxRefreshOpenTabs();
     }, 1500);
     return () => clearInterval(id);
-  }, [anyStreaming, sandboxFetchTree, sandboxRefreshOpenTabs]);
+  }, [anyStreaming, isActive, sandboxFetchTree, sandboxRefreshOpenTabs]);
 
   const [treeWidth, setTreeWidth] = useState(
     () => initialState?.treeWidth ?? 320,
@@ -651,9 +659,15 @@ function WorkspacePage({
   );
 
   const handleFileSelect = useCallback((path: string) => {
-    sandbox.selectFile(path);
+    sandboxSelectFile(path);
     setShowNotebook(false);
-  }, [sandbox]);
+  }, [sandboxSelectFile]);
+  const handleOrganizeFiles = useCallback(() => {
+    const handle = tabHandles.current.get(activeTabId);
+    if (!handle) return;
+    setView("chat");
+    void handle.sendQuick("Organize all the files in the sandbox directory");
+  }, [activeTabId]);
 
   // ------------------------------------------------------------------
   // Chat ↔ notebook deep links (join key: tool-call id === entry id).
@@ -789,7 +803,7 @@ function WorkspacePage({
           Brought to you by K-Dense, Inc.
         </p>
         <div className="flex items-center gap-2">
-          <ResourceMonitor />
+          {isActive && <ResourceMonitor />}
           <SessionCostPill
             summary={costSummary}
             projectSummary={projectCost}
@@ -891,7 +905,7 @@ function WorkspacePage({
       <div className={cn("flex flex-1 overflow-hidden", isResizing && "select-none")}>
 
         {/* Left: file tree */}
-        {sandboxOpen && (
+        {isActive && sandboxOpen && (
           <div className="shrink-0 overflow-hidden" style={{ width: treeWidth }}>
             <FileTreePanel
               tree={sandbox.tree}
@@ -906,14 +920,7 @@ function WorkspacePage({
               onRefresh={sandbox.fetchTree}
               onClose={toggleSandbox}
               onUpload={sandbox.uploadFiles}
-              onOrganize={() => {
-                const handle = tabHandles.current.get(activeTabId);
-                if (!handle) return;
-                setView("chat");
-                void handle.sendQuick(
-                  "Organize all the files in the sandbox directory",
-                );
-              }}
+              onOrganize={handleOrganizeFiles}
               onMove={sandbox.moveItem}
               onRename={sandbox.renameItem}
               onCreateDir={sandbox.createDir}
@@ -922,36 +929,38 @@ function WorkspacePage({
         )}
 
         {/* Drag handle: tree ↔ preview */}
-        {sandboxOpen && <ResizeHandle onMouseDown={startDrag("tree")} />}
+        {isActive && sandboxOpen && <ResizeHandle onMouseDown={startDrag("tree")} />}
 
         {/* Middle: file preview with tabs — always shown; it is the pane the
             side panels make room for (e.g. the LaTeX editor + PDF). */}
         <div className="flex-1 min-w-0 overflow-hidden">
-          <FilePreviewPanel
-            projectId={projectId}
-            tabs={sandbox.tabs}
-            activeTabPath={sandbox.activeTabPath}
-            onTabSelect={handleFileSelect}
-            onTabClose={sandbox.closeTab}
-            onDownload={sandbox.downloadFile}
-            onSaveText={sandbox.saveFile}
-            onSaveImageBlob={sandbox.saveImageBlob}
-            onRetry={sandbox.retryFile}
-            onCompileLatex={sandbox.compileLatex}
-            showNotebook={showNotebook}
-            onSelectNotebook={() => setShowNotebook(true)}
-            notebookSessionId={activeSessionId}
-            notebookEntries={notebookEntries}
-            notebookStreaming={notebookStreaming}
-            notebookSubagentCompletions={subagentCompletions}
-            onOpenNotebookFile={handleFileSelect}
-            notebookFocus={notebookFocus}
-            onNotebookJumpToChat={handleNotebookJumpToChat}
-          />
+          {isActive && (
+            <FilePreviewPanel
+              projectId={projectId}
+              tabs={sandbox.tabs}
+              activeTabPath={sandbox.activeTabPath}
+              onTabSelect={handleFileSelect}
+              onTabClose={sandbox.closeTab}
+              onDownload={sandbox.downloadFile}
+              onSaveText={sandbox.saveFile}
+              onSaveImageBlob={sandbox.saveImageBlob}
+              onRetry={sandbox.retryFile}
+              onCompileLatex={sandbox.compileLatex}
+              showNotebook={showNotebook}
+              onSelectNotebook={() => setShowNotebook(true)}
+              notebookSessionId={activeSessionId}
+              notebookEntries={notebookEntries}
+              notebookStreaming={notebookStreaming}
+              notebookSubagentCompletions={subagentCompletions}
+              onOpenNotebookFile={handleFileSelect}
+              notebookFocus={notebookFocus}
+              onNotebookJumpToChat={handleNotebookJumpToChat}
+            />
+          )}
         </div>
 
         {/* Drag handle: preview ↔ chat */}
-        {chatOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
+        {isActive && chatOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
 
         {/* Right: chat / workflows. Kept mounted (hidden via CSS when
             collapsed) so background chat streams keep running. */}
@@ -1008,7 +1017,7 @@ function WorkspacePage({
           ))}
 
           {/* Workflows view */}
-          {view === "workflows" && (
+          {isActive && view === "workflows" && (
             <div className="flex flex-1 flex-col min-h-0 overflow-hidden">
               <WorkflowsPanel
                 onLaunch={handleWorkflowLaunch}
