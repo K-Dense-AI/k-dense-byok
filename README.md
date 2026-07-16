@@ -24,6 +24,12 @@ Three things to know up front:
 
 > **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), and [YouTube](https://www.youtube.com/@K-Dense-Inc) for release notes and tutorials.
 
+## Internal benchmark
+
+![Internal benchmark comparing K-Dense BYOK with Claude Science and Biomni Lab across scientific quality and research execution](docs/07_platform_performance_summary.png)
+
+This figure compares K-Dense BYOK, Claude Science, and Biomni Lab across scientific quality and research execution in a 20-prompt benchmark. For these runs, K-Dense BYOK was configured to use Claude Opus 4.8 with the xHigh reasoning level. The benchmark was designed, run, and evaluated internally by K-Dense rather than an independent third party, so the results should be interpreted as an internal evaluation under the tested setup—not as a universal measure of platform performance.
+
 ## What can it do?
 
 Kady is designed to carry out research work, not only answer questions. You remain the scientist in charge: you can watch each step, inspect the code and files it creates, redirect it while it works, and stop a run at any time.
