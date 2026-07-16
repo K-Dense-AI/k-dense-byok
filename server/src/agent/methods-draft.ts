@@ -1,14 +1,20 @@
 /**
  * One-shot AI draft of a manuscript Methods section from a session's lab
- * notebook. Deliberately NOT a chat session — a single pi-ai complete() call,
+ * notebook. Deliberately NOT a chat session — one Pi ModelRuntime completion,
  * budget-gated and ledgered under the synthetic session id "methods-draft"
  * (mirrors latex/assist.ts). The draft is written into the sandbox so it opens
  * in the normal file preview and stays part of the project record.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { complete, type AssistantMessage, type Context } from "@earendil-works/pi-ai";
-import { getModelRegistry } from "./session-registry.ts";
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  StreamOptions,
+} from "@earendil-works/pi-ai";
+import { getModelRegistry, getModelRuntime } from "./session-registry.ts";
 import { resolveModel } from "./models.ts";
 import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
 import { getProject, resolvePaths, touchProject } from "../projects.ts";
@@ -129,13 +135,20 @@ function unwrapWholeFence(text: string): string {
   return m ? m[1] : trimmed;
 }
 
-type CompleteFn = typeof complete;
+type CompleteFn = (
+  model: Model<Api>,
+  context: Context,
+  options?: StreamOptions,
+) => Promise<AssistantMessage>;
+
+const completeWithRuntime: CompleteFn = (model, context, options) =>
+  getModelRuntime().complete(model, context, options);
 
 export async function runMethodsDraft(
   sessionId: string,
   projectId: string,
   opts: { model?: string } = {},
-  completeFn: CompleteFn = complete,
+  completeFn: CompleteFn = completeWithRuntime,
 ): Promise<MethodsDraftResult> {
   let entries: NotebookEntry[];
   try {

@@ -65,7 +65,7 @@ export function LabNotebookView({
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
   const [fetched, setFetched] = useState<NotebookEntry[]>([]);
-  const [scope, setScope] = useState<NotebookScope>("session");
+  const [scope, setScope] = useState<NotebookScope>("project");
   const [viewMode, setViewMode] = useState<NotebookViewMode>("story");
   const [filters, setFilters] = useState<NotebookFilterState>(EMPTY_FILTERS);
   const [projectEntries, setProjectEntries] = useState<NotebookEntry[]>([]);

@@ -17,6 +17,13 @@ class FakeSession {
   calls: string[] = [];
   state: { errorMessage?: string } = {};
   model = { id: "fake-model" };
+  messages = [
+    {
+      role: "assistant",
+      stopReason: "stop",
+      usage: { input: 12, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 12 },
+    },
+  ];
   promptCalls: { text: string; options: unknown }[] = [];
   /** Called by steer(); lets a test flip isStreaming mid-call. */
   onSteer: (() => void) | null = null;
@@ -100,7 +107,7 @@ class FakeSession {
 }
 
 vi.mock("../src/agent/session-registry.ts", () => ({
-  getAuthStorage: vi.fn(),
+  getModelRuntime: vi.fn(),
   getModelRegistry: vi.fn(() => ({ find: () => null })),
   createSession: vi.fn(),
   getSession: vi.fn(async (_projectId: string, _paths: unknown, id: string) =>

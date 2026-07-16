@@ -10,13 +10,14 @@
  *                          the child `pi` processes pi-subagents spawns, which
  *                          inherit our environment) pick them up without a
  *                          restart. The OpenRouter key is additionally pushed
- *                          into the shared AuthStorage.
+ *                          into the shared ModelRuntime.
  *
- * Managed keys: OpenRouter (model calls); the optional pi-web-access search
- * providers — Exa, Perplexity, Gemini (web search works without any of the
- * three via the Exa MCP fallback; a key unlocks the direct provider, and Gemini
- * also unlocks YouTube/video understanding); and the Modal remote-compute token
- * pair (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables the `modal_run` tool.
+ * Managed keys: OpenRouter (model calls and cross-browser speech
+ * transcription); the optional pi-web-access search providers — Exa,
+ * Perplexity, Gemini (web search works without any of the three via the Exa MCP
+ * fallback; a key unlocks the direct provider, and Gemini also unlocks
+ * YouTube/video understanding); and the Modal remote-compute token pair
+ * (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables the `modal_run` tool.
  *
  * Keys are stored exactly where the app already expects them (repo-root
  * `.env`, plaintext, on the user's own machine) — we are removing friction,
@@ -26,7 +27,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { REPO_ROOT } from "../config.ts";
-import { getAuthStorage } from "../agent/session-registry.ts";
+import { getModelRuntime } from "../agent/session-registry.ts";
 
 const ENV_PATH = path.join(REPO_ROOT, ".env");
 
@@ -39,8 +40,8 @@ interface ManagedKey {
   envVar: string;
   /** Extra env vars read (and cleared) for backwards compatibility. */
   envAliases?: string[];
-  /** Hook run after set/clear (e.g. push into AuthStorage). */
-  onChange?: (key: string | null) => void;
+  /** Hook run after set/clear (e.g. push into ModelRuntime). */
+  onChange?: (key: string | null) => Promise<void>;
 }
 
 const MANAGED_KEYS: ManagedKey[] = [
@@ -49,11 +50,12 @@ const MANAGED_KEYS: ManagedKey[] = [
     bodyField: "openrouterApiKey",
     envVar: "OPENROUTER_API_KEY",
     envAliases: ["OR_API_KEY"],
-    onChange: (key) => {
+    onChange: async (key) => {
       try {
-        getAuthStorage().setRuntimeApiKey("openrouter", key ?? "");
+        if (key) await getModelRuntime().setRuntimeApiKey("openrouter", key);
+        else await getModelRuntime().removeRuntimeApiKey("openrouter");
       } catch {
-        /* AuthStorage may reject empty; status still reflects the cleared env */
+        /* Runtime refresh failure does not undo the persisted environment change. */
       }
     },
   },
@@ -112,13 +114,13 @@ function status() {
   return out;
 }
 
-function applyKey(spec: ManagedKey, raw: string | null): string | null {
+async function applyKey(spec: ManagedKey, raw: string | null): Promise<string | null> {
   const key = typeof raw === "string" ? raw.trim() : "";
   if (key === "") {
     // Clear: drop from process.env and .env.
     for (const name of [spec.envVar, ...(spec.envAliases ?? [])]) delete process.env[name];
     persistEnv(spec.envVar, null);
-    spec.onChange?.(null);
+    await spec.onChange?.(null);
     return null;
   }
   // Basic sanity check — we don't hard-reject on format (providers change
@@ -128,7 +130,7 @@ function applyKey(spec: ManagedKey, raw: string | null): string | null {
   }
   process.env[spec.envVar] = key;
   persistEnv(spec.envVar, key);
-  spec.onChange?.(key);
+  await spec.onChange?.(key);
   return null;
 }
 
@@ -145,7 +147,7 @@ export async function registerCredentialRoutes(app: FastifyInstance): Promise<vo
         return { detail: `Provide at least one of: ${fields} (a string, or null to clear)` };
       }
       for (const spec of provided) {
-        const error = applyKey(spec, req.body?.[spec.bodyField] ?? null);
+        const error = await applyKey(spec, req.body?.[spec.bodyField] ?? null);
         if (error) {
           reply.code(400);
           return { detail: error };
