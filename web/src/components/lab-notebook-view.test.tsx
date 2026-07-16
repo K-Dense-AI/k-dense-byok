@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render as rtlRender, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LabNotebookView } from "./lab-notebook-view";
 import type { NotebookEntry } from "@/lib/notebook";
@@ -60,9 +60,14 @@ function routeFetch(custom?: (url: string, init?: RequestInit) => unknown) {
   });
 }
 
-/** Calls that hit a per-session or project notebook (NOT annotations/export). */
+/** Calls that hit a per-session notebook (NOT project, annotations, or export). */
 const notebookCalls = () =>
-  spy.mock.calls.filter(([u]) => typeof u === "string" && (u as string).endsWith("/notebook"));
+  spy.mock.calls.filter(
+    ([u]) =>
+      typeof u === "string" &&
+      (u as string).startsWith("/sessions/") &&
+      (u as string).endsWith("/notebook"),
+  );
 
 const e = (over: Partial<NotebookEntry>): NotebookEntry =>
   ({ id: "tc_1", type: "hypothesis", title: "Six cell types", timestamp: 1, ...over });
@@ -74,6 +79,13 @@ const baseProps = {
   subagentCompletions: 0,
   onOpenFile: () => {},
 };
+
+/** Most component tests exercise chat-scoped features; opt into that scope explicitly. */
+function render(ui: Parameters<typeof rtlRender>[0]) {
+  const result = rtlRender(ui);
+  fireEvent.click(screen.getByRole("button", { name: /this chat/i }));
+  return result;
+}
 
 describe("LabNotebookView", () => {
   beforeEach(() => {
@@ -355,7 +367,7 @@ describe("LabNotebookView", () => {
     );
   });
 
-  it("switches to project scope, fetching all-chat entries with session dividers", async () => {
+  it("defaults to project scope, fetching all-chat entries with session dividers", async () => {
     routeFetch((url) => {
       if (url === "/projects/default/notebook") {
         return okJson({
@@ -372,8 +384,11 @@ describe("LabNotebookView", () => {
         ]);
       }
     });
-    render(<LabNotebookView {...baseProps} />);
-    fireEvent.click(screen.getByRole("button", { name: /all chats/i }));
+    rtlRender(<LabNotebookView {...baseProps} />);
+    expect(screen.getByRole("button", { name: /all chats/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     await waitFor(() => expect(screen.getByText("Alpha entry")).toBeInTheDocument());
     expect(screen.getByText("Beta entry")).toBeInTheDocument();

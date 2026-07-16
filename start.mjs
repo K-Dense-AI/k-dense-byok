@@ -180,9 +180,9 @@ async function checkModelAccess() {
 
 // ---- Step 3: npm install ----------------------------------------------------
 
-function installPackages(dir, label) {
+function installPackages(dir, label, packages = []) {
   log(`Installing ${label} packages...`);
-  const code = run("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error"], {
+  const code = run("npm", ["install", "--no-audit", "--no-fund", "--loglevel=error", ...packages], {
     cwd: path.join(repoRoot, dir),
   });
   if (code !== 0) {
@@ -194,6 +194,27 @@ function installPackages(dir, label) {
         "    https://github.com/K-Dense-AI/k-dense-byok/issues",
     );
   }
+}
+
+const PI_PACKAGES = [
+  "@earendil-works/pi-agent-core",
+  "@earendil-works/pi-ai",
+  "@earendil-works/pi-coding-agent",
+];
+
+function installBackendPackages() {
+  const latest = capture("npm", ["view", "@earendil-works/pi-coding-agent@latest", "version"]);
+  if (!latest || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(latest)) {
+    log(`  ${sym.warn} Could not check npm for the latest Pi release; using the version in package-lock.json.`);
+    installPackages("server", "backend");
+    return;
+  }
+
+  log(`  Latest Pi release: v${latest}`);
+  // Install every directly imported Pi package at one release. An explicit
+  // @latest-derived version updates package.json/package-lock.json instead of
+  // leaving npm install pinned to the existing lockfile.
+  installPackages("server", "backend", PI_PACKAGES.map((name) => `${name}@${latest}`));
 }
 
 // ---- Step 4: free the ports --------------------------------------------------
@@ -405,8 +426,9 @@ ensureUv();
 checkGit();
 checkPython();
 // Pi itself needs no separate install: it's an npm dependency of server/
-// (@earendil-works/pi-coding-agent), installed/updated by npm install below.
-log(`  Pi agent ${sym.ok} (bundled with backend packages — no global install needed)`);
+// and the backend install below keeps all direct Pi packages on the latest
+// mutually compatible release.
+log(`  Pi agent ${sym.ok} (bundled with backend packages — updated on full startup)`);
 log("");
 
 setupEnv();
@@ -418,7 +440,7 @@ if (flags.check) {
   process.exit(0);
 }
 
-installPackages("server", "backend");
+installBackendPackages();
 installPackages("web", "frontend");
 log("");
 

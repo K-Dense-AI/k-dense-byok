@@ -1,11 +1,17 @@
 /**
  * One-shot AI assistance for the LaTeX editor: fix a compile error or apply
  * an instruction to a selection. Deliberately NOT a chat session — a single
- * pi-ai complete() call, budget-gated and ledgered under the synthetic
+ * Pi ModelRuntime completion, budget-gated and ledgered under the synthetic
  * session id "latex-assist" so project cost summaries include it.
  */
-import { complete, type AssistantMessage, type Context } from "@earendil-works/pi-ai";
-import { getModelRegistry } from "../agent/session-registry.ts";
+import type {
+  Api,
+  AssistantMessage,
+  Context,
+  Model,
+  StreamOptions,
+} from "@earendil-works/pi-ai";
+import { getModelRegistry, getModelRuntime } from "../agent/session-registry.ts";
 import { resolveModel } from "../agent/models.ts";
 import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
 
@@ -99,12 +105,19 @@ function validate(req: AssistRequest): void {
   }
 }
 
-type CompleteFn = typeof complete;
+type CompleteFn = (
+  model: Model<Api>,
+  context: Context,
+  options?: StreamOptions,
+) => Promise<AssistantMessage>;
+
+const completeWithRuntime: CompleteFn = (model, context, options) =>
+  getModelRuntime().complete(model, context, options);
 
 export async function runLatexAssist(
   req: AssistRequest,
   projectId: string,
-  completeFn: CompleteFn = complete,
+  completeFn: CompleteFn = completeWithRuntime,
 ): Promise<AssistResult> {
   validate(req);
   const budget = isBudgetExceeded(projectId);

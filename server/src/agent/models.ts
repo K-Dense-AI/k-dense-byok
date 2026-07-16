@@ -13,7 +13,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { AuthStorage, ModelRegistry } from "@earendil-works/pi-coding-agent";
+import type { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_MODEL_ID,
@@ -190,12 +190,17 @@ function buildOllamaModel(name: string): Model<Api> {
   };
 }
 
-/** Wire provider credentials into AuthStorage from the environment. */
-export function setupAuth(authStorage: AuthStorage): void {
+/** Configure app-specific providers and runtime credentials. */
+export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
+  modelRuntime.registerProvider("ollama", {
+    name: "Ollama",
+    baseUrl: `${OLLAMA_BASE_URL.replace(/\/+$/, "")}/v1`,
+    api: "openai-completions",
+    apiKey: "ollama",
+  });
+
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
-  if (orKey) authStorage.setRuntimeApiKey("openrouter", orKey);
-  // Local Ollama ignores the key, but Pi requires *some* auth to resolve.
-  authStorage.setRuntimeApiKey("ollama", "ollama");
+  if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
 }
 
 /**

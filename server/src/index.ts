@@ -23,6 +23,7 @@ import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
 import { registerAgentRoutes } from "./api/agents.ts";
+import { registerSpeechRoutes } from "./api/speech.ts";
 import { syncHelperVenv } from "./helpers-env.ts";
 
 function readCookie(req: FastifyRequest, name: string): string | undefined {
@@ -106,6 +107,7 @@ export async function buildApp() {
   await registerMcpRoutes(app);
   await registerCredentialRoutes(app);
   await registerAgentRoutes(app);
+  await registerSpeechRoutes(app);
 
   return app;
 }

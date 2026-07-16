@@ -4,15 +4,15 @@
  * Each chat tab maps to one Pi AgentSession persisted as a JSONL file under the
  * project's `sandbox/.pi/sessions/`. We hold the live session objects in a Map
  * (keyed by projectId:sessionId) so streaming runs reuse warm state, and
- * cold-open from disk after a restart. AuthStorage + ModelRegistry are process
+ * cold-open from disk after a restart. ModelRuntime + ModelRegistry are process
  * singletons (shared OpenRouter key across all projects).
  */
 import fs from "node:fs";
 import path from "node:path";
 import {
-  AuthStorage,
   DefaultResourceLoader,
   ModelRegistry,
+  ModelRuntime,
   SessionManager,
   createAgentSession,
   getAgentDir,
@@ -22,7 +22,7 @@ import {
 import type { ProjectPaths } from "../projects.ts";
 import { modalConfigured } from "../config.ts";
 import { getMcpTools } from "./mcp.ts";
-import { defaultModel, setupAuth } from "./models.ts";
+import { defaultModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
@@ -45,12 +45,12 @@ if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
   process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH ?? ""}`;
 }
 
-const authStorage = AuthStorage.create();
-setupAuth(authStorage);
-const modelRegistry = ModelRegistry.create(authStorage);
+const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
+await setupModelRuntime(modelRuntime);
+const modelRegistry = new ModelRegistry(modelRuntime);
 
-export function getAuthStorage(): AuthStorage {
-  return authStorage;
+export function getModelRuntime(): ModelRuntime {
+  return modelRuntime;
 }
 export function getModelRegistry(): ModelRegistry {
   return modelRegistry;
@@ -132,8 +132,7 @@ async function build(
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
     model: fallbackModel,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     sessionManager,
     resourceLoader,
     tools: [
