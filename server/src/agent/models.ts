@@ -1,13 +1,14 @@
 /**
  * Model resolution for the Pi agent.
  *
- * Two providers are supported, matching the product requirement:
+ * Three providers are supported, matching the product requirement:
  *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY)
+ *   - Atlas Cloud (OpenAI-compatible, key via ATLASCLOUD_API_KEY)
  *   - Ollama (local, OpenAI-compatible at OLLAMA_BASE_URL)
  *
  * The frontend picker sends model refs like "openrouter/anthropic/claude-opus-4.8"
- * or "ollama/llama3". OpenRouter has thousands of models that aren't all in Pi's
- * built-in table, so when `find()` misses we synthesize a Model from the
+ * or "atlascloud/qwen/qwen3.5-flash". OpenRouter has thousands of models that
+ * aren't all in Pi's built-in table, so when `find()` misses we synthesize a Model from the
  * frontend catalogue (web/src/data/models.json) — Pi computes usage.cost from
  * `model.cost`, so we populate it from the catalogue's per-1M pricing.
  */
@@ -28,6 +29,8 @@ import {
 // "vendor/model" ids and Bearer auth as OpenRouter.
 const OPENROUTER_BASE_URL =
   process.env.OPENROUTER_BASE_URL ?? "https://openrouter.ai/api/v1";
+const ATLASCLOUD_BASE_URL =
+  process.env.ATLASCLOUD_BASE_URL ?? "https://api.atlascloud.ai/v1";
 const CATALOGUE_PATH = path.join(REPO_ROOT, "web", "src", "data", "models.json");
 
 interface CatalogueEntry {
@@ -88,6 +91,31 @@ function loadCatalogue(): Map<string, CatalogueEntry> {
 // project spend cap. These are stripped to price as the base model.
 const EFFORT_SUFFIXES = ["-xhigh", "-high", "-medium", "-low", "-minimal", "-none"];
 
+const ATLAS_CLOUD_MODELS = new Map<string, CatalogueEntry>([
+  [
+    "qwen/qwen3.5-flash",
+    {
+      label: "Qwen3.5 Flash",
+      contextWindow: 1_000_000,
+      maxTokens: 8192,
+      costInput: 0.1,
+      costOutput: 0.4,
+      input: ["text"],
+    },
+  ],
+  [
+    "deepseek-ai/deepseek-v4-pro",
+    {
+      label: "DeepSeek V4 Pro",
+      contextWindow: 1_048_576,
+      maxTokens: 8192,
+      costInput: 1.68,
+      costOutput: 3.38,
+      input: ["text"],
+    },
+  ],
+]);
+
 /**
  * Catalogue lookup tolerant of a reasoning-effort suffix: exact match first
  * (so "-fast", a distinct catalogue model with its own pricing, is never
@@ -114,6 +142,27 @@ function buildOpenRouterModel(orId: string): Model<Api> {
     api: "openai-completions",
     provider: "openrouter",
     baseUrl: OPENROUTER_BASE_URL,
+    reasoning: true,
+    input: cat?.input ?? ["text"],
+    cost: {
+      input: cat?.costInput ?? 0,
+      output: cat?.costOutput ?? 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: cat?.contextWindow ?? 128_000,
+    maxTokens: cat?.maxTokens ?? 8192,
+  };
+}
+
+function buildAtlasCloudModel(modelId: string): Model<Api> {
+  const cat = ATLAS_CLOUD_MODELS.get(modelId);
+  return {
+    id: modelId,
+    name: cat?.label ?? modelId,
+    api: "openai-completions",
+    provider: "atlascloud",
+    baseUrl: ATLASCLOUD_BASE_URL,
     reasoning: true,
     input: cat?.input ?? ["text"],
     cost: {
@@ -194,6 +243,8 @@ function buildOllamaModel(name: string): Model<Api> {
 export function setupAuth(authStorage: AuthStorage): void {
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
   if (orKey) authStorage.setRuntimeApiKey("openrouter", orKey);
+  const atlasKey = process.env.ATLASCLOUD_API_KEY;
+  if (atlasKey) authStorage.setRuntimeApiKey("atlascloud", atlasKey);
   // Local Ollama ignores the key, but Pi requires *some* auth to resolve.
   authStorage.setRuntimeApiKey("ollama", "ollama");
 }
@@ -224,10 +275,16 @@ export function resolveModel(
   if (r.startsWith("ollama/")) {
     return buildOllamaModel(r.slice("ollama/".length));
   }
+  if (r.startsWith("atlascloud/")) {
+    return buildAtlasCloudModel(r.slice("atlascloud/".length));
+  }
   // .env.example documents a bare DEFAULT_MODEL_ID (e.g. "llama3") routed by
   // DEFAULT_MODEL_PROVIDER; honor that instead of misrouting to OpenRouter.
   if (usingDefault && DEFAULT_MODEL_PROVIDER.toLowerCase() === "ollama") {
     return buildOllamaModel(r);
+  }
+  if (usingDefault && DEFAULT_MODEL_PROVIDER.toLowerCase() === "atlascloud") {
+    return buildAtlasCloudModel(r);
   }
   const orId = stripOpenRouter(r);
   return registry.find("openrouter", orId) ?? buildOpenRouterModel(orId);

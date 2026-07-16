@@ -8,6 +8,30 @@ import { apiFetch, onProjectChange } from "@/lib/projects";
 import { fusionPanelModels, loadFusionConfigs } from "@/lib/fusion-presets";
 
 const OPENROUTER_MODELS = staticModels as Model[];
+const ATLASCLOUD_MODELS: Model[] = [
+  {
+    id: "atlascloud/qwen/qwen3.5-flash",
+    label: "Qwen3.5 Flash",
+    provider: "Atlas Cloud",
+    tier: "mid",
+    context_length: 1_000_000,
+    pricing: { prompt: 0.1, completion: 0.4 },
+    modality: "text->text",
+    description:
+      "Atlas Cloud OpenAI-compatible hosted model via ATLASCLOUD_API_KEY.",
+  },
+  {
+    id: "atlascloud/deepseek-ai/deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    provider: "Atlas Cloud",
+    tier: "high",
+    context_length: 1_048_576,
+    pricing: { prompt: 1.68, completion: 3.38 },
+    modality: "text->text",
+    description:
+      "Atlas Cloud OpenAI-compatible reasoning model via ATLASCLOUD_API_KEY.",
+  },
+];
 
 interface OllamaListResponse {
   available?: boolean;
@@ -15,7 +39,7 @@ interface OllamaListResponse {
 }
 
 export interface UseModelsReturn {
-  /** Every model available to the user: static OpenRouter catalogue + live Ollama tags + user Fusion configs. */
+  /** Every model available to the user: hosted catalogues + live Ollama tags + user Fusion configs. */
   models: Model[];
   /** Just the Ollama-sourced entries, in the order returned by the backend. */
   ollamaModels: Model[];
@@ -26,8 +50,8 @@ export interface UseModelsReturn {
 }
 
 /**
- * Merge the static OpenRouter-derived `models.json` with whatever models
- * are currently pulled in the user's local Ollama server.
+ * Merge the hosted model catalogues with whatever models are currently pulled
+ * in the user's local Ollama server.
  *
  * Ollama discovery is best-effort: if the daemon is offline we silently
  * fall back to OpenRouter-only. The hook re-fetches on project change to
@@ -134,7 +158,12 @@ export function useModels(): UseModelsReturn {
   return {
     // Drop the static `openrouter/fusion` catalogue row — the presets above
     // replace it (it was a non-functional $0 duplicate).
-    models: [...fusionModels, ...OPENROUTER_MODELS.filter((m) => !m.isFusion), ...ollamaModels],
+    models: [
+      ...fusionModels,
+      ...OPENROUTER_MODELS.filter((m) => !m.isFusion),
+      ...ATLASCLOUD_MODELS,
+      ...ollamaModels,
+    ],
     ollamaModels,
     ollamaAvailable,
     refresh: fetchOllama,

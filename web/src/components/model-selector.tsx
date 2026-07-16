@@ -47,6 +47,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   Anthropic: "text-orange-600 dark:text-orange-400",
   OpenAI:    "text-emerald-600 dark:text-emerald-400",
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
+  "Atlas Cloud": "text-sky-600 dark:text-sky-400",
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
   Ollama:    "text-teal-600 dark:text-teal-400",

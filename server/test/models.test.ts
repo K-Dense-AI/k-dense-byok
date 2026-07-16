@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { catalogueEntryFor } from "../src/agent/models.ts";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { catalogueEntryFor, resolveModel, setupAuth } from "../src/agent/models.ts";
+
+const registry = { find: vi.fn(() => undefined) };
+
+afterEach(() => {
+  delete process.env.ATLASCLOUD_API_KEY;
+  vi.clearAllMocks();
+});
 
 // Reasoning-effort suffixes ("...-xhigh", "...-high", …) are an OpenRouter
 // routing form, not separate catalogue rows. Before the fix they missed the
@@ -27,5 +34,43 @@ describe("catalogueEntryFor (reasoning-effort suffix pricing)", () => {
 
   it("returns undefined for an unknown model", () => {
     expect(catalogueEntryFor("nonexistent/model-xyz")).toBeUndefined();
+  });
+});
+
+describe("Atlas Cloud model resolution", () => {
+  it("builds Atlas Cloud OpenAI-compatible models from atlascloud refs", () => {
+    const model = resolveModel(
+      "atlascloud/qwen/qwen3.5-flash",
+      registry as never,
+    );
+
+    expect(model).toMatchObject({
+      id: "qwen/qwen3.5-flash",
+      name: "Qwen3.5 Flash",
+      provider: "atlascloud",
+      api: "openai-completions",
+      baseUrl: "https://api.atlascloud.ai/v1",
+      contextWindow: 1_000_000,
+      maxTokens: 8192,
+    });
+    expect(model.cost.input).toBe(0.1);
+    expect(model.cost.output).toBe(0.4);
+    expect(registry.find).not.toHaveBeenCalledWith(
+      "openrouter",
+      "atlascloud/qwen/qwen3.5-flash",
+    );
+  });
+
+  it("wires ATLASCLOUD_API_KEY into Pi auth storage", () => {
+    process.env.ATLASCLOUD_API_KEY = "atlas-test-key";
+    const authStorage = { setRuntimeApiKey: vi.fn() };
+
+    setupAuth(authStorage as never);
+
+    expect(authStorage.setRuntimeApiKey).toHaveBeenCalledWith(
+      "atlascloud",
+      "atlas-test-key",
+    );
+    expect(authStorage.setRuntimeApiKey).toHaveBeenCalledWith("ollama", "ollama");
   });
 });
