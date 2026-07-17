@@ -18,7 +18,7 @@ import { useProjects } from "@/lib/use-projects";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
 import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
-import { getActiveProjectId, ProjectScopeProvider } from "@/lib/projects";
+import { ProjectScopeProvider } from "@/lib/projects";
 import {
   hasProjectActivity,
   sameProjectActivity,
@@ -121,13 +121,8 @@ export default function HomePage() {
     void loadWorkspaceSnapshot().then((snapshot) => {
       if (cancelled) return;
       setRestoredProjects(snapshot.projects);
-      // Project workspace state is restored lazily. Hydrating every project
-      // visited in a previous browser session eagerly reopened all of its chat
-      // tabs, file viewers, and polling hooks on startup.
-      setOpenedProjectIds(
-        snapshot.screen === "workspace" ? [getActiveProjectId()] : [],
-      );
-      setScreen(snapshot.screen);
+      // Always start in the project overview. A project's saved workspace is
+      // restored lazily only after the user chooses that project.
       setWorkspaceHydrated(true);
     });
     return () => {
