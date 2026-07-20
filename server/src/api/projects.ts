@@ -25,6 +25,7 @@ import {
 } from "../agent/session-registry.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
 import { listProjectActivities } from "../project-activity.ts";
+import { modalJobManager } from "../modal/manager.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
   app.get("/projects", async () => listProjects());
@@ -126,21 +127,26 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
   );
 
   app.delete<{ Params: { projectId: string } }>("/projects/:projectId", async (req, reply) => {
+    const projectId = req.params.projectId;
     try {
-      const projectId = req.params.projectId;
       if (projectId === DEFAULT_PROJECT_ID) {
         throw new Error("The default project cannot be deleted");
       }
       const activeRuns = runBroker.activeForProject(projectId);
       for (const run of activeRuns) run.requestAbort();
+      // Remote jobs are project-owned and their metadata lives under the
+      // project sandbox. Terminate/reconcile them before deleting that state.
+      await modalJobManager.cancelProject(projectId);
       await abortProjectSessions(projectId);
       await Promise.all(activeRuns.map((run) => run.waitForCompletion()));
       disposeProjectSessions(projectId);
       await disposeMcpClients(projectId);
       deleteProject(projectId);
+      modalJobManager.resumeProject(projectId);
       reply.code(204);
       return null;
     } catch (err) {
+      modalJobManager.resumeProject(projectId);
       reply.code(400);
       return { detail: (err as Error).message };
     }

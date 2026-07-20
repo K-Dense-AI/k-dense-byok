@@ -28,8 +28,11 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
+import { validateModalCredentials } from "../modal/adapter.ts";
+import { modalJobManager } from "../modal/manager.ts";
 
 const ENV_PATH = path.join(REPO_ROOT, ".env");
+let credentialEnvPath = ENV_PATH;
 
 interface ManagedKey {
   /** Provider id in API payloads (GET response field). */
@@ -68,6 +71,22 @@ const MANAGED_KEYS: ManagedKey[] = [
   { id: "modalTokenSecret", bodyField: "modalTokenSecret", envVar: "MODAL_TOKEN_SECRET" },
 ];
 
+const MODAL_ID_FIELD = "modalTokenId";
+const MODAL_SECRET_FIELD = "modalTokenSecret";
+let modalCredentialValidator = validateModalCredentials;
+
+/** Injectable only so credential route tests never contact Modal. */
+export function setModalCredentialValidatorForTests(
+  validator: typeof validateModalCredentials | null,
+): void {
+  modalCredentialValidator = validator ?? validateModalCredentials;
+}
+
+/** Redirect persistence in tests so the user's real repo .env is never touched. */
+export function setCredentialEnvPathForTests(file: string | null): void {
+  credentialEnvPath = file ?? ENV_PATH;
+}
+
 function readKey(spec: ManagedKey): string | null {
   for (const name of [spec.envVar, ...(spec.envAliases ?? [])]) {
     const v = process.env[name];
@@ -87,7 +106,7 @@ function mask(key: string): string {
 function persistEnv(name: string, value: string | null): void {
   let lines: string[] = [];
   try {
-    lines = fs.readFileSync(ENV_PATH, "utf-8").split("\n");
+    lines = fs.readFileSync(credentialEnvPath, "utf-8").split("\n");
   } catch {
     lines = [];
   }
@@ -102,7 +121,8 @@ function persistEnv(name: string, value: string | null): void {
     while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
     lines.push(`${name}=${rendered}`);
   }
-  fs.writeFileSync(ENV_PATH, lines.join("\n") + "\n", "utf-8");
+  fs.mkdirSync(path.dirname(credentialEnvPath), { recursive: true });
+  fs.writeFileSync(credentialEnvPath, lines.join("\n") + "\n", "utf-8");
 }
 
 function status() {
@@ -146,12 +166,63 @@ export async function registerCredentialRoutes(app: FastifyInstance): Promise<vo
         const fields = MANAGED_KEYS.map((s) => s.bodyField).join(", ");
         return { detail: `Provide at least one of: ${fields} (a string, or null to clear)` };
       }
+
+      // Modal is one logical credential represented by two variables. Build
+      // and validate the candidate pair before changing process.env or .env,
+      // preventing a valid existing pair from being half-overwritten.
+      const changesModal =
+        req.body?.[MODAL_ID_FIELD] !== undefined ||
+        req.body?.[MODAL_SECRET_FIELD] !== undefined;
+      if (changesModal) {
+        const modalIdSpec = MANAGED_KEYS.find((spec) => spec.bodyField === MODAL_ID_FIELD)!;
+        const modalSecretSpec = MANAGED_KEYS.find((spec) => spec.bodyField === MODAL_SECRET_FIELD)!;
+        const candidate = (field: string, current: string | null) => {
+          const raw = req.body?.[field];
+          if (raw === undefined) return current;
+          return typeof raw === "string" && raw.trim() ? raw.trim() : null;
+        };
+        const tokenId = candidate(MODAL_ID_FIELD, readKey(modalIdSpec));
+        const tokenSecret = candidate(MODAL_SECRET_FIELD, readKey(modalSecretSpec));
+        if (Boolean(tokenId) !== Boolean(tokenSecret)) {
+          reply.code(400);
+          return {
+            detail:
+              "Modal credentials are a pair: provide both modalTokenId and modalTokenSecret, or clear both.",
+          };
+        }
+        if (tokenId && tokenSecret) {
+          if (tokenId.length < 8 || tokenSecret.length < 8) {
+            reply.code(400);
+            return { detail: "One or both Modal credential values look too short to be valid." };
+          }
+          try {
+            await modalCredentialValidator(tokenId, tokenSecret);
+          } catch (error) {
+            reply.code(400);
+            return {
+              detail: `Modal credentials could not be validated: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            };
+          }
+        }
+      }
       for (const spec of provided) {
         const error = await applyKey(spec, req.body?.[spec.bodyField] ?? null);
         if (error) {
           reply.code(400);
           return { detail: error };
         }
+      }
+      if (
+        changesModal &&
+        process.env.MODAL_TOKEN_ID &&
+        process.env.MODAL_TOKEN_SECRET
+      ) {
+        // Jobs whose restart recovery was deferred while credentials were
+        // absent can reattach immediately; no server restart or cold session
+        // rebuild is required.
+        await modalJobManager.recoverAllProjects();
       }
       return status();
     },

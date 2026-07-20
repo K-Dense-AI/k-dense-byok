@@ -44,7 +44,12 @@ import { AddContextMenu } from "@/components/add-context-menu";
 import { ContextChipsBar } from "@/components/context-chips";
 import { ContextUsageIndicator } from "@/components/context-usage-indicator";
 import { CitationBadge } from "@/components/citation-badge";
-import { NotebookEntryChip, ReasoningBlock, ToolActivityList } from "@/components/tool-activity";
+import {
+  ModalJobChip,
+  NotebookEntryChip,
+  ReasoningBlock,
+  ToolActivityList,
+} from "@/components/tool-activity";
 import { InterviewCard } from "@/components/interview-form";
 import { KadyFileIcon } from "@/components/file-icon";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
@@ -69,6 +74,11 @@ import {
   type ChatWorkspaceState,
   type WorkspaceQueuedMessage,
 } from "@/lib/workspace-persistence";
+import {
+  MODAL_JOB_FINISHED_EVENT,
+  type ModalCatalog,
+} from "@/lib/modal-jobs";
+import { useModalCatalog } from "@/lib/use-modal-jobs";
 import {
   SpeechInput,
   type SpeechInputMode,
@@ -469,7 +479,10 @@ function ChatInput({
   thinkingLevel,
   onThinkingLevelChange,
   thinkingDisabled,
-  modalConfigured,
+  modalCatalog,
+  modalCatalogLoading,
+  modalCatalogError,
+  onRefreshModalCatalog,
   onUploadFiles,
   allSkills,
   selectedSkills,
@@ -503,7 +516,10 @@ function ChatInput({
   thinkingLevel: ThinkingLevel;
   onThinkingLevelChange: (level: ThinkingLevel) => void;
   thinkingDisabled: boolean;
-  modalConfigured: boolean;
+  modalCatalog: ModalCatalog | null;
+  modalCatalogLoading: boolean;
+  modalCatalogError: string | null;
+  onRefreshModalCatalog: () => void;
   onUploadFiles: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   allSkills: Skill[];
   selectedSkills: Skill[];
@@ -845,7 +861,10 @@ function ChatInput({
               <ComputeSelector
                 selected={selectedComputeTarget}
                 onChange={onComputeTargetChange}
-                modalConfigured={modalConfigured}
+                catalog={modalCatalog}
+                loading={modalCatalogLoading}
+                error={modalCatalogError}
+                onRefresh={onRefreshModalCatalog}
               />
               <ContextUsageIndicator usage={contextUsage} />
             </div>
@@ -935,6 +954,7 @@ export function AssistantMessageBody({
   sessionId,
   projectId,
   onViewInNotebook,
+  onViewCompute,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
@@ -942,6 +962,7 @@ export function AssistantMessageBody({
   sessionId: string | null;
   projectId: string;
   onViewInNotebook?: (entryId: string) => void;
+  onViewCompute?: (jobId?: string) => void;
 }) {
   const activities = message.activities ?? [];
   const hasReasoning = Boolean(message.reasoning?.trim());
@@ -979,6 +1000,11 @@ export function AssistantMessageBody({
       flushChunk();
       orderedBlocks.push(
         <NotebookEntryChip key={a.id} item={a} onView={onViewInNotebook} />,
+      );
+    } else if (a.toolName?.startsWith("modal_")) {
+      flushChunk();
+      orderedBlocks.push(
+        <ModalJobChip key={a.id} item={a} onView={onViewCompute} />,
       );
     } else {
       chunk.push(a);
@@ -1107,6 +1133,8 @@ export interface ChatTabProps {
   onWorkspaceStateChange?: (tabId: string, state: ChatWorkspaceState) => void;
   /** Open the Lab Notebook panel focused on this entry (chat → notebook). */
   onViewInNotebook?: (entryId: string) => void;
+  /** Open the Compute panel, optionally focused on a durable Modal job. */
+  onViewCompute?: (jobId?: string) => void;
 }
 
 export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
@@ -1130,6 +1158,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     onMetaChange,
     onWorkspaceStateChange,
     onViewInNotebook,
+    onViewCompute,
   },
   ref,
 ) {
@@ -1179,11 +1208,32 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const [selectedComputeTarget, setSelectedComputeTarget] = useState<ModalInstance | null>(
     () => initialWorkspaceState?.selectedComputeTarget ?? null,
   );
+  const selectedComputeOptions = useMemo(
+    () =>
+      selectedComputeTarget
+        ? {
+            gpuCount: selectedComputeTarget.gpuCount,
+            ...(selectedComputeTarget.fallback
+              ? { gpuFallback: [selectedComputeTarget.fallback] }
+              : {}),
+            cache:
+              selectedComputeTarget.cache === "none"
+                ? ("none" as const)
+                : ("project" as const),
+          }
+        : undefined,
+    [selectedComputeTarget],
+  );
   const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>(
     () => initialWorkspaceState?.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
   );
   const thinkingDisabled = thinkingUnsupported(selectedModel);
-  const [modalConfigured, setModalConfigured] = useState(false);
+  const {
+    catalog: modalCatalog,
+    loading: modalCatalogLoading,
+    error: modalCatalogError,
+    refresh: refreshModalCatalog,
+  } = useModalCatalog(projectId);
   const [attachedFiles, setAttachedFiles] = useState<string[]>(
     () => initialWorkspaceState?.attachedFiles ?? [],
   );
@@ -1219,23 +1269,6 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   }, [steerError]);
 
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Modal compute is gated on both token halves being set; the ComputeSelector
-  // shows a "keys not configured" notice and disables GPU rows until then.
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch("/credentials")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!cancelled && d) {
-          setModalConfigured(Boolean(d.modalTokenId?.set && d.modalTokenSecret?.set));
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const addAttachedFile = useCallback((path: string) => {
     setAttachedFiles(prev => prev.includes(path) ? prev : [...prev, path]);
@@ -1322,6 +1355,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         },
         next.model.fusionConfig,
         next.computeTarget ?? undefined,
+        next.computeOptions,
         next.thinkingLevel ?? undefined,
         next.images.length > 0 ? next.images : undefined,
       );
@@ -1356,6 +1390,20 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   // Bubble meta up to parent so the page can drive the cost pill and tab
   // strip badges from the active tab.
   const sessionId = getSessionId();
+  useEffect(() => {
+    const onModalJobFinished = (event: Event) => {
+      const detail = (
+        event as CustomEvent<{ projectId?: string; sessionId?: string | null }>
+      ).detail;
+      if (detail?.projectId && detail.projectId !== projectId) return;
+      if (detail?.sessionId && detail.sessionId !== sessionId) return;
+      if (!detail?.sessionId && !isActiveTab) return;
+      onSandboxRefresh();
+      onTurnComplete();
+    };
+    window.addEventListener(MODAL_JOB_FINISHED_EVENT, onModalJobFinished);
+    return () => window.removeEventListener(MODAL_JOB_FINISHED_EVENT, onModalJobFinished);
+  }, [isActiveTab, onSandboxRefresh, onTurnComplete, projectId, sessionId]);
   const userMessageCount = useMemo(
     () => messages.filter((m) => m.role === "user").length,
     [messages],
@@ -1403,12 +1451,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           files: [...attachedFiles],
           images,
           computeTarget: selectedComputeTarget?.id ?? null,
+          computeOptions: selectedComputeOptions,
           thinkingLevel: thinkingDisabled ? null : thinkingLevel,
           timestamp: Date.now(),
         },
       ]);
     },
-    [messageQueue.length, selectedModel, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, thinkingDisabled, thinkingLevel],
+    [messageQueue.length, selectedModel, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, selectedComputeOptions, thinkingDisabled, thinkingLevel],
   );
 
   const handleSend = useCallback(
@@ -1427,6 +1476,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           },
           selectedModel.fusionConfig,
           selectedComputeTarget?.id,
+          selectedComputeOptions,
           thinkingDisabled ? undefined : thinkingLevel,
           images.length > 0 ? images : undefined,
         );
@@ -1463,6 +1513,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       send,
       selectedModel,
       selectedComputeTarget,
+      selectedComputeOptions,
       selectedDbs,
       selectedSkills,
       attachedFiles,
@@ -1500,6 +1551,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           undefined,
           selectedModel.fusionConfig,
           selectedComputeTarget?.id,
+          selectedComputeOptions,
           thinkingDisabled ? undefined : thinkingLevel,
         );
       },
@@ -1521,6 +1573,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           },
           model.fusionConfig,
           selectedComputeTarget?.id,
+          selectedComputeOptions,
           thinkingUnsupported(model) ? undefined : thinkingLevel,
         );
       },
@@ -1532,6 +1585,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       selectedModel.id,
       selectedModel.fusionConfig,
       selectedComputeTarget?.id,
+      selectedComputeOptions,
       thinkingDisabled,
       thinkingLevel,
     ],
@@ -1568,6 +1622,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                       sessionId={sessionId}
                       projectId={projectId}
                       onViewInNotebook={onViewInNotebook}
+                      onViewCompute={onViewCompute}
                     />
                   ) : (
                     <>
@@ -1666,7 +1721,10 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             thinkingLevel={thinkingLevel}
             onThinkingLevelChange={setThinkingLevel}
             thinkingDisabled={thinkingDisabled}
-            modalConfigured={modalConfigured}
+            modalCatalog={modalCatalog}
+            modalCatalogLoading={modalCatalogLoading}
+            modalCatalogError={modalCatalogError}
+            onRefreshModalCatalog={refreshModalCatalog}
             onUploadFiles={uploadFiles}
             allSkills={allSkills}
             selectedSkills={selectedSkills}

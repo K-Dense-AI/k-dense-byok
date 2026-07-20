@@ -46,6 +46,8 @@ const projectState: ProjectWorkspaceState = {
   activeTabId: "tab-1",
   view: "chat",
   showNotebook: true,
+  showCompute: false,
+  computeScope: "session",
   sandboxOpen: false,
   chatOpen: true,
   treeWidth: 280,
@@ -73,6 +75,8 @@ describe("workspace persistence schema", () => {
     expect(restored.projects["project-a"]).toMatchObject({
       activeTabId: "tab-1",
       showNotebook: true,
+      showCompute: false,
+      computeScope: "session",
       sandboxOpen: false,
       sandbox: {
         openPaths: ["notes.md", "figure.png"],
@@ -132,6 +136,9 @@ describe("workspace persistence schema", () => {
           ],
           activeTabId: "deleted-tab",
           view: "invalid",
+          showNotebook: false,
+          showCompute: true,
+          computeScope: "invalid",
           treeWidth: -100,
           chatWidth: 10000,
           sandbox: {
@@ -146,6 +153,9 @@ describe("workspace persistence schema", () => {
     expect(repaired.projects["project-a"]).toMatchObject({
       activeTabId: "tab-1",
       view: "chat",
+      showNotebook: false,
+      showCompute: true,
+      computeScope: "project",
       treeWidth: 150,
       chatWidth: 720,
       sandbox: { openPaths: ["a.md"], activePath: "a.md" },
@@ -153,6 +163,61 @@ describe("workspace persistence schema", () => {
         { id: "tab-1", sessionId: "same" },
         { id: "tab-2" },
       ],
+    });
+  });
+
+  it("sanitizes Compute state without breaking v1 snapshots that predate it", () => {
+    const legacy = validateWorkspaceMetadata({
+      version: WORKSPACE_SCHEMA_VERSION,
+      screen: "workspace",
+      openedProjectIds: ["project-a"],
+      projects: {
+        "project-a": {
+          tabs: [{
+            id: "tab-1",
+            title: "Legacy",
+            chat: {
+              selectedModel: { id: "openrouter/test", label: "Test" },
+              selectedComputeTarget: "h100",
+            },
+          }],
+          activeTabId: "tab-1",
+          showNotebook: false,
+          sandbox: { openPaths: [], activePath: null },
+        },
+      },
+    });
+    expect(legacy.projects["project-a"]).toMatchObject({
+      showCompute: false,
+      computeScope: "project",
+      tabs: [
+        {
+          chat: {
+            selectedComputeTarget: { id: "h100", label: "h100" },
+          },
+        },
+      ],
+    });
+
+    const conflicting = validateWorkspaceMetadata({
+      version: WORKSPACE_SCHEMA_VERSION,
+      screen: "workspace",
+      openedProjectIds: ["project-a"],
+      projects: {
+        "project-a": {
+          tabs: [{ id: "tab-1", title: "Conflict" }],
+          activeTabId: "tab-1",
+          showNotebook: true,
+          showCompute: true,
+          computeScope: "session",
+          sandbox: { openPaths: [], activePath: null },
+        },
+      },
+    });
+    expect(conflicting.projects["project-a"]).toMatchObject({
+      showNotebook: true,
+      showCompute: false,
+      computeScope: "session",
     });
   });
 

@@ -24,6 +24,14 @@ When you send a message:
    and streams them to the browser over SSE. The broker, rather than an
    individual browser connection, owns the live turn.
 
+Heavy remote commands follow a separate durable path. The lead agent or a
+sub-agent submits a project-scoped Modal job to the backend job manager. The
+manager reserves budget, persists the job under `.kady/modal/`, owns the remote
+sandbox, streams bounded logs, and atomically brings declared outputs back into
+the local sandbox. Because the sandbox id and lifecycle are persisted, the
+manager can reconnect after a backend restart. See
+[Durable Modal compute](./modal-compute.md).
+
 ## Chat tabs and sessions
 
 Every chat tab in the UI is backed by its own backend **session**. A session
@@ -83,6 +91,7 @@ k-dense-byok/
 │       ├── index.ts          ← Fastify app, CORS, project-scope hook
 │       ├── projects.ts       ← Project registry + path resolution
 │       ├── agent/            ← Pi wiring: models, sessions, tools, events, skills
+│       ├── modal/            ← Durable Modal jobs, storage, resources, transfers
 │       ├── api/              ← Routes: projects, sessions (SSE), sandbox, system
 │       └── cost/ledger.ts    ← Cost ledger + budget caps
 ├── web/                  ← Frontend (the UI you see in your browser)
@@ -96,7 +105,8 @@ k-dense-byok/
             ├── .pi/agents/        ← Sub-agent definitions (one .md per specialist)
             ├── .pi/mcp.json       ← MCP server connections for this project
             ├── .pi/sessions/      ← Pi JSONL session files (one per chat tab)
-            └── .kady/runs/<sessionId>/costs.jsonl  ← Per-session cost ledger
+            ├── .kady/runs/<sessionId>/costs.jsonl  ← Per-session cost ledger
+            └── .kady/modal/jobs/<jobId>/           ← Durable compute state + logs
 ```
 
 ## Model selection and routing

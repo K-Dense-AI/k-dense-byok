@@ -88,6 +88,11 @@ export interface CostEntry {
   totalTokens: number;
   cachedTokens: number;
   costUsd: number;
+  /** Durable Modal job id. Absent on old rows and non-compute entries. */
+  jobId?: string;
+  /** Modal costs are estimates (elapsed wall time × catalogue rate). */
+  estimated?: boolean;
+  terminalState?: string;
 }
 
 function costsPath(sessionId: string, projectId?: string): string {
@@ -108,6 +113,9 @@ export function recordRun(args: {
   after: CostSnapshot;
   role?: "agent" | "subagent" | "compute";
   projectId?: string;
+  jobId?: string;
+  estimated?: boolean;
+  terminalState?: string;
 }): CostEntry | null {
   const delta = snapshotDelta(args.before, args.after);
   const d = {
@@ -127,6 +135,9 @@ export function recordRun(args: {
     role: args.role ?? "agent",
     model: args.model,
     ...d,
+    ...(args.jobId ? { jobId: args.jobId } : {}),
+    ...(args.estimated !== undefined ? { estimated: args.estimated } : {}),
+    ...(args.terminalState ? { terminalState: args.terminalState } : {}),
   };
   const file = costsPath(args.sessionId, args.projectId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -186,6 +197,138 @@ export function recordModalRun(
   });
 }
 
+/**
+ * Idempotently ledger one durable Modal job. Old rows remain valid because all
+ * durable-compute metadata is optional.
+ */
+export function recordModalJobCost(args: {
+  projectId: string;
+  sessionId: string;
+  jobId: string;
+  costUsd: number;
+  model: string;
+  terminalState: string;
+}): CostEntry | null {
+  if (!args.sessionId) return null;
+  const existing = readEntries(args.sessionId, args.projectId).find(
+    (entry) => entry.role === "compute" && entry.jobId === args.jobId,
+  );
+  if (existing) return existing;
+  return recordRun({
+    sessionId: args.sessionId,
+    projectId: args.projectId,
+    model: args.model,
+    role: "compute",
+    before: emptySnapshot(),
+    after: { ...emptySnapshot(), costUsd: Math.max(0, args.costUsd) },
+    jobId: args.jobId,
+    estimated: true,
+    terminalState: args.terminalState,
+  });
+}
+
+export interface ComputeReservation {
+  version: 1;
+  id: string;
+  projectId: string;
+  sessionId: string;
+  amountUsd: number;
+  createdAt: number;
+}
+
+const RESERVATION_ID_RE = /^[a-z0-9][a-z0-9_-]{5,80}$/;
+
+function reservationPath(projectId: string, reservationId: string): string {
+  if (!RESERVATION_ID_RE.test(reservationId)) {
+    throw new Error(`Invalid reservation id: ${reservationId}`);
+  }
+  return path.join(resolvePaths(projectId).modalReservationsDir, `${reservationId}.json`);
+}
+
+function writeAtomicJson(file: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
+  fs.renameSync(tmp, file);
+}
+
+export function listComputeReservations(projectId: string): ComputeReservation[] {
+  const dir = resolvePaths(projectId).modalReservationsDir;
+  let files: string[];
+  try {
+    files = fs.readdirSync(dir).filter((file) => file.endsWith(".json"));
+  } catch {
+    return [];
+  }
+  return files.flatMap((file) => {
+    try {
+      const value = JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8")) as ComputeReservation;
+      if (
+        value?.version === 1 &&
+        value.projectId === projectId &&
+        Number.isFinite(value.amountUsd) &&
+        value.amountUsd >= 0
+      ) {
+        return [value];
+      }
+    } catch {
+      // A malformed reservation is ignored rather than making every project
+      // request fail. Atomic writers ensure normal files are never partial.
+    }
+    return [];
+  });
+}
+
+/**
+ * Reserve the strict worst-case cost before a remote job is admitted.
+ *
+ * This function is synchronous on purpose: in one server process, no other
+ * submit can interleave between the committed-spend check and atomic write.
+ */
+export function reserveComputeBudget(args: {
+  projectId: string;
+  reservationId: string;
+  sessionId: string;
+  amountUsd: number;
+}): ComputeReservation {
+  if (!Number.isFinite(args.amountUsd) || args.amountUsd < 0) {
+    throw new Error("Reservation amount must be a non-negative finite number");
+  }
+  const file = reservationPath(args.projectId, args.reservationId);
+  try {
+    return JSON.parse(fs.readFileSync(file, "utf-8")) as ComputeReservation;
+  } catch {
+    // new reservation
+  }
+  const summary = projectCostSummary(args.projectId);
+  if (
+    summary.limitUsd !== null &&
+    summary.committedUsd + args.amountUsd > summary.limitUsd + Number.EPSILON
+  ) {
+    const error = new Error(
+      `Modal job would exceed the project spend limit: ` +
+        `$${summary.committedUsd.toFixed(4)} committed + ` +
+        `$${args.amountUsd.toFixed(4)} reserved > $${summary.limitUsd.toFixed(4)}`,
+    );
+    error.name = "BudgetReservationError";
+    throw error;
+  }
+  const reservation: ComputeReservation = {
+    version: 1,
+    id: args.reservationId,
+    projectId: args.projectId,
+    sessionId: args.sessionId,
+    amountUsd: args.amountUsd,
+    createdAt: Date.now(),
+  };
+  writeAtomicJson(file, reservation);
+  return reservation;
+}
+
+export function releaseComputeReservation(projectId: string, reservationId: string): void {
+  fs.rmSync(reservationPath(projectId, reservationId), { force: true });
+}
+
 function readEntries(sessionId: string, projectId?: string): CostEntry[] {
   const file = costsPath(sessionId, projectId);
   try {
@@ -197,6 +340,49 @@ function readEntries(sessionId: string, projectId?: string): CostEntry[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Move a durable Modal cost row from a child/synthetic session to its parent.
+ * Project totals remain unchanged; the operation is idempotent and uses an
+ * atomic rewrite so readers never observe a partial source ledger.
+ */
+export function reattributeModalJobCost(
+  projectId: string,
+  jobId: string,
+  fromSessionId: string,
+  toSessionId: string,
+): boolean {
+  if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) return false;
+  const source = readEntries(fromSessionId, projectId);
+  const entry = source.find((row) => row.role === "compute" && row.jobId === jobId);
+  if (!entry) return false;
+  if (
+    readEntries(toSessionId, projectId).some(
+      (row) => row.role === "compute" && row.jobId === jobId,
+    )
+  ) {
+    return false;
+  }
+  const sourceFile = costsPath(fromSessionId, projectId);
+  const kept = source.filter((row) => row.entryId !== entry.entryId);
+  fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+  const tmp = `${sourceFile}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(
+    tmp,
+    kept.map((row) => JSON.stringify(row)).join("\n") + (kept.length ? "\n" : ""),
+    { encoding: "utf-8", mode: 0o600 },
+  );
+  fs.renameSync(tmp, sourceFile);
+
+  const targetFile = costsPath(toSessionId, projectId);
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.appendFileSync(
+    targetFile,
+    JSON.stringify({ ...entry, sessionId: toSessionId }) + "\n",
+    "utf-8",
+  );
+  return true;
 }
 
 export interface SessionCostSummary {
@@ -230,11 +416,24 @@ export type BudgetState = "ok" | "warn" | "exceeded";
 
 export interface ProjectCostSummary {
   projectId: string;
+  /** Backward-compatible alias for money already ledgered. */
   totalUsd: number;
+  spentUsd: number;
+  reservedUsd: number;
+  committedUsd: number;
   totalTokens: number;
   sessionCount: number;
   limitUsd: number | null;
-  budget: { totalUsd: number; limitUsd: number | null; ratio: number | null; state: BudgetState };
+  budget: {
+    /** Includes active reservations so admission and summaries agree. */
+    totalUsd: number;
+    spentUsd: number;
+    reservedUsd: number;
+    committedUsd: number;
+    limitUsd: number | null;
+    ratio: number | null;
+    state: BudgetState;
+  };
 }
 
 /** Sum every session's ledger under a project's runs dir. */
@@ -258,16 +457,32 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
   // A null or non-positive limit means "unlimited" (0 is not a hard block).
   const rawLimit = getProject(projectId)?.spendLimitUsd ?? null;
   const limitUsd = rawLimit !== null && rawLimit > 0 ? rawLimit : null;
-  const ratio = limitUsd ? totalUsd / limitUsd : null;
+  const reservedUsd = listComputeReservations(projectId).reduce(
+    (sum, reservation) => sum + reservation.amountUsd,
+    0,
+  );
+  const committedUsd = totalUsd + reservedUsd;
+  const ratio = limitUsd ? committedUsd / limitUsd : null;
   let state: BudgetState = "ok";
   if (ratio !== null) state = ratio >= 1 ? "exceeded" : ratio >= 0.8 ? "warn" : "ok";
   return {
     projectId,
     totalUsd,
+    spentUsd: totalUsd,
+    reservedUsd,
+    committedUsd,
     totalTokens,
     sessionCount,
     limitUsd,
-    budget: { totalUsd, limitUsd, ratio, state },
+    budget: {
+      totalUsd: committedUsd,
+      spentUsd: totalUsd,
+      reservedUsd,
+      committedUsd,
+      limitUsd,
+      ratio,
+      state,
+    },
   };
 }
 
@@ -277,8 +492,8 @@ export function isBudgetExceeded(projectId: string): { exceeded: boolean; totalU
   // summary.limitUsd is already normalized: null when unlimited (incl. a 0 cap).
   const limit = summary.limitUsd;
   return {
-    exceeded: limit !== null && summary.totalUsd >= limit,
-    totalUsd: summary.totalUsd,
+    exceeded: limit !== null && summary.committedUsd >= limit,
+    totalUsd: summary.committedUsd,
     limitUsd: limit,
   };
 }

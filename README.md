@@ -68,7 +68,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 - **Use major hosted models** from OpenAI, Anthropic, Google, xAI, Qwen, and others through one [OpenRouter](https://openrouter.ai/) account. Change the model and reasoning level independently in each chat.
 - **Run free local models with [Ollama](./docs/local-models-ollama.md)** when cost or data locality matters. Local models appear in the same model picker.
 - **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information.
-- **Move demanding computation to [Modal](https://modal.com).** Select an on-demand cloud CPU or GPU, up to H100-class hardware, for a chat. Kady stages the requested inputs, runs the job remotely, brings the outputs back into the local project, and records the compute cost with the rest of the project spend.
+- **Move demanding computation to [Modal](./docs/modal-compute.md).** Select an on-demand cloud CPU or single-/multi-GPU environment for a chat. Kady persists and monitors the job, stages validated inputs, brings outputs atomically back into the local project, and reserves estimated compute cost against the project budget. Long jobs survive chat turns and backend restarts and remain controllable from the Compute tab.
 
 ### Stay in control
 

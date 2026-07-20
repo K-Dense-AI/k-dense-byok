@@ -10,6 +10,7 @@ import {
   FilePlusIcon,
   FolderTreeIcon,
   SearchIcon,
+  ServerCogIcon,
   TerminalIcon,
   UsersIcon,
   WandSparklesIcon,
@@ -24,29 +25,31 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
+import { modalJobIdFromActivity, openModalJob } from "@/lib/modal-jobs";
 import { skillNameFromRead } from "@/lib/skill-invocation";
 import type { ActivityItem } from "@/lib/use-agent";
 import { cn } from "@/lib/utils";
 
-function iconFor(toolName?: string) {
+function ToolIcon({ toolName }: { toolName?: string }) {
+  const className = "size-3.5 shrink-0 text-muted-foreground";
   switch (toolName) {
     case "bash":
-      return TerminalIcon;
+      return <TerminalIcon className={className} />;
     case "read":
-      return FileIcon;
+      return <FileIcon className={className} />;
     case "write":
-      return FilePlusIcon;
+      return <FilePlusIcon className={className} />;
     case "edit":
-      return FileEditIcon;
+      return <FileEditIcon className={className} />;
     case "grep":
     case "find":
-      return SearchIcon;
+      return <SearchIcon className={className} />;
     case "ls":
-      return FolderTreeIcon;
+      return <FolderTreeIcon className={className} />;
     case "subagent":
-      return UsersIcon;
+      return <UsersIcon className={className} />;
     default:
-      return WrenchIcon;
+      return <WrenchIcon className={className} />;
   }
 }
 
@@ -99,7 +102,6 @@ function ToolCard({ item }: { item: ActivityItem }) {
   // instead of a generic file read (the path stays visible under Input). The
   // server resolves the frontmatter name; the path-derived name is a fallback.
   const skill = item.skillName ?? skillNameFromRead(item.toolName, item.args);
-  const Icon = skill ? WandSparklesIcon : iconFor(item.toolName);
   const name = skill ? "skill" : (item.toolName ?? item.label);
   const summary = skill ?? summarize(item.toolName, item.args);
   const args = fullArgs(item.args);
@@ -125,7 +127,11 @@ function ToolCard({ item }: { item: ActivityItem }) {
         ) : (
           <span className="size-3 shrink-0" />
         )}
-        <Icon className="size-3.5 shrink-0 text-muted-foreground" />
+        {skill ? (
+          <WandSparklesIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        ) : (
+          <ToolIcon toolName={item.toolName} />
+        )}
         <span className="font-medium text-foreground">{name}</span>
         {summary && (
           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
@@ -168,6 +174,53 @@ function ToolCard({ item }: { item: ActivityItem }) {
         </CollapsibleContent>
       )}
     </Collapsible>
+  );
+}
+
+/** Compact pointer from Modal tool activity to its durable Compute record. */
+export function ModalJobChip({
+  item,
+  onView,
+}: {
+  item: ActivityItem;
+  onView?: (jobId?: string) => void;
+}) {
+  const jobId = modalJobIdFromActivity(item);
+  const toolLabel = (item.toolName ?? "modal")
+    .replace(/^modal_/, "")
+    .replace(/_/g, " ");
+  const view = () => {
+    if (onView) onView(jobId ?? undefined);
+    else openModalJob(jobId);
+  };
+  return (
+    <div
+      data-tool-call-id={item.id}
+      className={cn(
+        "my-1 flex w-full items-center gap-2 rounded-md border border-violet-500/25 bg-violet-500/5 px-2.5 py-1.5 text-xs",
+        item.status === "error" && "border-destructive/40 bg-destructive/5",
+      )}
+    >
+      <ServerCogIcon className="size-3.5 shrink-0 text-violet-500" />
+      <span className="font-medium capitalize text-foreground">Modal · {toolLabel}</span>
+      {jobId ? (
+        <code className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+          {jobId}
+        </code>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-muted-foreground">
+          {item.status === "running" ? "Submitting durable compute…" : "Durable compute activity"}
+        </span>
+      )}
+      <StatusDot status={item.status} />
+      <button
+        type="button"
+        onClick={view}
+        className="shrink-0 text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+      >
+        {jobId ? "View job" : "Open Compute"}
+      </button>
+    </div>
   );
 }
 

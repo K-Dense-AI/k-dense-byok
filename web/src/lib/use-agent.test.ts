@@ -40,6 +40,32 @@ describe("buildRunBody", () => {
     expect(buildRunBody({ message: "hi", computeTarget: "local" })).toEqual({ message: "hi" });
   });
 
+  it("threads GPU count, fallback, and cache defaults only for remote compute", () => {
+    const computeOptions = {
+      gpuCount: 2,
+      gpuFallback: ["l4"],
+      cache: "none" as const,
+    };
+    expect(
+      buildRunBody({
+        message: "hi",
+        computeTarget: "t4",
+        computeOptions,
+      }),
+    ).toEqual({
+      message: "hi",
+      computeTarget: "t4",
+      computeOptions,
+    });
+    expect(
+      buildRunBody({
+        message: "hi",
+        computeTarget: "local",
+        computeOptions,
+      }),
+    ).toEqual({ message: "hi" });
+  });
+
   it("includes fusionConfig when provided", () => {
     const fusionConfig = { plugins: [] };
     expect(buildRunBody({ message: "hi", model: "fusion/x", fusionConfig })).toEqual({

@@ -22,7 +22,11 @@ import {
   validateAnswer,
   type InterviewAnswer,
 } from "../agent/interview.ts";
-import { setSessionComputeTarget } from "../agent/modal-tool.ts";
+import {
+  setSessionComputeOptions,
+  setSessionComputeTarget,
+  type SessionComputeOptions,
+} from "../agent/modal-tool.ts";
 import { resolveModel } from "../agent/models.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
@@ -80,6 +84,8 @@ interface RunBody {
   fusionConfig?: Record<string, unknown>;
   /** Default Modal compute instance id for `modal_run` this run ("local" / unset = none). */
   computeTarget?: string;
+  /** Optional defaults attached to the selected Modal target. */
+  computeOptions?: SessionComputeOptions;
   /** Inline image attachments (base64 + mime type); ride the user message as image blocks. */
   images?: unknown;
 }
@@ -521,6 +527,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         // Stash this run's selected compute instance so the modal_run tool uses
         // it as the default when the agent doesn't name one ("local"/unset clears it).
         setSessionComputeTarget(projectId, session.sessionId, body.computeTarget ?? null);
+        setSessionComputeOptions(
+          projectId,
+          session.sessionId,
+          body.computeTarget ? body.computeOptions : null,
+        );
         const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
         if (isFusion) {
           // Fusion is load-bearing for the spend cap: the cost-bearing Model

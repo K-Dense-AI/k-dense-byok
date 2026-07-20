@@ -59,6 +59,26 @@ Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple o
 - **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Sub-agents, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
 - **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
 
+## Modal compute
+
+Modal jobs are durable, restart-recoverable, available to sub-agents, and
+tracked in the center-panel Compute tab. The remaining boundaries are:
+
+- **Displayed cost is an estimate.** Modal does not expose a generally available
+  per-sandbox final invoice API. K-Dense reserves worst-case estimated cost and
+  reconciles it to elapsed resource time on every terminal path.
+- **Multi-GPU is single-sandbox.** K-Dense can request multiple GPUs and run
+  bounded groups of independent jobs, but it does not orchestrate multi-node
+  distributed training.
+- **The local sandbox remains canonical.** Remote Volumes cache dependencies,
+  models, and reference data; they are not a second copy of the project
+  workspace.
+- **Security and provenance have separate scopes.** Remote jobs do not receive
+  model credentials by default. Fine-grained egress policy, per-job secrets,
+  and full scientific provenance manifests remain future work.
+
+See [Durable Modal compute](./modal-compute.md) for lifecycle and recovery details.
+
 ## Native Windows support is new
 
 The app now runs natively on Windows 10/11 (no WSL needed) as of this release. It goes through the same test suite as macOS/Linux, but has had less real-world mileage — if you hit something Windows-specific, please [open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues). WSL remains a supported alternative.

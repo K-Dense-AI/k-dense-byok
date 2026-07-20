@@ -1,0 +1,15 @@
+{
+  "name": "kady-modal",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "K-Dense child-only durable Modal compute tools.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  }
+}

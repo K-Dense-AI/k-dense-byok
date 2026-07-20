@@ -4,6 +4,8 @@ import { MessageResponse } from "@/components/ai-elements/message";
 import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
 import { KadyFileIcon } from "@/components/file-icon";
 import { LabNotebookView } from "@/components/lab-notebook-view";
+import { ModalJobsPanel } from "@/components/modal-jobs-panel";
+import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { NotebookEntry } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
 import { getViewerDef } from "@/lib/viewers/registry";
@@ -38,6 +40,7 @@ import {
   ChevronUpIcon,
   RefreshCcwIcon,
   AlertCircleIcon,
+  ServerCogIcon,
 } from "lucide-react";
 import {
   Suspense,
@@ -141,6 +144,8 @@ function TabBar({
   onClose,
   showNotebook,
   onSelectNotebook,
+  showCompute,
+  onSelectCompute,
 }: {
   tabs: Tab[];
   activeTabPath: string | null;
@@ -149,6 +154,8 @@ function TabBar({
   onClose: (path: string) => void;
   showNotebook: boolean;
   onSelectNotebook: () => void;
+  showCompute: boolean;
+  onSelectCompute: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -178,7 +185,8 @@ function TabBar({
       style={{ scrollbarWidth: "none" }}
     >
       {/* Pinned Lab Notebook tab — always first, never closable */}
-      <div
+      <button
+        type="button"
         data-active={showNotebook}
         onClick={onSelectNotebook}
         title="Lab Notebook"
@@ -192,11 +200,29 @@ function TabBar({
       >
         <BookOpenIcon className="size-3.5 shrink-0 text-orange-500" />
         <span className="whitespace-nowrap font-medium">Lab Notebook</span>
-      </div>
+      </button>
+
+      {/* Pinned Compute tab — project job history, never closable */}
+      <button
+        type="button"
+        data-active={showCompute}
+        onClick={onSelectCompute}
+        title="Modal Compute"
+        className={cn(
+          "group relative flex shrink-0 select-none",
+          "items-center gap-1.5 border-r px-3 py-1.5 text-xs transition-colors",
+          showCompute
+            ? "bg-background text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
+            : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+        )}
+      >
+        <ServerCogIcon className="size-3.5 shrink-0 text-violet-500" />
+        <span className="whitespace-nowrap font-medium">Compute</span>
+      </button>
 
       {uniqueTabs.map((tab) => {
         const name = tab.path.split("/").pop() ?? tab.path;
-        const isActive = !showNotebook && tab.path === activeTabPath;
+        const isActive = !showNotebook && !showCompute && tab.path === activeTabPath;
         const mode = tabModes[tab.path] ?? "view";
         const isEditing = mode === "edit" || mode === "annotate";
 
@@ -1853,6 +1879,13 @@ export interface FilePreviewPanelProps {
   revealTarget?: RevealTarget | null;
   showNotebook: boolean;
   onSelectNotebook: () => void;
+  showCompute: boolean;
+  onSelectCompute: () => void;
+  computeSessionId: string | null;
+  computeScope: ModalComputeScope;
+  onComputeScopeChange: (scope: ModalComputeScope) => void;
+  computeFocus?: { id: string; token: number } | null;
+  onOpenComputeOutput: (path: string) => void;
   notebookSessionId: string | null;
   notebookEntries: NotebookEntry[];
   notebookStreaming: boolean;
@@ -1878,6 +1911,13 @@ export function FilePreviewPanel({
   revealTarget,
   showNotebook,
   onSelectNotebook,
+  showCompute,
+  onSelectCompute,
+  computeSessionId,
+  computeScope,
+  onComputeScopeChange,
+  computeFocus,
+  onOpenComputeOutput,
   notebookSessionId,
   notebookEntries,
   notebookStreaming,
@@ -1957,6 +1997,8 @@ export function FilePreviewPanel({
         onClose={onTabClose}
         showNotebook={showNotebook}
         onSelectNotebook={onSelectNotebook}
+        showCompute={showCompute}
+        onSelectCompute={onSelectCompute}
       />
 
       {showNotebook ? (
@@ -1969,6 +2011,15 @@ export function FilePreviewPanel({
           onOpenFile={onOpenNotebookFile}
           focusEntry={notebookFocus}
           onJumpToChat={onNotebookJumpToChat}
+        />
+      ) : showCompute ? (
+        <ModalJobsPanel
+          projectId={projectId}
+          sessionId={computeSessionId}
+          scope={computeScope}
+          onScopeChange={onComputeScopeChange}
+          focusJob={computeFocus}
+          onOpenOutput={onOpenComputeOutput}
         />
       ) : (
       <>
