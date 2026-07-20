@@ -70,7 +70,7 @@ export function NotePopover({
       ref={ref}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
-      className="fixed z-50 w-[300px] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
+      className="pointer-events-auto fixed z-50 w-[300px] rounded-md border bg-popover p-3 text-popover-foreground shadow-lg"
       style={{ top, left }}
     >
       <div className="mb-2 flex items-center gap-2 text-xs">

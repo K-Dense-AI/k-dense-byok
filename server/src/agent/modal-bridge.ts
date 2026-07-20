@@ -5,6 +5,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
 import { modalJobManager } from "../modal/manager.ts";
 import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
+import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -126,7 +127,15 @@ export function seedBuiltinAgentModalTools(paths: ProjectPaths): boolean {
       const existingTools = override.tools as string[];
       const generatedNotebook = [...builtin.tools, "notebook"];
       const generatedModal = [...generatedNotebook, ...MODAL_TOOL_NAMES];
-      if (!sameSet(existingTools, generatedNotebook) && !sameSet(existingTools, generatedModal)) {
+      const generatedModalWithPdf = [
+        ...generatedModal,
+        ...PDF_ANNOTATION_TOOL_NAMES,
+      ];
+      if (
+        !sameSet(existingTools, generatedNotebook) &&
+        !sameSet(existingTools, generatedModal) &&
+        !sameSet(existingTools, generatedModalWithPdf)
+      ) {
         continue;
       }
       const next = [...existingTools];

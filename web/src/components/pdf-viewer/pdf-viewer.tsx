@@ -13,7 +13,7 @@
  *     they stay aligned when zoom changes.
  *   - State is persisted to <file>.pdf.annotations.json via the endpoints
  *     in pdf-annotations.ts, and polled for external writes (e.g. the
- *     expert-side MCP dropping its own annotations mid-delegation).
+ *     lead or delegated agent adding expert annotations during a run).
  */
 
 import {

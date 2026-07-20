@@ -23,6 +23,13 @@ import { sciHelperFor, runSciHelper } from "./sci-helpers.ts";
 import { LATEX_ENGINES, compileLatex } from "../latex/compile.ts";
 import { synctexAvailable, synctexForward, synctexInverse } from "../latex/synctex.ts";
 import { AssistError, runLatexAssist, type AssistRequest } from "../latex/assist.ts";
+import {
+  PdfAnnotationStoreError,
+  readPdfAnnotations,
+  replacePdfAnnotations,
+  type PdfAnnotation,
+  type PdfAnnotationsDoc,
+} from "../pdf-annotations-store.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
@@ -139,15 +146,7 @@ function zipDir(root: string, base: string): { archive: ZipArchive; entryCount: 
   return { archive, entryCount };
 }
 
-function sidecarFor(pdfRel: string): string {
-  const target = safePath(pdfRel);
-  if (target.endsWith(".annotations.json")) {
-    throw new SandboxError(400, "Refusing to annotate a sidecar");
-  }
-  return target + ".annotations.json";
-}
-
-function normalizeAnnotations(data: unknown): { version: number; annotations: unknown[] } {
+function normalizeAnnotations(data: unknown): PdfAnnotationsDoc {
   if (!data || typeof data !== "object") throw new SandboxError(400, "Annotations body must be a JSON object");
   const anns = (data as { annotations?: unknown }).annotations ?? [];
   if (!Array.isArray(anns)) throw new SandboxError(400, "'annotations' must be a list");
@@ -162,13 +161,24 @@ function normalizeAnnotations(data: unknown): { version: number; annotations: un
       throw new SandboxError(400, `annotations[${i}].author.kind invalid`);
     }
   });
-  return { version: 1, annotations: anns };
+  return { version: 1, annotations: anns as PdfAnnotation[] };
 }
 
 /** Map SandboxError → HTTP reply; rethrow others. */
 function handle(reply: FastifyReply, err: unknown): { detail: string } {
   if (err instanceof SandboxError) {
     reply.code(err.statusCode);
+    return { detail: err.message };
+  }
+  if (err instanceof PdfAnnotationStoreError) {
+    const status = {
+      INVALID_PATH: 403,
+      NOT_FOUND: 404,
+      NOT_PDF: 400,
+      CONFLICT: 412,
+      LOCK_TIMEOUT: 503,
+    }[err.code];
+    reply.code(status);
     return { detail: err.message };
   }
   reply.code(500);
@@ -444,40 +454,28 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   // --- annotations ---
   app.get<{ Querystring: { path: string } }>("/sandbox/annotations", async (req, reply) => {
     try {
-      const sidecar = sidecarFor(req.query.path);
       reply.header("Cache-Control", "no-store");
-      if (!fs.existsSync(sidecar)) return { version: 1, annotations: [] };
-      const raw = fs.readFileSync(sidecar, "utf-8");
-      const data = raw.trim() ? JSON.parse(raw) : { version: 1, annotations: [] };
-      reply.header("Last-Modified", fs.statSync(sidecar).mtime.toUTCString());
-      return data;
+      const result = readPdfAnnotations(activePaths().sandbox, req.query.path);
+      if (result.mtime) reply.header("Last-Modified", result.mtime.toUTCString());
+      return result.doc;
     } catch (err) {
-      if (err instanceof SyntaxError) return { version: 1, annotations: [] };
       return handle(reply, err);
     }
   });
 
   app.put<{ Querystring: { path: string }; Body: unknown }>("/sandbox/annotations", async (req, reply) => {
     try {
-      const sidecar = sidecarFor(req.query.path);
-      if (fs.existsSync(sidecar)) {
-        const precond = req.headers["if-unmodified-since"];
-        if (precond) {
-          const expected = new Date(String(precond)).getTime();
-          const actual = fs.statSync(sidecar).mtime.getTime();
-          if (!Number.isNaN(expected) && actual - expected > 1000) {
-            reply.code(412);
-            return { detail: "Sidecar modified; re-read and retry" };
-          }
-        }
-      }
       const doc = normalizeAnnotations(req.body);
-      fs.mkdirSync(path.dirname(sidecar), { recursive: true });
-      const tmp = sidecar + ".tmp";
-      fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + "\n", "utf-8");
-      fs.renameSync(tmp, sidecar);
+      const saved = await replacePdfAnnotations(
+        activePaths().sandbox,
+        req.query.path,
+        doc,
+        req.headers["if-unmodified-since"]
+          ? String(req.headers["if-unmodified-since"])
+          : null,
+      );
       touchProject(currentProjectId());
-      reply.header("Last-Modified", fs.statSync(sidecar).mtime.toUTCString());
+      reply.header("Last-Modified", saved.mtime.toUTCString());
       return { saved: req.query.path, count: doc.annotations.length };
     } catch (err) {
       return handle(reply, err);

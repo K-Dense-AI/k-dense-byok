@@ -10,7 +10,7 @@ Everything renders **locally**. Text-based formats load instantly; binary/scient
 | Format | Extensions | Viewer |
 |---|---|---|
 | Images | `png` `jpg` `jpeg` `gif` `svg` `webp` `bmp` `ico` `heic` | Click to zoom to actual size; **annotate** with a red marker and save |
-| PDF | `pdf` | Paged viewer with an annotation layer |
+| PDF | `pdf` | Paged viewer with selectable user highlights/notes and live expert annotations from lead or delegated AI agents |
 | Markdown | `md` `mdx` | Rendered, with LaTeX math and Mermaid diagrams |
 | Jupyter notebooks | `ipynb` | Cells with rich outputs — images, HTML tables, tracebacks |
 | CSV | `csv` | Sortable table |
