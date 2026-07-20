@@ -20,13 +20,12 @@ import {
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
-import { modalConfigured } from "../config.ts";
 import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
-import { makeModalTool } from "./modal-tool.ts";
+import { makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
@@ -35,6 +34,11 @@ import {
   seedBuiltinAgentNotebookTools,
   makeSubagentNotebookExtension,
 } from "./notebook-bridge.ts";
+import {
+  makeSubagentModalExtension,
+  seedBuiltinAgentModalTools,
+  seedModalPackage,
+} from "./modal-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary
@@ -99,6 +103,11 @@ async function build(
   // Builtin pi-subagents specialists pin a tools allowlist that would filter
   // the notebook tool out of their child processes — extend it via overrides.
   seedBuiltinAgentNotebookTools(paths);
+  // Child-only localhost bridge for the same durable project-scoped Modal
+  // jobs. Builtin allowlists are extended only when they retain our generated
+  // shape; user-pinned lists remain authoritative.
+  seedModalPackage(paths);
+  seedBuiltinAgentModalTools(paths);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -115,6 +124,9 @@ async function build(
       // processes get the notebook tool via seedNotebookPackage above) into
       // the parent notebook — the parent is the single writer.
       makeSubagentNotebookExtension(projectId, () => holder.session?.sessionId ?? ""),
+      // Child Modal jobs are submitted through the localhost bridge under the
+      // child run id; reattribute them to this parent session on completion.
+      makeSubagentModalExtension(projectId, () => holder.session?.sessionId ?? ""),
     ],
   });
   await resourceLoader.reload();
@@ -123,12 +135,10 @@ async function build(
   const interviewTool = makeInterviewTool(projectId, () => holder.session?.sessionId ?? "");
   // Non-blocking lab-notebook tool: logs the agent's own narrative entries.
   const notebookTool = makeNotebookTool(projectId, () => holder.session?.sessionId ?? "");
-  // Remote-compute tool, only when Modal BYOK creds are present. Built per
-  // session (same holder-based late-bound sessionId as the interview tool); a
-  // session created before keys are set picks it up on its next cold-open.
-  const modalTool = modalConfigured()
-    ? makeModalTool(projectId, () => holder.session?.sessionId ?? "")
-    : null;
+  // Durable remote-compute tools are always present. Missing credentials are
+  // reported at submission time, so warm sessions become compatible
+  // immediately after credentials are configured live.
+  const modalTools = makeModalTools(projectId, () => holder.session?.sessionId ?? "");
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
     model: fallbackModel,
@@ -141,10 +151,10 @@ async function build(
       "interview",
       "notebook",
       ...WEB_ACCESS_TOOLS,
-      ...(modalTool ? ["modal_run"] : []),
+      ...MODAL_TOOL_NAMES,
       ...mcpTools.map((t) => t.name),
     ],
-    customTools: [interviewTool, notebookTool, ...(modalTool ? [modalTool] : []), ...mcpTools],
+    customTools: [interviewTool, notebookTool, ...modalTools, ...mcpTools],
   });
   holder.session = session;
   return session;

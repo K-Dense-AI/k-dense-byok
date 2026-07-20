@@ -358,15 +358,34 @@ export function buildRunBody(opts: {
   model?: string;
   fusionConfig?: Record<string, unknown>;
   computeTarget?: string;
+  computeOptions?: {
+    gpuCount?: number;
+    gpuFallback?: string[];
+    cache?: "project" | "none";
+  };
   thinkingLevel?: string;
   images?: PromptImage[];
 }): Record<string, unknown> {
-  const { message, model, fusionConfig, computeTarget, thinkingLevel, images } = opts;
+  const {
+    message,
+    model,
+    fusionConfig,
+    computeTarget,
+    computeOptions,
+    thinkingLevel,
+    images,
+  } = opts;
   return {
     message,
     ...(model ? { model } : {}),
     ...(fusionConfig ? { fusionConfig } : {}),
     ...(computeTarget && computeTarget !== "local" ? { computeTarget } : {}),
+    ...(computeTarget &&
+    computeTarget !== "local" &&
+    computeOptions &&
+    Object.keys(computeOptions).length > 0
+      ? { computeOptions }
+      : {}),
     ...(thinkingLevel ? { thinkingLevel } : {}),
     ...(images && images.length > 0 ? { images } : {}),
   };
@@ -792,6 +811,11 @@ export function useAgent(projectId?: string) {
       _legacyMeta?: unknown,
       fusionConfig?: Record<string, unknown>,
       computeTarget?: string,
+      computeOptions?: {
+        gpuCount?: number;
+        gpuFallback?: string[];
+        cache?: "project" | "none";
+      },
       thinkingLevel?: string,
       images?: PromptImage[],
     ): Promise<string | undefined> => {
@@ -839,6 +863,7 @@ export function useAgent(projectId?: string) {
                   model,
                   fusionConfig,
                   computeTarget,
+                  computeOptions,
                   thinkingLevel,
                   images,
                 }),

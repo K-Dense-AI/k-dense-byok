@@ -14,6 +14,7 @@ import { ResourceMonitor } from "@/components/resource-monitor";
 import { useSessionCost } from "@/lib/use-session-cost";
 import { useProjectCost } from "@/lib/use-project-cost";
 import { useProjectActivities } from "@/lib/use-project-activities";
+import { useModalJobs } from "@/lib/use-modal-jobs";
 import { useProjects } from "@/lib/use-projects";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
@@ -26,11 +27,16 @@ import {
   type ProjectActivitySummary,
 } from "@/lib/project-activity";
 import { onChatPrefill } from "@/lib/chat-prefill";
+import {
+  OPEN_MODAL_JOB_EVENT,
+  type ModalComputeScope,
+} from "@/lib/modal-jobs";
 import { isJunkFilePath } from "@/lib/utils";
 import {
   PanelLeftIcon,
   PanelRightIcon,
   SettingsIcon,
+  ServerCogIcon,
   SunIcon,
   MoonIcon,
 } from "lucide-react";
@@ -292,6 +298,12 @@ function WorkspacePage({
   const [showNotebook, setShowNotebook] = useState(
     () => initialState?.showNotebook ?? false,
   );
+  const [showCompute, setShowCompute] = useState(
+    () => initialState?.showCompute ?? false,
+  );
+  const [computeScope, setComputeScope] = useState<ModalComputeScope>(
+    () => initialState?.computeScope ?? "project",
+  );
 
   // Chat tab management. We allocate the initial id once via useRef so it
   // stays stable across React's strict-mode double-invocation of
@@ -495,6 +507,8 @@ function WorkspacePage({
       activeTabId,
       view,
       showNotebook,
+      showCompute,
+      computeScope,
       sandboxOpen,
       chatOpen,
       treeWidth,
@@ -505,8 +519,10 @@ function WorkspacePage({
       activeTabId,
       chatOpen,
       chatWidth,
+      computeScope,
       sandboxOpen,
       sandboxWorkspace,
+      showCompute,
       showNotebook,
       tabWorkspaceStates,
       tabs,
@@ -664,6 +680,7 @@ function WorkspacePage({
   const handleFileSelect = useCallback((path: string) => {
     sandboxSelectFile(path);
     setShowNotebook(false);
+    setShowCompute(false);
   }, [sandboxSelectFile]);
   const handleOrganizeFiles = useCallback(() => {
     const handle = tabHandles.current.get(activeTabId);
@@ -677,9 +694,27 @@ function WorkspacePage({
   // ------------------------------------------------------------------
   const [notebookFocus, setNotebookFocus] = useState<{ id: string; token: number } | null>(null);
   const handleViewInNotebook = useCallback((entryId: string) => {
+    setShowCompute(false);
     setShowNotebook(true);
     setNotebookFocus({ id: entryId, token: Date.now() });
   }, []);
+  const [computeFocus, setComputeFocus] = useState<{ id: string; token: number } | null>(null);
+  const handleViewCompute = useCallback((jobId?: string) => {
+    setShowNotebook(false);
+    setShowCompute(true);
+    if (jobId) setComputeFocus({ id: jobId, token: Date.now() });
+  }, []);
+  useEffect(() => {
+    if (!isActive) return;
+    const onOpenJob = (event: Event) => {
+      const jobId = (
+        event as CustomEvent<{ jobId?: string }>
+      ).detail?.jobId;
+      handleViewCompute(jobId);
+    };
+    window.addEventListener(OPEN_MODAL_JOB_EVENT, onOpenJob);
+    return () => window.removeEventListener(OPEN_MODAL_JOB_EVENT, onOpenJob);
+  }, [handleViewCompute, isActive]);
   const handleNotebookJumpToChat = useCallback(
     (entryId: string) => {
       // Un-hide the chat column without toggling it closed, then scroll once
@@ -699,6 +734,10 @@ function WorkspacePage({
   // ------------------------------------------------------------------
 
   const activeSessionId = activeMeta?.sessionId ?? null;
+  const {
+    activeCount: activeModalJobCount,
+    loading: modalJobsLoading,
+  } = useModalJobs({ projectId, enabled: isActive, limit: 200 });
 
   const { summary: costSummary, loading: costLoading } = useSessionCost(
     activeSessionId,
@@ -813,6 +852,26 @@ function WorkspacePage({
             limitUsd={projectCost.limitUsd}
             loading={costLoading || projectCostLoading}
           />
+          {activeModalJobCount > 0 ? (
+            <InfoTooltip
+              content={`${activeModalJobCount} Modal compute job${
+                activeModalJobCount === 1 ? " is" : "s are"
+              } still running. Open Compute to inspect live logs.`}
+            >
+              <button
+                type="button"
+                onClick={() => handleViewCompute()}
+                aria-label={`Open Compute, ${activeModalJobCount} active jobs`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-violet-500/30 bg-violet-500/10 px-2 py-1.5 text-[11px] font-medium text-violet-700 transition-colors hover:bg-violet-500/15 dark:text-violet-300"
+              >
+                <ServerCogIcon className="size-3.5" />
+                <span className="size-1.5 animate-pulse rounded-full bg-violet-500" />
+                {activeModalJobCount}
+              </button>
+            </InfoTooltip>
+          ) : modalJobsLoading ? (
+            <span className="sr-only" aria-live="polite">Checking compute jobs</span>
+          ) : null}
           {/* Panel visibility — collapse either side panel to give the center
               pane (file preview / LaTeX editor) more room. */}
           <div className="flex items-center gap-0.5 rounded-lg border bg-muted/30 p-0.5">
@@ -950,7 +1009,20 @@ function WorkspacePage({
               onRetry={sandbox.retryFile}
               onCompileLatex={sandbox.compileLatex}
               showNotebook={showNotebook}
-              onSelectNotebook={() => setShowNotebook(true)}
+              onSelectNotebook={() => {
+                setShowCompute(false);
+                setShowNotebook(true);
+              }}
+              showCompute={showCompute}
+              onSelectCompute={() => {
+                setShowNotebook(false);
+                setShowCompute(true);
+              }}
+              computeSessionId={activeSessionId}
+              computeScope={computeScope}
+              onComputeScopeChange={setComputeScope}
+              computeFocus={computeFocus}
+              onOpenComputeOutput={handleFileSelect}
               notebookSessionId={activeSessionId}
               notebookEntries={notebookEntries}
               notebookStreaming={notebookStreaming}
@@ -1016,6 +1088,7 @@ function WorkspacePage({
               onMetaChange={handleMetaChange}
               onWorkspaceStateChange={handleTabWorkspaceStateChange}
               onViewInNotebook={handleViewInNotebook}
+              onViewCompute={handleViewCompute}
             />
           ))}
 

@@ -44,6 +44,16 @@ Use the model dropdown in the input bar. Any message can use any tool-capable mo
 
 Open the workflows panel to browse **326 ready-to-run templates across 22 disciplines** — genomics, drug discovery, finance, astrophysics, and more. Pick one, fill in the blanks, and click Launch; it runs in the currently active chat tab. Want to add your own? See [Contributing workflows](./contributing-workflows.md).
 
+### Remote compute jobs
+
+After adding a Modal token pair in **Settings → API keys**, use the compute
+picker beside the composer to choose a cloud CPU or GPU. Short `modal_run` jobs
+block the current agent turn, while durable jobs can run in the background,
+survive a backend restart, and be inspected or cancelled from the center-panel
+**Compute** tab. Inputs are validated before upload, outputs are installed
+atomically into the local sandbox, and estimated spend is reserved against the
+project cap before resources start. See [Durable Modal compute](./modal-compute.md).
+
 ### Scientific databases
 
 Kady can query **229 scientific and financial databases** across 18 categories — Biomedical & Health, Chemistry & Materials, Scholarly Publications, Stock Market, Earth & Climate, Astronomy & Space, and more. Just ask (*"look up this compound in PubChem"*); Kady knows how to reach them. A few databases need their own free API key, listed in `.env.example`.

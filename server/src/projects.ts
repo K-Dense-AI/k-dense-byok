@@ -51,6 +51,11 @@ export interface ProjectPaths {
   kadyDir: string;
   runsDir: string;
   notebookDir: string;
+  modalDir: string;
+  modalJobsDir: string;
+  modalReservationsDir: string;
+  modalCacheDir: string;
+  modalEnvironmentsDir: string;
   skillsDir: string;
   sessionsDir: string;
 }
@@ -112,6 +117,7 @@ export function resolvePaths(projectId: string): ProjectPaths {
   }
   const sandbox = path.join(root, "sandbox");
   const kadyDir = path.join(sandbox, ".kady");
+  const modalDir = path.join(kadyDir, "modal");
   const piDir = path.join(sandbox, ".pi");
   return {
     id,
@@ -122,6 +128,11 @@ export function resolvePaths(projectId: string): ProjectPaths {
     kadyDir,
     runsDir: path.join(kadyDir, "runs"),
     notebookDir: path.join(kadyDir, "notebook"),
+    modalDir,
+    modalJobsDir: path.join(modalDir, "jobs"),
+    modalReservationsDir: path.join(modalDir, "reservations"),
+    modalCacheDir: path.join(modalDir, "cache"),
+    modalEnvironmentsDir: path.join(modalDir, "environments"),
     skillsDir: path.join(piDir, "skills"),
     sessionsDir: path.join(piDir, "sessions"),
   };

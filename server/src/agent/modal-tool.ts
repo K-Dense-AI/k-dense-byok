@@ -1,60 +1,29 @@
-/**
- * Native `modal_run` tool: run a command/script on a remote Modal Sandbox
- * (CPU or GPU) the user has chosen, then bring results back.
- *
- * This is the "agent-driven offload" model: the Pi agent loop stays local and
- * the local project sandbox stays the canonical filesystem. When the agent
- * needs heavy or GPU compute it calls `modal_run`, which:
- *   1. spins an isolated Modal Sandbox on the selected instance (BYOK creds —
- *      MODAL_TOKEN_ID / MODAL_TOKEN_SECRET, passed per-client),
- *   2. optionally builds a custom image (extra pip/apt packages),
- *   3. uploads `files_in` (sandbox-relative) into the remote /workspace,
- *   4. runs the command, capturing stdout/stderr/exit code,
- *   5. downloads `files_out` back into the local project sandbox,
- *   6. meters wall-time × the instance's hourly rate as a `compute` cost row,
- *   7. terminates the sandbox.
- *
- * Built as an in-process custom tool (mirrors interview.ts) — it is available
- * to the main agent session. Child `pi` subagent processes do not get it (they
- * load tools the project-settings way); extending it to subagents would mean
- * promoting this to a Pi package bridge (see web-access-bridge.ts).
- *
- * Note: `ollama/*` models run on the local daemon and are unaffected — Modal
- * offload is for compute steps, not for relocating the model loop. No secrets
- * are injected into the remote sandbox by default (the user's model key is not
- * forwarded); a future revision can add an explicit per-call secret allowlist.
- */
-import fs from "node:fs";
-import path from "node:path";
 import { Type, type Static } from "typebox";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { ModalClient, type Sandbox } from "modal";
-import { resolvePaths } from "../projects.ts";
-import { isWithin } from "../sandbox-fs.ts";
-import { isBudgetExceeded, recordModalRun } from "../cost/ledger.ts";
+import { currentRunId } from "./run-ids.ts";
 import {
   DEFAULT_INSTANCE_ID,
   MODAL_INSTANCE_IDS,
-  resolveInstance,
-} from "./modal-instances.ts";
+} from "../modal/catalog.ts";
+import {
+  DEFAULT_MODAL_TIMEOUT_SEC,
+  MAX_MODAL_BATCH_SIZE,
+  MAX_MODAL_TIMEOUT_SEC,
+  modalJobManager,
+} from "../modal/manager.ts";
+import { ModalJobError, type ModalJobOwner, type ModalJobRequest } from "../modal/types.ts";
 
-const APP_NAME = "kady";
-const WORKDIR = "/workspace";
-const DEFAULT_TIMEOUT_S = 600;
-const MAX_TIMEOUT_S = 3600;
-/** Cap each stream in the tool result so a chatty job can't blow the context. */
-const MAX_OUTPUT_CHARS = 16000;
+const MAX_TOOL_OUTPUT_CHARS = 16_000;
 
-// Per-project/session default compute instance, stashed by the /run handler
-// before a run (mirrors fusion-bridge's setFusionConfig). Module-level because
-// the tool is constructed before the session exists and reads the live value
-// by composite key. `null` means no Modal default selected ("local") — the tool
-// then falls back to DEFAULT_INSTANCE_ID when the agent doesn't name an
-// instance.
 const sessionComputeTargets = new Map<string, string | null>();
+export interface SessionComputeOptions {
+  gpuCount?: number;
+  gpuFallback?: string[];
+  cache?: "project" | "none";
+}
+const sessionComputeOptions = new Map<string, SessionComputeOptions>();
 const keyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
-/** Stash (or clear, with `null`/"local") the default for a project session. */
 export function setSessionComputeTarget(
   projectId: string,
   sessionId: string,
@@ -66,7 +35,6 @@ export function setSessionComputeTarget(
   );
 }
 
-/** Return the selected default compute instance for a project session. */
 export function getSessionComputeTarget(
   projectId: string,
   sessionId: string,
@@ -74,226 +42,403 @@ export function getSessionComputeTarget(
   return sessionComputeTargets.get(keyFor(projectId, sessionId));
 }
 
+export function setSessionComputeOptions(
+  projectId: string,
+  sessionId: string,
+  options: SessionComputeOptions | null | undefined,
+): void {
+  const key = keyFor(projectId, sessionId);
+  if (!options) {
+    sessionComputeOptions.delete(key);
+    return;
+  }
+  sessionComputeOptions.set(key, {
+    ...(options.gpuCount !== undefined ? { gpuCount: options.gpuCount } : {}),
+    ...(options.gpuFallback?.length
+      ? { gpuFallback: [...options.gpuFallback] }
+      : {}),
+    ...(options.cache ? { cache: options.cache } : {}),
+  });
+}
+
+export function getSessionComputeOptions(
+  projectId: string,
+  sessionId: string,
+): SessionComputeOptions | undefined {
+  return sessionComputeOptions.get(keyFor(projectId, sessionId));
+}
+
+const ModalImageParams = Type.Object({
+  base: Type.Optional(
+    Type.String({
+      description: "Base registry image (default python:3.13-slim).",
+    }),
+  ),
+  pip: Type.Optional(Type.Array(Type.String(), { maxItems: 128 })),
+  apt: Type.Optional(Type.Array(Type.String(), { maxItems: 128 })),
+});
+
 export const ModalRunParams = Type.Object({
   command: Type.String({
-    description: "Shell command to run remotely (executed via `sh -lc` in /workspace), e.g. \"python train.py --epochs 50\".",
+    description: "Shell command to run remotely via `sh` in /workspace.",
   }),
   instance: Type.Optional(
     Type.String({
-      description: `Compute instance id. One of: ${MODAL_INSTANCE_IDS.join(", ")}. Omit to use the session's selected default (else "${DEFAULT_INSTANCE_ID}").`,
+      description: `Compute instance id (${MODAL_INSTANCE_IDS.join(", ")}). Omit for the chat default or "${DEFAULT_INSTANCE_ID}".`,
     }),
   ),
-  image: Type.Optional(
-    Type.Object({
-      base: Type.Optional(
-        Type.String({ description: "Base registry image (default python:3.13-slim). e.g. \"pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime\"." }),
-      ),
-      pip: Type.Optional(Type.Array(Type.String(), { description: "pip packages to install into the image" })),
-      apt: Type.Optional(Type.Array(Type.String(), { description: "apt packages to install into the image" })),
+  gpu_count: Type.Optional(
+    Type.Integer({
+      minimum: 1,
+      maximum: 8,
+      description: "Number of GPUs. CPU presets require 1; A10 supports up to 4; other GPUs up to 8.",
+    }),
+  ),
+  gpu_fallback: Type.Optional(
+    Type.Array(Type.String(), {
+      maxItems: 7,
+      description: "Ordered fallback instance ids if the preferred instance cannot be allocated.",
+    }),
+  ),
+  image: Type.Optional(ModalImageParams),
+  environment: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 64,
+      pattern: "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      description:
+        "Optional named reusable environment. The normalized image is built and published for reuse.",
+    }),
+  ),
+  cache: Type.Optional(
+    Type.Union([Type.Literal("project"), Type.Literal("none")], {
+      description: 'Use the project Modal cache Volume (default) or "none" for an ephemeral job.',
     }),
   ),
   files_in: Type.Optional(
     Type.Array(Type.String(), {
-      description: "Sandbox-relative paths to upload into the remote /workspace before running.",
+      maxItems: 128,
+      description: "Required sandbox-relative files/directories to upload. Missing inputs fail before submission.",
     }),
   ),
   files_out: Type.Optional(
     Type.Array(Type.String(), {
-      description: "Sandbox-relative paths produced by the job to download back into the local project after it finishes.",
+      maxItems: 128,
+      description: "Sandbox-relative output paths or bounded * / ** / ? globs to install atomically.",
     }),
   ),
   timeout_sec: Type.Optional(
-    Type.Number({ description: `Max seconds before the sandbox is killed (default ${DEFAULT_TIMEOUT_S}, max ${MAX_TIMEOUT_S}).` }),
+    Type.Integer({
+      minimum: 1,
+      maximum: MAX_MODAL_TIMEOUT_SEC,
+      description: `Hard sandbox lifetime (default ${DEFAULT_MODAL_TIMEOUT_SEC}s).`,
+    }),
   ),
+  label: Type.Optional(Type.String({ maxLength: 200 })),
 });
 export type ModalRunParamsT = Static<typeof ModalRunParams>;
 
-/** Resolve a sandbox-relative path against the project sandbox, refusing traversal. */
-function safeUnder(sandboxRoot: string, rel: string): string {
-  const target = path.resolve(sandboxRoot, rel);
-  if (!isWithin(sandboxRoot, target)) {
-    throw new Error(`Path escapes the project sandbox: ${rel}`);
-  }
-  return target;
-}
+export const ModalJobIdParams = Type.Object({
+  job_id: Type.String({ description: "Durable Modal job id returned by modal_submit/modal_run." }),
+});
 
-function truncate(s: string): string {
-  if (s.length <= MAX_OUTPUT_CHARS) return s;
-  return `…(${s.length - MAX_OUTPUT_CHARS} earlier chars truncated)\n${s.slice(-MAX_OUTPUT_CHARS)}`;
+export const ModalWaitParams = Type.Object({
+  job_id: Type.String(),
+  timeout_sec: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      maximum: 3600,
+      description: "How long to wait. Returns the current state if it remains active.",
+    }),
+  ),
+});
+
+export const ModalSubmitBatchParams = Type.Object({
+  jobs: Type.Array(ModalRunParams, {
+    minItems: 1,
+    maxItems: MAX_MODAL_BATCH_SIZE,
+    description: "Independent jobs submitted under one group id.",
+  }),
+  group_id: Type.Optional(Type.String()),
+});
+
+function requestFromParams(
+  params: ModalRunParamsT,
+  defaultInstance: string | null | undefined,
+  defaultOptions: SessionComputeOptions | undefined,
+  groupId?: string,
+): ModalJobRequest {
+  return {
+    command: params.command,
+    instance: params.instance ?? defaultInstance ?? DEFAULT_INSTANCE_ID,
+    gpuCount: params.gpu_count ?? defaultOptions?.gpuCount,
+    gpuFallback: params.gpu_fallback ?? defaultOptions?.gpuFallback,
+    image: params.image,
+    environment: params.environment,
+    cache: params.cache ?? defaultOptions?.cache,
+    filesIn: params.files_in,
+    filesOut: params.files_out,
+    timeoutSec: params.timeout_sec,
+    label: params.label,
+    groupId,
+  };
 }
 
 function textResult(text: string, details?: Record<string, unknown>) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
+function truncate(value: string): string {
+  if (value.length <= MAX_TOOL_OUTPUT_CHARS) return value;
+  return `…(${value.length - MAX_TOOL_OUTPUT_CHARS} earlier characters truncated)\n${value.slice(-MAX_TOOL_OUTPUT_CHARS)}`;
+}
+
+function publicJob(job: ReturnType<typeof modalJobManager.get>) {
+  return {
+    id: job.id,
+    job_id: job.id,
+    state: job.state,
+    label: job.request.label,
+    group_id: job.request.groupId,
+    instance: job.effectiveInstance ?? job.request.instance,
+    gpu_count: job.request.gpuCount,
+    exit_code: job.exitCode,
+    duration_ms:
+      job.finishedAt && job.sandboxCreatedAt
+        ? Math.max(0, job.finishedAt - job.sandboxCreatedAt)
+        : undefined,
+    created_at: job.createdAt,
+    finished_at: job.finishedAt,
+    files_out: job.outputFiles,
+    missing_outputs: job.missingOutputs,
+    estimated_cost_usd: job.accounting.estimatedCostUsd,
+    cost_usd: job.accounting.estimatedCostUsd,
+    error: job.error,
+  };
+}
+
+function toolFailure(error: unknown) {
+  const detail =
+    error instanceof ModalJobError
+      ? { error: error.code, retryable: error.retryable }
+      : { error: "MODAL_FAILURE", retryable: false };
+  const message = error instanceof Error ? error.message : String(error);
+  return textResult(`Modal compute request failed: ${message}`, detail);
+}
+
+export const MODAL_TOOL_NAMES = [
+  "modal_run",
+  "modal_submit",
+  "modal_status",
+  "modal_wait",
+  "modal_cancel",
+  "modal_results",
+  "modal_submit_batch",
+] as const;
+
 /**
- * Build the `modal_run` ToolDefinition for one project session. `getSessionId`
- * is late-bound (the tool is built before the session exists) — same holder
- * pattern as the interview tool and subagent ledger extension.
+ * Build the hybrid durable Modal tool set. Tools are always registered: when
+ * credentials are missing, submission returns NOT_CONFIGURED. This lets warm
+ * sessions start working immediately after live credential setup.
  */
+export function makeModalTools(
+  projectId: string,
+  getSessionId: () => string,
+): ToolDefinition<any>[] {
+  const owner = (): ModalJobOwner => {
+    const sessionId = getSessionId();
+    return {
+      sessionId,
+      submittedBy: "lead",
+      ...(currentRunId(projectId, sessionId) ? { runId: currentRunId(projectId, sessionId)! } : {}),
+    };
+  };
+  const defaultInstance = () =>
+    getSessionComputeTarget(projectId, getSessionId()) ?? DEFAULT_INSTANCE_ID;
+  const defaultOptions = () =>
+    getSessionComputeOptions(projectId, getSessionId());
+
+  const submit = (
+    params: ModalRunParamsT,
+    groupId?: string,
+  ) => modalJobManager.submit(
+    projectId,
+    requestFromParams(params, defaultInstance(), defaultOptions(), groupId),
+    owner(),
+  );
+
+  const modalRun: ToolDefinition<typeof ModalRunParams> = {
+    name: "modal_run",
+    label: "Modal compute",
+    description: [
+      "Run a command on durable remote Modal CPU/GPU compute and wait for completion.",
+      "Backward-compatible blocking tool: required files_in are copied recursively, files_out are installed atomically into the local project sandbox, which remains canonical.",
+      "The job is persisted and recoverable. Aborting this blocking call cancels its remote job.",
+      "Cost is an explicit estimate (catalogue rate × elapsed sandbox time) and the worst-case timeout cost is reserved before admission.",
+    ].join("\n"),
+    promptSnippet: "modal_run: run and wait for durable Modal CPU/GPU compute",
+    parameters: ModalRunParams,
+    execute: async (_id, params, signal) => {
+      let jobId: string | undefined;
+      const onAbort = () => {
+        if (jobId) void modalJobManager.cancel(projectId, jobId);
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      try {
+        const submitted = submit(params);
+        jobId = submitted.id;
+        if (signal?.aborted) await modalJobManager.cancel(projectId, jobId);
+        const job = await modalJobManager.wait(projectId, jobId);
+        const result = modalJobManager.result(projectId, jobId);
+        const summary = publicJob(job);
+        return textResult(
+          `${JSON.stringify(summary, null, 2)}\n\n--- stdout ---\n${truncate(result.stdout) || "(empty)"}\n\n--- stderr ---\n${truncate(result.stderr) || "(empty)"}`,
+          summary,
+        );
+      } catch (error) {
+        if (jobId && signal?.aborted) await modalJobManager.cancel(projectId, jobId);
+        return toolFailure(error);
+      } finally {
+        signal?.removeEventListener("abort", onAbort);
+      }
+    },
+  };
+
+  const modalSubmit: ToolDefinition<typeof ModalRunParams> = {
+    name: "modal_submit",
+    label: "Submit Modal job",
+    description:
+      "Submit durable Modal CPU/GPU work and return immediately. Async jobs survive chat aborts; use modal_status/modal_wait/modal_results.",
+    promptSnippet: "modal_submit: submit durable asynchronous Modal compute",
+    parameters: ModalRunParams,
+    execute: async (_id, params) => {
+      try {
+        const job = submit(params);
+        const summary = publicJob(job);
+        return textResult(JSON.stringify(summary, null, 2), summary);
+      } catch (error) {
+        return toolFailure(error);
+      }
+    },
+  };
+
+  const modalStatus: ToolDefinition<typeof ModalJobIdParams> = {
+    name: "modal_status",
+    label: "Modal job status",
+    description: "Get durable status, timing, accounting, and output metadata for one Modal job.",
+    parameters: ModalJobIdParams,
+    execute: async (_id, params) => {
+      try {
+        const value = modalJobManager.result(projectId, params.job_id);
+        const summary = publicJob(value.job);
+        return textResult(
+          `${JSON.stringify(summary, null, 2)}\n\n--- recent stdout ---\n${truncate(value.stdout) || "(empty)"}\n\n--- recent stderr ---\n${truncate(value.stderr) || "(empty)"}`,
+          summary,
+        );
+      } catch (error) {
+        return toolFailure(error);
+      }
+    },
+  };
+
+  const modalWait: ToolDefinition<typeof ModalWaitParams> = {
+    name: "modal_wait",
+    label: "Wait for Modal job",
+    description: "Wait for a durable Modal job or return its current state after timeout_sec.",
+    parameters: ModalWaitParams,
+    execute: async (_id, params, signal) => {
+      try {
+        const job = await modalJobManager.wait(
+          projectId,
+          params.job_id,
+          (params.timeout_sec ?? 600) * 1000,
+          signal,
+        );
+        const summary = publicJob(job);
+        return textResult(JSON.stringify(summary, null, 2), summary);
+      } catch (error) {
+        return toolFailure(error);
+      }
+    },
+  };
+
+  const modalCancel: ToolDefinition<typeof ModalJobIdParams> = {
+    name: "modal_cancel",
+    label: "Cancel Modal job",
+    description: "Request cancellation and terminate the remote Modal sandbox if it exists.",
+    parameters: ModalJobIdParams,
+    execute: async (_id, params) => {
+      try {
+        const job = await modalJobManager.cancel(projectId, params.job_id);
+        const summary = publicJob(job);
+        return textResult(JSON.stringify(summary, null, 2), summary);
+      } catch (error) {
+        return toolFailure(error);
+      }
+    },
+  };
+
+  const modalResults: ToolDefinition<typeof ModalJobIdParams> = {
+    name: "modal_results",
+    label: "Modal job results",
+    description: "Read retained stdout/stderr plus installed output metadata for a Modal job.",
+    parameters: ModalJobIdParams,
+    execute: async (_id, params) => {
+      try {
+        const result = modalJobManager.result(projectId, params.job_id);
+        const summary = publicJob(result.job);
+        return textResult(
+          `${JSON.stringify(summary, null, 2)}\n\n--- stdout ---\n${truncate(result.stdout) || "(empty)"}\n\n--- stderr ---\n${truncate(result.stderr) || "(empty)"}`,
+          summary,
+        );
+      } catch (error) {
+        return toolFailure(error);
+      }
+    },
+  };
+
+  const modalSubmitBatch: ToolDefinition<typeof ModalSubmitBatchParams> = {
+    name: "modal_submit_batch",
+    label: "Submit Modal batch",
+    description: `Submit 1-${MAX_MODAL_BATCH_SIZE} independent durable jobs under one group id.`,
+    parameters: ModalSubmitBatchParams,
+    execute: async (_id, params) => {
+      try {
+        const requests = params.jobs.map((job) =>
+          requestFromParams(
+            job,
+            defaultInstance(),
+            defaultOptions(),
+            params.group_id,
+          ),
+        );
+        const result = modalJobManager.submitBatch(projectId, requests, owner());
+        const details = {
+          group_id: result.groupId,
+          jobs: result.jobs.map(publicJob),
+        };
+        return textResult(JSON.stringify(details, null, 2), details);
+      } catch (error) {
+        return toolFailure(error);
+      }
+    },
+  };
+
+  return [
+    modalRun,
+    modalSubmit,
+    modalStatus,
+    modalWait,
+    modalCancel,
+    modalResults,
+    modalSubmitBatch,
+  ];
+}
+
+/** Backward-compatible constructor retained for existing imports/tests. */
 export function makeModalTool(
   projectId: string,
   getSessionId: () => string,
 ): ToolDefinition<typeof ModalRunParams> {
-  return {
-    name: "modal_run",
-    label: "Modal compute",
-    description: [
-      "Run a command or script on a remote Modal Sandbox (on-demand CPU or GPU) and get the result back.",
-      "Use for heavy or GPU work that shouldn't run on the local machine: model training/fine-tuning, GPU inference, large simulations, or compute the local sandbox can't handle.",
-      "The remote sandbox is ephemeral and isolated. Upload inputs with `files_in` (sandbox-relative) and name expected outputs in `files_out` — they are copied back into the local project sandbox so your other tools (read/edit/bash) can use them. The local sandbox remains the source of truth.",
-      "Pick an `instance` by GPU need (omit to use the session's selected compute target). Add `image.pip`/`image.apt` for dependencies, or set `image.base` for a CUDA/framework base image.",
-      "Cost is billed by wall-clock time on the chosen instance and counts toward the project budget, so keep jobs scoped.",
-    ].join("\n"),
-    promptSnippet:
-      "modal_run: run a command/script on a remote Modal sandbox (CPU/GPU) and copy results back",
-    parameters: ModalRunParams,
-    execute: async (_toolCallId, params, signal) => {
-      const sessionId = getSessionId();
-
-      // Hard budget cap — same gate the subagent tool applies.
-      const budget = isBudgetExceeded(projectId);
-      if (budget.exceeded) {
-        return textResult(
-          `Modal run blocked: the project has reached its spend limit ` +
-            `($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}). ` +
-            `Finish without remote compute or ask the user to raise the limit.`,
-          { blocked: "budget" },
-        );
-      }
-
-      const tokenId = process.env.MODAL_TOKEN_ID;
-      const tokenSecret = process.env.MODAL_TOKEN_SECRET;
-      if (!tokenId || !tokenSecret) {
-        return textResult(
-          "Modal is not configured. Add MODAL_TOKEN_ID and MODAL_TOKEN_SECRET in Settings → API keys (get them at https://modal.com/settings).",
-          { error: "not_configured" },
-        );
-      }
-
-      const instanceId =
-        params.instance ?? getSessionComputeTarget(projectId, sessionId) ?? DEFAULT_INSTANCE_ID;
-      const spec = resolveInstance(instanceId);
-      if (!spec) {
-        return textResult(
-          `Unknown compute instance "${instanceId}". Valid instances: ${MODAL_INSTANCE_IDS.join(", ")}.`,
-          { error: "unknown_instance" },
-        );
-      }
-
-      const sandboxRoot = resolvePaths(projectId).sandbox;
-      const timeoutMs =
-        Math.min(Math.max(Math.floor(params.timeout_sec ?? DEFAULT_TIMEOUT_S), 1), MAX_TIMEOUT_S) * 1000;
-
-      const modal = new ModalClient({ tokenId, tokenSecret });
-      const startedAt = Date.now();
-      let sb: Sandbox | null = null;
-      const onAbort = () => {
-        sb?.terminate().catch(() => {});
-      };
-      signal?.addEventListener("abort", onAbort, { once: true });
-
-      try {
-        const app = await modal.apps.fromName(APP_NAME, { createIfMissing: true });
-
-        let image = modal.images.fromRegistry(params.image?.base ?? spec.defaultImage);
-        const dockerCmds: string[] = [];
-        if (params.image?.apt?.length) {
-          dockerCmds.push(
-            `RUN apt-get update && apt-get install -y ${params.image.apt.join(" ")} && rm -rf /var/lib/apt/lists/*`,
-          );
-        }
-        if (params.image?.pip?.length) {
-          dockerCmds.push(`RUN pip install --no-cache-dir ${params.image.pip.join(" ")}`);
-        }
-        if (dockerCmds.length) image = image.dockerfileCommands(dockerCmds);
-
-        sb = await modal.sandboxes.create(app, image, {
-          gpu: spec.gpu ?? undefined,
-          cpu: spec.cpu,
-          memoryMiB: spec.memoryMiB,
-          timeoutMs,
-        });
-        await sb.filesystem.makeDirectory(WORKDIR, { createParents: true });
-
-        // Stage inputs.
-        const stagedIn: string[] = [];
-        const missingIn: string[] = [];
-        for (const rel of params.files_in ?? []) {
-          const local = safeUnder(sandboxRoot, rel);
-          if (!fs.existsSync(local)) {
-            missingIn.push(rel);
-            continue;
-          }
-          const remote = path.posix.join(WORKDIR, rel);
-          const remoteDir = path.posix.dirname(remote);
-          if (remoteDir && remoteDir !== WORKDIR) {
-            await sb.filesystem.makeDirectory(remoteDir, { createParents: true });
-          }
-          await sb.filesystem.copyFromLocal(local, remote);
-          stagedIn.push(rel);
-        }
-
-        // Run.
-        const proc = await sb.exec(["sh", "-lc", params.command], {
-          stdout: "pipe",
-          stderr: "pipe",
-          workdir: WORKDIR,
-          timeoutMs,
-        });
-        const [stdout, stderr] = await Promise.all([
-          proc.stdout.readText(),
-          proc.stderr.readText(),
-        ]);
-        const exitCode = await proc.wait();
-
-        // Collect outputs.
-        const collectedOut: string[] = [];
-        const missingOut: string[] = [];
-        for (const rel of params.files_out ?? []) {
-          const local = safeUnder(sandboxRoot, rel);
-          const remote = path.posix.join(WORKDIR, rel);
-          try {
-            fs.mkdirSync(path.dirname(local), { recursive: true });
-            await sb.filesystem.copyToLocal(remote, local);
-            collectedOut.push(rel);
-          } catch {
-            missingOut.push(rel);
-          }
-        }
-
-        const durationMs = Date.now() - startedAt;
-        const costUsd = (durationMs / 3_600_000) * spec.pricePerHour;
-        recordModalRun(projectId, sessionId, costUsd, `modal:${spec.id}`);
-
-        const summary = {
-          instance: spec.id,
-          gpu: spec.gpu,
-          exit_code: exitCode,
-          duration_ms: durationMs,
-          cost_usd: Number(costUsd.toFixed(4)),
-          ...(stagedIn.length ? { files_in: stagedIn } : {}),
-          ...(missingIn.length ? { files_in_missing: missingIn } : {}),
-          files_out: collectedOut,
-          ...(missingOut.length ? { files_out_missing: missingOut } : {}),
-        };
-        const text =
-          `${JSON.stringify(summary, null, 2)}\n\n` +
-          `--- stdout ---\n${truncate(stdout) || "(empty)"}\n\n` +
-          `--- stderr ---\n${truncate(stderr) || "(empty)"}`;
-        return textResult(text, summary);
-      } catch (err) {
-        const msg = (err as Error).message ?? String(err);
-        return textResult(
-          `Modal run failed on instance "${spec.id}": ${msg}\n` +
-            `If this is an authentication error, check MODAL_TOKEN_ID / MODAL_TOKEN_SECRET in Settings.`,
-          { error: "modal_failure", instance: spec.id },
-        );
-      } finally {
-        signal?.removeEventListener("abort", onAbort);
-        if (sb) await sb.terminate().catch(() => {});
-        modal.close();
-      }
-    },
-  };
+  return makeModalTools(projectId, getSessionId)[0] as ToolDefinition<typeof ModalRunParams>;
 }

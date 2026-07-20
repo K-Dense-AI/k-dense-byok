@@ -27,8 +27,13 @@ import {
   LayersIcon,
   BotIcon,
   PlugIcon,
+  CheckCircle2Icon,
+  AlertCircleIcon,
+  LoaderCircleIcon,
+  ExternalLinkIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/projects";
+import { notifyModalCredentialsChanged } from "@/lib/modal-jobs";
 import {
   FUSION_DEFAULTS_VERSION,
   fusionPanelModels,
@@ -82,22 +87,6 @@ const KEY_DEFS: KeyDef[] = [
     placeholder: "AIza…",
     keysUrl: "https://aistudio.google.com/apikey",
     hint: "Search fallback plus YouTube and video understanding for fetched links.",
-  },
-  {
-    id: "modalTokenId",
-    bodyField: "modalTokenId",
-    label: "Modal Token ID (optional)",
-    placeholder: "ak-…",
-    keysUrl: "https://modal.com/settings/tokens",
-    hint: "Enables remote compute — the agent can run jobs on a Modal sandbox (CPU/GPU). Pair with the Token Secret below.",
-  },
-  {
-    id: "modalTokenSecret",
-    bodyField: "modalTokenSecret",
-    label: "Modal Token Secret (optional)",
-    placeholder: "as-…",
-    keysUrl: "https://modal.com/settings/tokens",
-    hint: "The secret half of your Modal token pair. Both must be set to run jobs on Modal.",
   },
 ];
 
@@ -209,6 +198,269 @@ function KeyRow({
   );
 }
 
+type ModalConnectionState = "idle" | "testing" | "connected" | "error";
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function errorDetail(value: unknown): string | null {
+  const record = recordValue(value);
+  if (!record) return typeof value === "string" ? value : null;
+  for (const candidate of [
+    record.detail,
+    record.error,
+    record.message,
+    record.reason,
+  ]) {
+    if (typeof candidate === "string" && candidate.trim()) return candidate;
+    const nested = recordValue(candidate);
+    if (nested) {
+      const message = nested.message ?? nested.detail;
+      if (typeof message === "string" && message.trim()) return message;
+    }
+  }
+  return null;
+}
+
+function credentialStatusFromResponse(value: unknown): CredentialStatus | null {
+  const record = recordValue(value);
+  if (!record) return null;
+  const credentials = recordValue(record.credentials) ?? record;
+  return recordValue(credentials.modalTokenId) || recordValue(credentials.modalTokenSecret)
+    ? (credentials as CredentialStatus)
+    : null;
+}
+
+function modalConnectionFromResponse(value: unknown): {
+  status: string | null;
+  detail: string | null;
+} {
+  const record = recordValue(value);
+  if (!record) return { status: null, detail: null };
+  const connection =
+    recordValue(record.modal) ??
+    recordValue(record.modalConnection) ??
+    recordValue(record.validation);
+  const status =
+    (typeof connection?.status === "string" ? connection.status : null) ??
+    (typeof record.modalStatus === "string" ? record.modalStatus : null) ??
+    (record.modalConfigured === true ? "connected" : null);
+  return {
+    status,
+    detail: errorDetail(connection) ?? errorDetail(record),
+  };
+}
+
+function ModalCredentialPair({
+  status,
+  onStatus,
+}: {
+  status: CredentialStatus | null;
+  onStatus: (status: CredentialStatus) => void;
+}) {
+  const tokenIdStatus = status?.modalTokenId;
+  const tokenSecretStatus = status?.modalTokenSecret;
+  const existingConnected = Boolean(tokenIdStatus?.set && tokenSecretStatus?.set);
+  const existingPartial = Boolean(tokenIdStatus?.set) !== Boolean(tokenSecretStatus?.set);
+  const [tokenId, setTokenId] = useState("");
+  const [tokenSecret, setTokenSecret] = useState("");
+  const [connectionState, setConnectionState] = useState<ModalConnectionState>(
+    existingConnected ? "connected" : existingPartial ? "error" : "idle",
+  );
+  const [error, setError] = useState<string | null>(
+    existingPartial ? "Both Modal token fields must be set together." : null,
+  );
+
+  useEffect(() => {
+    if (tokenIdStatus?.set && tokenSecretStatus?.set) {
+      setConnectionState("connected");
+      setError(null);
+    } else if (Boolean(tokenIdStatus?.set) !== Boolean(tokenSecretStatus?.set)) {
+      setConnectionState("error");
+      setError("Both Modal token fields must be set together.");
+    }
+  }, [
+    tokenIdStatus?.set,
+    tokenSecretStatus?.set,
+  ]);
+
+  const savePair = useCallback(
+    async (clear = false) => {
+      if (!clear && (!tokenId.trim() || !tokenSecret.trim())) {
+        setConnectionState("error");
+        setError("Enter both the Modal token ID and token secret.");
+        return;
+      }
+      setConnectionState("testing");
+      setError(null);
+      try {
+        const response = await apiFetch("/credentials", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            modalTokenId: clear ? null : tokenId.trim(),
+            modalTokenSecret: clear ? null : tokenSecret.trim(),
+          }),
+        });
+        const body = await response.json().catch(() => null);
+        const connection = modalConnectionFromResponse(body);
+        if (
+          !response.ok ||
+          connection.status === "error" ||
+          connection.status === "invalid" ||
+          connection.status === "disconnected"
+        ) {
+          throw new Error(
+            connection.detail ??
+              errorDetail(body) ??
+              (response.ok
+                ? "Modal rejected this token pair."
+                : `Modal connection failed (${response.status})`),
+          );
+        }
+        const nextStatus = credentialStatusFromResponse(body);
+        if (nextStatus) onStatus(nextStatus);
+        setTokenId("");
+        setTokenSecret("");
+        setConnectionState(clear ? "idle" : "connected");
+        notifyModalCredentialsChanged();
+      } catch (cause) {
+        setConnectionState("error");
+        setError(cause instanceof Error ? cause.message : "Modal connection failed");
+      }
+    },
+    [onStatus, tokenId, tokenSecret],
+  );
+
+  return (
+    <fieldset className="rounded-xl border p-3.5">
+      <legend className="px-1 text-xs font-medium">
+        <a
+          href="https://modal.com/settings/tokens"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 hover:underline"
+        >
+          Modal compute
+          <ExternalLinkIcon className="size-3" />
+        </a>
+      </legend>
+      <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
+        Save and validate the token ID and secret as one pair. The pair enables durable CPU and
+        GPU jobs without restarting Kady.
+      </p>
+
+      <div
+        role={connectionState === "error" ? "alert" : "status"}
+        className={cn(
+          "mb-3 flex items-center gap-2 rounded-md border px-2.5 py-2 text-[11px]",
+          connectionState === "testing" &&
+            "border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-300",
+          connectionState === "connected" &&
+            "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
+          connectionState === "error" &&
+            "border-destructive/30 bg-destructive/5 text-destructive",
+          connectionState === "idle" && "bg-muted/20 text-muted-foreground",
+        )}
+      >
+        {connectionState === "testing" ? (
+          <LoaderCircleIcon className="size-3.5 animate-spin" />
+        ) : connectionState === "connected" ? (
+          <CheckCircle2Icon className="size-3.5" />
+        ) : connectionState === "error" ? (
+          <AlertCircleIcon className="size-3.5" />
+        ) : (
+          <span className="size-2 rounded-full bg-muted-foreground/40" />
+        )}
+        <span className="min-w-0 flex-1">
+          {connectionState === "testing"
+            ? "Testing Modal connection…"
+            : connectionState === "connected"
+              ? "Connected — Modal compute is ready."
+              : connectionState === "error"
+                ? error ?? "Modal connection failed."
+                : "Not connected"}
+        </span>
+        {(tokenIdStatus?.set || tokenSecretStatus?.set) && connectionState !== "testing" ? (
+          <span className="hidden shrink-0 font-mono text-[10px] sm:inline">
+            {tokenIdStatus?.masked ?? "ID missing"} · {tokenSecretStatus?.masked ?? "secret missing"}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1.5 text-[11px] font-medium">
+          <span>Token ID</span>
+          <Input
+            type="password"
+            value={tokenId}
+            autoComplete="off"
+            placeholder={tokenIdStatus?.set ? "Replace ak-…" : "ak-…"}
+            className="h-8 font-mono text-xs"
+            onChange={(event) => {
+              setTokenId(event.target.value);
+              if (connectionState === "error") {
+                setConnectionState(existingConnected ? "connected" : "idle");
+                setError(null);
+              }
+            }}
+          />
+        </label>
+        <label className="space-y-1.5 text-[11px] font-medium">
+          <span>Token Secret</span>
+          <Input
+            type="password"
+            value={tokenSecret}
+            autoComplete="off"
+            placeholder={tokenSecretStatus?.set ? "Replace as-…" : "as-…"}
+            className="h-8 font-mono text-xs"
+            onChange={(event) => {
+              setTokenSecret(event.target.value);
+              if (connectionState === "error") {
+                setConnectionState(existingConnected ? "connected" : "idle");
+                setError(null);
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && tokenId.trim() && tokenSecret.trim()) {
+                void savePair();
+              }
+            }}
+          />
+        </label>
+      </div>
+      <div className="mt-3 flex justify-end gap-2">
+        {(tokenIdStatus?.set || tokenSecretStatus?.set) ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={connectionState === "testing"}
+            onClick={() => void savePair(true)}
+            className="text-xs text-destructive hover:text-destructive"
+          >
+            Clear pair
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          disabled={
+            connectionState === "testing" || !tokenId.trim() || !tokenSecret.trim()
+          }
+          onClick={() => void savePair()}
+          className="text-xs"
+        >
+          {connectionState === "testing" ? "Testing…" : "Save & test"}
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+
 function ApiKeysPanel() {
   const [statusState, setStatusState] = useState<CredentialStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -262,6 +514,7 @@ function ApiKeysPanel() {
               onStatus={setStatusState}
             />
           ))}
+          <ModalCredentialPair status={statusState} onStatus={setStatusState} />
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             Other keys (e.g.{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-[10px]">

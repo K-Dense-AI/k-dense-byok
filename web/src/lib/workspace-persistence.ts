@@ -5,6 +5,7 @@ import type { ModalInstance } from "@/components/compute-selector";
 import type { Model } from "@/components/model-selector";
 import type { ThinkingLevel } from "@/components/thinking-selector";
 import type { PromptImage } from "@/lib/image-attachments";
+import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { Skill } from "@/lib/use-skills";
 
 export const WORKSPACE_SCHEMA_VERSION = 1;
@@ -45,6 +46,11 @@ export interface WorkspaceQueuedMessage {
   files: string[];
   images: PromptImage[];
   computeTarget: string | null;
+  computeOptions?: {
+    gpuCount?: number;
+    gpuFallback?: string[];
+    cache?: "project" | "none";
+  };
   thinkingLevel: ThinkingLevel | null;
   timestamp: number;
 }
@@ -77,6 +83,8 @@ export interface ProjectWorkspaceState {
   activeTabId: string;
   view: WorkspaceView;
   showNotebook: boolean;
+  showCompute: boolean;
+  computeScope: ModalComputeScope;
   sandboxOpen: boolean;
   chatOpen: boolean;
   treeWidth: number;
@@ -217,8 +225,23 @@ function sanitizeModel(value: unknown): Model | null {
 
 function sanitizeComputeTarget(value: unknown): ModalInstance | null {
   if (value === null || value === undefined) return null;
-  if (!isRecord(value) || !stringValue(value.id) || !stringValue(value.label)) return null;
-  return value as unknown as ModalInstance;
+  if (typeof value === "string" && value.trim()) {
+    return {
+      id: value,
+      label: value,
+      gpu: null,
+      gpuCount: 1,
+      cpu: null,
+      memoryMiB: null,
+      pricePerHour: 0,
+    };
+  }
+  if (!isRecord(value) || !stringValue(value.id)) return null;
+  return {
+    ...value,
+    id: stringValue(value.id)!,
+    label: stringValue(value.label) ?? stringValue(value.id)!,
+  } as unknown as ModalInstance;
 }
 
 function sanitizeStoredChat(value: unknown): StoredChatState | undefined {
@@ -244,6 +267,27 @@ function sanitizeStoredChat(value: unknown): StoredChatState | undefined {
           files: stringArray(item.files),
           images: sanitizeBlobRefs(item.images),
           computeTarget: typeof item.computeTarget === "string" ? item.computeTarget : null,
+          computeOptions: isRecord(item.computeOptions)
+            ? {
+                ...(typeof item.computeOptions.gpuCount === "number" &&
+                Number.isInteger(item.computeOptions.gpuCount) &&
+                item.computeOptions.gpuCount >= 1 &&
+                item.computeOptions.gpuCount <= 8
+                  ? { gpuCount: item.computeOptions.gpuCount }
+                  : {}),
+                ...(Array.isArray(item.computeOptions.gpuFallback)
+                  ? {
+                      gpuFallback: item.computeOptions.gpuFallback.filter(
+                        (entry): entry is string => typeof entry === "string",
+                      ),
+                    }
+                  : {}),
+                ...(item.computeOptions.cache === "project" ||
+                item.computeOptions.cache === "none"
+                  ? { cache: item.computeOptions.cache }
+                  : {}),
+              }
+            : undefined,
           thinkingLevel: sanitizeThinkingLevel(item.thinkingLevel, true),
           timestamp: typeof item.timestamp === "number" && Number.isFinite(item.timestamp)
             ? item.timestamp
@@ -291,11 +335,14 @@ function sanitizeStoredProject(value: unknown): StoredProjectState | null {
   const sandbox = isRecord(value.sandbox) ? value.sandbox : {};
   const openPaths = stringArray(sandbox.openPaths);
   const requestedActivePath = stringValue(sandbox.activePath);
+  const showNotebook = value.showNotebook === true;
   return {
     tabs,
     activeTabId,
     view: value.view === "workflows" ? "workflows" : "chat",
-    showNotebook: value.showNotebook === true,
+    showNotebook,
+    showCompute: !showNotebook && value.showCompute === true,
+    computeScope: value.computeScope === "session" ? "session" : "project",
     sandboxOpen: value.sandboxOpen !== false,
     chatOpen: value.chatOpen !== false,
     treeWidth: boundedNumber(value.treeWidth, 320, 150, 480),

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { NotebookEntryChip, ToolActivityList } from "./tool-activity";
+import { ModalJobChip, NotebookEntryChip, ToolActivityList } from "./tool-activity";
 import type { ActivityItem } from "@/lib/use-agent";
 
 const item = (over: Partial<ActivityItem> = {}): ActivityItem => ({
@@ -66,5 +66,35 @@ describe("NotebookEntryChip", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /view in notebook/i }));
     expect(onView).toHaveBeenCalledWith("tc_9");
+  });
+});
+
+describe("ModalJobChip", () => {
+  it("links a durable tool result to its Compute job detail", () => {
+    const onView = vi.fn();
+    render(
+      <ModalJobChip
+        item={item({
+          toolName: "modal_submit",
+          result: JSON.stringify({ jobId: "job-abc123", status: "queued" }),
+        })}
+        onView={onView}
+      />,
+    );
+    expect(screen.getByText("job-abc123")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "View job" }));
+    expect(onView).toHaveBeenCalledWith("job-abc123");
+  });
+
+  it("still opens the Compute panel when a Modal result has no job id", () => {
+    const onView = vi.fn();
+    render(
+      <ModalJobChip
+        item={item({ toolName: "modal_run", result: "Compute completed" })}
+        onView={onView}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open Compute" }));
+    expect(onView).toHaveBeenCalledWith(undefined);
   });
 });
