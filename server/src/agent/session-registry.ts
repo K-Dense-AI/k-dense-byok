@@ -40,6 +40,14 @@ import {
   seedBuiltinAgentModalTools,
   seedModalPackage,
 } from "./modal-bridge.ts";
+import {
+  makePdfAnnotationTools,
+  PDF_ANNOTATION_TOOL_NAMES,
+} from "./pdf-annotation-tool.ts";
+import {
+  seedBuiltinAgentPdfAnnotationTools,
+  seedPdfAnnotationPackage,
+} from "./pdf-annotation-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary
@@ -109,6 +117,10 @@ async function build(
   // shape; user-pinned lists remain authoritative.
   seedModalPackage(paths);
   seedBuiltinAgentModalTools(paths);
+  // PDF annotation tools are in-process for the lead and package-backed for
+  // child agents so both can create expert markup visible in the viewer.
+  seedPdfAnnotationPackage(paths);
+  seedBuiltinAgentPdfAnnotationTools(paths);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -138,6 +150,7 @@ async function build(
   const notebookTool = makeNotebookTool(projectId, () => holder.session?.sessionId ?? "");
   // Typed presentation layer for compact scientific results and artifact links.
   const scientificResultTool = makeScientificResultTool(projectId);
+  const pdfAnnotationTools = makePdfAnnotationTools(projectId);
   // Durable remote-compute tools are always present. Missing credentials are
   // reported at submission time, so warm sessions become compatible
   // immediately after credentials are configured live.
@@ -154,6 +167,7 @@ async function build(
       "interview",
       "notebook",
       "scientific_result",
+      ...PDF_ANNOTATION_TOOL_NAMES,
       ...WEB_ACCESS_TOOLS,
       ...MODAL_TOOL_NAMES,
       ...mcpTools.map((t) => t.name),
@@ -162,6 +176,7 @@ async function build(
       interviewTool,
       notebookTool,
       scientificResultTool,
+      ...pdfAnnotationTools,
       ...modalTools,
       ...mcpTools,
     ],

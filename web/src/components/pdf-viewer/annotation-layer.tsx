@@ -64,7 +64,7 @@ export function AnnotationLayer({
 
   return (
     <div
-      className="absolute inset-0"
+      className="pointer-events-none absolute inset-0"
       style={{ width, height }}
     >
       {/* Highlights: rendered beneath pins, click-to-open. Use
