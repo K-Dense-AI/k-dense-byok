@@ -53,8 +53,45 @@ function ToolIcon({ toolName }: { toolName?: string }) {
   }
 }
 
+function subagentNames(
+  args: Record<string, unknown>,
+  result: string | undefined,
+): string[] {
+  const names: string[] = [];
+  const add = (value: unknown) => {
+    if (typeof value === "string" && value.trim() && !names.includes(value.trim())) {
+      names.push(value.trim());
+    }
+  };
+
+  add(args.agent);
+  if (Array.isArray(args.tasks)) {
+    for (const task of args.tasks) {
+      if (task && typeof task === "object") {
+        add((task as Record<string, unknown>).agent);
+      }
+    }
+  }
+
+  if (result) {
+    const asyncNames = /^Async (?:parallel|single): \[([^\]]+)\]/m.exec(result)?.[1];
+    if (asyncNames) asyncNames.split("+").forEach(add);
+    for (const match of result.matchAll(
+      /^(?:Step \d+|Agent \d+\/\d+):\s+([A-Za-z0-9][A-Za-z0-9._-]*)/gm,
+    )) {
+      add(match[1]);
+    }
+  }
+
+  return names;
+}
+
 /** One-line human summary of a tool call's arguments. */
-function summarize(toolName: string | undefined, args: unknown): string {
+function summarize(
+  toolName: string | undefined,
+  args: unknown,
+  result?: string,
+): string {
   if (args && typeof args === "object") {
     const a = args as Record<string, unknown>;
     const firstLine = (v: unknown) =>
@@ -64,8 +101,19 @@ function summarize(toolName: string | undefined, args: unknown): string {
     const pathish = a.path ?? a.file_path ?? a.filePath ?? a.pattern ?? a.query;
     if (typeof pathish === "string") return pathish;
     if (toolName === "subagent") {
-      const agent = typeof a.agent === "string" ? `${a.agent}: ` : "";
-      return agent + (firstLine(a.task ?? a.prompt ?? a.description) || "subtask");
+      const agents = subagentNames(a, result);
+      if (agents.length > 0) {
+        const task =
+          agents.length === 1 && Array.isArray(a.tasks) && a.tasks.length === 1
+            ? (a.tasks[0] as Record<string, unknown> | undefined)?.task
+            : a.task ?? a.prompt ?? a.description;
+        const detail = firstLine(task);
+        return `${agents.join(" + ")}${detail ? `: ${detail}` : ""}`;
+      }
+      if (a.action === "list") return "list agents";
+      if (a.action === "status") return "check subagent status";
+      if (a.action === "interrupt") return "interrupt subagent";
+      return firstLine(a.task ?? a.prompt ?? a.description) || "subtask";
     }
     const keys = Object.keys(a);
     if (keys.length) return firstLine(a[keys[0]]) || keys.join(", ");
@@ -103,7 +151,7 @@ function ToolCard({ item }: { item: ActivityItem }) {
   // server resolves the frontmatter name; the path-derived name is a fallback.
   const skill = item.skillName ?? skillNameFromRead(item.toolName, item.args);
   const name = skill ? "skill" : (item.toolName ?? item.label);
-  const summary = skill ?? summarize(item.toolName, item.args);
+  const summary = skill ?? summarize(item.toolName, item.args, item.result);
   const args = fullArgs(item.args);
   const hasDetail = Boolean(args || item.result);
 
