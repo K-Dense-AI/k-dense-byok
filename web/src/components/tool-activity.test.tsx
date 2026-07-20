@@ -29,6 +29,66 @@ describe("ToolActivityList", () => {
     const { container } = render(<ToolActivityList activities={[]} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it("shows the specialist name from a single-task subagent call", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "subagent",
+            args: {
+              tasks: [
+                {
+                  agent: "statistical-reviewer",
+                  task: "Audit the final analysis",
+                },
+              ],
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText("statistical-reviewer: Audit the final analysis"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("subtask")).not.toBeInTheDocument();
+  });
+
+  it("shows every specialist name from a parallel subagent call", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "subagent",
+            args: {
+              tasks: [
+                { agent: "researcher", task: "Find sources" },
+                { agent: "methodology-reviewer", task: "Review methods" },
+              ],
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText("researcher + methodology-reviewer"),
+    ).toBeInTheDocument();
+  });
+
+  it("recovers the specialist name from a completed status result", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "subagent",
+            args: { action: "status", id: "run-1" },
+            result: "Step 1: statistical-reviewer running, active but long-running",
+          }),
+        ]}
+      />,
+    );
+    expect(screen.getByText("statistical-reviewer")).toBeInTheDocument();
+  });
 });
 
 describe("NotebookEntryChip", () => {
