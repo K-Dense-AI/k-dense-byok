@@ -30,7 +30,11 @@ import {
   webAccessPackageDir,
 } from "../src/agent/web-access-bridge.ts";
 import { guessMime, isUserVisible } from "../src/sandbox-fs.ts";
-import { listProjectSkills, seedProjectSkills } from "../src/agent/skills.ts";
+import {
+  listDisabledSkills,
+  listProjectSkills,
+  seedProjectSkills,
+} from "../src/agent/skills.ts";
 import {
   contextUsageForClient,
   contextUsageFrame,
@@ -243,20 +247,25 @@ describe("sandbox-fs", () => {
 });
 
 describe("skills", () => {
-  it("copies skills from a sibling project and lists them", () => {
-    // sibling with one skill
+  it("copies sibling skills into their default enabled states", () => {
     const sib = resolvePaths("sib");
-    const skillDir = path.join(sib.skillsDir, "anndata");
-    fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(
-      path.join(skillDir, "SKILL.md"),
-      "---\nname: anndata\ndescription: Annotated matrices.\n---\n# anndata\n",
-    );
+    for (const [name, description] of [
+      ["anndata", "Annotated matrices."],
+      ["literature-review", "Systematic literature reviews."],
+    ]) {
+      const skillDir = path.join(sib.skillsDir, name);
+      fs.mkdirSync(skillDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(skillDir, "SKILL.md"),
+        `---\nname: ${name}\ndescription: ${description}\n---\n# ${name}\n`,
+      );
+    }
+
     const target = ensureProjectExists("default");
     const count = seedProjectSkills(target, false); // no network
-    expect(count).toBe(1);
-    const listed = listProjectSkills(target);
-    expect(listed.map((s) => s.name)).toContain("anndata");
+    expect(count).toBe(2);
+    expect(listProjectSkills(target).map((s) => s.name)).toContain("literature-review");
+    expect(listDisabledSkills(target).map((s) => s.name)).toContain("anndata");
   });
 });
 

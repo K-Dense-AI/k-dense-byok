@@ -21,6 +21,91 @@ import type { ToggleResult } from "./capability-state.ts";
 const SKILLS_REPO = process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
 const SKILLS_SUBPATH = "skills";
 const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
+const DEFAULT_DISABLED_MIGRATION = "package-skills-disabled-v1";
+
+/**
+ * Package-reference skills add standing context that current models generally
+ * do not need. Keep them installed so users can opt in from Settings, but seed
+ * them into the disabled directory for new projects.
+ *
+ * Workflow, data-source, and platform skills remain enabled. Modal and
+ * HypoGeniC are intentional exceptions: although broader than libraries, they
+ * are package-backed and should also default to disabled.
+ */
+const DEFAULT_DISABLED_SKILLS = new Set([
+  "aeon",
+  "anndata",
+  "arboreto",
+  "astropy",
+  "biopython",
+  "bioservices",
+  "cellxgene-census",
+  "cirq",
+  "cobrapy",
+  "dask",
+  "datamol",
+  "deepchem",
+  "deeptools",
+  "esm",
+  "etetoolkit",
+  "flowio",
+  "fluidsim",
+  "geniml",
+  "geopandas",
+  "gget",
+  "gtars",
+  "histolab",
+  "hypogenic",
+  "lamindb",
+  "markitdown",
+  "matchms",
+  "matplotlib",
+  "medchem",
+  "modal",
+  "molfeat",
+  "networkx",
+  "neurokit2",
+  "pathml",
+  "pennylane",
+  "polars",
+  "polars-bio",
+  "pufferlib",
+  "pydeseq2",
+  "pydicom",
+  "pyhealth",
+  "pylabrobot",
+  "pymatgen",
+  "pymc",
+  "pymoo",
+  "pyopenms",
+  "pysam",
+  "pytdc",
+  "pytorch-lightning",
+  "pyzotero",
+  "qiskit",
+  "qutip",
+  "rdkit",
+  "scanpy",
+  "scikit-bio",
+  "scikit-learn",
+  "scikit-survival",
+  "scvelo",
+  "scvi-tools",
+  "seaborn",
+  "shap",
+  "simpy",
+  "stable-baselines3",
+  "statsmodels",
+  "sympy",
+  "tiledbvcf",
+  "timesfm-forecasting",
+  "torch-geometric",
+  "torchdrug",
+  "transformers",
+  "umap-learn",
+  "vaex",
+  "zarr-python",
+]);
 
 function countSkillDirs(dir: string): number {
   try {
@@ -32,26 +117,67 @@ function countSkillDirs(dir: string): number {
   }
 }
 
-/** Any other project's skills dir that already has skills (for the copy fast path). */
-function findSiblingSkillsDir(excludeId: string): string | null {
+export function skillsDisabledDir(paths: ProjectPaths): string {
+  return path.join(paths.sandbox, ".pi", "skills-disabled");
+}
+
+function countInstalledSkills(paths: ProjectPaths): number {
+  return countSkillDirs(paths.skillsDir) + countSkillDirs(skillsDisabledDir(paths));
+}
+
+function defaultDisabledMigrationMarker(paths: ProjectPaths): string {
+  return path.join(paths.kadyDir, "migrations", DEFAULT_DISABLED_MIGRATION);
+}
+
+/**
+ * Apply the package-skill default once to an existing project. The marker is
+ * written only after skills exist and all moves finish, so a later explicit
+ * user enable is preserved.
+ */
+export function applyDefaultSkillStates(paths: ProjectPaths): void {
+  const marker = defaultDisabledMigrationMarker(paths);
+  if (fs.existsSync(marker) || countInstalledSkills(paths) === 0) return;
+
+  const disabledDir = skillsDisabledDir(paths);
+  for (const name of DEFAULT_DISABLED_SKILLS) {
+    const src = path.join(paths.skillsDir, name);
+    const dest = path.join(disabledDir, name);
+    if (!fs.existsSync(path.join(src, "SKILL.md")) || fs.existsSync(dest)) continue;
+    fs.mkdirSync(disabledDir, { recursive: true });
+    fs.renameSync(src, dest);
+  }
+
+  fs.mkdirSync(path.dirname(marker), { recursive: true });
+  fs.writeFileSync(marker, "", "utf-8");
+}
+
+/** Another project's enabled/disabled dirs that have skills (copy fast path). */
+function findSiblingSkillDirs(excludeId: string): string[] | null {
   if (!fs.existsSync(PROJECTS_ROOT)) return null;
   for (const child of fs.readdirSync(PROJECTS_ROOT, { withFileTypes: true })) {
     if (!child.isDirectory() || child.name === excludeId) continue;
-    const candidate = path.join(PROJECTS_ROOT, child.name, "sandbox", ".pi", "skills");
-    if (countSkillDirs(candidate) > 0) return candidate;
+    const piDir = path.join(PROJECTS_ROOT, child.name, "sandbox", ".pi");
+    const candidates = [path.join(piDir, "skills"), path.join(piDir, "skills-disabled")];
+    if (candidates.some((candidate) => countSkillDirs(candidate) > 0)) return candidates;
   }
   return null;
 }
 
-function copySkillDirs(srcDir: string, destDir: string): number {
-  fs.mkdirSync(destDir, { recursive: true });
+function copySkillDirs(srcDir: string, paths: ProjectPaths): number {
+  if (!fs.existsSync(srcDir)) return 0;
   let copied = 0;
   for (const d of fs.readdirSync(srcDir, { withFileTypes: true })) {
     if (!d.isDirectory()) continue;
     const src = path.join(srcDir, d.name);
     if (!fs.existsSync(path.join(src, "SKILL.md"))) continue;
+    const enabled = path.join(paths.skillsDir, d.name);
+    const disabled = path.join(skillsDisabledDir(paths), d.name);
+    if (fs.existsSync(enabled) || fs.existsSync(disabled)) continue; // preserve user state/customizations
+    const destDir = DEFAULT_DISABLED_SKILLS.has(d.name)
+      ? skillsDisabledDir(paths)
+      : paths.skillsDir;
     const dest = path.join(destDir, d.name);
-    if (fs.existsSync(dest)) continue; // don't clobber existing/customized skills
+    fs.mkdirSync(destDir, { recursive: true });
     fs.cpSync(src, dest, { recursive: true });
     copied++;
   }
@@ -79,25 +205,31 @@ function cloneCatalogue(): { skillsDir: string; tmpRoot: string } | null {
  * `allowRemote=false` skips the network clone (fast path only).
  */
 export function seedProjectSkills(paths: ProjectPaths, allowRemote = true): number {
-  const dest = paths.skillsDir;
-  if (countSkillDirs(dest) > 0) return countSkillDirs(dest);
+  if (countInstalledSkills(paths) > 0) {
+    applyDefaultSkillStates(paths);
+    return countInstalledSkills(paths);
+  }
 
-  const sibling = findSiblingSkillsDir(paths.id);
+  const sibling = findSiblingSkillDirs(paths.id);
   if (sibling) {
-    copySkillDirs(sibling, dest);
-    if (countSkillDirs(dest) > 0) return countSkillDirs(dest);
+    for (const sourceDir of sibling) copySkillDirs(sourceDir, paths);
+    if (countInstalledSkills(paths) > 0) {
+      applyDefaultSkillStates(paths);
+      return countInstalledSkills(paths);
+    }
   }
   if (allowRemote) {
     const catalogue = cloneCatalogue();
     if (catalogue) {
       try {
-        copySkillDirs(catalogue.skillsDir, dest);
+        copySkillDirs(catalogue.skillsDir, paths);
       } finally {
         fs.rmSync(catalogue.tmpRoot, { recursive: true, force: true });
       }
     }
   }
-  return countSkillDirs(dest);
+  applyDefaultSkillStates(paths);
+  return countInstalledSkills(paths);
 }
 
 /** List installed skills for the project (parsed SKILL.md frontmatter). */
@@ -108,10 +240,6 @@ export function listProjectSkills(paths: ProjectPaths): Skill[] {
 
 /** Skill directory names: no separators, no dot-dot. */
 export const SKILL_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
-
-export function skillsDisabledDir(paths: ProjectPaths): string {
-  return path.join(paths.sandbox, ".pi", "skills-disabled");
-}
 
 /** Installed-but-disabled skills (parsed SKILL.md frontmatter). */
 export function listDisabledSkills(paths: ProjectPaths): Skill[] {
