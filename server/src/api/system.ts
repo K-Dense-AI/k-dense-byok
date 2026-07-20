@@ -7,6 +7,7 @@ import type { FastifyInstance } from "fastify";
 import { OLLAMA_BASE_URL } from "../config.ts";
 import { activePaths } from "../projects.ts";
 import {
+  applyDefaultSkillStates,
   disableSkill,
   enableSkill,
   listDisabledSkills,
@@ -66,7 +67,9 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
   app.get("/system/resources", async () => getSystemStats());
 
   app.get("/skills", async () => {
-    return listProjectSkills(activePaths()).map((s) => ({
+    const paths = activePaths();
+    applyDefaultSkillStates(paths);
+    return listProjectSkills(paths).map((s) => ({
       id: s.name,
       name: s.name,
       description: s.description,
@@ -81,6 +84,7 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
 
   app.get("/skills/all", async () => {
     const paths = activePaths();
+    applyDefaultSkillStates(paths);
     return {
       enabled: listProjectSkills(paths).map(toInfo),
       disabled: listDisabledSkills(paths).map(toInfo),

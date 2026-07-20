@@ -9,6 +9,7 @@ import {
   listDisabledSkills,
   listProjectSkills,
   readSkillSource,
+  seedProjectSkills,
 } from "../src/agent/skills.ts";
 
 function reset(): void {
@@ -28,6 +29,54 @@ beforeEach(reset);
 afterAll(() => fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }));
 
 describe("skills enable/disable", () => {
+  it("seeds package skills disabled while keeping borderline workflows enabled", () => {
+    ensureProjectExists("source");
+    const source = resolvePaths("source");
+    for (const name of [
+      "scanpy",
+      "modal",
+      "hypogenic",
+      "diffdock",
+      "liteparse",
+      "molecular-dynamics",
+      "optimize-for-gpu",
+      "rowan",
+    ]) {
+      makeSkill(source.skillsDir, name, `${name} description`);
+    }
+
+    ensureProjectExists("target");
+    const target = resolvePaths("target");
+    expect(seedProjectSkills(target, false)).toBe(8);
+    expect(listDisabledSkills(target).map((s) => s.name).sort()).toEqual([
+      "hypogenic",
+      "modal",
+      "scanpy",
+    ]);
+    expect(listProjectSkills(target).map((s) => s.name).sort()).toEqual([
+      "diffdock",
+      "liteparse",
+      "molecular-dynamics",
+      "optimize-for-gpu",
+      "rowan",
+    ]);
+  });
+
+  it("migrates existing package skills once without overriding later user choices", () => {
+    ensureProjectExists("existing");
+    const paths = resolvePaths("existing");
+    makeSkill(paths.skillsDir, "scanpy", "single-cell package");
+    makeSkill(paths.skillsDir, "literature-review", "review workflow");
+
+    expect(seedProjectSkills(paths, false)).toBe(2);
+    expect(listDisabledSkills(paths).map((s) => s.name)).toContain("scanpy");
+    expect(listProjectSkills(paths).map((s) => s.name)).toContain("literature-review");
+
+    expect(enableSkill(paths, "scanpy")).toEqual({ ok: true });
+    expect(seedProjectSkills(paths, false)).toBe(2);
+    expect(listProjectSkills(paths).map((s) => s.name)).toContain("scanpy");
+  });
+
   it("round-trips a skill between enabled and disabled, preserving content", () => {
     ensureProjectExists("p1");
     const paths = resolvePaths("p1");
