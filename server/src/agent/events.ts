@@ -10,6 +10,10 @@ import {
   type ContextUsage,
 } from "@earendil-works/pi-coding-agent";
 import { skillLabelForRead } from "./skill-label.ts";
+import {
+  scientificResultFromDetails,
+  type ScientificResultCard,
+} from "./scientific-result.ts";
 
 export interface ClientFrame {
   type: string;
@@ -166,7 +170,7 @@ function resultText(s: unknown): string {
           : null,
       )
       .filter((t): t is string => t !== null);
-    if (parts.length) return parts.join("\n");
+    return parts.join("\n");
   }
   if (s && typeof s === "object") {
     const content = (s as { content?: unknown }).content;
@@ -196,6 +200,81 @@ function userMessageText(message: unknown): string {
 function cap(s: unknown, max = 4000): string {
   const str = resultText(s);
   return str.length > max ? str.slice(0, max) + "…" : str;
+}
+
+export const MAX_TOOL_RESULT_IMAGES = 4;
+export const MAX_TOOL_RESULT_IMAGE_BYTES = 2 * 1024 * 1024;
+const TOOL_RESULT_IMAGE_MIME = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+]);
+
+export interface ToolResultImage {
+  data: string;
+  mimeType: string;
+}
+
+export interface ToolResultFields {
+  result: string;
+  scientificResult?: ScientificResultCard;
+  images?: ToolResultImage[];
+  /** Number of invalid, oversized, or over-limit image blocks omitted. */
+  imagesTruncated?: number;
+}
+
+function base64Bytes(data: string): number {
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((data.length * 3) / 4) - padding);
+}
+
+/**
+ * Bounded, UI-safe projection of a Pi AgentToolResult/ToolResultMessage.
+ *
+ * Arbitrary details are deliberately not forwarded. The only accepted details
+ * payload is Kady's validated, versioned scientific-result envelope.
+ */
+export function toolResultFields(raw: unknown, sandboxRoot = ""): ToolResultFields {
+  const record =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : undefined;
+  const content = Array.isArray(record?.content) ? record.content : [];
+  const images: ToolResultImage[] = [];
+  let imagesTruncated = 0;
+  for (const part of content) {
+    if (!part || typeof part !== "object" || (part as { type?: unknown }).type !== "image") {
+      continue;
+    }
+    const data = (part as { data?: unknown }).data;
+    const mimeType = (part as { mimeType?: unknown }).mimeType;
+    if (
+      typeof data !== "string" ||
+      !data ||
+      typeof mimeType !== "string" ||
+      !TOOL_RESULT_IMAGE_MIME.has(mimeType) ||
+      base64Bytes(data) > MAX_TOOL_RESULT_IMAGE_BYTES ||
+      images.length >= MAX_TOOL_RESULT_IMAGES
+    ) {
+      imagesTruncated++;
+      continue;
+    }
+    images.push({ data, mimeType });
+  }
+
+  const scientificResult = scientificResultFromDetails(record?.details);
+  return {
+    result: relativizeSandboxPaths(cap(raw), sandboxRoot),
+    ...(scientificResult
+      ? {
+          scientificResult: relativizeSandboxPaths(
+            scientificResult,
+            sandboxRoot,
+          ),
+        }
+      : {}),
+    ...(images.length > 0 ? { images } : {}),
+    ...(imagesTruncated > 0 ? { imagesTruncated } : {}),
+  };
 }
 
 /** Returns a client frame for an event, or null to skip it.
@@ -252,7 +331,7 @@ export function toClientFrame(
         toolCallId: ev.toolCallId,
         toolName: ev.toolName,
         isError: ev.isError,
-        result: cap(ev.result),
+        ...toolResultFields(ev.result, sandboxRoot),
       };
     case "queue_update":
       return { type: "queue_update", steering: ev.steering, followUp: ev.followUp };

@@ -89,6 +89,23 @@ describe("ToolActivityList", () => {
     );
     expect(screen.getByText("statistical-reviewer")).toBeInTheDocument();
   });
+
+  it("shows bounded Pi image blocks in the generic fallback card", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "mcp__microscope__capture",
+            resultImages: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+            resultImagesTruncated: 1,
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /mcp__microscope__capture/i }));
+    expect(screen.getByAltText("Tool result image 1")).toBeInTheDocument();
+    expect(screen.getByText(/1 image omitted/)).toBeInTheDocument();
+  });
 });
 
 describe("NotebookEntryChip", () => {

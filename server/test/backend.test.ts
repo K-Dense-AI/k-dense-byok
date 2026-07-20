@@ -38,6 +38,7 @@ import {
 import {
   contextUsageForClient,
   contextUsageFrame,
+  MAX_TOOL_RESULT_IMAGES,
   toClientFrame,
   relativizeSandboxPaths,
 } from "../src/agent/events.ts";
@@ -365,6 +366,74 @@ describe("events → client frames", () => {
       root,
     );
     expect(frame).toMatchObject({ type: "tool_start", args: { path: "notes.md" } });
+  });
+
+  it("streams only validated scientific details and bounded raster images", () => {
+    const root = "/Users/x/projects/p/sandbox";
+    const images = Array.from({ length: MAX_TOOL_RESULT_IMAGES + 1 }, (_, index) => ({
+      type: "image",
+      data: Buffer.from(`image-${index}`).toString("base64"),
+      mimeType: "image/png",
+    }));
+    images.push({
+      type: "image",
+      data: Buffer.from("svg").toString("base64"),
+      mimeType: "image/svg+xml",
+    });
+    const frame = toClientFrame(
+      {
+        type: "tool_execution_end",
+        toolCallId: "scientific-1",
+        toolName: "scientific_result",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: `saved ${root}/plot.png` }, ...images],
+          details: {
+            scientificResult: {
+              schemaVersion: 1,
+              kind: "plot",
+              title: "Volcano plot",
+              images: [{ path: `${root}/plot.png`, alt: "Volcano plot" }],
+            },
+            secret: "not on the wire",
+          },
+        },
+      } as never,
+      root,
+    );
+    expect(frame).toMatchObject({
+      type: "tool_end",
+      result: "saved plot.png",
+      scientificResult: {
+        kind: "plot",
+        images: [{ path: "plot.png" }],
+      },
+      imagesTruncated: 2,
+    });
+    expect((frame?.images as unknown[])).toHaveLength(MAX_TOOL_RESULT_IMAGES);
+    expect(frame).not.toHaveProperty("details");
+    expect(frame).not.toHaveProperty("secret");
+  });
+
+  it("does not forward arbitrary tool-result details", () => {
+    expect(
+      toClientFrame({
+        type: "tool_execution_end",
+        toolCallId: "t1",
+        toolName: "bash",
+        isError: false,
+        result: {
+          content: [{ type: "text", text: "ok" }],
+          details: { env: { API_KEY: "secret" } },
+        },
+      } as never),
+    ).toEqual({
+      type: "tool_end",
+      toolCallId: "t1",
+      toolName: "bash",
+      isError: false,
+      result: "ok",
+    });
   });
 
   it("includes content on user message_start (string and content-array forms)", () => {

@@ -82,8 +82,17 @@ const FIXTURE = [
     toolName: "write",
     content: [
       { type: "text", text: "ok" },
-      { type: "image", data: "…" },
+      { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
     ],
+    details: {
+      scientificResult: {
+        schemaVersion: 1,
+        kind: "table",
+        title: "Plot inputs",
+        columns: [{ key: "condition", label: "Condition" }],
+        rows: [["treated"]],
+      },
+    },
     isError: false,
     timestamp: 7000,
   }),
@@ -95,6 +104,9 @@ describe("indexToolResults", () => {
     const byId = indexToolResults(readRows(file));
     expect(byId.get("call_1")?.content?.[0].text).toBe("gene,ctrl,treat");
     expect(byId.get("call_2")?.toolName).toBe("write");
+    expect(byId.get("call_2")?.details).toMatchObject({
+      scientificResult: { kind: "table" },
+    });
   });
 
   it("still reads legacy content-part toolResults", () => {
@@ -177,12 +189,17 @@ describe("toHistory", () => {
       result: "gene,ctrl,treat",
     });
 
-    // Second turn: the image-bearing result keeps only its text (same as the
-    // live stream's result extraction).
+    // Second turn: typed details and bounded image blocks survive replay.
     expect(history[3].frames![1]).toMatchObject({
       type: "tool_end",
       toolCallId: "call_2",
       result: "ok",
+      scientificResult: {
+        schemaVersion: 1,
+        kind: "table",
+        title: "Plot inputs",
+      },
+      images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
     });
   });
 

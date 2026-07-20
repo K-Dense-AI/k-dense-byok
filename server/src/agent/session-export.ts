@@ -24,7 +24,13 @@ export interface ToolResultPart {
   type: "toolResult";
   toolCallId: string;
   toolName?: string;
-  content?: { type: string; text?: string }[];
+  content?: {
+    type: string;
+    text?: string;
+    data?: string;
+    mimeType?: string;
+  }[];
+  details?: unknown;
   isError?: boolean;
 }
 export interface TextPart {
@@ -46,6 +52,7 @@ export interface MessageRow {
     // linkage fields at the message level rather than as a content part.
     toolCallId?: string;
     toolName?: string;
+    details?: unknown;
     isError?: boolean;
     timestamp?: number;
   };
@@ -111,6 +118,7 @@ export function indexToolResults(rows: MessageRow[]): Map<string, ToolResultPart
         toolCallId: m.toolCallId,
         toolName: m.toolName,
         content: m.content as ToolResultPart["content"],
+        details: m.details,
         isError: m.isError,
       });
       continue;

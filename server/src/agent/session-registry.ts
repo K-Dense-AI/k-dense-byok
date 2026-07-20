@@ -25,6 +25,7 @@ import { defaultModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
+import { makeScientificResultTool } from "./scientific-result.ts";
 import { makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
@@ -135,6 +136,8 @@ async function build(
   const interviewTool = makeInterviewTool(projectId, () => holder.session?.sessionId ?? "");
   // Non-blocking lab-notebook tool: logs the agent's own narrative entries.
   const notebookTool = makeNotebookTool(projectId, () => holder.session?.sessionId ?? "");
+  // Typed presentation layer for compact scientific results and artifact links.
+  const scientificResultTool = makeScientificResultTool(projectId);
   // Durable remote-compute tools are always present. Missing credentials are
   // reported at submission time, so warm sessions become compatible
   // immediately after credentials are configured live.
@@ -150,11 +153,18 @@ async function build(
       "subagent",
       "interview",
       "notebook",
+      "scientific_result",
       ...WEB_ACCESS_TOOLS,
       ...MODAL_TOOL_NAMES,
       ...mcpTools.map((t) => t.name),
     ],
-    customTools: [interviewTool, notebookTool, ...modalTools, ...mcpTools],
+    customTools: [
+      interviewTool,
+      notebookTool,
+      scientificResultTool,
+      ...modalTools,
+      ...mcpTools,
+    ],
   });
   holder.session = session;
   return session;

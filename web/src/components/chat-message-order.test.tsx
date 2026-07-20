@@ -99,4 +99,54 @@ describe("AssistantMessageBody", () => {
       preamble.compareDocumentPosition(interview) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
+
+  it("renders a typed scientific card between surrounding prose", () => {
+    const message: ChatMessage = {
+      id: "assistant",
+      role: "assistant",
+      content: "Computed the comparison.\n\nInterpretation follows.",
+      timestamp: 1,
+      activities: [
+        {
+          id: "result-1",
+          label: "Scientific result",
+          status: "complete",
+          timestamp: 2,
+          toolName: "scientific_result",
+          scientificResult: {
+            schemaVersion: 1,
+            kind: "statistical-test",
+            title: "Treatment effect",
+            tests: [{ name: "Welch t-test", pValue: 0.02 }],
+          },
+        },
+      ],
+      segments: [
+        { type: "text", content: "Computed the comparison.\n\n" },
+        { type: "activity", activityId: "result-1" },
+        { type: "text", content: "Interpretation follows." },
+      ],
+    };
+
+    const { container } = render(
+      <AssistantMessageBody
+        message={message}
+        isStreaming={false}
+        isLast
+        sessionId="session-1"
+        projectId="default"
+      />,
+    );
+
+    const before = screen.getByText("Computed the comparison.");
+    const card = container.querySelector('[data-tool-call-id="result-1"]');
+    const after = screen.getByText("Interpretation follows.");
+    expect(card).not.toBeNull();
+    expect(
+      before.compareDocumentPosition(card!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      card!.compareDocumentPosition(after) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
 });

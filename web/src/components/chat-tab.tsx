@@ -52,6 +52,7 @@ import {
 } from "@/components/tool-activity";
 import { InterviewCard } from "@/components/interview-form";
 import { KadyFileIcon } from "@/components/file-icon";
+import { ScientificResultCard } from "@/components/scientific-result-card";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
 import {
   INLINE_IMAGE_ACCEPT,
@@ -955,6 +956,7 @@ export function AssistantMessageBody({
   projectId,
   onViewInNotebook,
   onViewCompute,
+  onOpenFile,
 }: {
   message: ChatMessage;
   isStreaming: boolean;
@@ -963,6 +965,7 @@ export function AssistantMessageBody({
   projectId: string;
   onViewInNotebook?: (entryId: string) => void;
   onViewCompute?: (jobId?: string) => void;
+  onOpenFile?: (path: string) => void;
 }) {
   const activities = message.activities ?? [];
   const hasReasoning = Boolean(message.reasoning?.trim());
@@ -1005,6 +1008,16 @@ export function AssistantMessageBody({
       flushChunk();
       orderedBlocks.push(
         <ModalJobChip key={a.id} item={a} onView={onViewCompute} />,
+      );
+    } else if (a.scientificResult) {
+      flushChunk();
+      orderedBlocks.push(
+        <ScientificResultCard
+          key={a.id}
+          item={a}
+          projectId={projectId}
+          onOpenFile={onOpenFile}
+        />,
       );
     } else {
       chunk.push(a);
@@ -1135,6 +1148,8 @@ export interface ChatTabProps {
   onViewInNotebook?: (entryId: string) => void;
   /** Open the Compute panel, optionally focused on a durable Modal job. */
   onViewCompute?: (jobId?: string) => void;
+  /** Open a typed result artifact in the center file preview. */
+  onOpenFile?: (path: string) => void;
 }
 
 export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
@@ -1159,6 +1174,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     onWorkspaceStateChange,
     onViewInNotebook,
     onViewCompute,
+    onOpenFile,
   },
   ref,
 ) {
@@ -1623,6 +1639,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                       projectId={projectId}
                       onViewInNotebook={onViewInNotebook}
                       onViewCompute={onViewCompute}
+                      onOpenFile={onOpenFile}
                     />
                   ) : (
                     <>

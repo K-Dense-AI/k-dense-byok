@@ -25,6 +25,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { Spinner } from "@/components/ui/spinner";
+import { ToolResultImages } from "@/components/scientific-result-card";
 import { modalJobIdFromActivity, openModalJob } from "@/lib/modal-jobs";
 import { skillNameFromRead } from "@/lib/skill-invocation";
 import type { ActivityItem } from "@/lib/use-agent";
@@ -153,7 +154,12 @@ function ToolCard({ item }: { item: ActivityItem }) {
   const name = skill ? "skill" : (item.toolName ?? item.label);
   const summary = skill ?? summarize(item.toolName, item.args, item.result);
   const args = fullArgs(item.args);
-  const hasDetail = Boolean(args || item.result);
+  const hasDetail = Boolean(
+    args ||
+      item.result ||
+      item.resultImages?.length ||
+      item.resultImagesTruncated,
+  );
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} data-tool-call-id={item.id}>
@@ -218,6 +224,10 @@ function ToolCard({ item }: { item: ActivityItem }) {
                 </pre>
               </div>
             )}
+            <ToolResultImages
+              images={item.resultImages ?? []}
+              truncated={item.resultImagesTruncated}
+            />
           </div>
         </CollapsibleContent>
       )}

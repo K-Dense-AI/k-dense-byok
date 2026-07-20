@@ -1089,6 +1089,7 @@ function WorkspacePage({
               onWorkspaceStateChange={handleTabWorkspaceStateChange}
               onViewInNotebook={handleViewInNotebook}
               onViewCompute={handleViewCompute}
+              onOpenFile={handleFileSelect}
             />
           ))}
 
