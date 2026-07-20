@@ -98,20 +98,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/anthropic/claude-opus-4.7",
-    "label": "Claude Opus 4.7",
-    "provider": "Anthropic",
-    "tier": "flagship",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 5.0,
-      "completion": 25.0
-    },
-    "modality": "text+image+file->text",
-    "description": "Opus 4.7 is the next generation of Anthropic's Opus family, built for long-running, asynchronous agents. Building on the coding and agentic strengths of Opus 4.6, it delivers stronger performance on...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/anthropic/claude-opus-4.7-fast",
     "label": "Claude Opus 4.7 (Fast)",
     "provider": "Anthropic",
@@ -250,6 +236,34 @@
     },
     "modality": "text+image+file+audio+video->text",
     "description": "This model always redirects to the latest model in the Google Gemini Pro family.",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/~moonshotai/kimi-latest",
+    "label": "MoonshotAI Kimi Latest",
+    "provider": "Moonshotai",
+    "tier": "high",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 3.0,
+      "completion": 15.0
+    },
+    "modality": "text+image->text",
+    "description": "This model always redirects to the latest model in the MoonshotAI Kimi family.",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/moonshotai/kimi-k3",
+    "label": "MoonshotAI: Kimi K3",
+    "provider": "Moonshotai",
+    "tier": "high",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 3.0,
+      "completion": 15.0
+    },
+    "modality": "text+image->text",
+    "description": "Kimi K3 is a 2.8T parameter open-weight multimodal reasoning model from Moonshot AI. It is suited for complex coding, knowledge work, and long-horizon agentic workflows, and is particularly strong at...",
     "isFusion": false
   },
   {
@@ -394,14 +408,42 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/meta/muse-spark-1.1",
+    "label": "Muse Spark 1.1",
+    "provider": "Meta",
+    "tier": "mid",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 1.25,
+      "completion": 4.25
+    },
+    "modality": "text+image+file+audio+video->text",
+    "description": "Muse Spark 1.1 is a multimodal reasoning model from Meta, built for agentic tasks. It accepts text, images, video, audio, and PDF documents and returns text, with a 1M-token context...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/thinkingmachines/inkling",
+    "label": "Thinking Machines: Inkling",
+    "provider": "Thinkingmachines",
+    "tier": "mid",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 1.0,
+      "completion": 4.05
+    },
+    "modality": "text+image+audio->text",
+    "description": "Inkling is an open-weight multimodal mixture-of-experts model from Thinking Machines Lab, with 41B active parameters out of 975B total. It is designed for general-purpose reasoning, coding, agentic and tool-use systems,...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/z-ai/glm-5.2",
     "label": "Z.ai: GLM 5.2",
     "provider": "Z Ai",
     "tier": "mid",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.91,
-      "completion": 2.86
+      "prompt": 0.9296,
+      "completion": 2.9216
     },
     "modality": "text->text",
     "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,...",
@@ -428,8 +470,8 @@
     "tier": "mid",
     "context_length": 1000000,
     "pricing": {
-      "prompt": 0.5,
-      "completion": 2.2
+      "prompt": 0.6,
+      "completion": 3.6
     },
     "modality": "text->text",
     "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid Transformer-Mamba mixture-of-experts architecture, it...",
@@ -442,8 +484,8 @@
     "tier": "mid",
     "context_length": 1000000,
     "pricing": {
-      "prompt": 1.25,
-      "completion": 3.75
+      "prompt": 1.475,
+      "completion": 4.425
     },
     "modality": "text->text",
     "description": "Qwen3.7-Max is the flagship model in Alibaba's Qwen3.7 series. It supports text input and output and is designed for agent-centric workloads, with particular strengths in coding, office and productivity tasks,...",
@@ -478,42 +520,14 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/~moonshotai/kimi-latest",
-    "label": "MoonshotAI Kimi Latest",
-    "provider": "Moonshotai",
-    "tier": "mid",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.66,
-      "completion": 3.41
-    },
-    "modality": "text+image->text",
-    "description": "This model always redirects to the latest model in the MoonshotAI Kimi family.",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/moonshotai/kimi-k2.6",
-    "label": "MoonshotAI: Kimi K2.6",
-    "provider": "Moonshotai",
-    "tier": "mid",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.66,
-      "completion": 3.41
-    },
-    "modality": "text+image->text",
-    "description": "Kimi K2.6 is Moonshot AI's next-generation multimodal model, designed for long-horizon coding, coding-driven UI/UX generation, and multi-agent orchestration. It handles complex end-to-end coding tasks across Python, Rust, and Go, and...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/moonshotai/kimi-k2.7-code",
     "label": "MoonshotAI: Kimi K2.7 Code",
     "provider": "Moonshotai",
     "tier": "mid",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.719,
-      "completion": 3.49
+      "prompt": 0.82,
+      "completion": 3.75
     },
     "modality": "text+image->text",
     "description": "MoonshotAI: Kimi K2.7 Code is a coding-focused model in Moonshot AI's Kimi K2 family, built to complete end-to-end programming tasks reliably over long contexts. It uses a native multimodal mixture-of-experts...",
@@ -590,14 +604,28 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/meituan/longcat-2.0",
+    "label": "LongCat 2.0",
+    "provider": "Meituan",
+    "tier": "budget",
+    "context_length": 1048756,
+    "pricing": {
+      "prompt": 0.3,
+      "completion": 1.2
+    },
+    "modality": "text->text",
+    "description": "LongCat 2.0 is a sparse mixture-of-experts language model from Meituan, with 48B active parameters out of 1.6T total. It is suited for coding, repository-level changes, long-horizon problem solving, and agentic...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/deepseek/deepseek-v4-flash",
     "label": "DeepSeek V4 Flash",
     "provider": "DeepSeek",
     "tier": "budget",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.09,
-      "completion": 0.18
+      "prompt": 0.098,
+      "completion": 0.196
     },
     "modality": "text->text",
     "description": "DeepSeek V4 Flash is an efficiency-optimized Mixture-of-Experts model from DeepSeek with 284B total parameters and 13B activated parameters, supporting a 1M-token context window. It is designed for fast inference and...",
@@ -638,7 +666,7 @@
     "tier": "budget",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.105,
+      "prompt": 0.14,
       "completion": 0.28
     },
     "modality": "text+image+audio+video->text",
@@ -736,8 +764,8 @@
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.14,
-      "completion": 0.58
+      "prompt": 0.2,
+      "completion": 0.8
     },
     "modality": "text->text",
     "description": "Hy3 is a 295B-parameter Mixture-of-Experts model from Tencent (21B active, 192 experts with top-8 routing) built for reasoning, agentic workflows, and real-world production use. It supports a configurable reasoning effort:...",
@@ -862,8 +890,8 @@
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.289,
-      "completion": 2.4
+      "prompt": 0.45,
+      "completion": 2.7
     },
     "modality": "text+image+video->text",
     "description": "Qwen3.6 27B is a dense 27-billion-parameter language model from the Qwen Team at Alibaba, released in April 2026. It features hybrid multimodal capabilities \u2014 accepting text, image, and video inputs...",
