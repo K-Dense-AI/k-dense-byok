@@ -44,6 +44,38 @@ describe("applyFrameToMessage", () => {
     expect(done.activities?.[0]).toMatchObject({ id: "t1", status: "complete" });
   });
 
+  it("retains typed scientific details and bounded result images", () => {
+    const running = applyFrameToMessage(
+      baseMessage(),
+      { type: "tool_start", toolCallId: "r1", toolName: "scientific_result" },
+      10,
+    );
+    const done = applyFrameToMessage(
+      running,
+      {
+        type: "tool_end",
+        toolCallId: "r1",
+        toolName: "scientific_result",
+        scientificResult: {
+          schemaVersion: 1,
+          kind: "table",
+          title: "Top hits",
+          columns: [{ key: "gene", label: "Gene" }],
+          rows: [["TP53"]],
+        },
+        images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+        imagesTruncated: 2,
+      },
+      20,
+    );
+    expect(done.activities?.[0]).toMatchObject({
+      status: "complete",
+      scientificResult: { kind: "table", title: "Top hits" },
+      resultImages: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+      resultImagesTruncated: 2,
+    });
+  });
+
   it("preserves text and tool calls in stream order", () => {
     let message = applyFrameToMessage(
       baseMessage(),

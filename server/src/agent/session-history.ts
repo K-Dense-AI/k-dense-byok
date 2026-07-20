@@ -6,7 +6,12 @@
  * a reopened transcript renders exactly like it did while streaming — prose,
  * reasoning blocks, and tool activity rows with args and capped results.
  */
-import { relativizeSandboxPaths, skillFieldFor, type ClientFrame } from "./events.ts";
+import {
+  relativizeSandboxPaths,
+  skillFieldFor,
+  toolResultFields,
+  type ClientFrame,
+} from "./events.ts";
 import {
   readRows,
   textOf,
@@ -25,18 +30,6 @@ export interface HistoryMessage {
   frames?: ClientFrame[];
   /** Wall-clock ms of the underlying log row, when recorded. */
   timestamp?: number;
-}
-
-/** Matches the live-stream result cap in events.ts. */
-const RESULT_CAP = 4000;
-
-function capResult(parts: { type: string; text?: string }[] | undefined): string {
-  if (!parts) return "";
-  const text = parts
-    .map((p) => (typeof p.text === "string" ? p.text : ""))
-    .join("")
-    .trim();
-  return text.length > RESULT_CAP ? text.slice(0, RESULT_CAP) + "…" : text;
 }
 
 /** Inline image parts of a user message (prompt attachments). */
@@ -87,7 +80,10 @@ export function toHistory(file: string, sandboxRoot = ""): HistoryMessage[] {
           toolCallId: m.toolCallId,
           toolName: m.toolName,
           isError: Boolean(m.isError),
-          result: capResult(m.content as { type: string; text?: string }[]),
+          ...toolResultFields(
+            { content: m.content, details: m.details },
+            sandboxRoot,
+          ),
         },
         m.timestamp,
       );

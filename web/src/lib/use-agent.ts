@@ -3,6 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch, useProjectScopeId } from "@/lib/projects";
+import {
+  parseScientificResult,
+  parseToolResultImages,
+  type ScientificResultCard,
+  type ToolResultImage,
+} from "@/lib/scientific-results";
 
 import type { PromptImage } from "./image-attachments";
 import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./notebook";
@@ -25,6 +31,12 @@ export interface ActivityItem {
   args?: unknown;
   /** Tool result text captured from tool_end (truncated server-side). */
   result?: string;
+  /** Validated typed scientific-result payload captured from tool_end. */
+  scientificResult?: ScientificResultCard;
+  /** Bounded raster image blocks returned by Pi tools. */
+  resultImages?: ToolResultImage[];
+  /** Count of result images omitted by server safety limits. */
+  resultImagesTruncated?: number;
 }
 
 export type AssistantMessageSegment =
@@ -117,6 +129,9 @@ export interface AgentFrame {
   message?: string;
   args?: unknown;
   result?: string;
+  scientificResult?: unknown;
+  images?: unknown;
+  imagesTruncated?: number;
   runCost?: number;
   runTokens?: number;
   role?: string;
@@ -218,10 +233,17 @@ export function applyFrameToMessage(
       const status: ActivityItem["status"] = frame.isError ? "error" : "complete";
       if (idx === -1) return message;
       const next = [...activities];
+      const scientificResult = parseScientificResult(frame.scientificResult);
+      const resultImages = parseToolResultImages(frame.images);
       next[idx] = {
         ...next[idx],
         status,
         result: typeof frame.result === "string" ? frame.result : next[idx].result,
+        ...(scientificResult ? { scientificResult } : {}),
+        ...(resultImages.length > 0 ? { resultImages } : {}),
+        ...(typeof frame.imagesTruncated === "number" && frame.imagesTruncated > 0
+          ? { resultImagesTruncated: frame.imagesTruncated }
+          : {}),
       };
       return { ...message, activities: next };
     }

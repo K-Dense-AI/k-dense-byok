@@ -20,6 +20,7 @@ Kady works like a researcher at a computer: it reads and writes files, runs code
 - **It activates the right skills.** 140+ pre-installed scientific skills cover genomics, proteomics, drug discovery, materials science, and more. Kady picks the relevant ones automatically — you don't need to choose.
 - **It can delegate to specialists.** Kady has a built-in team of 21 scientific sub-agents — a `citation-checker` that verifies every reference, a `statistical-reviewer` that audits your analysis, a `peer-reviewer` that writes a journal-style report, and 18 more. Kady delegates on its own for heavy or parallel work, or you can name one yourself: *"have the citation-checker go through manuscript.md"*. See [Sub-agents](./sub-agents.md).
 - **It can search the web and read sources.** Kady (and every sub-agent) can search the web, fetch and read pages, PDFs, and entire GitHub repositories, and even understand YouTube videos — out of the box, no extra key required. Optional Exa, Perplexity, and Gemini keys unlock the direct providers (see [Installation → Optional API keys](./installation.md#6-optional-api-keys)).
+- **It presents structured scientific results.** Meaningful tables, statistical tests, plots, quality-control checks, dataset schemas, citations, molecules, and artifact bundles can appear as typed cards in the chat. Plot and file cards link to the underlying sandbox artifacts, so you can open the complete result in the center preview. These cards structure values reported by the agent; they are not an independent verification pass.
 
 ## The interface
 
