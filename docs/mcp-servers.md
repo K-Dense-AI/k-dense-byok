@@ -16,6 +16,16 @@ A server hosted somewhere on the internet. You need its URL and, usually, an acc
 - **Server URL**: e.g. `https://mcp.example.com/mcp`
 - **Bearer token**: the access token, if the service requires one
 
+#### Example: Parallel Search
+
+To add optional web search and URL fetching through Parallel Search MCP, use:
+
+- **Name**: `parallel-search`
+- **Server URL**: `https://search.parallel.ai/mcp`
+- **Bearer token**: leave blank
+
+The default endpoint requires no account or API key. After you test and save it, its `web_search` and `web_fetch` tools are available in new chat tabs.
+
 ### Local (command)
 
 A small program that runs on your own computer when needed. These are typically published as npm packages and need no hosting.
