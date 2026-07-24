@@ -77,6 +77,8 @@ export interface LatexAssistResult {
   replacement: string;
   model: string;
   costUsd: number;
+  billingMode?: string;
+  listPriceUsd?: number;
 }
 
 export async function postLatexAssist(

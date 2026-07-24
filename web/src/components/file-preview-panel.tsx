@@ -1867,6 +1867,7 @@ export interface RevealTarget {
 
 export interface FilePreviewPanelProps {
   projectId: string;
+  activeModelRef?: string;
   tabs: Tab[];
   activeTabPath: string | null;
   onTabSelect: (path: string) => void;
@@ -1899,6 +1900,7 @@ export interface FilePreviewPanelProps {
 
 export function FilePreviewPanel({
   projectId,
+  activeModelRef,
   tabs,
   activeTabPath,
   onTabSelect,
@@ -1942,6 +1944,11 @@ export function FilePreviewPanel({
 
   const selectedName = selectedPath?.split("/").pop() ?? null;
   const cat = selectedName ? fileCategory(selectedName) : "text";
+  // Fusion is a multi-model OpenRouter request with no one-shot editor mode.
+  // Let assists use the configured default instead of deterministically 422ing.
+  const oneShotModelRef = activeModelRef?.startsWith("fusion/")
+    ? undefined
+    : activeModelRef;
   const regDef = getViewerDef(cat);
   // All text-based formats can be edited as source. Binary/structured
   // viewers (images, PDFs, anndata) have no raw-text editor. Registered
@@ -2004,6 +2011,7 @@ export function FilePreviewPanel({
       {showNotebook ? (
         <LabNotebookView
           projectId={projectId}
+          model={oneShotModelRef}
           sessionId={notebookSessionId}
           liveEntries={notebookEntries}
           streaming={notebookStreaming}
@@ -2046,6 +2054,7 @@ export function FilePreviewPanel({
               path={selectedPath}
               name={selectedName ?? ""}
               initialContent={fileContent ?? ""}
+              model={oneShotModelRef}
               onSave={(content) => onSaveText(selectedPath, content)}
               onCompile={onCompileLatex}
               onDiscard={() => setMode(selectedPath, "view")}

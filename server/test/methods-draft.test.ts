@@ -83,7 +83,10 @@ describe("runMethodsDraft", () => {
     appendNotebookEntry("sess-1", entryOf({ type: "method", title: "Ran PCA" }), p.id);
 
     const res = await withActiveProject(p.id, () =>
-      runMethodsDraft("sess-1", p.id, {}, async () => fakeMessage("## Methods\nWe ran PCA.")),
+      runMethodsDraft("sess-1", p.id, {}, async (_model, _context, options) => {
+        expect(options?.apiKey).toBeUndefined();
+        return fakeMessage("## Methods\nWe ran PCA.");
+      }),
     );
     expect(res.path).toBe("methods_draft_sess-1.md");
     expect(res.markdown).toContain("## Methods");

@@ -32,7 +32,7 @@ Click `+` in the chat tab strip to open a new chat in the same project. Each tab
 
 ### Choosing a model
 
-Use the model dropdown in the input bar. Any message can use any tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), or a free local model through [Ollama](./local-models-ollama.md). Different tabs can use different models. See [Model selection](./model-selection.md) for how the list is built.
+Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, or xAI through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. See [Model selection](./model-selection.md) for model refs and billing behavior.
 
 ### Files
 
@@ -65,17 +65,22 @@ Open any `.tex` file and click **Edit** for a split-pane editor with live PDF co
 
 ### Other input options
 
-- **Voice input** — dictate your message instead of typing.
+- **Voice input** — dictate your message instead of typing. Browser-native speech needs no model credential; the server-side fallback remains OpenRouter-only.
 - **Message queue** — keep typing while Kady works; up to 5 messages queue and run in order.
 
 ## Costs and budgets
 
-You pay only for what the AI models consume on your own API key. The cost pill in the header shows the active tab's session cost (`sess`) and the project total across every tab (`proj`). You can set an optional hard spend cap per project in Settings, and using local Ollama models costs nothing at all.
+The cost pill in the header shows the active tab's session spend (`sess`) and the project total across every tab (`proj`), with token details in its popover. You can set an optional hard spend cap per project in Settings.
+
+- OpenRouter pay-as-you-go and Anthropic OAuth's Pi-documented metered extra per-token usage count toward the cap.
+- OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited.
+- Local Ollama usage does not add model spend. Modal compute remains separately estimated and counted.
 
 ## Settings
 
 Click the gear icon in the top-right to:
 
+- connect supported subscriptions under **Model providers**,
 - manage your **API keys**,
 - connect external tools via **[MCP servers](./mcp-servers.md)** — GitHub, reference managers, databases, and hundreds more, with a built-in connection tester,
 - view, edit, and create **[sub-agents](./sub-agents.md)**,

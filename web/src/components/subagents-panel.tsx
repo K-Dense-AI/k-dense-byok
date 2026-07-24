@@ -247,7 +247,8 @@ export function SubagentsPanel() {
               </label>
               <Input
                 value={form.model}
-                placeholder="inherit from defaults"
+                placeholder="inherit, or provider/model"
+                title="Examples: openrouter/anthropic/claude-opus-4.8, openai-codex/gpt-5.6-sol"
                 className="h-8 text-xs font-mono"
                 onChange={(e) => setForm({ ...form, model: e.target.value })}
               />

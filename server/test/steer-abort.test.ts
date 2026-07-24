@@ -16,7 +16,7 @@ class FakeSession {
   clearQueueCalls = 0;
   calls: string[] = [];
   state: { errorMessage?: string } = {};
-  model = { id: "fake-model" };
+  model = { id: "fake-model", provider: "openrouter" };
   messages = [
     {
       role: "assistant",
@@ -107,7 +107,16 @@ class FakeSession {
 }
 
 vi.mock("../src/agent/session-registry.ts", () => ({
-  getModelRuntime: vi.fn(),
+  getModelRuntime: vi.fn(() => ({
+    checkAuth: vi.fn(async () => ({ type: "api_key", source: "test" })),
+    login: vi.fn(),
+    logout: vi.fn(),
+    listCredentials: vi.fn(async () => []),
+    getAvailable: vi.fn(async () => []),
+    getProvider: vi.fn(),
+    setRuntimeApiKey: vi.fn(),
+    removeRuntimeApiKey: vi.fn(),
+  })),
   getModelRegistry: vi.fn(() => ({ find: () => null })),
   createSession: vi.fn(),
   getSession: vi.fn(async (_projectId: string, _paths: unknown, id: string) =>

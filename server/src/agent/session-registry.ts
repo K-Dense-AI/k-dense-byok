@@ -5,7 +5,7 @@
  * project's `sandbox/.pi/sessions/`. We hold the live session objects in a Map
  * (keyed by projectId:sessionId) so streaming runs reuse warm state, and
  * cold-open from disk after a restart. ModelRuntime + ModelRegistry are process
- * singletons (shared OpenRouter key across all projects).
+ * singletons sharing Kady's OpenRouter runtime key and Pi OAuth store.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -19,6 +19,7 @@ import {
   type AgentSession,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import { getMcpTools } from "./mcp.ts";
 import { defaultModel, setupModelRuntime } from "./models.ts";
@@ -50,6 +51,11 @@ import {
 } from "./pdf-annotation-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
 
+// Entry points normally establish this in env.ts. Keep the registry safe when
+// imported directly (tests/scripts) so child Pi processes still share the same
+// Kady-scoped auth store as the in-process runtime.
+process.env.PI_CODING_AGENT_DIR ??= KADY_PI_AGENT_DIR;
+
 // pi-subagents runs each delegation as a child `pi` CLI process. The binary
 // ships with our pi-coding-agent dependency; make sure spawn("pi") resolves
 // even when the server wasn't started through an npm script.
@@ -58,7 +64,10 @@ if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
   process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH ?? ""}`;
 }
 
-const modelRuntime = await ModelRuntime.create({ allowModelNetwork: false });
+const modelRuntime = await ModelRuntime.create({
+  allowModelNetwork: false,
+  authPath: path.join(KADY_PI_AGENT_DIR, "auth.json"),
+});
 await setupModelRuntime(modelRuntime);
 const modelRegistry = new ModelRegistry(modelRuntime);
 
@@ -129,7 +138,12 @@ async function build(
     agentDir: getAgentDir(),
     additionalExtensionPaths: [subagentsExtensionPath()],
     extensionFactories: [
-      makeSubagentLedgerExtension(projectId, () => holder.session?.sessionId ?? ""),
+      makeSubagentLedgerExtension(
+        projectId,
+        () => holder.session?.sessionId ?? "",
+        () => holder.session?.model,
+        (providerId) => modelRuntime.isUsingOAuth(providerId),
+      ),
       // Rewrites the outgoing provider body to an OpenRouter Fusion request when
       // the /run handler stashed a Fusion config for this session (setFusionConfig).
       makeFusionRequestExtension(projectId, () => holder.session?.sessionId ?? ""),

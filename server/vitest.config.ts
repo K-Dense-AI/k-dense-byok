@@ -13,7 +13,11 @@ export default defineConfig({
     // Each run gets an isolated projects root under the OS temp dir.
     env: {
       KADY_PROJECTS_ROOT:
-        process.env.VITEST_PROJECTS_ROOT ?? path.join(os.tmpdir(), "kady-vitest-projects"),
+        process.env.VITEST_PROJECTS_ROOT ??
+        path.join(os.tmpdir(), `kady-vitest-projects-${process.pid}`),
+      PI_CODING_AGENT_DIR:
+        process.env.VITEST_PI_AGENT_DIR ??
+        path.join(os.tmpdir(), `kady-vitest-pi-agent-${process.pid}`),
     },
   },
 });

@@ -31,6 +31,7 @@ import {
   AlertCircleIcon,
   LoaderCircleIcon,
   ExternalLinkIcon,
+  CloudIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/projects";
 import { notifyModalCredentialsChanged } from "@/lib/modal-jobs";
@@ -43,6 +44,8 @@ import {
 import { SkillsPanel } from "@/components/skills-panel";
 import { SubagentsPanel } from "@/components/subagents-panel";
 import { ConnectorsPanel } from "@/components/connectors-panel";
+import { ProviderAuthPanel } from "@/components/provider-auth-panel";
+import { notifyProviderAuthChanged } from "@/lib/use-provider-auth";
 
 type CredentialStatus = Record<string, { set: boolean; masked: string | null }>;
 
@@ -120,6 +123,7 @@ function KeyRow({
           | null;
         if (!res.ok) throw new Error(data?.detail || `Save failed (${res.status})`);
         if (data) onStatus(data as CredentialStatus);
+        if (def.id === "openrouter") notifyProviderAuthChanged();
         setKeyInput("");
         setSaved(true);
       } catch (exc) {
@@ -603,8 +607,15 @@ export function SettingsDialog({
         >
           <TabsList
             variant="line"
-            className="w-44 shrink-0 border-r rounded-none px-2 py-3 items-start justify-start"
+            className="w-44 shrink-0 overflow-y-auto border-r rounded-none px-2 py-3 items-start justify-start"
           >
+            <TabsTrigger
+              value="model-providers"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <CloudIcon className="size-3.5" />
+              Model providers
+            </TabsTrigger>
             <TabsTrigger
               value="api-keys"
               className="justify-start gap-2 px-3 text-xs w-full"
@@ -649,6 +660,9 @@ export function SettingsDialog({
             </TabsTrigger>
           </TabsList>
 
+          <TabsContent value="model-providers" className="flex-1 min-h-0 p-5">
+            <ProviderAuthPanel />
+          </TabsContent>
           <TabsContent value="api-keys" className="flex-1 min-h-0 p-5">
             <ApiKeysPanel />
           </TabsContent>

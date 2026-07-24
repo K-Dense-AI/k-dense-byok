@@ -12,8 +12,13 @@ import type {
   StreamOptions,
 } from "@earendil-works/pi-ai";
 import { getModelRegistry, getModelRuntime } from "../agent/session-registry.ts";
-import { resolveModel } from "../agent/models.ts";
+import {
+  assertModelAuthentication,
+  modelReference,
+  resolveModel,
+} from "../agent/models.ts";
 import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
+import { billingCountsTowardBudget, billingForModel } from "../cost/billing.ts";
 
 export const ASSIST_SESSION_ID = "latex-assist";
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -35,6 +40,8 @@ export interface AssistResult {
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
+  billingMode?: string;
+  listPriceUsd?: number;
 }
 
 export class AssistError extends Error {
@@ -120,22 +127,32 @@ export async function runLatexAssist(
   completeFn: CompleteFn = completeWithRuntime,
 ): Promise<AssistResult> {
   validate(req);
+  if (req.model?.startsWith("fusion/")) {
+    throw new AssistError(422, "Fusion models are not supported for editor AI assist");
+  }
+  const model = resolveModel(req.model, getModelRegistry());
+  if (completeFn === completeWithRuntime) {
+    try {
+      await assertModelAuthentication(model, getModelRuntime());
+    } catch (error) {
+      throw new AssistError(
+        401,
+        error instanceof Error ? error.message : "Model provider is not connected",
+      );
+    }
+  }
+  const billing = await billingForModel(model, getModelRuntime());
   const budget = isBudgetExceeded(projectId);
-  if (budget.exceeded) {
+  if (billingCountsTowardBudget(billing) && budget.exceeded) {
     throw new AssistError(
       402,
       `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
         `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project settings.`,
     );
   }
-  if (req.model?.startsWith("fusion/")) {
-    throw new AssistError(422, "Fusion models are not supported for editor AI assist");
-  }
-  const model = resolveModel(req.model, getModelRegistry());
   let msg: AssistantMessage;
   try {
     msg = await completeFn(model, buildAssistContext(req), {
-      apiKey: process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY,
       maxTokens: MAX_OUTPUT_TOKENS,
     });
   } catch (err) {
@@ -153,10 +170,10 @@ export async function runLatexAssist(
     throw new AssistError(502, "Model did not produce a usable replacement");
   }
   const u = msg.usage;
-  recordRun({
+  const entry = recordRun({
     sessionId: ASSIST_SESSION_ID,
     projectId,
-    model: msg.model,
+    model: modelReference(model),
     role: "agent",
     before: emptySnapshot(),
     after: {
@@ -166,12 +183,17 @@ export async function runLatexAssist(
       cacheRead: u.cacheRead,
       total: u.totalTokens,
     },
+    billing,
   });
   return {
     replacement,
-    model: msg.model,
-    costUsd: u.cost.total,
+    model: modelReference(model),
+    costUsd: entry?.costUsd ?? 0,
     inputTokens: u.input,
     outputTokens: u.output,
+    billingMode: billing.billingMode,
+    ...(entry?.listPriceUsd !== undefined
+      ? { listPriceUsd: entry.listPriceUsd }
+      : {}),
   };
 }

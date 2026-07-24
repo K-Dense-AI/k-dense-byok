@@ -13,13 +13,13 @@ The start script (`start.sh` on macOS/Linux, `start.cmd` on Windows — both thi
 | **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
 | **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
 
-The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)) and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter** (built-in Pi provider) or **Ollama** (local) — there is no separate proxy.
+The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)) and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter**, **Ollama**, or a connected Pi OAuth provider (**OpenAI Codex, Anthropic, GitHub Copilot, or xAI**) — there is no separate proxy.
 
 When you send a message:
 
 1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
-2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent runs as its own short-lived `pi` process in the same sandbox, with its spend counted toward the project budget).
-3. Model calls go straight to OpenRouter or Ollama.
+2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent runs as its own short-lived `pi` process in the same sandbox, with usage ledgered under the parent session).
+3. Model calls go straight to the selected OpenRouter, Ollama, or authenticated Pi provider.
 4. A backend run broker sequences and buffers events (text, tool calls, cost)
    and streams them to the browser over SSE. The broker, rather than an
    individual browser connection, owns the live turn.
@@ -57,7 +57,7 @@ What every tab in a project shares:
   immediately visible to the others.
 - Project settings: the budget cap (`spendLimitUsd`) and the project-level
   cost total shown in the header pill.
-- API keys and global preferences from the repo-root `.env`.
+- API keys and global preferences from the repo-root `.env`, plus the process-wide Kady Pi OAuth store shared by lead and child agents.
 
 Switching tabs in the UI is purely client-side; the backend doesn't need to
 know which tab is "active" because each request already carries its own
@@ -74,7 +74,7 @@ The first time you start the app (`./start.sh` or `start.cmd`), it will automati
 
 - Install backend dependencies (`server/`) and frontend dependencies (`web/`)
 - Install [uv](https://docs.astral.sh/uv/) if missing - the Python manager Kady uses to run analyses in each sandbox
-- Create your `.env` from `.env.example` if you haven't yet, and warn if no API key (or local Ollama) is configured
+- Create your `.env` from `.env.example` if you haven't yet, and warn if no OpenRouter key, stored subscription login, or local Ollama is immediately detectable (the UI still opens for provider setup)
 - Download the scientific skills catalogue into each project's `sandbox/.pi/skills/`
 
 Subsequent starts are much faster.
@@ -85,7 +85,7 @@ Subsequent starts are much faster.
 k-dense-byok/
 ├── start.mjs             ← The launcher that starts everything (cross-platform)
 ├── start.sh / start.cmd  ← Thin macOS-Linux / Windows wrappers around it
-├── .env                  ← Your API keys (copy from .env.example; gitignored)
+├── .env                  ← Optional API keys and overrides (gitignored)
 ├── server/               ← Backend (TypeScript, Pi SDK)
 │   └── src/
 │       ├── index.ts          ← Fastify app, CORS, project-scope hook
@@ -93,7 +93,7 @@ k-dense-byok/
 │       ├── agent/            ← Pi wiring: models, sessions, tools, events, skills
 │       ├── modal/            ← Durable Modal jobs, storage, resources, transfers
 │       ├── api/              ← Routes: projects, sessions (SSE), sandbox, system
-│       └── cost/ledger.ts    ← Cost ledger + budget caps
+│       └── cost/             ← Billing policy, ledger, and budget caps
 ├── web/                  ← Frontend (the UI you see in your browser)
 ├── docs/                 ← Extended documentation (this folder)
 └── projects/             ← All user work, one subdirectory per named project
@@ -109,12 +109,29 @@ k-dense-byok/
             └── .kady/modal/jobs/<jobId>/           ← Durable compute state + logs
 ```
 
+The OAuth store intentionally sits outside this tree at `~/.kady/pi-agent/auth.json` by default, so tokens are not copied into projects or session files.
+
+## Provider authentication
+
+**Settings → Model providers** drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry; direct-provider entries are OAuth-only.
+
+The backend creates one process-wide Pi `ModelRuntime` with its auth path set to Kady's store. `server/src/env.ts` defaults `PI_CODING_AGENT_DIR` to `~/.kady/pi-agent`, or to `KADY_PI_AGENT_DIR` when that override is set. An explicitly supplied `PI_CODING_AGENT_DIR` takes precedence and can intentionally point Kady at the same directory as a standalone Pi installation. Child `pi` processes inherit it, so lead agents and subagents use the same file-locked `auth.json`.
+
 ## Model selection and routing
 
 Each chat tab picks one model. Model refs from the picker look like
-`openrouter/<vendor>/<model>` or `ollama/<name>`. The backend resolves these to
-Pi `Model` objects (`server/src/agent/models.ts`): OpenRouter is a built-in Pi
-provider (key from `OPENROUTER_API_KEY`), and Ollama points at your local daemon
-(`OLLAMA_BASE_URL`). There is no proxy — Pi calls the provider directly. See
+`openrouter/<vendor>/<model>`, `ollama/<name>`, or
+`<oauth-provider>/<model>` where the provider is `openai-codex`, `anthropic`,
+`github-copilot`, or `xai`. These canonical `provider/model` refs are also used
+by ledgers and subagents. The backend resolves them to Pi `Model` objects
+(`server/src/agent/models.ts`): OpenRouter uses `OPENROUTER_API_KEY`, Ollama
+points at `OLLAMA_BASE_URL`, and direct providers require a connected OAuth
+credential. There is no proxy — Pi calls the provider directly. OpenRouter
+Fusion and the server-side speech transcription fallback remain OpenRouter-only.
+See
 [Local models with Ollama](./local-models-ollama.md) and
 [Model selection](./model-selection.md).
+
+## Usage accounting and budgets
+
+Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. Ollama is local, while Modal compute counts its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.

@@ -16,6 +16,8 @@ export interface ProjectBudgetStatus {
 export interface ProjectCostSummary {
   projectId: string;
   totalUsd: number;
+  listPriceUsd?: number;
+  subscriptionTokens?: number;
   totalTokens: number;
   sessionCount: number;
   limitUsd: number | null;
@@ -26,6 +28,8 @@ function emptySummary(projectId: string): ProjectCostSummary {
   return {
     projectId,
     totalUsd: 0,
+    listPriceUsd: 0,
+    subscriptionTokens: 0,
     totalTokens: 0,
     sessionCount: 0,
     limitUsd: null,

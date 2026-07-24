@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { SessionCostPill } from "./session-cost-pill";
 import type {
   CostEntry,
@@ -96,6 +97,34 @@ describe("SessionCostPill", () => {
     });
     render(<SessionCostPill summary={summary} />);
     expect(screen.getByRole("button")).toHaveTextContent("$0.0012");
+  });
+
+  it("shows subscription token usage without treating it as project spend", async () => {
+    const user = userEvent.setup();
+    const summary = makeSummary({
+      totalUsd: 0,
+      totalTokens: 1_500,
+      subscriptionTokens: 1_500,
+      listPriceUsd: 2.5,
+      entries: [
+        makeEntry({
+          model: "openai-codex/gpt-test",
+          costUsd: 0,
+          totalTokens: 1_500,
+          billingMode: "subscription",
+          listPriceUsd: 2.5,
+        }),
+      ],
+    });
+    render(<SessionCostPill summary={summary} />);
+
+    const trigger = screen.getByRole("button");
+    expect(trigger).toHaveTextContent("$0.00");
+    expect(trigger).toHaveTextContent("sub");
+    expect(trigger).toHaveAccessibleName(/1\.5k subscription tokens/i);
+    await user.hover(trigger);
+    expect(await screen.findByText("Subscription usage")).toBeInTheDocument();
+    expect(screen.getByText("1.5k tokens")).toBeInTheDocument();
   });
 
   it("renders project total without a limit when spendLimit is unset", () => {

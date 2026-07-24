@@ -14,17 +14,32 @@ Everything else (Python tooling, packages, scientific skills) is installed autom
 
 > **Optional — LaTeX PDF reports:** if you want Kady's LaTeX editor to compile PDFs, install a TeX distribution: [MacTeX](https://www.tug.org/mactex/) (macOS), TeX Live (Linux), or [MiKTeX](https://miktex.org/) / [TeX Live](https://www.tug.org/texlive/) (Windows). Not needed for normal use.
 
-## 2. Get an OpenRouter API key
+## 2. Choose model access
 
-K-Dense BYOK is "Bring Your Own Keys": the app is free, and you pay only for the AI model usage on your own account.
+Kady can use any combination of these model sources:
 
-1. Go to [openrouter.ai](https://openrouter.ai/) and sign up.
-2. Add a small amount of credit (a few dollars is plenty to start).
-3. Create an API key and copy it — it looks like `sk-or-...`.
+### OpenRouter
 
-OpenRouter is a single account that gives you access to models from OpenAI, Anthropic, Google, xAI, Qwen, and more, so you don't need separate accounts with each provider.
+An [OpenRouter](https://openrouter.ai/) API key gives one pay-as-you-go account access to models from OpenAI, Anthropic, Google, xAI, Qwen, and more. Sign up, add credit, and create a key (it looks like `sk-or-...`).
 
-> **Prefer not to pay anything?** You can run the app entirely on free local models instead — see [Local models with Ollama](./local-models-ollama.md). In that case you can skip the OpenRouter key.
+### Pi OAuth subscriptions
+
+Kady can connect these existing subscriptions directly through Pi:
+
+- ChatGPT Plus/Pro (`openai-codex`)
+- Claude Pro/Max (`anthropic`)
+- GitHub Copilot (`github-copilot`)
+- xAI (`xai`, shown for supported SuperGrok or X Premium access)
+
+After Kady starts, open **Settings → Model providers** and click **Connect**. Pi and the provider choose the appropriate browser redirect, device-code, or manual-code flow; Kady displays each step in the dialog.
+
+A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks OpenAI Codex, Copilot, and xAI subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap.
+
+### Local Ollama
+
+You can run entirely on free local models instead — see [Local models with Ollama](./local-models-ollama.md). No hosted-provider credential is needed.
+
+> **OpenRouter-only features:** OpenRouter Fusion and server-side speech transcription for browsers without Web Speech still require an OpenRouter API key. Subscription logins do not authenticate those endpoints.
 
 ## 3. Download the project
 
@@ -37,7 +52,7 @@ cd k-dense-byok
 
 This downloads the project into a folder called `k-dense-byok` and moves you into it.
 
-## 4. Add your API key
+## 4. Configure model access
 
 In the project folder there is a template file called `.env.example`. Copy it to a file called `.env` (note the dot at the start):
 
@@ -46,13 +61,15 @@ cp .env.example .env      # macOS / Linux
 copy .env.example .env    # Windows
 ```
 
-Open `.env` in any text editor and paste your OpenRouter key:
+If you use OpenRouter, open `.env` in any text editor and paste your key:
 
 ```
 OPENROUTER_API_KEY=sk-or-your-key-here
 ```
 
-That's the only key you need. If you skip this step, the startup script creates the `.env` file for you and reminds you — and you can also paste the key later inside the app under **Settings → API keys**.
+If you use only a Pi subscription or Ollama, you can leave `OPENROUTER_API_KEY` blank. The startup script creates `.env` if needed, and OpenRouter keys can also be added later under **Settings → API keys**.
+
+OAuth tokens are kept outside the repository and all projects. By default Pi stores them in Kady's private `~/.kady/pi-agent/auth.json`; the lead agent and its specialist subagents use that same store. Set `KADY_PI_AGENT_DIR` to relocate Kady's Pi directory. If you explicitly set `PI_CODING_AGENT_DIR`, it takes precedence; point it at your standalone Pi agent directory only when you intentionally want Kady and Pi to share authentication and settings.
 
 ## 5. Start the app
 
@@ -68,7 +85,7 @@ The first run takes a few minutes. The script automatically:
 - checks for and installs anything missing (Node.js on a Mac, the [uv](https://docs.astral.sh/uv/) Python manager that Kady uses to run analyses — on every platform),
 - installs the backend and frontend packages,
 - downloads the catalogue of 140+ scientific skills,
-- creates your `.env` file if you haven't, and warns you clearly if no API key (or local Ollama) is set up.
+- creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, stored subscription login, or local Ollama (the UI still opens for provider setup).
 
 When it finishes, your browser opens to **[http://localhost:3000](http://localhost:3000)** — that's the app. Future starts take only a few seconds.
 
@@ -103,6 +120,6 @@ The startup script picks up any new packages and skills automatically.
 - **`./start.sh: Permission denied`** (macOS/Linux) — run `chmod +x start.sh` once, then try again.
 - **Windows says "Windows protected your PC"** when double-clicking `start.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\start.cmd`).
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
-- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), or paste it in **Settings → API keys** inside the app.
+- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys**, start Ollama, or connect a supported subscription in **Settings → Model providers**.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
 - **Something else?** — [Open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues); we read every one.

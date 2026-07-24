@@ -53,6 +53,8 @@ export function SessionCostPill({
     summary.entries.length > 0 ||
     sessionTotal > 0 ||
     projectTotal > 0 ||
+    (summary.subscriptionTokens ?? 0) > 0 ||
+    (projectSummary?.subscriptionTokens ?? 0) > 0 ||
     (projectSummary?.sessionCount ?? 0) > 0;
 
   if (!hasData) {
@@ -79,8 +81,8 @@ export function SessionCostPill({
           )}
           aria-label={
             limitUsd !== null
-              ? `Project cost ${formatUsd(projectTotal)} of ${formatUsd(limitUsd)}, session cost ${formatUsd(sessionTotal)}`
-              : `Project cost ${formatUsd(projectTotal)}, session cost ${formatUsd(sessionTotal)}`
+              ? `Project billable cost ${formatUsd(projectTotal)} of ${formatUsd(limitUsd)}, session billable cost ${formatUsd(sessionTotal)}${(summary.subscriptionTokens ?? 0) > 0 ? `, ${formatTokens(summary.subscriptionTokens ?? 0)} subscription tokens` : ""}`
+              : `Project billable cost ${formatUsd(projectTotal)}, session billable cost ${formatUsd(sessionTotal)}${(summary.subscriptionTokens ?? 0) > 0 ? `, ${formatTokens(summary.subscriptionTokens ?? 0)} subscription tokens` : ""}`
           }
         >
           <div className="flex items-center gap-2">
@@ -102,6 +104,14 @@ export function SessionCostPill({
                 <span className="text-muted-foreground">sess</span>
                 <span className="font-semibold">{formatUsd(sessionTotal)}</span>
               </span>
+              {(summary.subscriptionTokens ?? 0) > 0 ? (
+                <span className="flex items-baseline gap-1">
+                  <span className="text-muted-foreground">sub</span>
+                  <span className="font-semibold">
+                    {formatTokens(summary.subscriptionTokens ?? 0)} tok
+                  </span>
+                </span>
+              ) : null}
             </div>
           </div>
           {ratio !== null && (
@@ -131,7 +141,7 @@ export function SessionCostPill({
         {projectSummary && (
           <div className="border-b p-4">
             <div className="text-muted-foreground text-xs uppercase tracking-wide">
-              Project total
+              Project billable spend
             </div>
             <div className="mt-1 flex items-baseline gap-2">
               <div className="font-mono text-2xl font-semibold tabular-nums">
@@ -148,6 +158,12 @@ export function SessionCostPill({
               {projectSummary.sessionCount} session
               {projectSummary.sessionCount === 1 ? "" : "s"}
             </div>
+            {(projectSummary.subscriptionTokens ?? 0) > 0 ? (
+              <div className="mt-1 text-xs text-muted-foreground">
+                {formatTokens(projectSummary.subscriptionTokens ?? 0)} subscription
+                tokens are tracked separately from this spend.
+              </div>
+            ) : null}
             {ratio !== null && (
               <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div
@@ -165,8 +181,9 @@ export function SessionCostPill({
             )}
             {blockedTone && (
               <div className="mt-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-                Spend limit reached. New work is blocked until the limit is
-                raised.
+                Spend limit reached. New billable API and compute work is
+                blocked until the limit is raised; provider-managed
+                subscription and local runs can continue.
               </div>
             )}
             {warnTone && (
@@ -197,6 +214,14 @@ export function SessionCostPill({
             {summary.computeUsd > 0 && (
               <CostRow label="Compute (Modal)" costUsd={summary.computeUsd} />
             )}
+            {(summary.subscriptionTokens ?? 0) > 0 ? (
+              <div className="flex items-baseline justify-between py-1 text-sm">
+                <span className="text-muted-foreground">Subscription usage</span>
+                <span className="font-mono tabular-nums">
+                  {formatTokens(summary.subscriptionTokens ?? 0)} tokens
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -248,7 +273,12 @@ function EntryRow({ entry }: { entry: CostEntry }) {
         <span className="truncate">{shortModel(entry.model)}</span>
       </span>
       <span className="shrink-0 font-mono tabular-nums">
-        {formatTokens(entry.totalTokens)} · {formatUsd(entry.costUsd)}
+        {formatTokens(entry.totalTokens)} ·{" "}
+        {entry.billingMode === "subscription"
+          ? "subscription"
+          : entry.billingMode === "local"
+            ? "local"
+            : formatUsd(entry.costUsd)}
       </span>
     </li>
   );

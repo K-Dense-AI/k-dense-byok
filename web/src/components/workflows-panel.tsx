@@ -99,7 +99,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ModelSelector, type Model, DEFAULT_MODEL } from "@/components/model-selector";
+import {
+  ModelSelector,
+  type Model,
+  DEFAULT_MODEL,
+  modelUsesBillableBudget,
+} from "@/components/model-selector";
+import { useModels } from "@/lib/use-models";
 import workflowsData from "@/data/workflows.json";
 
 export type Workflow = {
@@ -295,6 +301,11 @@ function LaunchDialog({
   budgetBlocked?: boolean;
 }) {
   const [model, setModel] = useState<Model>(DEFAULT_MODEL);
+  const { modelAvailability } = useModels();
+  const selectedModelAvailability = modelAvailability(model);
+  const modelAvailable = selectedModelAvailability === "available";
+  const selectedBudgetBlocked =
+    budgetBlocked && modelUsesBillableBudget(model);
   const [placeholderValues, setPlaceholderValues] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
@@ -503,9 +514,13 @@ function LaunchDialog({
           </Button>
           <Button
             onClick={handleLaunch}
-            disabled={!canLaunch || budgetBlocked}
+            disabled={!canLaunch || selectedBudgetBlocked || !modelAvailable}
             title={
-              budgetBlocked
+              !modelAvailable
+                ? selectedModelAvailability === "checking"
+                  ? "Model provider status is still loading."
+                  : "This model provider is disconnected. Reconnect it in Settings or choose another model."
+                : selectedBudgetBlocked
                 ? "Project spend limit reached. Raise the limit in the project settings to continue."
                 : undefined
             }

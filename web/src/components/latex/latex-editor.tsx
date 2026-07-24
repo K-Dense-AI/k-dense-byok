@@ -58,6 +58,7 @@ const LATEX_BASIC_SETUP = {
 export interface LatexEditorProps {
   path: string;
   name: string;
+  model?: string;
   initialContent: string;
   onSave: (content: string) => Promise<boolean>;
   onCompile: (path: string, engine?: string) => Promise<LatexCompileResult>;
@@ -72,6 +73,7 @@ function isValidEngine(p: string | undefined): p is Engine {
 export function LatexEditor({
   path,
   name,
+  model,
   initialContent,
   onSave,
   onCompile,
@@ -473,7 +475,11 @@ export function LatexEditor({
       const ctrl = new AbortController();
       aiAbortRef.current = ctrl;
       try {
-        return await postLatexAssist(payload, ctrl.signal, projectId);
+        return await postLatexAssist(
+          model ? { ...payload, model } : payload,
+          ctrl.signal,
+          projectId,
+        );
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           onError(err instanceof LatexAssistError ? err.message : "AI request failed");
@@ -484,7 +490,7 @@ export function LatexEditor({
         if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
       }
     },
-    [projectId],
+    [model, projectId],
   );
 
   const runAiEdit = useCallback(

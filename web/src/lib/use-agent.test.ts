@@ -352,8 +352,11 @@ describe("useAgent live-run reconnect", () => {
           `data: ${JSON.stringify({
             seq: 8,
             type: "cost",
-            runCost: 0.25,
+            runCost: 0,
             runTokens: 42,
+            runBillingMode: "subscription",
+            runProvider: "openai-codex",
+            runListPriceUsd: 0.25,
           })}\n\n`,
         ),
       );
@@ -366,8 +369,11 @@ describe("useAgent live-run reconnect", () => {
 
     expect(result.current.messages.at(-1)).toMatchObject({
       content: "hello",
-      runCostUsd: 0.25,
+      runCostUsd: 0,
       runTokens: 42,
+      runBillingMode: "subscription",
+      runProvider: "openai-codex",
+      runListPriceUsd: 0.25,
     });
     expect(result.current.messages.filter((message) => message.content === "new prompt")).toHaveLength(1);
     expect(result.current.subagentCompletions).toBe(1);

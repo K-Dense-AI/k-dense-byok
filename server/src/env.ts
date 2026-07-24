@@ -9,6 +9,7 @@
  * The parser itself is shared with the launcher: repo-root env-file.mjs.
  */
 import path from "node:path";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { applyEnvFile } from "../../env-file.mjs";
 
@@ -20,3 +21,24 @@ const repoRoot = path.resolve(here, "..", "..");
 applyEnvFile(path.join(repoRoot, ".env"));
 applyEnvFile(path.join(repoRoot, "kady_agent", ".env"));
 applyEnvFile(path.join(repoRoot, "server", ".env"));
+
+// Keep Kady's Pi credentials/settings separate from the user's standalone Pi
+// CLI by default. The same environment variable is inherited by pi-subagents'
+// child processes, so lead and child runs share one file-locked auth.json
+// without copying OAuth tokens into process arguments or project files.
+//
+// An explicitly supplied PI_CODING_AGENT_DIR remains authoritative for users
+// who intentionally want Kady and their Pi CLI to share configuration. Resolve
+// it once here so child processes launched from a sandbox cwd see the same
+// directory even when the configured value was relative.
+const configuredPiDir =
+  process.env.PI_CODING_AGENT_DIR?.trim() ||
+  process.env.KADY_PI_AGENT_DIR?.trim() ||
+  path.join(os.homedir(), ".kady", "pi-agent");
+const expandedPiDir =
+  configuredPiDir === "~"
+    ? os.homedir()
+    : configuredPiDir.startsWith("~/") || configuredPiDir.startsWith("~\\")
+      ? path.join(os.homedir(), configuredPiDir.slice(2))
+      : configuredPiDir;
+process.env.PI_CODING_AGENT_DIR = path.resolve(repoRoot, expandedPiDir);

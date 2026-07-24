@@ -150,7 +150,9 @@ function setupEnv() {
     } else {
       log("No .env found — creating one from .env.example.");
       fs.copyFileSync(example, rootEnv);
-      log(`  ${sym.arrow} Edit .env and set OPENROUTER_API_KEY (or run a local Ollama).`);
+      log(
+        `  ${sym.arrow} Add an OpenRouter key, run Ollama, or connect a subscription in Settings.`,
+      );
     }
   }
   // The backend re-loads these itself (server/src/env.ts); loading them here
@@ -161,9 +163,44 @@ function setupEnv() {
   else if (applyEnvFile(legacyEnv, { override: true })) log("Loading environment from kady_agent/.env...");
 }
 
-/** The agent needs OpenRouter or a reachable Ollama to do anything. */
+function expandHome(value) {
+  if (value === "~") return os.homedir();
+  if (value.startsWith("~/") || value.startsWith("~\\")) {
+    return path.join(os.homedir(), value.slice(2));
+  }
+  return value;
+}
+
+function hasSubscriptionCredential() {
+  const agentDir = path.resolve(
+    repoRoot,
+    expandHome(
+      process.env.PI_CODING_AGENT_DIR ||
+        process.env.KADY_PI_AGENT_DIR ||
+        path.join(os.homedir(), ".kady", "pi-agent"),
+    ),
+  );
+  try {
+    const credentials = JSON.parse(
+      fs.readFileSync(path.join(agentDir, "auth.json"), "utf-8"),
+    );
+    return ["openai-codex", "anthropic", "github-copilot", "xai"].some(
+      (providerId) => credentials?.[providerId]?.type === "oauth",
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Warn when no immediately detectable model source is configured. */
 async function checkModelAccess() {
-  if (process.env.OPENROUTER_API_KEY) return;
+  if (
+    process.env.OPENROUTER_API_KEY ||
+    process.env.OR_API_KEY ||
+    hasSubscriptionCredential()
+  ) {
+    return;
+  }
   const ollama = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
   try {
     await fetch(`${ollama}/api/tags`, { signal: AbortSignal.timeout(2000) });
@@ -171,9 +208,10 @@ async function checkModelAccess() {
   } catch {
     log("");
     log(`  ${sym.warn} No OPENROUTER_API_KEY in .env and no Ollama at ${ollama}.`);
-    log("    The UI will start, but the agent cannot run until you either:");
+    log("    The UI will start. To run the agent, either:");
     log("      - add OPENROUTER_API_KEY to .env (https://openrouter.ai/keys), or");
-    log("      - start a local Ollama (https://ollama.com) with a pulled model.");
+    log("      - start a local Ollama (https://ollama.com) with a pulled model, or");
+    log("      - connect ChatGPT, Claude, Copilot, or xAI in Settings.");
     log("");
   }
 }
