@@ -43,7 +43,7 @@ export const HOST = process.env.KADY_HOST ?? "127.0.0.1";
 export const DEFAULT_MODEL_PROVIDER =
   process.env.DEFAULT_MODEL_PROVIDER ?? "openrouter";
 export const DEFAULT_MODEL_ID =
-  process.env.DEFAULT_MODEL_ID ?? "anthropic/claude-opus-4.8";
+  process.env.DEFAULT_MODEL_ID ?? "anthropic/claude-opus-5";
 
 export const OLLAMA_BASE_URL =
   process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";

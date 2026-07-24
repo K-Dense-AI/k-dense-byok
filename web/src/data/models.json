@@ -123,8 +123,7 @@
     },
     "modality": "text+image+file->text",
     "description": "Claude Opus 4.8 is Anthropic's most capable generally available model in the Opus family. It supports text, image, and file inputs with text output, with reasoning support and a 1M-token...",
-    "isFusion": false,
-    "default": true
+    "isFusion": false
   },
   {
     "id": "openrouter/anthropic/claude-opus-4.8-fast",
@@ -138,6 +137,35 @@
     },
     "modality": "text+image+file->text",
     "description": "Fast-mode variant of [Opus 4.8](/anthropic/claude-opus-4.8) - identical capabilities with higher output speed at 2x pricing relative to regular Opus 4.8.\n\nLearn more in Anthropic's docs: https://platform.claude.com/docs/en/build-with-claude/fast-mode",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/anthropic/claude-opus-5",
+    "label": "Claude Opus 5",
+    "provider": "Anthropic",
+    "tier": "flagship",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 5.0,
+      "completion": 25.0
+    },
+    "modality": "text+image+file->text",
+    "description": "Claude Opus 5 is Anthropic\u2019s flagship model for demanding reasoning, coding, and long-horizon agentic work. It is particularly strong at end-to-end software tasks, code review and bug finding, visual analysis...",
+    "isFusion": false,
+    "default": true
+  },
+  {
+    "id": "openrouter/anthropic/claude-opus-5-fast",
+    "label": "Claude Opus 5 (Fast)",
+    "provider": "Anthropic",
+    "tier": "flagship",
+    "context_length": 1000000,
+    "pricing": {
+      "prompt": 10.0,
+      "completion": 50.0
+    },
+    "modality": "text+image+file->text",
+    "description": "Fast-mode variant of [Opus 5](/anthropic/claude-opus-5) - identical capabilities with higher output speed at 2x pricing relative to regular Opus 5.\n\nLearn more in Anthropic's docs: https://platform.claude.com/docs/en/build-with-claude/fast-mode",
     "isFusion": false
   },
   {
@@ -341,7 +369,7 @@
     "label": "Nano Banana Pro (Gemini 3 Pro Image)",
     "provider": "Google",
     "tier": "high",
-    "context_length": 65536,
+    "context_length": 131072,
     "pricing": {
       "prompt": 2.0,
       "completion": 12.0
@@ -394,6 +422,20 @@
     "expertDefault": true
   },
   {
+    "id": "openrouter/google/gemini-3.6-flash",
+    "label": "Gemini 3.6 Flash",
+    "provider": "Google",
+    "tier": "mid",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 1.5,
+      "completion": 7.5
+    },
+    "modality": "text+image+file+audio+video->text",
+    "description": "Gemini 3.6 Flash is a high-efficiency model from Google for coding, agentic workflows, and web and app development. It is designed to produce polished outputs with fewer unnecessary edits and...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/~google/gemini-flash-latest",
     "label": "Google Gemini Flash Latest",
     "provider": "Google",
@@ -401,7 +443,7 @@
     "context_length": 1048576,
     "pricing": {
       "prompt": 1.5,
-      "completion": 9.0
+      "completion": 7.5
     },
     "modality": "text+image+file+audio+video->text",
     "description": "This model always redirects to the latest model in the Google Gemini Flash family.",
@@ -442,8 +484,8 @@
     "tier": "mid",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.9296,
-      "completion": 2.9216
+      "prompt": 0.791,
+      "completion": 2.486
     },
     "modality": "text->text",
     "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,...",
@@ -464,20 +506,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b",
-    "label": "Nemotron 3 Ultra",
-    "provider": "NVIDIA",
-    "tier": "mid",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.6,
-      "completion": 3.6
-    },
-    "modality": "text->text",
-    "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid Transformer-Mamba mixture-of-experts architecture, it...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/qwen/qwen3.7-max",
     "label": "Qwen3.7 Max",
     "provider": "Qwen",
@@ -489,6 +517,20 @@
     },
     "modality": "text->text",
     "description": "Qwen3.7-Max is the flagship model in Alibaba's Qwen3.7 series. It supports text input and output and is designed for agent-centric workloads, with particular strengths in coding, office and productivity tasks,...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/nvidia/nemotron-3-ultra-550b-a55b",
+    "label": "Nemotron 3 Ultra",
+    "provider": "NVIDIA",
+    "tier": "mid",
+    "context_length": 512288,
+    "pricing": {
+      "prompt": 0.5,
+      "completion": 2.2
+    },
+    "modality": "text->text",
+    "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid Transformer-Mamba mixture-of-experts architecture, it...",
     "isFusion": false
   },
   {
@@ -618,34 +660,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/deepseek/deepseek-v4-flash",
-    "label": "DeepSeek V4 Flash",
-    "provider": "DeepSeek",
-    "tier": "budget",
-    "context_length": 1048576,
-    "pricing": {
-      "prompt": 0.098,
-      "completion": 0.196
-    },
-    "modality": "text->text",
-    "description": "DeepSeek V4 Flash is an efficiency-optimized Mixture-of-Experts model from DeepSeek with 284B total parameters and 13B activated parameters, supporting a 1M-token context window. It is designed for fast inference and...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/deepseek/deepseek-v4-pro",
-    "label": "DeepSeek V4 Pro",
-    "provider": "DeepSeek",
-    "tier": "budget",
-    "context_length": 1048576,
-    "pricing": {
-      "prompt": 0.435,
-      "completion": 0.87
-    },
-    "modality": "text->text",
-    "description": "DeepSeek V4 Pro is a large-scale Mixture-of-Experts model from DeepSeek with 1.6T total parameters and 49B activated parameters, supporting a 1M-token context window. It is designed for advanced reasoning, coding,...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/google/gemini-3.1-flash-lite",
     "label": "Gemini 3.1 Flash Lite",
     "provider": "Google",
@@ -660,31 +674,31 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/xiaomi/mimo-v2.5",
-    "label": "MiMo-V2.5",
-    "provider": "Xiaomi",
+    "id": "openrouter/google/gemini-3.5-flash-lite",
+    "label": "Gemini 3.5 Flash Lite",
+    "provider": "Google",
     "tier": "budget",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.14,
-      "completion": 0.28
+      "prompt": 0.3,
+      "completion": 2.5
     },
-    "modality": "text+image+audio+video->text",
-    "description": "MiMo-V2.5 is a native omnimodal model by Xiaomi. It delivers Pro-level agentic performance at roughly half the inference cost, while surpassing MiMo-V2-Omni in multimodal perception across image and video understanding...",
+    "modality": "text+image+file+audio+video->text",
+    "description": "Gemini 3.5 Flash Lite is a high-efficiency model from Google with upgraded agentic capabilities. It is suited for subagents that execute focused tasks within complex, multi-agent workflows.",
     "isFusion": false
   },
   {
-    "id": "openrouter/xiaomi/mimo-v2.5-pro",
-    "label": "MiMo-V2.5-Pro",
-    "provider": "Xiaomi",
+    "id": "openrouter/poolside/laguna-s-2.1",
+    "label": "Laguna S 2.1",
+    "provider": "Poolside",
     "tier": "budget",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.435,
-      "completion": 0.87
+      "prompt": 0.1,
+      "completion": 0.2
     },
     "modality": "text->text",
-    "description": "MiMo-V2.5-Pro is Xiaomi\u2019s flagship model, delivering strong performance in general agentic capabilities, complex software engineering, and long-horizon tasks, with top rankings on benchmarks such as ClawEval, GDPVal, and SWE-bench Pro....",
+    "description": "Laguna S 2.1 is the latest coding agent model from [Poolside](<https://poolside.ai/>). Laguna S 2.1 is a 118B total parameter model with 8B active parameters, scoring 70.2% on Terminal-Bench 2.1 and...",
     "isFusion": false
   },
   {
@@ -764,39 +778,11 @@
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.2,
-      "completion": 0.8
+      "prompt": 0.132,
+      "completion": 0.528
     },
     "modality": "text->text",
     "description": "Hy3 is a 295B-parameter Mixture-of-Experts model from Tencent (21B active, 192 experts with top-8 routing) built for reasoning, agentic workflows, and real-world production use. It supports a configurable reasoning effort:...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/tencent/hy3:free",
-    "label": "Hy3 (free)",
-    "provider": "Tencent",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "Hy3 is a 295B-parameter Mixture-of-Experts model from Tencent (21B active, 192 experts with top-8 routing) built for reasoning, agentic workflows, and real-world production use. It supports a configurable reasoning effort:...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/tencent/hy3-preview",
-    "label": "Hy3 preview",
-    "provider": "Tencent",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.063,
-      "completion": 0.21
-    },
-    "modality": "text->text",
-    "description": "Hy3 preview is a high-efficiency Mixture-of-Experts model from Tencent designed for agentic workflows and production use. It supports configurable reasoning levels across disabled, low, and high modes, allowing it to...",
     "isFusion": false
   },
   {
@@ -828,6 +814,20 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/poolside/laguna-s-2.1:free",
+    "label": "Laguna S 2.1 (free)",
+    "provider": "Poolside",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.0,
+      "completion": 0.0
+    },
+    "modality": "text->text",
+    "description": "Laguna S 2.1 is the latest coding agent model from [Poolside](<https://poolside.ai/>). Laguna S 2.1 is a 118B total parameter model with 8B active parameters, scoring 70.2% on Terminal-Bench 2.1 and...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/poolside/laguna-xs-2.1",
     "label": "Laguna XS 2.1",
     "provider": "Poolside",
@@ -853,6 +853,20 @@
     },
     "modality": "text->text",
     "description": "Laguna XS 2.1 is the latest coding agent model in the 33B-A3B category from [Poolside](https://poolside.ai/) and a step forward from their Laguna XS.2 model (released in April 2026). It combines...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/inclusionai/ling-3.0-flash:free",
+    "label": "Ling-3.0-flash (free)",
+    "provider": "Inclusionai",
+    "tier": "budget",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.0,
+      "completion": 0.0
+    },
+    "modality": "text->text",
+    "description": "*Ling-3.0-flash* is a *124B-parameter Mixture-of-Experts (MoE) model*, with approximately *5.1B parameters activated per token*. The model is designed with *token efficiency and production-scale agentic inference* as key priorities, enabling developers...",
     "isFusion": false
   },
   {
@@ -890,8 +904,8 @@
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.45,
-      "completion": 2.7
+      "prompt": 0.288,
+      "completion": 2.4
     },
     "modality": "text+image+video->text",
     "description": "Qwen3.6 27B is a dense 27-billion-parameter language model from the Qwen Team at Alibaba, released in April 2026. It features hybrid multimodal capabilities \u2014 accepting text, image, and video inputs...",
@@ -912,31 +926,17 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/inclusionai/ling-2.6-1t",
-    "label": "inclusionAI: Ling-2.6-1T",
-    "provider": "Inclusionai",
+    "id": "openrouter/stepfun/step-3.7-flash",
+    "label": "StepFun: Step 3.7 Flash",
+    "provider": "Stepfun",
     "tier": "budget",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.075,
-      "completion": 0.625
+      "prompt": 0.2,
+      "completion": 1.15
     },
-    "modality": "text->text",
-    "description": "Ling-2.6-1T is an instant (instruct) model from inclusionAI and the company\u2019s trillion-parameter flagship, designed for real-world agents that require fast execution and high efficiency at scale. It uses a \u201cfast...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/inclusionai/ling-2.6-flash",
-    "label": "inclusionAI: Ling-2.6-flash",
-    "provider": "Inclusionai",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.01,
-      "completion": 0.03
-    },
-    "modality": "text->text",
-    "description": "Ling-2.6-flash is an instant (instruct) model from inclusionAI with 104B total parameters and 7.4B active parameters, designed for real-world agents that require fast responses, strong execution, and high token efficiency....",
+    "modality": "text+image+video->text",
+    "description": "Step 3.7 Flash is StepFun's latest high-efficiency multimodal Mixture-of-Experts model. It pairs a 196B-parameter language backbone with a vision encoder for native image and video understanding, activating roughly 11B parameters...",
     "isFusion": false
   },
   {
@@ -993,20 +993,6 @@
     },
     "modality": "text->text",
     "description": "North Mini Code is Cohere's first agentic coding model and the debut of its North family. A sparse mixture-of-experts model with 30B total parameters and 3B active, it is optimized...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/stepfun/step-3.7-flash",
-    "label": "StepFun: Step 3.7 Flash",
-    "provider": "Stepfun",
-    "tier": "budget",
-    "context_length": 256000,
-    "pricing": {
-      "prompt": 0.2,
-      "completion": 1.15
-    },
-    "modality": "text+image+video->text",
-    "description": "Step 3.7 Flash is StepFun's latest high-efficiency multimodal Mixture-of-Experts model. It pairs a 196B-parameter language backbone with a vision encoder for native image and video understanding, activating roughly 11B parameters...",
     "isFusion": false
   },
   {
