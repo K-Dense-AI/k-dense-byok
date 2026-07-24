@@ -689,6 +689,25 @@ function projectMetadataFromState(
   };
 }
 
+/**
+ * Release the blob: URLs minted by `loadWorkspaceSnapshot`.
+ *
+ * Hydration creates one per restored composer attachment. When the caller
+ * throws the snapshot away — the page unmounted mid-load, or a second load
+ * superseded it — nothing else will ever revoke them and the blobs stay
+ * resident for the lifetime of the document.
+ */
+export function revokeSnapshotObjectUrls(snapshot: WorkspaceSnapshot): void {
+  if (typeof URL === "undefined" || typeof URL.revokeObjectURL !== "function") return;
+  for (const project of Object.values(snapshot.projects)) {
+    for (const tab of project.tabs) {
+      for (const attachment of tab.chat?.composer.attachments ?? []) {
+        if (attachment.url?.startsWith("blob:")) URL.revokeObjectURL(attachment.url);
+      }
+    }
+  }
+}
+
 export async function loadWorkspaceSnapshot(
   validProjectIds?: Iterable<string>,
 ): Promise<WorkspaceSnapshot> {

@@ -188,6 +188,41 @@ describe("SessionCostPill", () => {
     expect(button.className).toContain("border-amber-500/60");
   });
 
+  it("counts compute reservations and in-flight runs toward the displayed cap", async () => {
+    const user = userEvent.setup();
+    // The server admits work against committed money; showing only ledgered
+    // spend made a blocked project look like it had room left.
+    const project = makeProjectSummary({
+      totalUsd: 2.0,
+      spentUsd: 2.0,
+      reservedUsd: 6.0,
+      inFlightUsd: 1.0,
+      committedUsd: 9.0,
+      limitUsd: 10.0,
+      budget: {
+        totalUsd: 9.0,
+        spentUsd: 2.0,
+        reservedUsd: 6.0,
+        inFlightUsd: 1.0,
+        committedUsd: 9.0,
+        limitUsd: 10.0,
+        ratio: 0.9,
+        state: "warn",
+      },
+    });
+    render(
+      <SessionCostPill summary={makeSummary()} projectSummary={project} limitUsd={10.0} />,
+    );
+    const button = screen.getByRole("button");
+    expect(button).toHaveTextContent("$9.00");
+    expect(button).toHaveAccessibleName(/held for work in progress/i);
+    expect(button.className).toContain("border-amber-500/60");
+
+    await user.hover(button);
+    expect(await screen.findByText(/\$2\.00 recorded/)).toBeInTheDocument();
+    expect(screen.getByText(/held for compute jobs/)).toBeInTheDocument();
+  });
+
   it("applies the destructive tone and lock icon when the budget is exceeded", () => {
     const project = makeProjectSummary({ totalUsd: 12.0, limitUsd: 10.0 });
     const session = makeSummary({

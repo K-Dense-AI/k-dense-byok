@@ -8,6 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { activePaths, resolvePaths } from "../projects.ts";
 import { SandboxError } from "../sandbox-fs.ts";
 import { isValidSessionId } from "./notebook-store.ts";
@@ -72,33 +73,55 @@ export function normalizeNotebookAnnotations(data: unknown): NotebookAnnotations
   return { version: 1, annotations: anns as NotebookAnnotation[] };
 }
 
+/**
+ * Strong validator for the sidecar's contents.
+ *
+ * Last-Modified only resolves to the second, so an mtime comparison can't tell
+ * "unchanged" from "changed within the same second as your read" — a window in
+ * which one writer's pins/comments silently replace another's.
+ */
+function annotationsEtag(file: string): string | null {
+  try {
+    return `"${createHash("sha256").update(fs.readFileSync(file)).digest("hex").slice(0, 32)}"`;
+  } catch {
+    return null;
+  }
+}
+
 export function readNotebookAnnotations(
   sessionId: string,
   projectId?: string,
-): { doc: NotebookAnnotationsDoc; mtime: Date | null } {
+): { doc: NotebookAnnotationsDoc; mtime: Date | null; etag: string | null } {
   const file = notebookAnnotationsPath(sessionId, projectId);
   try {
     const raw = fs.readFileSync(file, "utf-8");
     const doc = raw.trim()
       ? (JSON.parse(raw) as NotebookAnnotationsDoc)
       : { version: 1 as const, annotations: [] };
-    return { doc, mtime: fs.statSync(file).mtime };
+    return { doc, mtime: fs.statSync(file).mtime, etag: annotationsEtag(file) };
   } catch {
     // Absent or corrupt sidecar → empty envelope (never fails the read).
-    return { doc: { version: 1, annotations: [] }, mtime: null };
+    return { doc: { version: 1, annotations: [] }, mtime: null, etag: null };
   }
 }
 
-/** Atomic write (tmp + rename); returns the sidecar's new mtime. */
+/** Atomic write (tmp + rename); returns the sidecar's new mtime and validator. */
 export function writeNotebookAnnotations(
   sessionId: string,
   doc: NotebookAnnotationsDoc,
   projectId?: string,
-): Date {
+): { mtime: Date; etag: string | null } {
   const file = notebookAnnotationsPath(sessionId, projectId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + "\n", "utf-8");
-  fs.renameSync(tmp, file);
-  return fs.statSync(file).mtime;
+  // Unique temp name: a concurrent writer sharing `<file>.tmp` would otherwise
+  // have its partial content renamed into place by whoever finishes first.
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(doc, null, 2) + "\n", "utf-8");
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+  return { mtime: fs.statSync(file).mtime, etag: annotationsEtag(file) };
 }

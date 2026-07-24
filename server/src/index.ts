@@ -71,7 +71,7 @@ export async function buildApp() {
       cb(null, isCorsOriginAllowed(origin));
     },
     credentials: true,
-    exposedHeaders: ["ETag"],
+    exposedHeaders: ["ETag", "X-Project-Fallback"],
   });
 
   await app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });
@@ -83,13 +83,25 @@ export async function buildApp() {
   // Project scope: resolve the active project and run the rest of the request
   // lifecycle inside its AsyncLocalStorage context. Calling `done` inside
   // withActiveProject keeps the store active for downstream hooks + handler.
-  app.addHook("onRequest", (req, _reply, done) => {
+  app.addHook("onRequest", (req, reply, done) => {
     let projectId = resolveProjectId(req);
     try {
       // Only the default project is created on demand. An unknown id here is
       // a stale header (e.g. an in-flight poll for a just-deleted project) —
       // creating it would silently resurrect the deleted project.
       if (projectId !== DEFAULT_PROJECT_ID && !getProject(projectId)) {
+        // Reads degrade to the default project (with a header so the client
+        // can notice and re-sync), but a write must never land in a project
+        // the caller did not ask for: that silently moves a chat, an upload or
+        // a spend record into someone else's workspace.
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          reply.code(404).send({
+            detail: `Unknown project: ${projectId}`,
+            reason: "unknown_project",
+          });
+          return;
+        }
+        reply.header("X-Project-Fallback", projectId);
         projectId = DEFAULT_PROJECT_ID;
       }
       ensureProjectExists(projectId);

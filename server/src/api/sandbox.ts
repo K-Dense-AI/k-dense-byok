@@ -6,11 +6,11 @@
  * sidecars (<file>.annotations.json) are edited through dedicated endpoints and
  * cascade on move/delete. AnnData previews shell out to a small Python helper.
  */
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
@@ -18,8 +18,7 @@ import { activePaths, getProject, touchProject } from "../projects.ts";
 import { buildProjectArchive } from "../project-archive.ts";
 import { currentProjectId } from "../scope.ts";
 import { apiRelative, guessMime, isUserVisible, isWithin, safePath, SandboxError } from "../sandbox-fs.ts";
-import { helperPython } from "../helpers-env.ts";
-import { sciHelperFor, runSciHelper } from "./sci-helpers.ts";
+import { sciHelperFor, runSciHelper, runHelperScript } from "./sci-helpers.ts";
 import { LATEX_ENGINES, compileLatex } from "../latex/compile.ts";
 import { synctexAvailable, synctexForward, synctexInverse } from "../latex/synctex.ts";
 import { AssistError, runLatexAssist, type AssistRequest } from "../latex/assist.ts";
@@ -41,6 +40,59 @@ function isTreeExcludedDir(name: string): boolean {
     TREE_EXCLUDED_DIRS.has(name) ||
     /(?:^|[-_.])(?:venv|virtualenv)$/i.test(name)
   );
+}
+
+/**
+ * RFC 6266 header value.
+ *
+ * A `"` or a backslash in a filename closes the quoted-string early, so the
+ * browser saves the file under a truncated name (or rejects the header). The
+ * ASCII fallback stays quoted for old clients; `filename*` carries the real
+ * name for everything else.
+ */
+function contentDisposition(kind: "inline" | "attachment", filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/** `report.csv` → `report (2).csv` when the destination is taken. */
+function uniqueDestination(dest: string): string {
+  if (!fs.existsSync(dest)) return dest;
+  const dir = path.dirname(dest);
+  const base = path.basename(dest);
+  const ext = path.extname(base);
+  const stem = ext ? base.slice(0, -ext.length) : base;
+  for (let n = 2; n < 1000; n++) {
+    const candidate = path.join(dir, `${stem} (${n})${ext}`);
+    if (!fs.existsSync(candidate)) return candidate;
+  }
+  return path.join(dir, `${stem} (${Date.now()})${ext}`);
+}
+
+/** Rename, falling back to copy+unlink when staging landed on another device. */
+function moveFile(from: string, to: string): void {
+  try {
+    fs.renameSync(from, to);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+    fs.copyFileSync(from, to);
+    fs.rmSync(from, { force: true });
+  }
+}
+
+/**
+ * Write via a temp file + rename so a crash mid-write cannot leave the
+ * original truncated. Readers see either the old file or the new one.
+ */
+function writeFileAtomic(target: string, data: Buffer | string): void {
+  const tmp = `${target}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, data);
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 interface TreeNode {
@@ -212,43 +264,68 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.post("/sandbox/upload", async (req, reply) => {
     const paths = activePaths();
     fs.mkdirSync(paths.uploadDir, { recursive: true });
+    // Files stream straight to a staging dir instead of being buffered: with a
+    // 1GB per-file limit, holding a whole multi-file upload in memory is an
+    // easy out-of-memory kill for exactly the large datasets this is for.
+    // Staging lives next to the destination so the final move is a rename.
+    const stagingRoot = fs.mkdtempSync(path.join(paths.root, ".upload-"));
     // The client sends parallel `files`/`paths` parts: paths[i] is the i-th
     // file's relative subpath for folder uploads (may be empty for flat files).
-    const files: { filename: string; buf: Buffer }[] = [];
+    const staged: { filename: string; temp: string }[] = [];
     const relPaths: string[] = [];
-    const parts = (req as FastifyRequest & { parts: () => AsyncIterable<any> }).parts();
-    for await (const part of parts) {
-      if (part.type === "file") {
-        if (!part.filename) {
-          part.file.resume();
-          continue;
+    try {
+      const parts = (req as FastifyRequest & { parts: () => AsyncIterable<any> }).parts();
+      for await (const part of parts) {
+        if (part.type === "file") {
+          if (!part.filename) {
+            part.file.resume();
+            continue;
+          }
+          const temp = path.join(stagingRoot, String(staged.length));
+          await pipeline(part.file, fs.createWriteStream(temp));
+          if (part.file.truncated) {
+            reply.code(413);
+            return { detail: `${part.filename} exceeds the maximum upload size` };
+          }
+          staged.push({ filename: part.filename, temp });
+        } else if (part.fieldname === "paths") {
+          relPaths.push(String(part.value ?? ""));
         }
-        files.push({ filename: part.filename, buf: await part.toBuffer() });
-      } else if (part.fieldname === "paths") {
-        relPaths.push(String(part.value ?? ""));
       }
-    }
-    const saved: string[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const rel = (relPaths[i] ?? "").trim();
-      let dest: string;
-      if (rel) {
-        const safeParts = rel
-          .split(/[\\/]+/)
-          .filter((p) => p && p !== "." && p !== ".." && !p.startsWith("."));
-        if (!safeParts.length) continue;
-        dest = path.join(paths.uploadDir, ...safeParts);
-      } else {
-        const safeName = path.basename(files[i].filename);
-        if (!safeName || safeName.startsWith(".")) continue;
-        dest = path.join(paths.uploadDir, safeName);
+      const saved: string[] = [];
+      const renamed: { from: string; to: string }[] = [];
+      for (let i = 0; i < staged.length; i++) {
+        const rel = (relPaths[i] ?? "").trim();
+        let dest: string;
+        if (rel) {
+          const safeParts = rel
+            .split(/[\\/]+/)
+            .filter((p) => p && p !== "." && p !== ".." && !p.startsWith("."));
+          if (!safeParts.length) continue;
+          dest = path.join(paths.uploadDir, ...safeParts);
+        } else {
+          const safeName = path.basename(staged[i].filename);
+          if (!safeName || safeName.startsWith(".")) continue;
+          dest = path.join(paths.uploadDir, safeName);
+        }
+        fs.mkdirSync(path.dirname(dest), { recursive: true });
+        // Re-uploading a name that already exists used to destroy the original
+        // with no warning. Park the new copy beside it instead.
+        const finalDest = uniqueDestination(dest);
+        moveFile(staged[i].temp, finalDest);
+        if (finalDest !== dest) {
+          renamed.push({
+            from: apiRelative(paths.sandbox, dest),
+            to: apiRelative(paths.sandbox, finalDest),
+          });
+        }
+        saved.push(apiRelative(paths.sandbox, finalDest));
       }
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, files[i].buf);
-      saved.push(apiRelative(paths.sandbox, dest));
+      touchProject(currentProjectId());
+      return { uploaded: saved, renamed };
+    } finally {
+      fs.rmSync(stagingRoot, { recursive: true, force: true });
     }
-    touchProject(currentProjectId());
-    return { uploaded: saved };
   });
 
   app.get<{ Querystring: { path: string } }>("/sandbox/file", async (req, reply) => {
@@ -274,7 +351,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       const target = safePath(req.query.path);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       const body = req.body instanceof Buffer ? req.body : Buffer.from(String(req.body ?? ""));
-      fs.writeFileSync(target, body);
+      writeFileAtomic(target, body);
       touchProject(currentProjectId());
       return { saved: req.query.path, size: body.length };
     } catch (err) {
@@ -386,7 +463,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         return { detail: "File not found" };
       }
       reply.type(guessMime(path.basename(target)));
-      reply.header("Content-Disposition", `inline; filename="${path.basename(target)}"`);
+      reply.header("Content-Disposition", contentDisposition("inline", path.basename(target)));
       return reply.send(fs.createReadStream(target));
     } catch (err) {
       return handle(reply, err);
@@ -401,7 +478,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         return { detail: "File not found" };
       }
       reply.type("application/octet-stream");
-      reply.header("Content-Disposition", `attachment; filename="${path.basename(target)}"`);
+      reply.header("Content-Disposition", contentDisposition("attachment", path.basename(target)));
       return reply.send(fs.createReadStream(target));
     } catch (err) {
       return handle(reply, err);
@@ -422,7 +499,10 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         return { detail: "Directory is empty" };
       }
       reply.type("application/zip");
-      reply.header("Content-Disposition", `attachment; filename="${path.basename(target)}.zip"`);
+      reply.header(
+        "Content-Disposition",
+        contentDisposition("attachment", `${path.basename(target)}.zip`),
+      );
       const response = reply.send(archive);
       // Archiver emits the same failure on the stream, which Fastify handles.
       void archive.finalize().catch(() => undefined);
@@ -457,6 +537,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       reply.header("Cache-Control", "no-store");
       const result = readPdfAnnotations(activePaths().sandbox, req.query.path);
       if (result.mtime) reply.header("Last-Modified", result.mtime.toUTCString());
+      if (result.etag) reply.header("ETag", result.etag);
       return result.doc;
     } catch (err) {
       return handle(reply, err);
@@ -466,16 +547,17 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.put<{ Querystring: { path: string }; Body: unknown }>("/sandbox/annotations", async (req, reply) => {
     try {
       const doc = normalizeAnnotations(req.body);
-      const saved = await replacePdfAnnotations(
-        activePaths().sandbox,
-        req.query.path,
-        doc,
-        req.headers["if-unmodified-since"]
+      const saved = await replacePdfAnnotations(activePaths().sandbox, req.query.path, doc, {
+        // If-Match is the precise check; If-Unmodified-Since stays as a
+        // fallback for clients that only kept the Last-Modified value.
+        etag: req.headers["if-match"] ? String(req.headers["if-match"]) : null,
+        ifUnmodifiedSince: req.headers["if-unmodified-since"]
           ? String(req.headers["if-unmodified-since"])
           : null,
-      );
+      });
       touchProject(currentProjectId());
       reply.header("Last-Modified", saved.mtime.toUTCString());
+      if (saved.etag) reply.header("ETag", saved.etag);
       return { saved: req.query.path, count: doc.annotations.length };
     } catch (err) {
       return handle(reply, err);
@@ -490,7 +572,11 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Not a .h5ad file" };
       }
-      const res = spawnSync(helperPython(), [ANNDATA_HELPER, "summarize", target], { encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
+      const res = await runHelperScript(ANNDATA_HELPER, ["summarize", target]);
+      if (res.timedOut) {
+        reply.code(504);
+        return { detail: res.stderr.trim() };
+      }
       if (res.status === 3) {
         reply.code(503);
         return { detail: res.stderr.trim() || "AnnData deps missing" };
@@ -517,32 +603,44 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         }
         const cacheDir = path.join(activePaths().root, ".anndata_cache");
         const outPng = path.join(os.tmpdir(), `kady-emb-${process.pid}-${Date.now()}.png`);
-        const res = spawnSync(
-          helperPython(),
-          [ANNDATA_HELPER, "embedding", target, req.query.key, req.query.color || "-", cacheDir, outPng],
-          { encoding: "utf-8" },
-        );
-        if (res.status === 3) {
-          reply.code(503);
-          return { detail: res.stderr.trim() || "AnnData deps missing" };
+        try {
+          const res = await runHelperScript(ANNDATA_HELPER, [
+            "embedding",
+            target,
+            req.query.key,
+            req.query.color || "-",
+            cacheDir,
+            outPng,
+          ]);
+          if (res.timedOut) {
+            reply.code(504);
+            return { detail: res.stderr.trim() };
+          }
+          if (res.status === 3) {
+            reply.code(503);
+            return { detail: res.stderr.trim() || "AnnData deps missing" };
+          }
+          if (res.status === 4) {
+            reply.code(404);
+            return { detail: res.stderr.trim() };
+          }
+          if (res.status === 5) {
+            reply.code(400);
+            return { detail: res.stderr.trim() };
+          }
+          if (res.status !== 0 || !fs.existsSync(outPng)) {
+            reply.code(500);
+            return { detail: res.stderr.trim() || "Failed to render embedding" };
+          }
+          const data = fs.readFileSync(outPng);
+          reply.type("image/png");
+          reply.header("Cache-Control", "private, max-age=300");
+          return data;
+        } finally {
+          // Every failure path can leave a partial render behind; the success
+          // path used to be the only one that cleaned up.
+          fs.rmSync(outPng, { force: true });
         }
-        if (res.status === 4) {
-          reply.code(404);
-          return { detail: res.stderr.trim() };
-        }
-        if (res.status === 5) {
-          reply.code(400);
-          return { detail: res.stderr.trim() };
-        }
-        if (res.status !== 0 || !fs.existsSync(outPng)) {
-          reply.code(500);
-          return { detail: res.stderr.trim() || "Failed to render embedding" };
-        }
-        const data = fs.readFileSync(outPng);
-        fs.rmSync(outPng, { force: true });
-        reply.type("image/png");
-        reply.header("Cache-Control", "private, max-age=300");
-        return data;
       } catch (err) {
         return handle(reply, err);
       }
@@ -561,7 +659,11 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "File not found" };
       }
-      const res = runSciHelper(req.query.kind, "summarize", [target]);
+      const res = await runSciHelper(req.query.kind, "summarize", [target]);
+      if (res.timedOut) {
+        reply.code(504);
+        return { detail: res.stderr.trim() };
+      }
       if (res.status === 3) {
         reply.code(503);
         return { detail: res.stderr.trim() || "Preview dependency missing" };
@@ -599,29 +701,41 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           return { detail: "File not found" };
         }
         const outPath = path.join(os.tmpdir(), `kady-sci-${process.pid}-${Date.now()}`);
-        const res = runSciHelper(req.query.kind, "render", [target, req.query.index ?? "0", outPath, req.query.axis ?? "-"]);
-        if (res.status === 3) {
-          reply.code(503);
-          return { detail: res.stderr.trim() || "Preview dependency missing" };
+        try {
+          const res = await runSciHelper(req.query.kind, "render", [
+            target,
+            req.query.index ?? "0",
+            outPath,
+            req.query.axis ?? "-",
+          ]);
+          if (res.timedOut) {
+            reply.code(504);
+            return { detail: res.stderr.trim() };
+          }
+          if (res.status === 3) {
+            reply.code(503);
+            return { detail: res.stderr.trim() || "Preview dependency missing" };
+          }
+          if (res.status === 4) {
+            reply.code(404);
+            return { detail: res.stderr.trim() };
+          }
+          if (res.status === 5) {
+            reply.code(400);
+            return { detail: res.stderr.trim() };
+          }
+          if (res.status !== 0 || !fs.existsSync(outPath)) {
+            reply.code(500);
+            return { detail: res.stderr.trim() || "Failed to render" };
+          }
+          const data = fs.readFileSync(outPath);
+          // helper writes SVG for chem 2D, PNG otherwise; sniff the first byte
+          reply.type(data.slice(0, 5).toString("utf-8").startsWith("<") ? "image/svg+xml" : "image/png");
+          reply.header("Cache-Control", "private, max-age=300");
+          return data;
+        } finally {
+          fs.rmSync(outPath, { force: true });
         }
-        if (res.status === 4) {
-          reply.code(404);
-          return { detail: res.stderr.trim() };
-        }
-        if (res.status === 5) {
-          reply.code(400);
-          return { detail: res.stderr.trim() };
-        }
-        if (res.status !== 0 || !fs.existsSync(outPath)) {
-          reply.code(500);
-          return { detail: res.stderr.trim() || "Failed to render" };
-        }
-        const data = fs.readFileSync(outPath);
-        fs.rmSync(outPath, { force: true });
-        // helper writes SVG for chem 2D, PNG otherwise; sniff the first byte
-        reply.type(data.slice(0, 5).toString("utf-8").startsWith("<") ? "image/svg+xml" : "image/png");
-        reply.header("Cache-Control", "private, max-age=300");
-        return data;
       } catch (err) {
         return handle(reply, err);
       }
@@ -641,7 +755,16 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Not a .tex file" };
       }
-      return await compileLatex(target, engine, activePaths().sandbox);
+      // Abort the engine passes if the client goes away (tab closed, navigated
+      // off); a full compile can otherwise keep a core busy for a minute for
+      // a result nobody will read.
+      const cancel = new AbortController();
+      req.raw.on("close", () => {
+        if (!req.raw.readableEnded) cancel.abort();
+      });
+      return await compileLatex(target, engine, activePaths().sandbox, {
+        signal: cancel.signal,
+      });
     } catch (err) {
       return handle(reply, err);
     }

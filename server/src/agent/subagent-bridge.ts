@@ -22,6 +22,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { boundedMapSet, boundedSetAdd } from "../bounded.ts";
 import { isBudgetExceeded, recordSubagentRun } from "../cost/ledger.ts";
 import {
   billingCountsTowardBudget,
@@ -163,15 +164,23 @@ const lastLedgeredSessionUsage = new Map<
   { cost: number; input: number; output: number; cacheRead: number; total: number }
 >();
 
+const MAX_TRACKED_SESSION_FILES = 1_000;
+
 function rememberSessionUsage(file: string, usage: SessionUsage): void {
-  lastLedgeredSessionUsage.set(file, {
-    cost: usage.cost,
-    input: usage.tokens.input,
-    output: usage.tokens.output,
-    cacheRead: usage.tokens.cacheRead,
-    total: usage.tokens.total,
-  });
-  if (lastLedgeredSessionUsage.size > 1_000) lastLedgeredSessionUsage.clear();
+  // Oldest-first eviction, never a wipe: forgetting a watermark makes the next
+  // read look first-seen and re-ledger the child's whole cumulative usage.
+  boundedMapSet(
+    lastLedgeredSessionUsage,
+    file,
+    {
+      cost: usage.cost,
+      input: usage.tokens.input,
+      output: usage.tokens.output,
+      cacheRead: usage.tokens.cacheRead,
+      total: usage.tokens.total,
+    },
+    MAX_TRACKED_SESSION_FILES,
+  );
 }
 
 function usageDeltaFromSessionFile(file: string): SessionUsage | null {
@@ -386,6 +395,7 @@ function recordModelAttempts(args: {
 // Module-level because every live session registers its own listener and
 // pi-subagents may deliver the same completion to more than one of them.
 const ledgeredAsyncRuns = new Set<string>();
+const MAX_LEDGERED_ASYNC_RUNS = 1_000;
 
 /**
  * Budget gate + cost ledger for subagent runs, as a Pi extension.
@@ -514,8 +524,7 @@ export function makeSubagentLedgerExtension(
       for (const [index, result] of (payload.results ?? []).entries()) {
         const key = `${payload.id ?? ""}:${result.sessionFile ?? result.agent ?? index}`;
         if (ledgeredAsyncRuns.has(key)) continue;
-        ledgeredAsyncRuns.add(key);
-        if (ledgeredAsyncRuns.size > 1000) ledgeredAsyncRuns.clear();
+        boundedSetAdd(ledgeredAsyncRuns, key, MAX_LEDGERED_ASYNC_RUNS);
         const parentModel = getParentModel();
         if (
           recordModelAttempts({

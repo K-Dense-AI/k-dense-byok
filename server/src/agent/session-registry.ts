@@ -27,7 +27,7 @@ import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
 import { makeScientificResultTool } from "./scientific-result.ts";
-import { makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
+import { clearSessionCompute, makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
@@ -86,6 +86,21 @@ const MAX_LIVE_PER_PROJECT = 10;
 const live = new Map<string, AgentSession>();
 const keyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
+// Sessions with a claimed run. A run holds its claim across async model setup
+// before `isStreaming` ever flips, so eviction cannot rely on isStreaming
+// alone — a tab opened during that window could dispose the session that is
+// about to stream.
+const pinned = new Set<string>();
+
+/** Protect a session from eviction for the lifetime of a claimed run. */
+export function pinSession(projectId: string, sessionId: string): void {
+  pinned.add(keyFor(projectId, sessionId));
+}
+
+export function unpinSession(projectId: string, sessionId: string): void {
+  pinned.delete(keyFor(projectId, sessionId));
+}
+
 /** Dispose the least-recently-used idle sessions for a project over the cap. */
 function evictOverCap(projectId: string): void {
   const prefix = `${projectId}:`;
@@ -94,11 +109,18 @@ function evictOverCap(projectId: string): void {
   for (const k of keys) {
     if (remaining <= MAX_LIVE_PER_PROJECT) break;
     const s = live.get(k);
-    if (s && s.isStreaming) continue; // never evict an in-flight session
-    s?.dispose();
-    live.delete(k);
+    if (!s || s.isStreaming || pinned.has(k)) continue; // in-flight or claimed
+    release(projectId, k, s);
     remaining--;
   }
+}
+
+/** Dispose one live session and drop everything keyed off it. */
+function release(projectId: string, key: string, session: AgentSession): void {
+  session.dispose();
+  live.delete(key);
+  pinned.delete(key);
+  clearSessionCompute(projectId, key.slice(projectId.length + 1));
 }
 
 async function build(
@@ -244,10 +266,7 @@ export async function listSessions(paths: ProjectPaths): Promise<SessionInfo[]> 
 export function disposeSession(projectId: string, sessionId: string): void {
   const k = keyFor(projectId, sessionId);
   const s = live.get(k);
-  if (s) {
-    s.dispose();
-    live.delete(k);
-  }
+  if (s) release(projectId, k, s);
 }
 
 /** Stop every live session before its project directory is removed. */
@@ -267,7 +286,6 @@ export function disposeProjectSessions(projectId: string): void {
   const prefix = `${projectId}:`;
   const sessions = [...live.entries()].filter(([key]) => key.startsWith(prefix));
   for (const [key, session] of sessions) {
-    session.dispose();
-    live.delete(key);
+    release(projectId, key, session);
   }
 }

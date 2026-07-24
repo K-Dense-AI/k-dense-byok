@@ -8,7 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 export interface PdfAnnotationAuthor {
   kind: "user" | "expert";
@@ -143,15 +143,32 @@ function readSidecar(sidecar: string): PdfAnnotationsDoc {
   }
 }
 
+/**
+ * Strong validator for a sidecar's current contents.
+ *
+ * Last-Modified only has one-second resolution, which is why the old
+ * precondition had to tolerate a second of drift — and therefore silently
+ * accepted writes made against a version that had already changed. A content
+ * hash has no such blind window.
+ */
+function sidecarEtag(sidecar: string): string | null {
+  try {
+    return `"${createHash("sha256").update(fs.readFileSync(sidecar)).digest("hex").slice(0, 32)}"`;
+  } catch {
+    return null;
+  }
+}
+
 export function readPdfAnnotations(
   sandboxRoot: string,
   pdfPath: string,
-): { doc: PdfAnnotationsDoc; mtime: Date | null } {
+): { doc: PdfAnnotationsDoc; mtime: Date | null; etag: string | null } {
   const sidecar = pdfAnnotationSidecarPath(sandboxRoot, pdfPath);
-  if (!fs.existsSync(sidecar)) return { doc: EMPTY_DOC(), mtime: null };
+  if (!fs.existsSync(sidecar)) return { doc: EMPTY_DOC(), mtime: null, etag: null };
   return {
     doc: readSidecar(sidecar),
     mtime: fs.statSync(sidecar).mtime,
+    etag: sidecarEtag(sidecar),
   };
 }
 
@@ -173,6 +190,15 @@ function writeSidecar(sidecar: string, doc: PdfAnnotationsDoc): Date {
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+/** First line of a lock file — the holder's unique token — or null if unreadable. */
+function readLockToken(lock: string): string | null {
+  try {
+    return fs.readFileSync(lock, "utf-8").split("\n")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
 async function acquireLock(sidecar: string): Promise<() => void> {
   const lock = path.join(
     path.dirname(sidecar),
@@ -182,15 +208,18 @@ async function acquireLock(sidecar: string): Promise<() => void> {
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
 
   for (;;) {
+    // Each holder stamps a unique token so neither release nor stale-recovery
+    // can remove a lock that now belongs to someone else.
+    const token = `${process.pid}:${randomUUID()}`;
     try {
       const fd = fs.openSync(lock, "wx");
-      fs.writeFileSync(fd, `${process.pid}\n${Date.now()}\n`, "utf-8");
+      fs.writeFileSync(fd, `${token}\n${Date.now()}\n`, "utf-8");
       return () => {
         try {
           fs.closeSync(fd);
         } finally {
           try {
-            fs.rmSync(lock, { force: true });
+            if (readLockToken(lock) === token) fs.rmSync(lock, { force: true });
           } catch {
             // Another process can recover this lock after it becomes stale.
           }
@@ -200,7 +229,13 @@ async function acquireLock(sidecar: string): Promise<() => void> {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       try {
         if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) {
-          fs.rmSync(lock, { force: true });
+          // Only clear the exact lock we observed as stale. (A fresh lock
+          // taken between this read and the unlink would still be lost, but
+          // that requires a holder to have already hung past LOCK_STALE_MS.)
+          const stale = readLockToken(lock);
+          if (stale !== null && readLockToken(lock) === stale) {
+            fs.rmSync(lock, { force: true });
+          }
           continue;
         }
       } catch {
@@ -234,19 +269,44 @@ export async function mutatePdfAnnotations<T>(
   }
 }
 
+export interface AnnotationPrecondition {
+  /** Strong validator from a previous read (If-Match). Preferred. */
+  etag?: string | null;
+  /** Second-resolution fallback (If-Unmodified-Since). */
+  ifUnmodifiedSince?: string | null;
+}
+
 export async function replacePdfAnnotations(
   sandboxRoot: string,
   pdfPath: string,
   doc: PdfAnnotationsDoc,
-  ifUnmodifiedSince?: string | null,
-): Promise<{ doc: PdfAnnotationsDoc; mtime: Date }> {
+  precondition?: AnnotationPrecondition | string | null,
+): Promise<{ doc: PdfAnnotationsDoc; mtime: Date; etag: string | null }> {
+  const expected: AnnotationPrecondition =
+    typeof precondition === "string" || precondition === null || precondition === undefined
+      ? { ifUnmodifiedSince: precondition ?? null }
+      : precondition;
   const sidecar = pdfAnnotationSidecarPath(sandboxRoot, pdfPath);
   const release = await acquireLock(sidecar);
   try {
-    if (ifUnmodifiedSince && fs.existsSync(sidecar)) {
-      const expected = new Date(ifUnmodifiedSince).getTime();
+    const exists = fs.existsSync(sidecar);
+    if (expected.etag) {
+      // "*" means "must already exist"; anything else must match exactly.
+      const current = exists ? sidecarEtag(sidecar) : null;
+      const ok = expected.etag === "*" ? exists : current === expected.etag;
+      if (!ok) {
+        throw new PdfAnnotationStoreError(
+          "CONFLICT",
+          "Sidecar modified; re-read and retry",
+        );
+      }
+    } else if (expected.ifUnmodifiedSince && exists) {
+      const since = new Date(expected.ifUnmodifiedSince).getTime();
       const actual = fs.statSync(sidecar).mtime.getTime();
-      if (!Number.isNaN(expected) && actual - expected > 1000) {
+      // Compare whole seconds: the header cannot express more, and the old
+      // `actual - expected > 1000` check let any write inside a full second
+      // past the client's version through as if nothing had changed.
+      if (!Number.isNaN(since) && Math.floor(actual / 1000) > Math.floor(since / 1000)) {
         throw new PdfAnnotationStoreError(
           "CONFLICT",
           "Sidecar modified; re-read and retry",
@@ -254,7 +314,8 @@ export async function replacePdfAnnotations(
       }
     }
     const normalized = normalizeDoc(doc);
-    return { doc: normalized, mtime: writeSidecar(sidecar, normalized) };
+    const mtime = writeSidecar(sidecar, normalized);
+    return { doc: normalized, mtime, etag: sidecarEtag(sidecar) };
   } finally {
     release();
   }

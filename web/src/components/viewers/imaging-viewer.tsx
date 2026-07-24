@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { sciRenderUrl, sciSummaryUrl } from "@/lib/use-sandbox";
+import { fetchSciJson, isAbortError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
 
 // ---------------------------------------------------------------------------
@@ -54,23 +55,19 @@ export default function ImagingViewer({ path, projectId }: ViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [activeAxis, setActiveAxis] = useState<string | null>(null);
   const [index, setIndex] = useState(0);
+  const [failedSlice, setFailedSlice] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const ac = new AbortController();
     setSummary(null);
     setError(null);
     setActiveAxis(null);
     setIndex(0);
-    fetch(sciSummaryUrl(path, "imaging", projectId))
-      .then(async (r) => {
-        if (!r.ok) {
-          const detail = (await r.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(detail.detail || `HTTP ${r.status}`);
-        }
-        return r.json() as Promise<ImagingSummary>;
-      })
+    fetchSciJson<ImagingSummary>(sciSummaryUrl(path, "imaging", projectId), {
+      signal: ac.signal,
+    })
       .then((d) => {
-        if (!alive) return;
+        if (ac.signal.aborted) return;
         setSummary(d);
         const axis = d.default_axis ?? d.axes[0]?.name ?? null;
         setActiveAxis(axis);
@@ -78,11 +75,9 @@ export default function ImagingViewer({ path, projectId }: ViewerProps) {
         setIndex(Math.floor(size / 2));
       })
       .catch((e) => {
-        if (alive) setError(String(e.message ?? e));
+        if (!isAbortError(e)) setError(String(e.message ?? e));
       });
-    return () => {
-      alive = false;
-    };
+    return () => ac.abort();
   }, [path, projectId]);
 
   if (error) {
@@ -105,6 +100,10 @@ export default function ImagingViewer({ path, projectId }: ViewerProps) {
   const axisInfo = summary.axes.find((a) => a.name === activeAxis) ?? summary.axes[0];
   const maxIndex = Math.max(axisInfo.size - 1, 0);
   const metaEntries = Object.entries(summary.meta ?? {});
+  // A broken <img> renders as nothing at all, which reads as "empty scan"
+  // rather than "render failed"; the key scopes the failure to one slice.
+  const sliceKey = `${activeAxis}:${index}`;
+  const sliceFailed = failedSlice === sliceKey;
 
   function handleAxisChange(nextAxis: string) {
     if (!summary) return;
@@ -168,12 +167,22 @@ export default function ImagingViewer({ path, projectId }: ViewerProps) {
           </div>
 
           <div className="flex flex-1 items-center justify-center overflow-auto rounded-md border bg-muted/10 p-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={sciRenderUrl(path, "imaging", index, activeAxis, projectId)}
-              alt={`${summary.format} slice ${index} (${activeAxis})`}
-              className="max-h-full max-w-full object-contain"
-            />
+            {sliceFailed ? (
+              <p className="px-4 py-8 text-center text-xs text-muted-foreground">
+                Couldn&apos;t render this slice. Try another axis or index.
+              </p>
+            ) : (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  key={sliceKey}
+                  src={sciRenderUrl(path, "imaging", index, activeAxis, projectId)}
+                  alt={`${summary.format} slice ${index} (${activeAxis})`}
+                  className="max-h-full max-w-full object-contain"
+                  onError={() => setFailedSlice(sliceKey)}
+                />
+              </>
+            )}
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { sciSummaryUrl, sciRenderUrl } from "@/lib/use-sandbox";
+import { fetchSciJson, isAbortError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
 
 interface MolInfo {
@@ -14,16 +15,12 @@ export default function MoleculeViewer({ path, projectId }: ViewerProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const ac = new AbortController();
     setSummary(null); setError(null);
-    fetch(sciSummaryUrl(path, "chem", projectId))
-      .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
-        return r.json() as Promise<ChemSummary>;
-      })
-      .then((d) => { if (alive) setSummary(d); })
-      .catch((e) => { if (alive) setError(String(e.message ?? e)); });
-    return () => { alive = false; };
+    fetchSciJson<ChemSummary>(sciSummaryUrl(path, "chem", projectId), { signal: ac.signal })
+      .then((d) => { if (!ac.signal.aborted) setSummary(d); })
+      .catch((e) => { if (!isAbortError(e)) setError(String(e.message ?? e)); });
+    return () => ac.abort();
   }, [path, projectId]);
 
   if (error) {

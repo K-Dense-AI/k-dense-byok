@@ -18,10 +18,12 @@ async function main(): Promise<void> {
     if (meta.archived) continue;
     process.stdout.write(`== Initializing project: ${meta.id} (${meta.name}) ==\n`);
     const paths = resolvePaths(meta.id);
-    seedSandboxFiles(paths);
+    // prep is the explicit "restore my scaffolding" path, so it re-creates
+    // seed files a user may have deleted (regular requests do not).
+    seedSandboxFiles(paths, { force: true });
     const count = seedProjectSkills(paths, true);
     process.stdout.write(`   skills: ${count}\n`);
-    const synced = syncSandboxVenv(paths);
+    const synced = syncSandboxVenv(paths, { force: true });
     process.stdout.write(`   venv: ${synced ? "synced" : "skipped (uv unavailable or sync failed)"}\n`);
   }
   const helperSynced = syncHelperVenv();

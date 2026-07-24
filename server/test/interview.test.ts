@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   MAX_IMAGES,
   MIN_TIMEOUT_S,
+  cancelInterviewsForSession,
   makeInterviewTool,
   pendingInterviewFor,
   resolveInterview,
@@ -97,6 +98,39 @@ describe("interview tool", () => {
     ac.abort();
     await expect(run).rejects.toThrow(/aborted/i);
     expect(pendingInterviewFor("proj", "sess")).toBeNull();
+  });
+
+  it("rejects immediately when the signal aborted before the tool started", async () => {
+    const t = tool();
+    const ac = new AbortController();
+    ac.abort();
+    // Stop can win the race with tool start. Attaching a listener to an
+    // already-fired signal left the turn blocked for the whole timeout while
+    // the form still claimed to be waiting.
+    await expect(
+      t.execute("call-pre-abort", QUESTIONS, ac.signal, undefined, noCtx),
+    ).rejects.toThrow(/aborted/i);
+    expect(pendingInterviewFor("proj", "sess")).toBeNull();
+  });
+
+  it("dismisses every pending interview for a session on abort", async () => {
+    const t = tool();
+    const first = t.execute("call-a", QUESTIONS, undefined, undefined, noCtx);
+    const other = tool("proj", "sess-2").execute(
+      "call-b",
+      QUESTIONS,
+      undefined,
+      undefined,
+      noCtx,
+    );
+
+    expect(cancelInterviewsForSession("proj", "sess")).toBe(1);
+    expect((await first).details).toEqual({ cancelled: true });
+    // A form on another tab keeps waiting.
+    expect(pendingInterviewFor("proj", "sess-2")?.toolCallId).toBe("call-b");
+    expect(cancelInterviewsForSession("proj", "sess-2")).toBe(1);
+    await other;
+    expect(cancelInterviewsForSession("proj", "sess")).toBe(0);
   });
 
   it("floors a too-short timeout and times out without implying the user answered", async () => {

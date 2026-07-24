@@ -68,6 +68,13 @@ export function getSessionComputeOptions(
   return sessionComputeOptions.get(keyFor(projectId, sessionId));
 }
 
+/** Drop a disposed session's compute selection so these maps stay bounded. */
+export function clearSessionCompute(projectId: string, sessionId: string): void {
+  const key = keyFor(projectId, sessionId);
+  sessionComputeTargets.delete(key);
+  sessionComputeOptions.delete(key);
+}
+
 const ModalImageParams = Type.Object({
   base: Type.Optional(
     Type.String({

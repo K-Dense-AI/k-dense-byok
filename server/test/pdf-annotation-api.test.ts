@@ -86,4 +86,51 @@ describe("PDF annotation API", () => {
     });
     expect(notPdf.statusCode).toBe(400);
   });
+
+  it("uses If-Match to catch a write the second-resolution timestamp misses", async () => {
+    const paths = ensureProjectExists("default");
+    fs.writeFileSync(path.join(paths.sandbox, "paper.pdf"), "%PDF-1.4\n");
+    const note = (id: string) => ({
+      id,
+      type: "note" as const,
+      page: 1,
+      anchor: { x: 10, y: 10 },
+      body: id,
+      author: { kind: "user" as const, id: "u", label: "User" },
+      createdAt: "2026-07-20T00:00:00.000Z",
+    });
+    const put = (payload: unknown, headers: Record<string, string> = {}) =>
+      app.inject({
+        method: "PUT",
+        url: "/sandbox/annotations?path=paper.pdf",
+        headers: { "x-project-id": "default", ...headers },
+        payload: payload as Record<string, unknown>,
+      });
+
+    const first = await put({ version: 1, annotations: [note("a")] });
+    const etag = first.headers.etag as string;
+    expect(etag).toBeTruthy();
+
+    // Another tab saves within the same second: Last-Modified is unchanged, so
+    // only the content hash can reveal that this client's copy is stale.
+    const second = await put({ version: 1, annotations: [note("a"), note("b")] });
+    expect(second.statusCode).toBe(200);
+    expect(second.headers.etag).not.toBe(etag);
+
+    const conflict = await put({ version: 1, annotations: [note("a")] }, { "if-match": etag });
+    expect(conflict.statusCode).toBe(412);
+    // The other tab's annotation survives the refused write.
+    const loaded = await app.inject({
+      method: "GET",
+      url: "/sandbox/annotations?path=paper.pdf",
+      headers: { "x-project-id": "default" },
+    });
+    expect(loaded.json().annotations.map((a: { id: string }) => a.id)).toEqual(["a", "b"]);
+
+    const retry = await put(
+      { version: 1, annotations: [note("a"), note("b"), note("c")] },
+      { "if-match": loaded.headers.etag as string },
+    );
+    expect(retry.statusCode).toBe(200);
+  });
 });

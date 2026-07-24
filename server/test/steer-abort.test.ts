@@ -124,6 +124,8 @@ vi.mock("../src/agent/session-registry.ts", () => ({
   ),
   listSessions: vi.fn(async () => []),
   disposeSession: vi.fn(),
+  pinSession: vi.fn(),
+  unpinSession: vi.fn(),
 }));
 
 import { buildApp } from "../src/index.ts";
@@ -222,7 +224,12 @@ describe("POST /sessions/:id/steer", () => {
     fakeSessions.set("s1", s);
     const res = await steer("s1", { message: "too late" });
     expect(res.statusCode).toBe(409);
-    expect(res.json()).toMatchObject({ reason: "not_streaming" });
+    // Every dropped message comes back so the composer can restore it; losing
+    // it silently is worse than the failed steer.
+    expect(res.json()).toMatchObject({
+      reason: "not_streaming",
+      restored: ["too late"],
+    });
     // The stale steer must not leak into the next run.
     expect(s.clearQueueCalls).toBe(1);
     expect(s.steered).toEqual([]);
@@ -407,6 +414,38 @@ describe("persistent run routes", () => {
     expect(session.aborted).toBe(true);
     expect(session.promptCalls).toHaveLength(0);
     expect(sseFrames(response.body).at(-1)?.type).toBe("done");
+  });
+
+  it("releases the run claim when the broker refuses to start", async () => {
+    const session = new FakeSession();
+    session.isStreaming = false;
+    fakeSessions.set("s1", session);
+    const start = vi.spyOn(runBroker, "start").mockImplementationOnce(() => {
+      throw new Error("broker refused");
+    });
+
+    const failed = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/run",
+      headers: { "x-project-id": "default", "content-type": "application/json" },
+      payload: { message: "first" },
+    });
+    expect(failed.statusCode).toBe(500);
+    start.mockRestore();
+
+    // Without releasing the claim the tab stayed 409-locked until restart.
+    session.holdPrompt();
+    const retry = app.inject({
+      method: "POST",
+      url: "/sessions/s1/run",
+      headers: { "x-project-id": "default", "content-type": "application/json" },
+      payload: { message: "second" },
+    });
+    await vi.waitFor(() => {
+      expect(session.promptCalls).toHaveLength(1);
+    });
+    session.releasePrompt();
+    expect((await retry).statusCode).toBe(200);
   });
 
   it("does not abort the Pi run when the initiating socket closes", async () => {

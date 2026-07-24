@@ -10,6 +10,7 @@ import path from "node:path";
 import AdmZip from "adm-zip";
 import { isWithin } from "../sandbox-fs.ts";
 import { notebookToMarkdown } from "./notebook-export.ts";
+import type { NotebookAnnotation } from "./notebook-annotations.ts";
 import type { NotebookEntry } from "./notebook-store.ts";
 
 export interface NotebookZipResult {
@@ -24,7 +25,12 @@ function normalizeRel(rel: string): string {
 
 export function buildNotebookZip(
   entries: NotebookEntry[],
-  opts: { sessionId: string; projectName?: string; sandboxRoot: string },
+  opts: {
+    sessionId: string;
+    projectName?: string;
+    sandboxRoot: string;
+    annotations?: readonly NotebookAnnotation[];
+  },
 ): NotebookZipResult {
   const zip = new AdmZip();
   const missing = new Set<string>();
@@ -50,6 +56,7 @@ export function buildNotebookZip(
   const md = notebookToMarkdown(entries, {
     sessionId: opts.sessionId,
     projectName: opts.projectName,
+    annotations: opts.annotations,
     artifactHref: (p) => (bundled.has(p) ? "artifacts/" + normalizeRel(p) : undefined),
     missingArtifacts: missing,
   });

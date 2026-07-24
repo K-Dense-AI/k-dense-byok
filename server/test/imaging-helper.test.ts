@@ -17,8 +17,8 @@ function tmpOut(name: string): string {
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
 describe("imaging_helper", () => {
-  it.runIf(depsOk)("summarizes a NIfTI volume", () => {
-    const res = runSciHelper("imaging", "summarize", [path.join(FIX, "sample.nii.gz")]);
+  it.runIf(depsOk)("summarizes a NIfTI volume", async () => {
+    const res = await runSciHelper("imaging", "summarize", [path.join(FIX, "sample.nii.gz")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("nifti");
@@ -27,10 +27,10 @@ describe("imaging_helper", () => {
     expect(d.default_axis).toBe("axial");
   }, 15000);
 
-  it.runIf(depsOk)("renders a NIfTI axial slice to PNG", () => {
+  it.runIf(depsOk)("renders a NIfTI axial slice to PNG", async () => {
     const out = tmpOut("nifti.png");
     try {
-      const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.nii.gz"), "2", out, "axial"]);
+      const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample.nii.gz"), "2", out, "axial"]);
       expect(res.status).toBe(0);
       const data = fs.readFileSync(out);
       expect(data.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
@@ -39,8 +39,8 @@ describe("imaging_helper", () => {
     }
   }, 15000);
 
-  it.runIf(depsOk)("summarizes a DICOM file without leaking PHI", () => {
-    const res = runSciHelper("imaging", "summarize", [path.join(FIX, "sample.dcm")]);
+  it.runIf(depsOk)("summarizes a DICOM file without leaking PHI", async () => {
+    const res = await runSciHelper("imaging", "summarize", [path.join(FIX, "sample.dcm")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("dicom");
@@ -50,10 +50,10 @@ describe("imaging_helper", () => {
     expect(Object.keys(d.meta)).not.toContain("PatientBirthDate");
   }, 15000);
 
-  it.runIf(depsOk)("renders a DICOM frame to PNG", () => {
+  it.runIf(depsOk)("renders a DICOM frame to PNG", async () => {
     const out = tmpOut("dicom.png");
     try {
-      const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.dcm"), "0", out, "-"]);
+      const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample.dcm"), "0", out, "-"]);
       expect(res.status).toBe(0);
       const data = fs.readFileSync(out);
       expect(data.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
@@ -62,18 +62,18 @@ describe("imaging_helper", () => {
     }
   }, 15000);
 
-  it.runIf(depsOk)("summarizes a TIFF stack", () => {
-    const res = runSciHelper("imaging", "summarize", [path.join(FIX, "sample.tif")]);
+  it.runIf(depsOk)("summarizes a TIFF stack", async () => {
+    const res = await runSciHelper("imaging", "summarize", [path.join(FIX, "sample.tif")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("tiff");
     expect(d.axes[0].size).toBe(3);
   }, 15000);
 
-  it.runIf(depsOk)("renders a TIFF page to PNG", () => {
+  it.runIf(depsOk)("renders a TIFF page to PNG", async () => {
     const out = tmpOut("tiff.png");
     try {
-      const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.tif"), "0", out, "-"]);
+      const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample.tif"), "0", out, "-"]);
       expect(res.status).toBe(0);
       const data = fs.readFileSync(out);
       expect(data.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
@@ -82,18 +82,18 @@ describe("imaging_helper", () => {
     }
   }, 15000);
 
-  it.runIf(depsOk)("summarizes an RGB TIFF as a single plane, not one page per sample", () => {
-    const res = runSciHelper("imaging", "summarize", [path.join(FIX, "sample_rgb.tif")]);
+  it.runIf(depsOk)("summarizes an RGB TIFF as a single plane, not one page per sample", async () => {
+    const res = await runSciHelper("imaging", "summarize", [path.join(FIX, "sample_rgb.tif")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("tiff");
     expect(d.axes[0].size).toBe(1);
   }, 15000);
 
-  it.runIf(depsOk)("renders an RGB TIFF plane to PNG", () => {
+  it.runIf(depsOk)("renders an RGB TIFF plane to PNG", async () => {
     const out = tmpOut("tiff-rgb.png");
     try {
-      const res = runSciHelper("imaging", "render", [path.join(FIX, "sample_rgb.tif"), "0", out, "-"]);
+      const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample_rgb.tif"), "0", out, "-"]);
       expect(res.status).toBe(0);
       const data = fs.readFileSync(out);
       expect(data.subarray(0, 4).equals(PNG_MAGIC)).toBe(true);
@@ -102,28 +102,28 @@ describe("imaging_helper", () => {
     }
   }, 15000);
 
-  it("exits 4 on missing file", () => {
-    const res = runSciHelper("imaging", "summarize", [path.join(FIX, "does-not-exist.dcm")]);
+  it("exits 4 on missing file", async () => {
+    const res = await runSciHelper("imaging", "summarize", [path.join(FIX, "does-not-exist.dcm")]);
     expect(res.status).toBe(4);
   });
 
-  it.runIf(depsOk)("exits 4 on out-of-range NIfTI slice index", () => {
+  it.runIf(depsOk)("exits 4 on out-of-range NIfTI slice index", async () => {
     const out = tmpOut("oor.png");
-    const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.nii.gz"), "99", out, "axial"]);
+    const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample.nii.gz"), "99", out, "axial"]);
     expect(res.status).toBe(4);
     expect(fs.existsSync(out)).toBe(false);
   });
 
-  it.runIf(depsOk)("exits 4 on out-of-range DICOM frame index", () => {
+  it.runIf(depsOk)("exits 4 on out-of-range DICOM frame index", async () => {
     const out = tmpOut("oor-dcm.png");
-    const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.dcm"), "5", out, "-"]);
+    const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample.dcm"), "5", out, "-"]);
     expect(res.status).toBe(4);
     expect(fs.existsSync(out)).toBe(false);
   });
 
-  it.runIf(depsOk)("exits 4 on out-of-range TIFF page index", () => {
+  it.runIf(depsOk)("exits 4 on out-of-range TIFF page index", async () => {
     const out = tmpOut("oor-tiff.png");
-    const res = runSciHelper("imaging", "render", [path.join(FIX, "sample.tif"), "99", out, "-"]);
+    const res = await runSciHelper("imaging", "render", [path.join(FIX, "sample.tif"), "99", out, "-"]);
     expect(res.status).toBe(4);
     expect(fs.existsSync(out)).toBe(false);
   }, 15000);

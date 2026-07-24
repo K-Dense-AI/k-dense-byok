@@ -86,7 +86,12 @@ describe("saveAnnotations", () => {
       EMPTY_DOC,
       "Wed, 21 Oct 2024 07:28:00 GMT"
     );
-    expect(res).toEqual({ ok: false, conflict: true, lastModified: null });
+    expect(res).toEqual({
+      ok: false,
+      conflict: true,
+      lastModified: null,
+      etag: null,
+    });
   });
 
   it("forwards If-Unmodified-Since header when provided", async () => {

@@ -369,17 +369,38 @@ export function releaseComputeReservation(projectId: string, reservationId: stri
   fs.rmSync(reservationPath(projectId, reservationId), { force: true });
 }
 
+/**
+ * Read one session's ledger, skipping unparseable rows.
+ *
+ * A single torn line (crash mid-append) must never discard the rest of the
+ * file: these totals feed the spend cap, so losing them silently understates
+ * real spend and lets billable work through a cap that should have blocked it.
+ */
 function readEntries(sessionId: string, projectId?: string): CostEntry[] {
   const file = costsPath(sessionId, projectId);
+  let raw: string;
   try {
-    return fs
-      .readFileSync(file, "utf-8")
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => JSON.parse(line) as CostEntry);
+    raw = fs.readFileSync(file, "utf-8");
   } catch {
-    return [];
+    return []; // no ledger yet is normal, not an error
   }
+  const entries: CostEntry[] = [];
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line) as CostEntry;
+      if (parsed && typeof parsed === "object") entries.push(parsed);
+    } catch {
+      // Torn or hand-edited row; the remaining rows are still authoritative.
+    }
+  }
+  return entries;
+}
+
+/** Coerce a possibly-missing/corrupt ledger number to a safe non-negative value. */
+function finite(value: unknown): number {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
 /**
@@ -446,14 +467,18 @@ export function sessionCostSummary(sessionId: string, projectId?: string): Sessi
   let agentUsd = 0;
   let subagentUsd = 0;
   let computeUsd = 0;
+  // Every field is coerced: one row with a missing/NaN cost would otherwise
+  // poison the total, and `NaN >= limit` is false — failing the cap open.
   for (const e of entries) {
-    totalUsd += e.costUsd;
-    listPriceUsd += e.listPriceUsd ?? 0;
-    if (e.billingMode === "subscription") subscriptionTokens += e.totalTokens;
-    totalTokens += e.totalTokens;
-    if (e.role === "subagent") subagentUsd += e.costUsd;
-    else if (e.role === "compute") computeUsd += e.costUsd;
-    else agentUsd += e.costUsd;
+    const costUsd = finite(e.costUsd);
+    const entryTokens = finite(e.totalTokens);
+    totalUsd += costUsd;
+    listPriceUsd += finite(e.listPriceUsd);
+    if (e.billingMode === "subscription") subscriptionTokens += entryTokens;
+    totalTokens += entryTokens;
+    if (e.role === "subagent") subagentUsd += costUsd;
+    else if (e.role === "compute") computeUsd += costUsd;
+    else agentUsd += costUsd;
   }
   return {
     sessionId,
@@ -468,6 +493,46 @@ export function sessionCostSummary(sessionId: string, projectId?: string): Sessi
   };
 }
 
+/**
+ * Live spend of runs that have started but not yet written their ledger row.
+ *
+ * A run only appends to `costs.jsonl` when it finishes, so two tabs starting
+ * moments apart would both read the same stale total and both be admitted
+ * under a cap only one of them fits in. In-flight runs publish their accrued
+ * spend here so admission and project summaries see it immediately.
+ *
+ * Only cap-counted runs should register; subscription usage is not project
+ * spend. Callers untrack *after* recording their row, so a concurrent read may
+ * briefly see both — overcounting blocks conservatively, undercounting would
+ * overspend.
+ */
+const inFlightRuns = new Map<string, { projectId: string; accruedUsd: () => number }>();
+
+export function trackInFlightRun(
+  runKey: string,
+  projectId: string,
+  accruedUsd: () => number,
+): void {
+  inFlightRuns.set(runKey, { projectId, accruedUsd });
+}
+
+export function untrackInFlightRun(runKey: string): void {
+  inFlightRuns.delete(runKey);
+}
+
+function inFlightUsdFor(projectId: string): number {
+  let total = 0;
+  for (const run of inFlightRuns.values()) {
+    if (run.projectId !== projectId) continue;
+    try {
+      total += finite(run.accruedUsd());
+    } catch {
+      // A dead session must not break budget reads for the whole project.
+    }
+  }
+  return total;
+}
+
 export type BudgetState = "ok" | "warn" | "exceeded";
 
 export interface ProjectCostSummary {
@@ -476,6 +541,8 @@ export interface ProjectCostSummary {
   totalUsd: number;
   spentUsd: number;
   reservedUsd: number;
+  /** Accrued spend of runs still in flight (not yet ledgered). */
+  inFlightUsd: number;
   committedUsd: number;
   listPriceUsd: number;
   subscriptionTokens: number;
@@ -483,10 +550,11 @@ export interface ProjectCostSummary {
   sessionCount: number;
   limitUsd: number | null;
   budget: {
-    /** Includes active reservations so admission and summaries agree. */
+    /** Includes reservations and in-flight runs so admission and summaries agree. */
     totalUsd: number;
     spentUsd: number;
     reservedUsd: number;
+    inFlightUsd: number;
     committedUsd: number;
     limitUsd: number | null;
     ratio: number | null;
@@ -520,10 +588,11 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
   const rawLimit = getProject(projectId)?.spendLimitUsd ?? null;
   const limitUsd = rawLimit !== null && rawLimit > 0 ? rawLimit : null;
   const reservedUsd = listComputeReservations(projectId).reduce(
-    (sum, reservation) => sum + reservation.amountUsd,
+    (sum, reservation) => sum + finite(reservation.amountUsd),
     0,
   );
-  const committedUsd = totalUsd + reservedUsd;
+  const inFlightUsd = inFlightUsdFor(projectId);
+  const committedUsd = totalUsd + reservedUsd + inFlightUsd;
   const ratio = limitUsd ? committedUsd / limitUsd : null;
   let state: BudgetState = "ok";
   if (ratio !== null) state = ratio >= 1 ? "exceeded" : ratio >= 0.8 ? "warn" : "ok";
@@ -532,6 +601,7 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
     totalUsd,
     spentUsd: totalUsd,
     reservedUsd,
+    inFlightUsd,
     committedUsd,
     listPriceUsd,
     subscriptionTokens,
@@ -542,6 +612,7 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
       totalUsd: committedUsd,
       spentUsd: totalUsd,
       reservedUsd,
+      inFlightUsd,
       committedUsd,
       limitUsd,
       ratio,

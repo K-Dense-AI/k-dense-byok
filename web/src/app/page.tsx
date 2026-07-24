@@ -48,6 +48,7 @@ import {
   deletePersistedChatState,
   loadWorkspaceSnapshot,
   pruneDeletedProjectState,
+  revokeSnapshotObjectUrls,
   saveProjectWorkspaceState,
   saveWorkspaceShellState,
   type ChatWorkspaceState,
@@ -125,7 +126,11 @@ export default function HomePage() {
   useEffect(() => {
     let cancelled = false;
     void loadWorkspaceSnapshot().then((snapshot) => {
-      if (cancelled) return;
+      if (cancelled) {
+        // Nothing will consume (or revoke) the restored attachment blob URLs.
+        revokeSnapshotObjectUrls(snapshot);
+        return;
+      }
       setRestoredProjects(snapshot.projects);
       // Always start in the project overview. A project's saved workspace is
       // restored lazily only after the user chooses that project.
@@ -629,15 +634,33 @@ function WorkspacePage({
     setView("chat");
   }, []);
 
+  // A tab whose stored session no longer exists on disk: keep the tab, drop the
+  // binding, so it stops being treated as that session (dedupe, History focus)
+  // and stops re-requesting it on every reload.
+  const forgetTabSession = useCallback((id: string) => {
+    setTabs((prev) =>
+      prev.map((t) => {
+        if (t.id !== id || !t.sessionId) return t;
+        const { sessionId: _dropped, ...rest } = t;
+        void _dropped;
+        return rest;
+      }),
+    );
+  }, []);
+
   // Reopen a stored session (History menu). If some tab already holds that
   // session, just focus it — two tabs must never share one session.
   const openSession = useCallback(
     (sessionId: string, title: string) => {
-      const openTab = Object.entries(tabsMeta).find(
-        ([, meta]) => meta.sessionId === sessionId,
-      );
-      if (openTab) {
-        setActiveTabId(openTab[0]);
+      // Check the tab descriptors as well as reported meta: a restored or
+      // just-opened tab carries its sessionId before its ChatTab has mounted
+      // and reported meta, and matching on meta alone let the same session be
+      // opened into a second tab.
+      const openTabId =
+        tabsRef.current.find((t) => t.sessionId === sessionId)?.id ??
+        Object.entries(tabsMeta).find(([, meta]) => meta.sessionId === sessionId)?.[0];
+      if (openTabId) {
+        setActiveTabId(openTabId);
         setView("chat");
         return;
       }
@@ -739,6 +762,22 @@ function WorkspacePage({
     loading: modalJobsLoading,
   } = useModalJobs({ projectId, enabled: isActive, limit: 200 });
 
+  // Async subagents are ledgered when the child finishes, which can be long
+  // after the parent turn ended. Without this the pill under-reported spend
+  // until the next turn.
+  const totalSubagentCompletions = useMemo(
+    () =>
+      Object.values(tabsMeta).reduce(
+        (sum, meta) => sum + (meta.subagentCompletions ?? 0),
+        0,
+      ),
+    [tabsMeta],
+  );
+  useEffect(() => {
+    if (totalSubagentCompletions === 0) return;
+    setCostRefreshKey((k) => k + 1);
+  }, [totalSubagentCompletions]);
+
   const { summary: costSummary, loading: costLoading } = useSessionCost(
     activeSessionId,
     costRefreshKey,
@@ -748,11 +787,16 @@ function WorkspacePage({
   const directorySpendLimit = projectDirectory.find(
     (project) => project.id === projectId,
   )?.spendLimitUsd;
+  // Match the server's admission rule: it compares *committed* money (ledgered
+  // + compute reservations + in-flight runs) against the cap, and treats a
+  // non-positive limit as unlimited.
+  const committedUsd = projectCost.budget.committedUsd ?? projectCost.budget.totalUsd;
   const budgetBlocked =
     directorySpendLimit === undefined
       ? projectCost.budget.state === "exceeded"
       : directorySpendLimit !== null &&
-        projectCost.totalUsd >= directorySpendLimit;
+        directorySpendLimit > 0 &&
+        committedUsd >= directorySpendLimit;
   const projectActivity = useMemo(
     () =>
       summarizeProjectActivity(
@@ -1088,6 +1132,7 @@ function WorkspacePage({
               budgetLimitUsd={projectCost.budget.limitUsd}
               onMetaChange={handleMetaChange}
               onWorkspaceStateChange={handleTabWorkspaceStateChange}
+              onSessionUnavailable={forgetTabSession}
               onViewInNotebook={handleViewInNotebook}
               onViewCompute={handleViewCompute}
               onOpenFile={handleFileSelect}

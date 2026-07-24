@@ -25,6 +25,9 @@ const IDLE_LIST_POLL_MS = 12_000;
 const ACTIVE_DETAIL_POLL_MS = 1_000;
 const ACTIVE_LOG_POLL_MS = 800;
 const MAX_LOG_CHARS = 500_000;
+/** Consecutive detail-poll failures tolerated before giving up (backing off). */
+const MAX_DETAIL_POLL_FAILURES = 6;
+const MAX_DETAIL_RETRY_MS = 20_000;
 
 const catalogCache = new Map<string, ModalCatalog>();
 
@@ -332,6 +335,7 @@ export function useModalJob(
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let controller: AbortController | null = null;
+    let failures = 0;
 
     const poll = async (initial: boolean) => {
       controller?.abort();
@@ -347,6 +351,7 @@ export function useModalJob(
         const parsed = parseModalJob(await response.json());
         if (!parsed) throw new Error("The Modal job response was invalid");
         if (cancelled) return;
+        failures = 0;
         setJob(parsed);
         setError(null);
         if (isModalJobActive(parsed.status) && activePollMs > 0) {
@@ -355,6 +360,14 @@ export function useModalJob(
       } catch (cause) {
         if (cancelled || controller.signal.aborted) return;
         setError(cause instanceof Error ? cause.message : "Failed to load Modal job");
+        // A single blip (server restart mid-job) used to stop the poll for
+        // good, freezing a running job's detail view until a manual refresh.
+        // Retry with backoff, then give up rather than hammering a dead id.
+        failures += 1;
+        if (activePollMs > 0 && failures <= MAX_DETAIL_POLL_FAILURES) {
+          const delay = Math.min(activePollMs * 2 ** (failures - 1), MAX_DETAIL_RETRY_MS);
+          timer = setTimeout(() => void poll(false), delay);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

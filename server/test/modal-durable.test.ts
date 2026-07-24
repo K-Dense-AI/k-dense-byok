@@ -18,7 +18,11 @@ import {
 import {
   DurableModalJobManager,
 } from "../src/modal/manager.ts";
-import { ModalJobStore } from "../src/modal/store.ts";
+import {
+  EVENT_TRIM_INTERVAL,
+  MAX_EVENT_ROWS,
+  ModalJobStore,
+} from "../src/modal/store.ts";
 import {
   MODAL_INSTANCES,
   gpuString,
@@ -411,6 +415,48 @@ describe("Modal reservations and store", () => {
     expect(fs.readFileSync(path.join(resolvePaths("default").sandbox, "result.txt"), "utf-8")).toBe(
       "result\n",
     );
+  });
+
+  it("bounds the event log and keeps the newest rows", () => {
+    const store = new ModalJobStore();
+    // A job that retries or falls back repeatedly would otherwise grow
+    // events.jsonl without bound. Resume an over-long history and stop one
+    // event short of a trim tick, so a single append triggers the trim.
+    const trimAt = MAX_EVENT_ROWS + EVENT_TRIM_INTERVAL;
+    store.create({
+      ...persistedRunningJob({ id: "mj_events", sandboxId: "sb-1", sessionId: "s1" }),
+      eventSeq: trimAt - 2,
+    });
+    const file = path.join(resolvePaths("default").modalJobsDir, "mj_events", "events.jsonl");
+    const history = Array.from({ length: MAX_EVENT_ROWS + 50 }, (_, i) =>
+      JSON.stringify({ seq: i + 1, ts: i, type: "log", message: `tick ${i}` }),
+    );
+    fs.appendFileSync(file, history.join("\n") + "\n");
+
+    const last = store.appendEvent("default", "mj_events", {
+      type: "log",
+      message: "newest",
+    });
+    expect(last.seq % EVENT_TRIM_INTERVAL).toBe(0);
+    const events = store.events("default", "mj_events");
+    expect(events).toHaveLength(MAX_EVENT_ROWS);
+    expect(events.at(-1)?.message).toBe("newest");
+    // seq stays monotonic across trims so `after` cursors keep working.
+    expect(store.events("default", "mj_events", events.at(-2)!.seq)).toHaveLength(1);
+  });
+
+  it("returns the readable events when one row is torn", () => {
+    const store = new ModalJobStore();
+    store.create(
+      persistedRunningJob({ id: "mj_torn", sandboxId: "sb-2", sessionId: "s1" }),
+    );
+    store.appendEvent("default", "mj_torn", { type: "log", message: "before" });
+    const file = path.join(resolvePaths("default").modalJobsDir, "mj_torn", "events.jsonl");
+    fs.appendFileSync(file, '{"seq":99,"type":"log"\n');
+    store.appendEvent("default", "mj_torn", { type: "log", message: "after" });
+    expect(
+      store.events("default", "mj_torn").map((event) => event.message),
+    ).toEqual(["Job queued", "before", "after"]);
   });
 });
 

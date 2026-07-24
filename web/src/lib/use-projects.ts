@@ -7,6 +7,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -62,11 +63,19 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, []);
 
+  // create/update/remove each refresh, and the mount effect refreshes too, so
+  // several list requests can be in flight at once. Only the newest may write
+  // state: a slow earlier response otherwise resurrects a deleted project or
+  // reports a stale error over a successful reload.
+  const refreshSeq = useRef(0);
+
   const refresh = useCallback(async () => {
+    const seq = ++refreshSeq.current;
     setLoading(true);
     setError(null);
     try {
       const list = await apiListProjects();
+      if (seq !== refreshSeq.current) return;
       setProjects(list);
       // If the active project was deleted elsewhere (or we're fresh on a
       // machine that doesn't have it yet), fall back to the default.
@@ -75,9 +84,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
         setActiveProjectId(DEFAULT_PROJECT_ID);
       }
     } catch (exc) {
+      if (seq !== refreshSeq.current) return;
       setError(exc instanceof Error ? exc.message : "Failed to load projects");
     } finally {
-      setLoading(false);
+      if (seq === refreshSeq.current) setLoading(false);
     }
   }, []);
 

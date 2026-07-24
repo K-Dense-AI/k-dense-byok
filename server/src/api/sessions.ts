@@ -17,6 +17,7 @@ import {
 } from "../agent/events.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
+  cancelInterviewsForSession,
   pendingInterviewFor,
   resolveInterview,
   validateAnswer,
@@ -58,6 +59,8 @@ import {
   getModelRuntime,
   getSession,
   listSessions,
+  pinSession,
+  unpinSession,
 } from "../agent/session-registry.ts";
 import { parseThinkingLevel } from "../agent/thinking.ts";
 import {
@@ -68,6 +71,8 @@ import {
   sessionCostSummary,
   snapshotDelta,
   snapshotMax,
+  trackInFlightRun,
+  untrackInFlightRun,
   type CostSnapshot,
 } from "../cost/ledger.ts";
 import {
@@ -213,6 +218,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         const projectId = currentProjectId();
         const entries = readNotebookEntries(req.params.id, projectId);
         const projectName = getProject(projectId)?.name ?? projectId;
+        // Pins, comments and standalone notes live in a sidecar. Leaving them
+        // out made every export silently drop the user's own layer.
+        const { doc: annotationsDoc } = readNotebookAnnotations(req.params.id, projectId);
+        const annotations = annotationsDoc.annotations;
         const attachment = (ext: string) =>
           reply.header(
             "Content-Disposition",
@@ -221,19 +230,24 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         if (format === "json") {
           reply.header("Content-Type", "application/json; charset=utf-8");
           attachment("json");
-          return { sessionId: req.params.id, projectName, entries };
+          return { sessionId: req.params.id, projectName, entries, annotations };
         }
         if (format === "zip") {
           const { buffer } = buildNotebookZip(entries, {
             sessionId: req.params.id,
             projectName,
             sandboxRoot: activePaths().sandbox,
+            annotations,
           });
           reply.type("application/zip");
           attachment("zip");
           return buffer;
         }
-        const md = notebookToMarkdown(entries, { sessionId: req.params.id, projectName });
+        const md = notebookToMarkdown(entries, {
+          sessionId: req.params.id,
+          projectName,
+          annotations,
+        });
         reply.header("Content-Type", "text/markdown; charset=utf-8");
         attachment("md");
         return md;
@@ -249,8 +263,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     async (req, reply) => {
       try {
         reply.header("Cache-Control", "no-store");
-        const { doc, mtime } = readNotebookAnnotations(req.params.id, currentProjectId());
+        const { doc, mtime, etag } = readNotebookAnnotations(req.params.id, currentProjectId());
         if (mtime) reply.header("Last-Modified", mtime.toUTCString());
+        if (etag) reply.header("ETag", etag);
         return doc;
       } catch (err) {
         if (err instanceof SandboxError) {
@@ -267,21 +282,31 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     async (req, reply) => {
       try {
         const projectId = currentProjectId();
-        const { mtime } = readNotebookAnnotations(req.params.id, projectId);
-        if (mtime) {
-          const precond = req.headers["if-unmodified-since"];
-          if (precond) {
-            const expected = new Date(String(precond)).getTime();
-            if (!Number.isNaN(expected) && mtime.getTime() - expected > 1000) {
-              reply.code(412);
-              return { detail: "Sidecar modified; re-read and retry" };
-            }
+        const { mtime, etag } = readNotebookAnnotations(req.params.id, projectId);
+        const ifMatch = req.headers["if-match"] ? String(req.headers["if-match"]) : null;
+        const ifUnmodifiedSince = req.headers["if-unmodified-since"];
+        if (ifMatch) {
+          // Exact check. The Last-Modified fallback below can only compare
+          // whole seconds, so a same-second edit would slip through it.
+          if (ifMatch === "*" ? !etag : ifMatch !== etag) {
+            reply.code(412);
+            return { detail: "Sidecar modified; re-read and retry" };
+          }
+        } else if (ifUnmodifiedSince && mtime) {
+          const since = new Date(String(ifUnmodifiedSince)).getTime();
+          if (
+            !Number.isNaN(since) &&
+            Math.floor(mtime.getTime() / 1000) > Math.floor(since / 1000)
+          ) {
+            reply.code(412);
+            return { detail: "Sidecar modified; re-read and retry" };
           }
         }
         const doc = normalizeNotebookAnnotations(req.body);
-        const newMtime = writeNotebookAnnotations(req.params.id, doc, projectId);
+        const saved = writeNotebookAnnotations(req.params.id, doc, projectId);
         touchProject(projectId);
-        reply.header("Last-Modified", newMtime.toUTCString());
+        reply.header("Last-Modified", saved.mtime.toUTCString());
+        if (saved.etag) reply.header("ETag", saved.etag);
         return { saved: req.params.id, count: doc.annotations.length };
       } catch (err) {
         if (err instanceof SandboxError) {
@@ -406,6 +431,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     // Mark first so an abort racing with pre-prompt model setup prevents that
     // detached owner from entering prompt() after session.abort() returns.
     runBroker.get(projectId, req.params.id)?.requestAbort();
+    // Release any interview blocking the turn before aborting: a form still
+    // waiting on user input would otherwise keep the run alive.
+    cancelInterviewsForSession(projectId, req.params.id);
     const session = await getSession(projectId, activePaths(), req.params.id);
     if (!session) return { ok: true, restored: [] };
     // Clear BEFORE abort so a pending steer can't be delivered into the
@@ -457,9 +485,15 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // The run can end between the guard and the queue write; a steer left
       // behind would silently deliver into the NEXT run, so pull it back out.
       if (!session.isStreaming) {
-        session.clearQueue();
+        const cleared = session.clearQueue();
         reply.code(409);
-        return { detail: "Run ended before the message was delivered", reason: "not_streaming" };
+        return {
+          detail: "Run ended before the message was delivered",
+          reason: "not_streaming",
+          // Hand every dropped message back so the client can restore them;
+          // clearQueue also discards anything queued before this steer.
+          restored: [...cleared.steering, ...cleared.followUp],
+        };
       }
       return { ok: true, pending: [...session.getSteeringMessages()] };
     },
@@ -508,6 +542,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // Claim before the first awaited auth check so concurrent requests cannot
       // both pass the run guard. Preflight failures release the claim below.
       activeRuns.add(runKey);
+      // Held for the whole claim, not just while streaming: another tab opening
+      // during model setup could otherwise evict this session out from under us.
+      pinSession(projectId, session.sessionId);
       const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
       let requestedModel: ReturnType<typeof resolveModel>;
       let runBilling: BillingContext;
@@ -518,6 +555,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         await assertModelAuthentication(requestedModel, getModelRuntime());
         runBilling = await billingForModel(requestedModel, getModelRuntime());
       } catch (error) {
+        unpinSession(projectId, session.sessionId);
         activeRuns.delete(runKey);
         reply.code(error instanceof ModelAuthenticationError ? 401 : 400);
         return {
@@ -531,16 +569,27 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // (lead tool + subagent harvest) are stamped with it. Cleared in the
       // owner cleanup so it covers every exit path.
       const runId = mintRunId();
-      setSessionRunId(projectId, session.sessionId, runId);
-      const handle = runBroker.start(projectId, sessionId, {
-        runId,
-        prompt,
-        images: parsedImages.images.map(({ data, mimeType }) => ({ data, mimeType })),
-        baseline,
-      });
-      // Publish immediately, before any awaited model setup, so refresh recovery
-      // can discover the accepted run during that setup window.
-      handle.publish({ type: "run_start", runId });
+      let handle: RunHandle;
+      try {
+        setSessionRunId(projectId, session.sessionId, runId);
+        handle = runBroker.start(projectId, sessionId, {
+          runId,
+          prompt,
+          images: parsedImages.images.map(({ data, mimeType }) => ({ data, mimeType })),
+          baseline,
+        });
+        // Publish immediately, before any awaited model setup, so refresh recovery
+        // can discover the accepted run during that setup window.
+        handle.publish({ type: "run_start", runId });
+      } catch (err) {
+        // The claim is taken but nothing owns it yet: without this release the
+        // tab stays permanently 409-locked until the process restarts.
+        setSessionRunId(projectId, session.sessionId, null);
+        unpinSession(projectId, session.sessionId);
+        activeRuns.delete(runKey);
+        reply.code(500);
+        return { detail: (err as Error).message };
+      }
       // For a Fusion run we disable Pi's local tools for the turn (see below).
       // Remember the real active set so we can restore it in the finally; `null`
       // means "not a fusion run, nothing to restore".
@@ -555,6 +604,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           savedToolNames = null;
         }
         setSessionRunId(projectId, session.sessionId, null);
+        // Runs after the ledger row is written (the owner's inner finally),
+        // so the run's spend is never invisible to a concurrent admission.
+        untrackInFlightRun(runKey);
+        unpinSession(projectId, session.sessionId);
         activeRuns.delete(runKey);
       };
       try {
@@ -683,6 +736,14 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             // errorMessage is sticky on the session; only report it if THIS run set it.
             const priorError = session.state.errorMessage;
             const before = snapshot(session);
+            // Publish this run's live spend so a concurrent run in another tab
+            // is admitted against what we are actually spending, not against
+            // the ledger total from before this run started.
+            if (billingCountsTowardBudget(runBilling)) {
+              trackInFlightRun(runKey, projectId, () =>
+                Math.max(0, snapshot(session).costUsd - before.costUsd),
+              );
+            }
             try {
               await session.prompt(
                 prompt,

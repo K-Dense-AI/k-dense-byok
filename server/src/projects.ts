@@ -164,11 +164,27 @@ function loadIndex(): IndexFile {
   return { projects: {} };
 }
 
+/**
+ * Atomic JSON write with a per-writer temp name.
+ *
+ * A shared `<file>.tmp` is only safe while one writer exists: `npm run prep`
+ * (or a second backend) writing at the same time would have its half-written
+ * temp renamed into place by the other, corrupting the registry.
+ */
+function writeJsonAtomic(file: string, value: unknown): void {
+  const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", "utf-8");
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+}
+
 function saveIndex(index: IndexFile): void {
   ensureProjectsRoot();
-  const tmp = INDEX_PATH + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(index, null, 2) + "\n", "utf-8");
-  fs.renameSync(tmp, INDEX_PATH);
+  writeJsonAtomic(INDEX_PATH, index);
 }
 
 function readProjectJson(paths: ProjectPaths): ProjectMeta | null {
@@ -183,9 +199,7 @@ function readProjectJson(paths: ProjectPaths): ProjectMeta | null {
 
 function writeProjectJson(paths: ProjectPaths, meta: ProjectMeta): void {
   fs.mkdirSync(paths.root, { recursive: true });
-  const tmp = paths.projectJson + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(meta, null, 2) + "\n", "utf-8");
-  fs.renameSync(tmp, paths.projectJson);
+  writeJsonAtomic(paths.projectJson, meta);
 }
 
 // --- public registry API -------------------------------------------------

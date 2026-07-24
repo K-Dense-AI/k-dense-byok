@@ -36,7 +36,18 @@ export function SessionCostPill({
   loading = false,
   className,
 }: SessionCostPillProps) {
-  const projectTotal = projectSummary?.totalUsd ?? 0;
+  // The cap is enforced against *committed* money — ledgered spend plus
+  // compute reservations plus runs still in flight. Showing only ledgered
+  // spend meant the pill could read "$4.10 / $5.00" while the server refused
+  // new work, with nothing on screen to explain why.
+  const spentUsd = projectSummary?.spentUsd ?? projectSummary?.totalUsd ?? 0;
+  const projectTotal =
+    projectSummary?.budget?.committedUsd ??
+    projectSummary?.budget?.totalUsd ??
+    spentUsd;
+  const heldUsd = Math.max(0, projectTotal - spentUsd);
+  const reservedUsd = projectSummary?.budget?.reservedUsd ?? 0;
+  const inFlightUsd = projectSummary?.budget?.inFlightUsd ?? 0;
   const sessionTotal = summary.totalUsd ?? 0;
   const limitUsd =
     limitUsdProp !== undefined
@@ -80,9 +91,18 @@ export function SessionCostPill({
             className,
           )}
           aria-label={
-            limitUsd !== null
-              ? `Project billable cost ${formatUsd(projectTotal)} of ${formatUsd(limitUsd)}, session billable cost ${formatUsd(sessionTotal)}${(summary.subscriptionTokens ?? 0) > 0 ? `, ${formatTokens(summary.subscriptionTokens ?? 0)} subscription tokens` : ""}`
-              : `Project billable cost ${formatUsd(projectTotal)}, session billable cost ${formatUsd(sessionTotal)}${(summary.subscriptionTokens ?? 0) > 0 ? `, ${formatTokens(summary.subscriptionTokens ?? 0)} subscription tokens` : ""}`
+            [
+              limitUsd !== null
+                ? `Project billable cost ${formatUsd(projectTotal)} of ${formatUsd(limitUsd)}`
+                : `Project billable cost ${formatUsd(projectTotal)}`,
+              heldUsd > 0 ? `including ${formatUsd(heldUsd)} held for work in progress` : "",
+              `session billable cost ${formatUsd(sessionTotal)}`,
+              (summary.subscriptionTokens ?? 0) > 0
+                ? `${formatTokens(summary.subscriptionTokens ?? 0)} subscription tokens`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(", ")
           }
         >
           <div className="flex items-center gap-2">
@@ -158,6 +178,13 @@ export function SessionCostPill({
               {projectSummary.sessionCount} session
               {projectSummary.sessionCount === 1 ? "" : "s"}
             </div>
+            {heldUsd > 0 && (
+              <div className="text-muted-foreground mt-1 text-xs">
+                {formatUsd(spentUsd)} recorded
+                {reservedUsd > 0 ? ` · ${formatUsd(reservedUsd)} held for compute jobs` : ""}
+                {inFlightUsd > 0 ? ` · ${formatUsd(inFlightUsd)} in the current run` : ""}
+              </div>
+            )}
             {(projectSummary.subscriptionTokens ?? 0) > 0 ? (
               <div className="mt-1 text-xs text-muted-foreground">
                 {formatTokens(projectSummary.subscriptionTokens ?? 0)} subscription

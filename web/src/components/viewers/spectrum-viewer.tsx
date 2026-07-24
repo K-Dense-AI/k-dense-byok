@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { sciSummaryUrl } from "@/lib/use-sandbox";
+import { fetchSciJson, isAbortError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
 
 interface SpectrumEntry {
@@ -130,29 +131,22 @@ export default function SpectrumViewer({ path, projectId }: ViewerProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const ac = new AbortController();
     setSummary(null);
     setError(null);
     setSelectedId(null);
-    fetch(sciSummaryUrl(path, "massspec", projectId))
-      .then(async (r) => {
-        if (!r.ok) {
-          const detail = (await r.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(detail.detail || `HTTP ${r.status}`);
-        }
-        return r.json() as Promise<MassSpecSummary>;
-      })
+    fetchSciJson<MassSpecSummary>(sciSummaryUrl(path, "massspec", projectId), {
+      signal: ac.signal,
+    })
       .then((d) => {
-        if (!alive) return;
+        if (ac.signal.aborted) return;
         setSummary(d);
         setSelectedId(d.spectra[0]?.id ?? null);
       })
       .catch((e) => {
-        if (alive) setError(String(e.message ?? e));
+        if (!isAbortError(e)) setError(String(e.message ?? e));
       });
-    return () => {
-      alive = false;
-    };
+    return () => ac.abort();
   }, [path, projectId]);
 
   if (error) {

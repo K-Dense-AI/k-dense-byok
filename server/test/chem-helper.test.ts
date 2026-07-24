@@ -14,24 +14,24 @@ const depsOk = (() => {
 })();
 
 describe("chem_helper", () => {
-  it.runIf(depsOk)("summarizes a SMILES file", () => {
-    const res = runSciHelper("chem", "summarize", [path.join(FIX, "ethanol.smi")]);
+  it.runIf(depsOk)("summarizes a SMILES file", async () => {
+    const res = await runSciHelper("chem", "summarize", [path.join(FIX, "ethanol.smi")]);
     expect(res.status).toBe(0);
     const data = JSON.parse(res.stdout);
     expect(data.count).toBe(1);
     expect(data.molecules[0].formula).toBe("C2H6O");
   }, 15000);
-  it.runIf(depsOk)("renders an SVG for molecule 0", () => {
+  it.runIf(depsOk)("renders an SVG for molecule 0", async () => {
     const out = path.join(os.tmpdir(), `chem-test-${process.pid}.svg`);
-    const res = runSciHelper("chem", "render", [path.join(FIX, "ethanol.smi"), "0", out]);
+    const res = await runSciHelper("chem", "render", [path.join(FIX, "ethanol.smi"), "0", out]);
     expect(res.status).toBe(0);
     expect(fs.readFileSync(out, "utf-8")).toContain("<svg");
     fs.rmSync(out, { force: true });
   }, 15000);
-  it("exits 5 on a malformed SMILES", () => {
+  it("exits 5 on a malformed SMILES", async () => {
     const bad = path.join(os.tmpdir(), `bad-${process.pid}.smi`);
     fs.writeFileSync(bad, "this-is-not-smiles!!!\n");
-    const res = runSciHelper("chem", "summarize", [bad]);
+    const res = await runSciHelper("chem", "summarize", [bad]);
     expect(res.status).toBe(depsOk ? 5 : 3);
     fs.rmSync(bad, { force: true });
   });

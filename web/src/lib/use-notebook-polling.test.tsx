@@ -92,6 +92,32 @@ describe("useNotebookPolling", () => {
     expect(refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps polling past the quiet budget while async work is outstanding", () => {
+    const refetch = vi.fn();
+    renderHook((p: Props) => useNotebookPolling(p), {
+      initialProps: base({ refetch, hasOutstandingWork: true }),
+    });
+    vi.advanceTimersByTime(5000 * 6);
+    expect(refetch).toHaveBeenCalledTimes(6);
+    // A background subagent outlives the quiet budget; polling must continue,
+    // just at a slower stride, or its entries never surface.
+    vi.advanceTimersByTime(5000 * 20);
+    expect(refetch.mock.calls.length).toBeGreaterThan(6);
+  });
+
+  it("strides out instead of polling every tick once quiet", () => {
+    const refetch = vi.fn();
+    renderHook((p: Props) => useNotebookPolling(p), {
+      initialProps: base({ refetch, hasOutstandingWork: true, maxIntervalMs: 30_000 }),
+    });
+    vi.advanceTimersByTime(5000 * 6);
+    expect(refetch).toHaveBeenCalledTimes(6);
+    const before = refetch.mock.calls.length;
+    vi.advanceTimersByTime(5000 * 10);
+    // Far fewer than 10 more fetches: the cadence backs off toward maxIntervalMs.
+    expect(refetch.mock.calls.length - before).toBeLessThan(10);
+  });
+
   it("stops polling when enabled flips to false", () => {
     const refetch = vi.fn();
     const { rerender } = renderHook((p: Props) => useNotebookPolling(p), {
