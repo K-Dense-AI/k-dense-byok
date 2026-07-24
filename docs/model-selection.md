@@ -37,8 +37,8 @@ This fork adds an **Openrouter Fusion** section at the top of the picker: named 
 
 ## Defaults
 
-- The default model is `openrouter/anthropic/claude-opus-4.8`.
-- Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-4.8`, routed by `DEFAULT_MODEL_PROVIDER`).
+- The default model is `openrouter/anthropic/claude-opus-5`.
+- Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-5`, routed by `DEFAULT_MODEL_PROVIDER`).
 - To default to a connected subscription model, set `DEFAULT_MODEL_PROVIDER` to `openai-codex`, `anthropic`, `github-copilot`, or `xai` and set `DEFAULT_MODEL_ID` to that provider's model id.
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
 

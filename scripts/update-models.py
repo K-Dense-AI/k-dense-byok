@@ -11,7 +11,8 @@ Inclusion rules: every OpenRouter model that
   - was released on OpenRouter within the last MAX_AGE_MONTHS (`created`
     timestamp) — the catalogue stays current instead of accumulating
     every legacy model, and old models tend to hit tool-calling compat
-    bugs anyway.
+    bugs anyway. `~vendor/*-latest` aliases are exempt from the age gate
+    because they always redirect to the newest model in their family.
 
 The `default` / `expertDefault` flags are carried forward from the
 existing file by model id; a flagged model is kept even past the age
@@ -109,9 +110,12 @@ def main() -> None:
         if not is_fusion:
             if "tools" not in (m.get("supported_parameters") or []):
                 continue
-            # Age gate — but never drop a default/expertDefault model.
+            # Age gate — but never drop a default/expertDefault model, nor a
+            # `~vendor/*-latest` alias, which redirects to the newest model in
+            # its family and so is never stale however old the alias itself is.
             or_id = f"openrouter/{model_id}"
-            if (m.get("created") or 0) < cutoff and or_id not in flags:
+            is_alias = model_id.startswith("~")
+            if (m.get("created") or 0) < cutoff and not is_alias and or_id not in flags:
                 continue
             prompt = round(float(m["pricing"]["prompt"]) * 1_000_000, 6)
             completion = round(float(m["pricing"]["completion"]) * 1_000_000, 6)
