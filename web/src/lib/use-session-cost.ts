@@ -15,11 +15,17 @@ export interface CostEntry {
   totalTokens: number;
   cachedTokens: number;
   costUsd: number;
+  provider?: string;
+  authType?: "api_key" | "oauth" | "local" | "none";
+  billingMode?: "payg" | "metered_oauth" | "subscription" | "local" | "compute";
+  listPriceUsd?: number;
 }
 
 export interface SessionCostSummary {
   sessionId: string;
   totalUsd: number;
+  listPriceUsd?: number;
+  subscriptionTokens?: number;
   totalTokens: number;
   agentUsd: number;
   subagentUsd: number;
@@ -30,6 +36,8 @@ export interface SessionCostSummary {
 const EMPTY: SessionCostSummary = {
   sessionId: "",
   totalUsd: 0,
+  listPriceUsd: 0,
+  subscriptionTokens: 0,
   totalTokens: 0,
   agentUsd: 0,
   subagentUsd: 0,

@@ -13,6 +13,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { activePaths, getProject, resolvePaths } from "../projects.ts";
+import {
+  billingForProvider,
+  normalizeUsageCost,
+  type BillingContext,
+  type BillingMode,
+  type LedgerAuthType,
+} from "./billing.ts";
 
 export interface CostSnapshot {
   costUsd: number;
@@ -87,12 +94,32 @@ export interface CostEntry {
   completionTokens: number;
   totalTokens: number;
   cachedTokens: number;
+  /** Billable/estimated USD counted against the project spend cap. */
   costUsd: number;
+  provider?: string;
+  authType?: LedgerAuthType;
+  billingMode?: BillingMode;
+  /** Pi list-price equivalent for provider-managed subscription usage. */
+  listPriceUsd?: number;
   /** Durable Modal job id. Absent on old rows and non-compute entries. */
   jobId?: string;
   /** Modal costs are estimates (elapsed wall time × catalogue rate). */
   estimated?: boolean;
   terminalState?: string;
+}
+
+function inferredBilling(model: string, role?: CostEntry["role"]): BillingContext {
+  if (role === "compute" || model === "modal" || model.startsWith("modal/")) {
+    return billingForProvider("modal");
+  }
+  if (model.startsWith("ollama/")) return billingForProvider("ollama", "local");
+  if (model.startsWith("openrouter/") || model.startsWith("fusion/")) {
+    return billingForProvider("openrouter", "api_key");
+  }
+  // Legacy rows/callers did not distinguish an OpenRouter vendor prefix from a
+  // direct provider. Treat them as payg so missing metadata can never bypass a
+  // cap; new callers always pass an explicit context.
+  return billingForProvider(model.split("/", 1)[0] || "unknown", "api_key");
 }
 
 function costsPath(sessionId: string, projectId?: string): string {
@@ -116,10 +143,13 @@ export function recordRun(args: {
   jobId?: string;
   estimated?: boolean;
   terminalState?: string;
+  billing?: BillingContext;
 }): CostEntry | null {
   const delta = snapshotDelta(args.before, args.after);
+  const billing = args.billing ?? inferredBilling(args.model, args.role);
+  const normalizedCost = normalizeUsageCost(delta.costUsd, billing);
   const d = {
-    costUsd: delta.costUsd,
+    costUsd: normalizedCost.costUsd,
     promptTokens: delta.input,
     completionTokens: delta.output,
     totalTokens: delta.total,
@@ -135,6 +165,12 @@ export function recordRun(args: {
     role: args.role ?? "agent",
     model: args.model,
     ...d,
+    provider: billing.provider,
+    authType: billing.authType,
+    billingMode: billing.billingMode,
+    ...(normalizedCost.listPriceUsd !== undefined
+      ? { listPriceUsd: normalizedCost.listPriceUsd }
+      : {}),
     ...(args.jobId ? { jobId: args.jobId } : {}),
     ...(args.estimated !== undefined ? { estimated: args.estimated } : {}),
     ...(args.terminalState ? { terminalState: args.terminalState } : {}),
@@ -155,6 +191,7 @@ export function recordSubagentRun(
   sessionId: string,
   model: string,
   stats: { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } },
+  billing?: BillingContext,
 ): CostEntry | null {
   if (!sessionId) return null;
   return recordRun({
@@ -170,6 +207,7 @@ export function recordSubagentRun(
       cacheRead: stats.tokens.cacheRead,
       total: stats.tokens.total,
     },
+    billing,
   });
 }
 
@@ -194,6 +232,7 @@ export function recordModalRun(
     role: "compute",
     before: emptySnapshot(),
     after: { ...emptySnapshot(), costUsd },
+    billing: billingForProvider("modal"),
   });
 }
 
@@ -224,6 +263,7 @@ export function recordModalJobCost(args: {
     jobId: args.jobId,
     estimated: true,
     terminalState: args.terminalState,
+    billing: billingForProvider("modal"),
   });
 }
 
@@ -388,6 +428,8 @@ export function reattributeModalJobCost(
 export interface SessionCostSummary {
   sessionId: string;
   totalUsd: number;
+  listPriceUsd: number;
+  subscriptionTokens: number;
   totalTokens: number;
   agentUsd: number;
   subagentUsd: number;
@@ -398,18 +440,32 @@ export interface SessionCostSummary {
 export function sessionCostSummary(sessionId: string, projectId?: string): SessionCostSummary {
   const entries = readEntries(sessionId, projectId);
   let totalUsd = 0;
+  let listPriceUsd = 0;
+  let subscriptionTokens = 0;
   let totalTokens = 0;
   let agentUsd = 0;
   let subagentUsd = 0;
   let computeUsd = 0;
   for (const e of entries) {
     totalUsd += e.costUsd;
+    listPriceUsd += e.listPriceUsd ?? 0;
+    if (e.billingMode === "subscription") subscriptionTokens += e.totalTokens;
     totalTokens += e.totalTokens;
     if (e.role === "subagent") subagentUsd += e.costUsd;
     else if (e.role === "compute") computeUsd += e.costUsd;
     else agentUsd += e.costUsd;
   }
-  return { sessionId, totalUsd, totalTokens, agentUsd, subagentUsd, computeUsd, entries };
+  return {
+    sessionId,
+    totalUsd,
+    listPriceUsd,
+    subscriptionTokens,
+    totalTokens,
+    agentUsd,
+    subagentUsd,
+    computeUsd,
+    entries,
+  };
 }
 
 export type BudgetState = "ok" | "warn" | "exceeded";
@@ -421,6 +477,8 @@ export interface ProjectCostSummary {
   spentUsd: number;
   reservedUsd: number;
   committedUsd: number;
+  listPriceUsd: number;
+  subscriptionTokens: number;
   totalTokens: number;
   sessionCount: number;
   limitUsd: number | null;
@@ -440,6 +498,8 @@ export interface ProjectCostSummary {
 export function projectCostSummary(projectId: string): ProjectCostSummary {
   const paths = resolvePaths(projectId);
   let totalUsd = 0;
+  let listPriceUsd = 0;
+  let subscriptionTokens = 0;
   let totalTokens = 0;
   let sessionCount = 0;
   try {
@@ -449,6 +509,8 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
       if (s.entries.length === 0) continue; // run dir with nothing ledgered yet
       sessionCount++;
       totalUsd += s.totalUsd;
+      listPriceUsd += s.listPriceUsd;
+      subscriptionTokens += s.subscriptionTokens;
       totalTokens += s.totalTokens;
     }
   } catch {
@@ -471,6 +533,8 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
     spentUsd: totalUsd,
     reservedUsd,
     committedUsd,
+    listPriceUsd,
+    subscriptionTokens,
     totalTokens,
     sessionCount,
     limitUsd,

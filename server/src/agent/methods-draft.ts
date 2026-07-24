@@ -15,8 +15,13 @@ import type {
   StreamOptions,
 } from "@earendil-works/pi-ai";
 import { getModelRegistry, getModelRuntime } from "./session-registry.ts";
-import { resolveModel } from "./models.ts";
+import {
+  assertModelAuthentication,
+  modelReference,
+  resolveModel,
+} from "./models.ts";
 import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
+import { billingCountsTowardBudget, billingForModel } from "../cost/billing.ts";
 import { getProject, resolvePaths, touchProject } from "../projects.ts";
 import { readNotebookEntries, type NotebookEntry } from "./notebook-store.ts";
 
@@ -41,6 +46,8 @@ export interface MethodsDraftResult {
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
+  billingMode?: string;
+  listPriceUsd?: number;
 }
 
 const SYSTEM_PROMPT = [
@@ -159,24 +166,34 @@ export async function runMethodsDraft(
   if (entries.length === 0) {
     throw new MethodsDraftError(400, "Notebook has no entries to draft from");
   }
-  const budget = isBudgetExceeded(projectId);
-  if (budget.exceeded) {
-    throw new MethodsDraftError(
-      402,
-      `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
-        `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project settings.`,
-    );
-  }
   if (opts.model?.startsWith("fusion/")) {
     throw new MethodsDraftError(422, "Fusion models are not supported for the Methods draft");
   }
   const paths = resolvePaths(projectId);
   const projectName = getProject(projectId)?.name;
   const model = resolveModel(opts.model, getModelRegistry());
+  if (completeFn === completeWithRuntime) {
+    try {
+      await assertModelAuthentication(model, getModelRuntime());
+    } catch (error) {
+      throw new MethodsDraftError(
+        401,
+        error instanceof Error ? error.message : "Model provider is not connected",
+      );
+    }
+  }
+  const billing = await billingForModel(model, getModelRuntime());
+  const budget = isBudgetExceeded(projectId);
+  if (billingCountsTowardBudget(billing) && budget.exceeded) {
+    throw new MethodsDraftError(
+      402,
+      `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+        `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project settings.`,
+    );
+  }
   let msg: AssistantMessage;
   try {
     msg = await completeFn(model, buildMethodsDraftContext(entries, { sessionId, projectName }), {
-      apiKey: process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY,
       maxTokens: MAX_OUTPUT_TOKENS,
     });
   } catch (err) {
@@ -198,10 +215,10 @@ export async function runMethodsDraft(
   fs.writeFileSync(path.join(paths.sandbox, fileName), markdown + "\n", "utf-8");
   touchProject(projectId);
   const u = msg.usage;
-  recordRun({
+  const costEntry = recordRun({
     sessionId: METHODS_DRAFT_SESSION_ID,
     projectId,
-    model: msg.model,
+    model: modelReference(model),
     role: "agent",
     before: emptySnapshot(),
     after: {
@@ -211,13 +228,18 @@ export async function runMethodsDraft(
       cacheRead: u.cacheRead,
       total: u.totalTokens,
     },
+    billing,
   });
   return {
     path: fileName,
     markdown,
-    model: msg.model,
-    costUsd: u.cost.total,
+    model: modelReference(model),
+    costUsd: costEntry?.costUsd ?? 0,
     inputTokens: u.input,
     outputTokens: u.output,
+    billingMode: billing.billingMode,
+    ...(costEntry?.listPriceUsd !== undefined
+      ? { listPriceUsd: costEntry.listPriceUsd }
+      : {}),
   };
 }

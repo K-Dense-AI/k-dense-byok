@@ -81,6 +81,11 @@ export interface ChatMessage {
   runCostUsd?: number;
   /** Per-turn token total for this assistant message. */
   runTokens?: number;
+  /** How this turn is billed; subscription usage is not project spend. */
+  runBillingMode?: "payg" | "metered_oauth" | "subscription" | "local" | "compute";
+  runProvider?: string;
+  /** Pi list-price equivalent for provider-managed subscription usage. */
+  runListPriceUsd?: number;
   /** Retained for compatibility; no longer populated under the Pi backend. */
   turnId?: string;
   citations?: CitationReport;
@@ -134,6 +139,9 @@ export interface AgentFrame {
   imagesTruncated?: number;
   runCost?: number;
   runTokens?: number;
+  runBillingMode?: ChatMessage["runBillingMode"];
+  runProvider?: string;
+  runListPriceUsd?: number;
   role?: string;
   content?: string;
   steering?: unknown;
@@ -254,6 +262,16 @@ export function applyFrameToMessage(
           typeof frame.runCost === "number" ? frame.runCost : message.runCostUsd,
         runTokens:
           typeof frame.runTokens === "number" ? frame.runTokens : message.runTokens,
+        runBillingMode:
+          typeof frame.runBillingMode === "string"
+            ? frame.runBillingMode
+            : message.runBillingMode,
+        runProvider:
+          typeof frame.runProvider === "string" ? frame.runProvider : message.runProvider,
+        runListPriceUsd:
+          typeof frame.runListPriceUsd === "number"
+            ? frame.runListPriceUsd
+            : message.runListPriceUsd,
       };
     case "error": {
       // Append rather than replace: an error after partial output (mid-stream

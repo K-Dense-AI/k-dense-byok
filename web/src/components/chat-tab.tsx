@@ -29,6 +29,7 @@ import { buildDatabaseContext, type Database } from "@/components/database-selec
 import {
   ModelSelector,
   DEFAULT_MODEL,
+  modelUsesBillableBudget,
   type Model,
 } from "@/components/model-selector";
 import { ComputeSelector, type ModalInstance } from "@/components/compute-selector";
@@ -80,6 +81,7 @@ import {
   type ModalCatalog,
 } from "@/lib/modal-jobs";
 import { useModalCatalog } from "@/lib/use-modal-jobs";
+import { useModels, type ModelAvailability } from "@/lib/use-models";
 import {
   SpeechInput,
   type SpeechInputMode,
@@ -117,8 +119,13 @@ type QueuedMessage = WorkspaceQueuedMessage;
 /** Models whose runs must NOT carry a thinkingLevel: Ollama models are built
  *  with reasoning:false (Pi clamps to off) and Fusion rewrites the wire body,
  *  so a level is meaningless there. Mirrors isOllama in model-selector.tsx. */
-function thinkingUnsupported(model: { id: string; provider?: string }): boolean {
+function thinkingUnsupported(model: {
+  id: string;
+  provider?: string;
+  reasoning?: boolean;
+}): boolean {
   return (
+    model.reasoning === false ||
     model.provider === "Ollama" ||
     model.id.startsWith("ollama/") ||
     model.id.startsWith("fusion/")
@@ -493,6 +500,7 @@ function ChatInput({
   budgetState = "ok",
   budgetTotalUsd = 0,
   budgetLimitUsd = null,
+  modelAvailability = "available",
 }: {
   isActiveTab: boolean;
   allFiles: string[];
@@ -530,8 +538,11 @@ function ChatInput({
   budgetState?: "ok" | "warn" | "exceeded";
   budgetTotalUsd?: number;
   budgetLimitUsd?: number | null;
+  modelAvailability?: ModelAvailability;
 }) {
-  const budgetBlocked = budgetState === "exceeded";
+  const modelAvailable = modelAvailability === "available";
+  const budgetBlocked =
+    budgetState === "exceeded" && modelUsesBillableBudget(selectedModel);
   const controller = usePromptInputController();
 
   // "Ask Kady" handoff from the LaTeX editor: only the active tab's composer
@@ -587,8 +598,15 @@ function ChatInput({
     async (msg, event) => {
       const intent: SendIntent = queueIntentRef.current ? "queue" : "auto";
       queueIntentRef.current = false;
-      if (budgetBlocked) {
+      if (budgetBlocked || !modelAvailable) {
         event?.preventDefault();
+        if (!modelAvailable) {
+          setAttachError(
+            modelAvailability === "checking"
+              ? "Model provider status is still loading. Try again in a moment."
+              : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
+          );
+        }
         return false;
       }
       const refs = attachedFiles.length > 0 ? "\n" + attachedFiles.join("\n") : "";
@@ -605,7 +623,7 @@ function ChatInput({
       onSend(baseText + refs + dbCtx + skillsCtx, intent, images);
       onClearFiles();
     },
-    [budgetBlocked, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
+    [budgetBlocked, modelAvailability, modelAvailable, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
   );
 
   // @ mention state
@@ -787,7 +805,7 @@ function ChatInput({
           </div>
         )}
 
-        {budgetState !== "ok" && (
+        {budgetState !== "ok" && modelUsesBillableBudget(selectedModel) && (
           <BudgetBanner
             state={budgetState}
             totalUsd={budgetTotalUsd}
@@ -898,7 +916,19 @@ function ChatInput({
               </InfoTooltip>
               <InfoTooltip
                 content={
-                  budgetBlocked ? (
+                  !modelAvailable ? (
+                    <>
+                      <b>
+                        {modelAvailability === "checking"
+                          ? "Checking model provider"
+                          : "Model provider disconnected"}
+                      </b>
+                      <br />
+                      {modelAvailability === "checking"
+                        ? "Wait a moment for provider status to load."
+                        : "Reconnect it in Settings or choose another model."}
+                    </>
+                  ) : budgetBlocked ? (
                     <>
                       <b>Spend limit reached</b>
                       <br />
@@ -937,7 +967,7 @@ function ChatInput({
                 <PromptInputSubmit
                   status={submitStatus as "streaming" | "error" | "ready"}
                   onStop={onStop}
-                  disabled={budgetBlocked && !isStreaming}
+                  disabled={(budgetBlocked || !modelAvailable) && !isStreaming}
                 />
               </InfoTooltip>
             </div>
@@ -1221,6 +1251,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const [selectedModel, setSelectedModel] = useState<Model>(
     () => initialWorkspaceState?.selectedModel ?? DEFAULT_MODEL,
   );
+  const { isModelAvailable, modelAvailability } = useModels();
+  const selectedModelAvailability = modelAvailability(selectedModel);
+  const selectedModelAvailable = selectedModelAvailability === "available";
+  const selectedBudgetBlocked =
+    budgetState === "exceeded" && modelUsesBillableBudget(selectedModel);
   const [selectedComputeTarget, setSelectedComputeTarget] = useState<ModalInstance | null>(
     () => initialWorkspaceState?.selectedComputeTarget ?? null,
   );
@@ -1359,6 +1394,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   useEffect(() => {
     if (!initialSessionReady || status !== "ready" || messageQueue.length === 0) return;
     const [next, ...rest] = messageQueue;
+    if (!isModelAvailable(next.model)) return;
+    if (budgetState === "exceeded" && modelUsesBillableBudget(next.model)) return;
     const id = window.setTimeout(() => {
       setMessageQueue(rest);
       void send(
@@ -1377,7 +1414,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       );
     }, 0);
     return () => window.clearTimeout(id);
-  }, [initialSessionReady, status, messageQueue, send]);
+  }, [
+    budgetState,
+    initialSessionReady,
+    isModelAvailable,
+    messageQueue,
+    send,
+    status,
+  ]);
 
   useEffect(() => {
     onWorkspaceStateChange?.(tabId, {
@@ -1451,6 +1495,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const enqueue = useCallback(
     (trimmed: string, images: PromptImage[] = []) => {
       if (messageQueue.length >= MAX_QUEUE) return;
+      if (!selectedModelAvailable) {
+        toast.error(
+          selectedModelAvailability === "checking"
+            ? "Model provider status is still loading. Try again in a moment."
+            : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
+        );
+        return;
+      }
       setMessageQueue((prev) => [
         ...prev,
         {
@@ -1473,12 +1525,20 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         },
       ]);
     },
-    [messageQueue.length, selectedModel, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, selectedComputeOptions, thinkingDisabled, thinkingLevel],
+    [messageQueue.length, selectedModel, selectedModelAvailability, selectedModelAvailable, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, selectedComputeOptions, thinkingDisabled, thinkingLevel],
   );
 
   const handleSend = useCallback(
     async (text: string, intent: SendIntent, images: PromptImage[] = []) => {
-      if (budgetState === "exceeded") return;
+      if (!selectedModelAvailable) {
+        toast.error(
+          selectedModelAvailability === "checking"
+            ? "Model provider status is still loading. Try again in a moment."
+            : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
+        );
+        return;
+      }
+      if (selectedBudgetBlocked) return;
       const trimmed = text.trim();
       if (!trimmed) return;
       const sendNow = () =>
@@ -1522,7 +1582,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       await sendNow();
     },
     [
-      budgetState,
+      selectedBudgetBlocked,
+      selectedModelAvailability,
+      selectedModelAvailable,
       isStreaming,
       steer,
       enqueue,
@@ -1560,7 +1622,15 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         return true;
       },
       sendQuick: async (prompt: string) => {
-        if (budgetState === "exceeded") return;
+        if (!selectedModelAvailable) {
+          toast.error(
+            selectedModelAvailability === "checking"
+              ? "Model provider status is still loading. Try again in a moment."
+              : "Reconnect this model provider in Settings before sending.",
+          );
+          return;
+        }
+        if (selectedBudgetBlocked) return;
         await send(
           prompt,
           selectedModel.id,
@@ -1572,7 +1642,16 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         );
       },
       launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
-        if (budgetState === "exceeded") return;
+        const workflowModelAvailability = modelAvailability(model);
+        if (workflowModelAvailability !== "available") {
+          toast.error(
+            workflowModelAvailability === "checking"
+              ? "Model provider status is still loading. Try again in a moment."
+              : "Reconnect this model provider in Settings before launching.",
+          );
+          return;
+        }
+        if (budgetState === "exceeded" && modelUsesBillableBudget(model)) return;
         setSelectedModel(model);
         const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
         const skillsCtx = suggestedSkills.length > 0
@@ -1598,6 +1677,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       send,
       stop,
       budgetState,
+      isModelAvailable,
+      modelAvailability,
+      selectedBudgetBlocked,
+      selectedModelAvailability,
+      selectedModelAvailable,
       selectedModel.id,
       selectedModel.fusionConfig,
       selectedComputeTarget?.id,
@@ -1679,23 +1763,39 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
                         )}
                       </MessageAction>
                     </MessageActions>
-                    {typeof message.runCostUsd === "number" &&
-                      message.runCostUsd > 0 && (
+                    {((typeof message.runCostUsd === "number" &&
+                      message.runCostUsd > 0) ||
+                      (message.runBillingMode === "subscription" &&
+                        (message.runTokens ?? 0) > 0)) && (
                         <InfoTooltip
                           content={
                             <>
-                              <b>Cost of this reply</b>
+                              <b>
+                                {message.runBillingMode === "subscription"
+                                  ? "Subscription usage"
+                                  : message.runBillingMode === "metered_oauth"
+                                    ? "Metered extra usage"
+                                    : "Cost of this reply"}
+                              </b>
                               <br />
-                              {formatUsd(message.runCostUsd)}
+                              {message.runBillingMode === "subscription"
+                                ? `${message.runProvider ?? "Provider"} manages billing and quota`
+                                : formatUsd(message.runCostUsd ?? 0)}
                               {typeof message.runTokens === "number" &&
                               message.runTokens > 0
                                 ? ` · ${message.runTokens.toLocaleString()} tokens`
+                                : ""}
+                              {message.runBillingMode === "subscription" &&
+                              typeof message.runListPriceUsd === "number"
+                                ? ` · ${formatUsd(message.runListPriceUsd)} list-price reference (not project spend)`
                                 : ""}
                             </>
                           }
                         >
                           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                            {formatUsd(message.runCostUsd)}
+                            {message.runBillingMode === "subscription"
+                              ? `subscription · ${(message.runTokens ?? 0).toLocaleString()} tok`
+                              : formatUsd(message.runCostUsd ?? 0)}
                           </span>
                         </InfoTooltip>
                       )}
@@ -1751,6 +1851,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             budgetState={budgetState}
             budgetTotalUsd={budgetTotalUsd}
             budgetLimitUsd={budgetLimitUsd}
+            modelAvailability={selectedModelAvailability}
           />
         </PromptInputProvider>
       </div>

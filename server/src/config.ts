@@ -5,6 +5,7 @@
  * on-disk `projects/` layout (so existing user data is preserved) but drops the
  * Gemini-CLI / LiteLLM / MCP machinery.
  */
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -19,6 +20,17 @@ export const PROJECTS_ROOT = path.resolve(
   process.env.KADY_PROJECTS_ROOT
     ? process.env.KADY_PROJECTS_ROOT
     : path.join(REPO_ROOT, "projects"),
+);
+
+/** App-scoped Pi configuration/auth directory, established by env.ts. */
+const rawPiAgentDir =
+  process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".kady", "pi-agent");
+export const KADY_PI_AGENT_DIR = path.resolve(
+  rawPiAgentDir === "~"
+    ? os.homedir()
+    : rawPiAgentDir.startsWith("~/") || rawPiAgentDir.startsWith("~\\")
+      ? path.join(os.homedir(), rawPiAgentDir.slice(2))
+      : rawPiAgentDir,
 );
 
 export const DEFAULT_PROJECT_ID = "default";

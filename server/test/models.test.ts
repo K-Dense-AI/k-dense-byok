@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { catalogueEntryFor } from "../src/agent/models.ts";
+import {
+  assertModelAuthentication,
+  catalogueEntryFor,
+  ModelAuthenticationError,
+  ModelResolutionError,
+  modelReference,
+  resolveModel,
+} from "../src/agent/models.ts";
+import { getModelRegistry } from "../src/agent/session-registry.ts";
 
 // Reasoning-effort suffixes ("...-xhigh", "...-high", …) are an OpenRouter
 // routing form, not separate catalogue rows. Before the fix they missed the
@@ -27,5 +35,58 @@ describe("catalogueEntryFor (reasoning-effort suffix pricing)", () => {
 
   it("returns undefined for an unknown model", () => {
     expect(catalogueEntryFor("nonexistent/model-xyz")).toBeUndefined();
+  });
+});
+
+describe("provider-aware model resolution", () => {
+  const registry = getModelRegistry();
+
+  it.each([
+    ["anthropic/claude-opus-4-8", "anthropic"],
+    ["openai-codex/gpt-5.6-sol", "openai-codex"],
+    ["github-copilot/claude-sonnet-5", "github-copilot"],
+    ["xai/grok-4.5", "xai"],
+  ])("resolves %s through its direct Pi provider", (ref, provider) => {
+    const model = resolveModel(ref, registry);
+    expect(model.provider).toBe(provider);
+    expect(modelReference(model)).toBe(ref);
+  });
+
+  it("keeps canonical and legacy OpenRouter refs on OpenRouter", () => {
+    expect(
+      resolveModel("openrouter/anthropic/claude-opus-4.8", registry).provider,
+    ).toBe("openrouter");
+    expect(resolveModel("meta-llama/llama-3.3-70b-instruct", registry).provider).toBe(
+      "openrouter",
+    );
+  });
+
+  it("refuses unknown direct-provider models instead of synthesizing OpenRouter", () => {
+    expect(() =>
+      resolveModel("anthropic/not-a-real-subscription-model", registry),
+    ).toThrowError(ModelResolutionError);
+  });
+
+  it("requires OAuth rather than an ambient API key for subscription providers", async () => {
+    const model = resolveModel("anthropic/claude-opus-4-8", registry);
+    const apiKeyRuntime = {
+      checkAuth: async () => ({ type: "api_key" as const, source: "ANTHROPIC_API_KEY" }),
+    };
+    await expect(
+      assertModelAuthentication(
+        model,
+        apiKeyRuntime as Parameters<typeof assertModelAuthentication>[1],
+      ),
+    ).rejects.toBeInstanceOf(ModelAuthenticationError);
+
+    const oauthRuntime = {
+      checkAuth: async () => ({ type: "oauth" as const, source: "OAuth" }),
+    };
+    await expect(
+      assertModelAuthentication(
+        model,
+        oauthRuntime as Parameters<typeof assertModelAuthentication>[1],
+      ),
+    ).resolves.toBeUndefined();
   });
 });

@@ -927,7 +927,7 @@ function WorkspacePage({
               <>
                 <b>Settings</b>
                 <br />
-                API keys, skills, specialists, connectors, and appearance.
+                Model providers, API keys, skills, specialists, connectors, and appearance.
               </>
             }
           >
@@ -999,6 +999,7 @@ function WorkspacePage({
           {isActive && (
             <FilePreviewPanel
               projectId={projectId}
+              activeModelRef={tabWorkspaceStates[activeTabId]?.selectedModel.id}
               tabs={sandbox.tabs}
               activeTabPath={sandbox.activeTabPath}
               onTabSelect={handleFileSelect}

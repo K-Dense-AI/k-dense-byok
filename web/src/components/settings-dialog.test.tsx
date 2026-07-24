@@ -32,6 +32,7 @@ describe("SettingsDialog", () => {
 
   it("shows the capability tabs (Skills, Specialists, Connectors) alongside API keys", () => {
     render(<SettingsDialog open onOpenChange={() => {}} />);
+    expect(screen.getByRole("tab", { name: /model providers/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /api keys/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /skills/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /specialists/i })).toBeInTheDocument();

@@ -1,8 +1,9 @@
 /**
  * Model resolution for the Pi agent.
  *
- * Two providers are supported, matching the product requirement:
+ * Supported access paths:
  *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY)
+ *   - Pi OAuth providers (OpenAI Codex, Anthropic, GitHub Copilot, xAI)
  *   - Ollama (local, OpenAI-compatible at OLLAMA_BASE_URL)
  *
  * The frontend picker sends model refs like "openrouter/anthropic/claude-opus-4.8"
@@ -21,6 +22,10 @@ import {
   OLLAMA_BASE_URL,
   REPO_ROOT,
 } from "../config.ts";
+import {
+  isSubscriptionProvider,
+  type SubscriptionProviderId,
+} from "./provider-auth.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
 // OpenAI-compatible provider can point at any compatible gateway — e.g.
@@ -203,6 +208,90 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
   if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
 }
 
+export class ModelResolutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ModelResolutionError";
+  }
+}
+
+export class ModelAuthenticationError extends Error {
+  constructor(
+    readonly providerId: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ModelAuthenticationError";
+  }
+}
+
+/** Canonical provider/model ref used by the frontend, ledgers, and subagents. */
+export function modelReference(model: Model<Api>): string {
+  if (model.provider === "openrouter" && model.id === "openrouter/fusion") {
+    return "openrouter/fusion";
+  }
+  return `${model.provider}/${model.id}`;
+}
+
+function configuredDefaultRef(): string {
+  const provider = DEFAULT_MODEL_PROVIDER.trim().toLowerCase() || "openrouter";
+  const id = DEFAULT_MODEL_ID.trim();
+  if (!id) {
+    throw new ModelResolutionError("DEFAULT_MODEL_ID is empty");
+  }
+  if (provider === "openrouter") {
+    return id.startsWith("openrouter/") ? id : `openrouter/${id}`;
+  }
+  if (provider === "ollama") {
+    return id.startsWith("ollama/") ? id : `ollama/${id}`;
+  }
+  if (isSubscriptionProvider(provider)) {
+    return id.startsWith(`${provider}/`) ? id : `${provider}/${id}`;
+  }
+  return `${provider}/${id}`;
+}
+
+function directProviderRef(
+  ref: string,
+): { providerId: SubscriptionProviderId; modelId: string } | null {
+  const slash = ref.indexOf("/");
+  if (slash <= 0) return null;
+  const providerId = ref.slice(0, slash);
+  if (!isSubscriptionProvider(providerId)) return null;
+  return { providerId, modelId: ref.slice(slash + 1) };
+}
+
+export function isSubscriptionModelRef(ref: string): boolean {
+  return directProviderRef(ref.trim()) !== null;
+}
+
+/**
+ * Verify that a model's provider is configured for the intended product path.
+ * Direct subscription providers deliberately require OAuth; ambient API keys
+ * are not silently treated as subscription access.
+ */
+export async function assertModelAuthentication(
+  model: Model<Api>,
+  modelRuntime: ModelRuntime,
+): Promise<void> {
+  if (model.provider === "ollama") return;
+  const auth = await modelRuntime.checkAuth(model.provider);
+  if (!auth) {
+    throw new ModelAuthenticationError(
+      model.provider,
+      model.provider === "openrouter"
+        ? "OpenRouter is not configured. Add an API key in Settings or choose another model provider."
+        : `${model.provider} is not connected. Connect it in Settings or choose another model.`,
+    );
+  }
+  if (isSubscriptionProvider(model.provider) && auth.type !== "oauth") {
+    throw new ModelAuthenticationError(
+      model.provider,
+      `${model.provider} has an API key but no subscription login. Connect the subscription in Settings.`,
+    );
+  }
+}
+
 /**
  * Resolve a model ref to a Pi Model. Prefers Pi's built-in entry (so cost +
  * capabilities stay accurate), falling back to a synthesized model.
@@ -213,7 +302,7 @@ export function resolveModel(
   fusionConfig?: Record<string, unknown>,
 ): Model<Api> {
   const usingDefault = !ref || !ref.trim();
-  const r = usingDefault ? DEFAULT_MODEL_ID.trim() : ref.trim();
+  const r = usingDefault ? configuredDefaultRef() : ref.trim();
   // A "fusion/<id>" ref is the synthetic selector entry; resolve it to the real
   // openrouter/fusion Model, priced by the panel sum. The bare string ref can't
   // carry the panel prices, so the fusionConfig must be threaded in by the
@@ -229,15 +318,30 @@ export function resolveModel(
   if (r.startsWith("ollama/")) {
     return buildOllamaModel(r.slice("ollama/".length));
   }
-  // .env.example documents a bare DEFAULT_MODEL_ID (e.g. "llama3") routed by
-  // DEFAULT_MODEL_PROVIDER; honor that instead of misrouting to OpenRouter.
-  if (usingDefault && DEFAULT_MODEL_PROVIDER.toLowerCase() === "ollama") {
-    return buildOllamaModel(r);
+  const direct = directProviderRef(r);
+  if (direct) {
+    if (!direct.modelId) {
+      throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
+    }
+    const model = registry.find(direct.providerId, direct.modelId);
+    if (!model) {
+      throw new ModelResolutionError(
+        `Unknown ${direct.providerId} model "${direct.modelId}"`,
+      );
+    }
+    return model;
   }
+  if (r.startsWith("openrouter/")) {
+    const orId = stripOpenRouter(r);
+    if (!orId) throw new ModelResolutionError("OpenRouter model ref is missing a model id");
+    return registry.find("openrouter", orId) ?? buildOpenRouterModel(orId);
+  }
+  // Backward compatibility for pre-canonical refs such as
+  // "meta-llama/llama-3.3-70b": unknown prefixes remain OpenRouter vendor ids.
   const orId = stripOpenRouter(r);
   return registry.find("openrouter", orId) ?? buildOpenRouterModel(orId);
 }
 
 export function defaultModel(registry: ModelRegistry): Model<Api> {
-  return resolveModel(DEFAULT_MODEL_ID, registry);
+  return resolveModel(undefined, registry);
 }

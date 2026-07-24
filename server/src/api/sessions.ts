@@ -27,7 +27,12 @@ import {
   setSessionComputeTarget,
   type SessionComputeOptions,
 } from "../agent/modal-tool.ts";
-import { resolveModel } from "../agent/models.ts";
+import {
+  assertModelAuthentication,
+  ModelAuthenticationError,
+  modelReference,
+  resolveModel,
+} from "../agent/models.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
@@ -50,6 +55,7 @@ import { toHistory } from "../agent/session-history.ts";
 import {
   createSession,
   getModelRegistry,
+  getModelRuntime,
   getSession,
   listSessions,
 } from "../agent/session-registry.ts";
@@ -64,6 +70,11 @@ import {
   snapshotMax,
   type CostSnapshot,
 } from "../cost/ledger.ts";
+import {
+  billingCountsTowardBudget,
+  billingForModel,
+  type BillingContext,
+} from "../cost/billing.ts";
 
 function snapshot(session: { getSessionStats(): { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } } }): CostSnapshot {
   const s = session.getSessionStats();
@@ -430,7 +441,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // A steer extends a live run's spend past what the run-start check
       // gated, so re-check the cap here.
       const budget = isBudgetExceeded(projectId);
-      if (budget.exceeded) {
+      const steeringBilling = session.model
+        ? await billingForModel(session.model, getModelRuntime())
+        : { provider: "unknown", authType: "none" as const, billingMode: "payg" as const };
+      if (billingCountsTowardBudget(steeringBilling) && budget.exceeded) {
         reply.code(403);
         return {
           detail:
@@ -491,8 +505,28 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         messages: historyFile ? toHistory(historyFile, paths.sandbox) : [],
         contextUsage: contextUsageForClient(session) ?? null,
       };
-      // No awaits between the guard above and this claim, so it is atomic.
+      // Claim before the first awaited auth check so concurrent requests cannot
+      // both pass the run guard. Preflight failures release the claim below.
       activeRuns.add(runKey);
+      const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
+      let requestedModel: ReturnType<typeof resolveModel>;
+      let runBilling: BillingContext;
+      try {
+        requestedModel = body.model
+          ? resolveModel(body.model, getModelRegistry(), body.fusionConfig)
+          : session.model ?? resolveModel(undefined, getModelRegistry());
+        await assertModelAuthentication(requestedModel, getModelRuntime());
+        runBilling = await billingForModel(requestedModel, getModelRuntime());
+      } catch (error) {
+        activeRuns.delete(runKey);
+        reply.code(error instanceof ModelAuthenticationError ? 401 : 400);
+        return {
+          detail:
+            error instanceof Error ? error.message : "The selected model could not be prepared",
+          reason:
+            error instanceof ModelAuthenticationError ? "provider_not_connected" : "invalid_model",
+        };
+      }
       // One id per run invocation; notebook entries appended during this run
       // (lead tool + subagent harvest) are stamped with it. Cleared in the
       // owner cleanup so it covers every exit path.
@@ -532,7 +566,6 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           session.sessionId,
           body.computeTarget ? body.computeOptions : null,
         );
-        const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
         if (isFusion) {
           // Fusion is load-bearing for the spend cap: the cost-bearing Model
           // (priced from the panel sum) and the body-rewrite must be applied
@@ -540,9 +573,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           // no panel model), do NOT swallow it and run at the prior model's
           // cost — abort, since the body would still be rewritten to fusion.
           try {
-            await session.setModel(
-              resolveModel(body.model, getModelRegistry(), body.fusionConfig),
-            );
+            await session.setModel(requestedModel);
             setFusionConfig(projectId, session.sessionId, body.fusionConfig ?? null);
             // Disable Pi's local agentic tools for this turn so OpenRouter Fusion
             // runs deterministically. Stripping `tools` from the wire body (in
@@ -578,9 +609,16 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           setFusionConfig(projectId, session.sessionId, null);
           if (body.model) {
             try {
-              await session.setModel(resolveModel(body.model, getModelRegistry()));
+              await session.setModel(requestedModel);
             } catch (err) {
-              req.log.warn({ err }, "setModel failed; keeping current model");
+              handle.publish({
+                type: "error",
+                message: `Model could not be selected: ${(err as Error).message}`,
+              });
+              reply.code(400);
+              return {
+                detail: `Model could not be selected: ${(err as Error).message}`,
+              };
             }
           }
         }
@@ -613,7 +651,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
             // Hard budget cap: refuse to run if the project has reached its limit.
             const budget = isBudgetExceeded(projectId);
-            if (budget.exceeded) {
+            if (billingCountsTowardBudget(runBilling) && budget.exceeded) {
               handle.publish({
                 type: "error",
                 kind: "budget",
@@ -666,12 +704,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
               // turn_end; the tally catches compaction — take the max of the two.
               try {
                 const run = snapshotMax(snapshotDelta(before, snapshot(session)), turnTally);
-                recordRun({
+                const entry = recordRun({
                   sessionId,
                   projectId,
-                  model: session.model?.id ?? "unknown",
+                  model: session.model ? modelReference(session.model) : "unknown",
                   before: emptySnapshot(),
                   after: run,
+                  billing: runBilling,
                 });
                 const stats = session.getSessionStats();
                 // `cost` is the session's full ledgered spend (subagents included,
@@ -682,8 +721,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
                   type: "cost",
                   cost: sessionCostSummary(sessionId, projectId).totalUsd,
                   tokens: stats.tokens,
-                  runCost: run.costUsd,
+                  runCost: entry?.costUsd ?? 0,
                   runTokens: run.total,
+                  runBillingMode: runBilling.billingMode,
+                  runProvider: runBilling.provider,
+                  ...(entry?.listPriceUsd !== undefined
+                    ? { runListPriceUsd: entry.listPriceUsd }
+                    : {}),
                 });
               } catch (err) {
                 log.warn({ err }, "failed to ledger run cost");

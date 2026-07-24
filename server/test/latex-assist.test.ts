@@ -90,7 +90,10 @@ describe("runLatexAssist", () => {
           instruction: "bold it", selection: "hello",
         },
         p.id,
-        async () => fakeMessage("```latex\n\\textbf{hello}\n```"),
+        async (_model, _context, options) => {
+          expect(options?.apiKey).toBeUndefined();
+          return fakeMessage("```latex\n\\textbf{hello}\n```");
+        },
       ),
     );
     expect(res.replacement).toBe("\\textbf{hello}");

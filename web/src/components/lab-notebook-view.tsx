@@ -43,6 +43,7 @@ function sessionDisplayName(s: SessionInfo): string {
 
 export function LabNotebookView({
   projectId,
+  model,
   sessionId,
   liveEntries,
   streaming,
@@ -52,6 +53,7 @@ export function LabNotebookView({
   focusEntry,
 }: {
   projectId?: string;
+  model?: string;
   sessionId: string | null;
   liveEntries: NotebookEntry[];
   streaming: boolean;
@@ -414,12 +416,17 @@ export function LabNotebookView({
     try {
       const res = await apiFetch(
         `/sessions/${encodeURIComponent(sessionId)}/notebook/methods-draft`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(model ? { model } : {}),
+        },
         scopedProjectId,
       );
       const data = (await res.json().catch(() => ({}))) as {
         path?: string;
         costUsd?: number;
+        billingMode?: string;
         message?: string;
       };
       if (res.status === 402) {
@@ -431,7 +438,9 @@ export function LabNotebookView({
         return;
       }
       toast.success(
-        typeof data.costUsd === "number"
+        data.billingMode === "subscription"
+          ? "Methods draft saved (subscription usage)"
+          : typeof data.costUsd === "number"
           ? `Methods draft saved ($${data.costUsd.toFixed(4)})`
           : "Methods draft saved",
       );

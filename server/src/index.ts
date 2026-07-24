@@ -25,6 +25,7 @@ import { registerCredentialRoutes } from "./api/credentials.ts";
 import { registerAgentRoutes } from "./api/agents.ts";
 import { registerSpeechRoutes } from "./api/speech.ts";
 import { registerModalRoutes } from "./api/modal.ts";
+import { registerModelProviderRoutes } from "./api/model-providers.ts";
 import { modalJobManager } from "./modal/manager.ts";
 import { syncHelperVenv } from "./helpers-env.ts";
 
@@ -111,6 +112,7 @@ export async function buildApp() {
   await registerAgentRoutes(app);
   await registerSpeechRoutes(app);
   await registerModalRoutes(app);
+  await registerModelProviderRoutes(app);
 
   // Reattach durable jobs after routes are available. Recovery schedules
   // active jobs in the background and immediately reconciles any terminal job

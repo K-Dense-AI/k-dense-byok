@@ -408,7 +408,14 @@ describe("LabNotebookView", () => {
       }
     });
     const onOpenFile = vi.fn();
-    render(<LabNotebookView {...baseProps} liveEntries={[e({})]} onOpenFile={onOpenFile} />);
+    render(
+      <LabNotebookView
+        {...baseProps}
+        model="openai-codex/gpt-test"
+        liveEntries={[e({})]}
+        onOpenFile={onOpenFile}
+      />,
+    );
     await user.click(screen.getByRole("button", { name: /methods draft/i }));
     await user.click(await screen.findByRole("button", { name: /generate/i }));
     await waitFor(() => expect(onOpenFile).toHaveBeenCalledWith("methods_draft_x.md"));
@@ -421,6 +428,14 @@ describe("LabNotebookView", () => {
           (init as RequestInit | undefined)?.method === "POST",
       ),
     ).toBe(true);
+    const methodsCall = spy.mock.calls.find(
+      ([url]) =>
+        typeof url === "string" &&
+        (url as string).includes("/notebook/methods-draft"),
+    );
+    expect(JSON.parse(String((methodsCall?.[1] as RequestInit | undefined)?.body))).toEqual({
+      model: "openai-codex/gpt-test",
+    });
   });
 
   it("toasts an error when the methods draft hits the budget limit (402)", async () => {

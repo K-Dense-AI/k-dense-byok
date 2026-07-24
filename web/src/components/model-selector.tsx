@@ -26,7 +26,27 @@ export type Model = {
   expertDefault?: boolean;
   isFusion?: boolean;
   fusionConfig?: Record<string, unknown>;
+  sourceId?: string;
+  sourceLabel?: string;
+  billingMode?: "payg" | "metered_oauth" | "subscription" | "local";
+  reasoning?: boolean;
+  available?: boolean;
 };
+
+export function modelUsesBillableBudget(model: {
+  id: string;
+  billingMode?: Model["billingMode"];
+}): boolean {
+  if (model.billingMode === "subscription" || model.billingMode === "local") {
+    return false;
+  }
+  return !(
+    model.id.startsWith("openai-codex/") ||
+    model.id.startsWith("github-copilot/") ||
+    model.id.startsWith("xai/") ||
+    model.id.startsWith("ollama/")
+  );
+}
 
 const STATIC_MODELS = models as Model[];
 
@@ -46,6 +66,8 @@ const PROVIDER_COLORS: Record<string, string> = {
   Google:    "text-blue-600 dark:text-blue-400",
   Anthropic: "text-orange-600 dark:text-orange-400",
   OpenAI:    "text-emerald-600 dark:text-emerald-400",
+  "OpenAI Codex": "text-emerald-600 dark:text-emerald-400",
+  "GitHub Copilot": "text-violet-600 dark:text-violet-400",
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
@@ -73,7 +95,7 @@ function formatContext(tokens: number): string {
 export { DEFAULT_MODEL };
 
 // ---------------------------------------------------------------------------
-// Reusable interior: search input + remote/local model list.
+// Reusable interior: search input + models grouped by access source.
 // ---------------------------------------------------------------------------
 
 interface ModelPickerListProps {
@@ -84,7 +106,12 @@ interface ModelPickerListProps {
 
 function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) {
   const [search, setSearch] = useState("");
-  const { models: allModels, ollamaAvailable, ollamaModels, refresh } = useModels();
+  const {
+    models: allModels,
+    ollamaAvailable,
+    ollamaModels,
+    refresh,
+  } = useModels();
 
   // PopoverContent unmounts when closed, so this effectively re-probes
   // Ollama each time the user opens the picker — lets them start the
@@ -93,7 +120,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     refresh();
   }, [refresh]);
 
-  const { remoteFiltered, localFiltered, totalCount } = useMemo(() => {
+  const { groups, totalCount } = useMemo(() => {
     const q = search.toLowerCase();
     const matches = (m: Model) =>
       !q ||
@@ -101,19 +128,47 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       m.provider.toLowerCase().includes(q) ||
       m.id.toLowerCase().includes(q);
 
-    const remote: Model[] = [];
-    const local: Model[] = [];
+    const grouped = new Map<string, { label: string; models: Model[] }>();
     for (const m of allModels) {
       if (!matches(m)) continue;
-      (isOllama(m) ? local : remote).push(m);
+      const sourceId = m.isFusion
+        ? "fusion"
+        : m.sourceId ?? (isOllama(m) ? "ollama" : "openrouter");
+      const label = m.isFusion
+        ? "OpenRouter Fusion"
+        : m.sourceLabel ?? (isOllama(m) ? "Local (Ollama)" : "OpenRouter");
+      const group = grouped.get(sourceId) ?? { label, models: [] };
+      group.models.push(m);
+      grouped.set(sourceId, group);
     }
-    return { remoteFiltered: remote, localFiltered: local, totalCount: remote.length + local.length };
+    const order = [
+      "fusion",
+      "openai-codex",
+      "anthropic",
+      "github-copilot",
+      "xai",
+      "openrouter",
+      "ollama",
+    ];
+    const groups = [...grouped.entries()]
+      .sort(([left], [right]) => {
+        const leftIndex = order.indexOf(left);
+        const rightIndex = order.indexOf(right);
+        return (leftIndex < 0 ? order.length : leftIndex) -
+          (rightIndex < 0 ? order.length : rightIndex);
+      })
+      .map(([id, group]) => ({ id, ...group }));
+    return {
+      groups,
+      totalCount: groups.reduce((sum, group) => sum + group.models.length, 0),
+    };
   }, [allModels, search]);
 
   const isRecommended = (m: Model): boolean => Boolean(m.default);
 
   const renderModelRow = (model: Model) => {
     const isSelected = selected.id === model.id;
+    const available = model.available !== false;
     const providerColor = PROVIDER_COLORS[model.provider] ?? "text-muted-foreground";
     const local = isOllama(model);
     return (
@@ -121,18 +176,22 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
         key={model.id}
         role="option"
         aria-selected={isSelected}
+        aria-disabled={!available}
         aria-label={`${model.label} by ${model.provider}`}
-        tabIndex={0}
-        onClick={() => onSelect(model)}
+        tabIndex={available ? 0 : -1}
+        onClick={() => {
+          if (available) onSelect(model);
+        }}
         onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
+          if (available && (e.key === "Enter" || e.key === " ")) {
             e.preventDefault();
             onSelect(model);
           }
         }}
         className={cn(
           "flex cursor-pointer items-start gap-2.5 px-3 py-2.5 text-xs transition-colors hover:bg-muted/60 focus:bg-muted/60 focus:outline-none",
-          isSelected && "bg-muted/40"
+          isSelected && "bg-muted/40",
+          !available && "cursor-not-allowed opacity-50",
         )}
       >
         <div
@@ -158,6 +217,11 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
             <span className={cn("text-[10px] font-medium shrink-0", providerColor)}>
               {model.provider}
             </span>
+            {!available ? (
+              <span className="rounded-full bg-destructive/10 px-1.5 py-px text-[10px] font-medium text-destructive">
+                disconnected
+              </span>
+            ) : null}
           </div>
           <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground/70">
             {model.context_length > 0 && (
@@ -166,7 +230,13 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                 <span>·</span>
               </>
             )}
-            {local ? (
+            {model.billingMode === "subscription" ? (
+              <span>Uses provider-managed subscription limits</span>
+            ) : model.billingMode === "metered_oauth" ? (
+              <span>
+                ${model.pricing.prompt.toFixed(2)} in / ${model.pricing.completion.toFixed(2)} out per 1M tok · extra usage
+              </span>
+            ) : local ? (
               <span>Runs locally · no API cost</span>
             ) : (
               <span>${model.pricing.prompt.toFixed(2)} in / ${model.pricing.completion.toFixed(2)} out per 1M tok</span>
@@ -198,39 +268,56 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
         aria-label="Models"
         className={cn("overflow-y-auto py-1", compact ? "max-h-72" : "max-h-80")}
       >
-        {remoteFiltered.map(renderModelRow)}
-
-        {(localFiltered.length > 0 || !search) && (
-          <>
-            {remoteFiltered.length > 0 && (
-              <div className="my-1 border-t border-border/60" />
-            )}
-            <div className="flex items-center gap-1.5 px-3 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <HardDriveIcon className="size-3" />
-              <span>Local (Ollama)</span>
-              <span className="ml-auto font-normal normal-case tracking-normal text-[10px] text-muted-foreground/70">
-                {ollamaAvailable ? `${ollamaModels.length} available` : "not running"}
+        {groups.map((group, index) => (
+          <div key={group.id}>
+            {index > 0 ? <div className="my-1 border-t border-border/60" /> : null}
+            <div className="flex items-center gap-1.5 px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              {group.id === "ollama" ? (
+                <HardDriveIcon className="size-3" aria-hidden />
+              ) : (
+                <BrainCircuitIcon className="size-3" aria-hidden />
+              )}
+              <span>{group.label}</span>
+              <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">
+                {group.id === "ollama"
+                  ? ollamaAvailable
+                    ? `${ollamaModels.length} available`
+                    : "not running"
+                  : `${group.models.length} model${group.models.length === 1 ? "" : "s"}`}
               </span>
             </div>
-            {localFiltered.map(renderModelRow)}
-            {!search && ollamaAvailable && ollamaModels.length === 0 && (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground/80">
-                Ollama is running but no models are pulled yet. Run{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-[10px]">ollama pull qwen3.6</code>{" "}
-                to add one.
-              </div>
-            )}
-            {!search && !ollamaAvailable && (
-              <div className="px-3 py-2 text-[11px] text-muted-foreground/80 leading-relaxed">
-                Start Ollama to use local models. Run{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-[10px]">ollama serve</code>{" "}
-                and{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-[10px]">ollama pull qwen3.6</code>
-                , then reopen this menu.
-              </div>
-            )}
-          </>
-        )}
+            {group.models.map(renderModelRow)}
+          </div>
+        ))}
+
+        {!search && !groups.some((group) => group.id === "ollama") ? (
+          <div>
+            {groups.length > 0 ? <div className="my-1 border-t border-border/60" /> : null}
+            <div className="flex items-center gap-1.5 px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <HardDriveIcon className="size-3" aria-hidden />
+              <span>Local (Ollama)</span>
+              <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">
+                {ollamaAvailable ? "0 available" : "not running"}
+              </span>
+            </div>
+            <div className="px-3 py-2 text-[11px] leading-relaxed text-muted-foreground/80">
+              {ollamaAvailable ? (
+                <>
+                  Ollama is running but no models are pulled. Run{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+                    ollama pull qwen3.6
+                  </code>
+                  .
+                </>
+              ) : (
+                <>
+                  Start Ollama to use local models, then pull a model and reopen
+                  this menu.
+                </>
+              )}
+            </div>
+          </div>
+        ) : null}
 
         {totalCount === 0 && (
           <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
@@ -270,6 +357,9 @@ export function ModelSelector({
   onChange: (model: Model) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { modelAvailability } = useModels();
+  const selectedAvailability = modelAvailability(selected);
+  const selectedAvailable = selectedAvailability === "available";
 
   const handleSelect = (model: Model) => {
     onChange(model);
@@ -288,10 +378,29 @@ export function ModelSelector({
           )}
           role="button"
           tabIndex={0}
+          aria-label={
+            selectedAvailability === "checking"
+              ? `Select model, checking ${selected.label} provider`
+              : selectedAvailable
+              ? `Select model, current ${selected.label}`
+              : `Select model, current ${selected.label} is disconnected`
+          }
         >
           <BrainCircuitIcon className="size-3 shrink-0 text-muted-foreground" />
           <TierDot tier={selected.tier} isFusion={selected.isFusion} />
           <span className="min-w-0 truncate font-medium text-foreground">{selected.label}</span>
+          {selectedAvailability !== "available" ? (
+            <span
+              className={cn(
+                "shrink-0 text-[10px] font-medium",
+                selectedAvailability === "checking"
+                  ? "text-muted-foreground"
+                  : "text-destructive",
+              )}
+            >
+              {selectedAvailability === "checking" ? "checking…" : "disconnected"}
+            </span>
+          ) : null}
           <ChevronDownIcon
             className={cn(
               "size-3 shrink-0 text-muted-foreground transition-transform ml-0.5",

@@ -10,7 +10,7 @@
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-K--Dense_Inc.-0A66C2?logo=linkedin)](https://www.linkedin.com/company/k-dense-inc)
 [![YouTube](https://img.shields.io/badge/YouTube-K--Dense_Inc.-FF0000?logo=youtube)](https://www.youtube.com/@K-Dense-Inc)
 
-**Your own AI research assistant, running on your computer, powered by your API keys.**
+**Your own AI research assistant, running on your computer, powered by the accounts and API keys you choose.**
 
 ![K-Dense BYOK — Kady running an end-to-end single-cell RNA-seq analysis, with the project file browser, a rendered analysis report, and the live chat panel](docs/app-screenshot.png)
 
@@ -20,7 +20,7 @@ Three things to know up front:
 
 - **No coding experience required.** You describe what you want; Kady writes and runs the code and shows you its progress as it works.
 - **Your workspace stays on your computer.** Projects, conversations, notebooks, and results live in ordinary folders on your machine; K-Dense does not host or store them. When you use a hosted AI model, the material needed for that request is sent directly to the provider you selected under that provider's privacy terms. Use a local Ollama model when data must not leave your machine.
-- **The app is free; you pay only for AI usage.** "Bring your own keys" means you connect your own AI account (a single, prepaid [OpenRouter](https://openrouter.ai/) account covers every major model — a few dollars goes a long way). Every project tracks its spending, and you can set a hard spending cap. Prefer to pay nothing at all? Run [free local models](./docs/local-models-ollama.md) instead.
+- **The app itself is free; provider charges and limits remain yours.** Use prepaid [OpenRouter](https://openrouter.ai/), connect a supported AI subscription, or run [free local models](./docs/local-models-ollama.md). Kady tracks paid OpenRouter usage and Anthropic OAuth's documented metered extra usage against project spending caps. ChatGPT, Copilot, and xAI subscription usage is tracked separately because those providers manage quotas and overages; a subscription login does not imply unlimited or free usage.
 
 > **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), and [YouTube](https://www.youtube.com/@K-Dense-Inc) for release notes and tutorials.
 
@@ -65,33 +65,37 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 ### Choose the right model and compute for each task
 
+- **Connect supported subscriptions directly through Pi OAuth.** In **Settings → Model providers**, connect ChatGPT Plus/Pro (`openai-codex`), Claude Pro/Max (`anthropic`), GitHub Copilot, or xAI. Kady handles the provider's browser, device-code, or manual sign-in flow and makes its available models appear in the picker.
 - **Use major hosted models** from OpenAI, Anthropic, Google, xAI, Qwen, and others through one [OpenRouter](https://openrouter.ai/) account. Change the model and reasoning level independently in each chat.
 - **Run free local models with [Ollama](./docs/local-models-ollama.md)** when cost or data locality matters. Local models appear in the same model picker.
-- **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information.
+- **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information. Fusion remains OpenRouter-only and requires an OpenRouter API key.
 - **Move demanding computation to [Modal](./docs/modal-compute.md).** Select an on-demand cloud CPU or single-/multi-GPU environment for a chat. Kady persists and monitors the job, stages validated inputs, brings outputs atomically back into the local project, and reserves estimated compute cost against the project budget. Long jobs survive chat turns and backend restarts and remain controllable from the Compute tab.
 
 ### Stay in control
 
-- **See cost as work happens.** Kady records model, specialist, and Modal compute costs by run and project. Set an optional hard dollar limit on any project; once reached, new paid work is blocked.
+- **See usage and cost as work happens.** Kady records model tokens, specialist usage, and Modal compute by run and project. OpenRouter and Anthropic OAuth metered usage count toward an optional hard dollar limit; provider-managed ChatGPT, Copilot, and xAI subscription usage shows token and reference-price information without consuming that cap.
 - **Watch local resource use.** A compact system monitor shows CPU, memory, and GPU activity while analyses are running on your computer.
-- **Manage capabilities without editing configuration files.** Settings lets you add API keys, enable or disable skills, create or customize specialists, manage Fusion presets, and change appearance. Disabling a capability does not delete it.
+- **Manage capabilities without editing configuration files.** Settings lets you connect model providers, add API keys, enable or disable skills, create or customize specialists, manage Fusion presets, and change appearance. Disabling a capability does not delete it.
 - **Connect your existing research tools** through [MCP](./docs/mcp-servers.md), a plug-in standard for AI assistants. Add reference managers, GitHub, databases, and other services, test the connection in the app, and make their tools available to Kady.
 - **Your work is stored in ordinary local files.** Projects can be backed up, moved, inspected with other software, or archived independently of the app.
 
 ## Get started in 5 minutes
 
-You need two things:
+You need a compatible computer and at least one model source:
 
 1. A computer running **macOS, Linux, or Windows 10/11**.
    - On Windows, install [Node.js 22+](https://nodejs.org/) (or `winget install OpenJS.NodeJS.LTS`) and [Git for Windows](https://git-scm.com/download/win) first — Kady's agent runs its shell commands through the Git Bash that Git for Windows provides. (Prefer a Linux environment? [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) works too.)
-2. An **[OpenRouter](https://openrouter.ai/) API key** — sign up, add a few dollars of credit, and create a key (it looks like `sk-or-...`). One account gives you every major AI model; no separate OpenAI/Anthropic/Google accounts needed. Or skip this entirely and use [free local models](./docs/local-models-ollama.md).
+2. One of:
+   - an **[OpenRouter](https://openrouter.ai/) API key** for broad pay-as-you-go model access,
+   - a supported **ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, or xAI subscription** that you connect after launch, or
+   - [free local models through Ollama](./docs/local-models-ollama.md).
 
 Open a terminal (on a Mac: press `Cmd+Space`, type "Terminal", press Enter) and run these four lines:
 
 ```bash
 git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
-cp .env.example .env    # then paste your OpenRouter key into the new .env file
+cp .env.example .env    # optional: add an OpenRouter key or other settings
 ./start.sh
 ```
 
@@ -100,13 +104,13 @@ On Windows (press `Win`, type "PowerShell" or "Terminal", press Enter):
 ```powershell
 git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
-copy .env.example .env    # then paste your OpenRouter key into the new .env file
+copy .env.example .env    # optional: add an OpenRouter key or other settings
 .\start.cmd
 ```
 
-In plain terms: the first two lines download the app and step into its folder; the third creates a small settings file where you paste your key (open `.env` with any text editor); the last starts the app.
+In plain terms: the first two lines download the app and step into its folder; the third creates an optional local settings file; the last starts the app. If you use a supported subscription instead of OpenRouter, connect it in **Settings → Model providers** once Kady opens.
 
-The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000** — that address is your own computer, not a website. Press **Ctrl+C** in the terminal to stop the app. You can also add or change API keys anytime from the in-app Settings — no restart needed.
+The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000** — that address is your own computer, not a website. Press **Ctrl+C** in the terminal to stop the app. You can connect subscriptions under **Model providers** and add or change keys under **API keys** anytime — no restart needed.
 
 That's it. Create a project, drop in your data, and ask Kady for what you want — for example: *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
 
@@ -119,14 +123,15 @@ All guides live in the [`docs/`](./docs) folder:
 
 | Guide | What it covers |
 |-------|----------------|
-| [Installation](./docs/installation.md) | Full setup walkthrough, optional API keys, updating, troubleshooting |
+| [Codebase summary](./docs/codebase-summary.md) | One-page overview of what K-Dense BYOK is, what it can do, and why it matters |
+| [Installation](./docs/installation.md) | Full setup walkthrough, subscriptions, optional API keys, updating, troubleshooting |
 | [Basic usage](./docs/basic-usage.md) | First session, chat tabs, files, workflows, databases, costs, tips |
 | [File previews](./docs/file-previews.md) | Every scientific format Kady can render — structures, spectra, imaging, arrays, and more |
 | [Living Lab Notebook](./docs/lab-notebook.md) | Real-time record of Kady's work — structured entries, export, and PDF |
 | [Sub-agents](./docs/sub-agents.md) | Kady's team of 21 scientific specialists and how to customize them |
 | [Connecting external tools (MCP)](./docs/mcp-servers.md) | Give Kady extra abilities like GitHub, reference managers, and databases |
 | [Local models with Ollama](./docs/local-models-ollama.md) | Run everything on free local models, no API keys required |
-| [Model selection](./docs/model-selection.md) | How Kady builds the OpenRouter model list |
+| [Model selection](./docs/model-selection.md) | OpenRouter, Pi subscription, Ollama, model refs, and billing behavior |
 | [OpenRouter Fusion](./docs/openrouter-fusion.md) | Multi-model deliberation presets — what they are and how the integration works |
 | [Architecture](./docs/architecture.md) | How the two local services fit together (for the technically curious) |
 | [Contributing workflows](./docs/contributing-workflows.md) | Add new workflow templates to the library |

@@ -22,7 +22,12 @@ import {
   snapshotDelta,
   snapshotMax,
 } from "../src/cost/ledger.ts";
-import { usageFromSessionFile } from "../src/agent/subagent-bridge.ts";
+import { billingForProvider } from "../src/cost/billing.ts";
+import {
+  makeSubagentLedgerExtension,
+  pinInheritedChildModels,
+  usageFromSessionFile,
+} from "../src/agent/subagent-bridge.ts";
 import {
   WEB_ACCESS_TOOLS,
   seedWebAccessPackage,
@@ -149,6 +154,74 @@ describe("cost ledger + budget", () => {
     expect(sess.entries[0].role).toBe("subagent");
   });
 
+  it("records provider-managed subscription usage without consuming the spend cap", () => {
+    createProject({ name: "Subscription", projectId: "subscription", spendLimitUsd: 0.001 });
+    recordRun({
+      sessionId: "s1",
+      projectId: "subscription",
+      model: "openai-codex/gpt-5.6-sol",
+      before: emptySnapshot(),
+      after: { costUsd: 2.5, input: 1_000, output: 500, cacheRead: 0, total: 1_500 },
+      billing: billingForProvider("openai-codex", "oauth"),
+    });
+
+    const session = sessionCostSummary("s1", "subscription");
+    expect(session.totalUsd).toBe(0);
+    expect(session.listPriceUsd).toBeCloseTo(2.5);
+    expect(session.subscriptionTokens).toBe(1_500);
+    expect(session.entries[0]).toMatchObject({
+      provider: "openai-codex",
+      authType: "oauth",
+      billingMode: "subscription",
+      costUsd: 0,
+      listPriceUsd: 2.5,
+    });
+    expect(isBudgetExceeded("subscription").exceeded).toBe(false);
+  });
+
+  it("counts Anthropic OAuth extra usage toward the spend cap", () => {
+    createProject({ name: "Claude", projectId: "claude", spendLimitUsd: 0.01 });
+    recordRun({
+      sessionId: "s1",
+      projectId: "claude",
+      model: "anthropic/claude-opus-4-8",
+      before: emptySnapshot(),
+      after: { costUsd: 0.02, input: 100, output: 50, cacheRead: 0, total: 150 },
+      billing: billingForProvider("anthropic", "oauth"),
+    });
+    expect(sessionCostSummary("s1", "claude").entries[0]).toMatchObject({
+      billingMode: "metered_oauth",
+      costUsd: 0.02,
+    });
+    expect(isBudgetExceeded("claude").exceeded).toBe(true);
+  });
+
+  it("keeps mixed payg, subscription, and compute totals budget-safe", () => {
+    createProject({ name: "Mixed", projectId: "mixed", spendLimitUsd: 2 });
+    const base = { input: 10, output: 5, cacheRead: 0, total: 15 };
+    recordRun({
+      sessionId: "s1", projectId: "mixed", model: "openrouter/a",
+      before: emptySnapshot(), after: { ...base, costUsd: 1 },
+      billing: billingForProvider("openrouter", "api_key"),
+    });
+    recordRun({
+      sessionId: "s1", projectId: "mixed", model: "github-copilot/a",
+      before: emptySnapshot(), after: { ...base, costUsd: 5 },
+      billing: billingForProvider("github-copilot", "oauth"),
+    });
+    recordRun({
+      sessionId: "s1", projectId: "mixed", model: "modal",
+      role: "compute", before: emptySnapshot(),
+      after: { ...emptySnapshot(), costUsd: 0.5 },
+      billing: billingForProvider("modal"),
+    });
+    const summary = projectCostSummary("mixed");
+    expect(summary.totalUsd).toBeCloseTo(1.5);
+    expect(summary.listPriceUsd).toBeCloseTo(5);
+    expect(summary.committedUsd).toBeCloseTo(1.5);
+    expect(summary.budget.state).toBe("ok");
+  });
+
   it("excludes run dirs with no ledger entries from sessionCount", () => {
     const paths = ensureProjectExists("default");
     recordRun({
@@ -194,6 +267,8 @@ describe("cost ledger + budget", () => {
       JSON.stringify({
         message: {
           role: "assistant",
+          provider: "openai-codex",
+          model: "gpt-5.6-sol",
           usage: { input: 100, output: 40, cacheRead: 20, cacheWrite: 5, cost: { total: 0.03 } },
         },
       }),
@@ -201,6 +276,8 @@ describe("cost ledger + budget", () => {
       JSON.stringify({
         message: {
           role: "assistant",
+          provider: "openai-codex",
+          model: "gpt-5.6-sol",
           usage: { input: 200, output: 60, cacheRead: 0, cacheWrite: 0, cost: { total: 0.05 } },
         },
       }),
@@ -212,8 +289,108 @@ describe("cost ledger + budget", () => {
     expect(usage).not.toBeNull();
     expect(usage!.cost).toBeCloseTo(0.08);
     expect(usage!.tokens).toEqual({ input: 300, output: 100, cacheRead: 20, total: 425 });
+    expect(usage!.provider).toBe("openai-codex");
+    expect(usage!.model).toBe("gpt-5.6-sol");
 
     expect(usageFromSessionFile(path.join(dir, "missing.jsonl"))).toBeNull();
+  });
+});
+
+describe("subagent model inheritance", () => {
+  it("pins the parent provider/model unless a child override is explicit", () => {
+    ensureProjectExists("default");
+    const input: Record<string, unknown> = {
+      tasks: [
+        { agent: "first", task: "a" },
+        { agent: "second", task: "b", model: "openrouter/openai/gpt-5.5" },
+      ],
+    };
+    pinInheritedChildModels(
+      "default",
+      input,
+      {
+        provider: "openai-codex",
+        id: "gpt-5.6-sol",
+      } as Parameters<typeof pinInheritedChildModels>[2],
+    );
+    expect(input.tasks).toEqual([
+      {
+        agent: "first",
+        task: "a",
+        model: "openai-codex/gpt-5.6-sol",
+      },
+      {
+        agent: "second",
+        task: "b",
+        model: "openrouter/openai/gpt-5.5",
+      },
+    ]);
+  });
+
+  it("ledgers cross-provider attempts separately and gates resume work", async () => {
+    createProject({ name: "Subagent billing", projectId: "sub-billing", spendLimitUsd: 0.5 });
+    const handlers = new Map<string, (event: any) => any>();
+    const eventHandlers = new Map<string, (event: unknown) => void>();
+    const extension = makeSubagentLedgerExtension(
+      "sub-billing",
+      () => "parent-session",
+      () =>
+        ({
+          provider: "openai-codex",
+          id: "gpt-5.6-sol",
+        }) as Parameters<typeof pinInheritedChildModels>[2],
+      (providerId) => providerId === "openai-codex",
+    );
+    extension({
+      on: (name: string, handler: (event: any) => any) => handlers.set(name, handler),
+      events: {
+        on: (name: string, handler: (event: unknown) => void) =>
+          eventHandlers.set(name, handler),
+      },
+    } as any);
+
+    await handlers.get("tool_result")!({
+      toolName: "subagent",
+      details: {
+        results: [
+          {
+            modelAttempts: [
+              {
+                model: "openrouter/openai/gpt-5.5",
+                usage: { input: 10, output: 5, cost: 1 },
+              },
+              {
+                model: "openai-codex/gpt-5.6-sol",
+                usage: { input: 20, output: 10, cost: 5 },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const summary = sessionCostSummary("parent-session", "sub-billing");
+    expect(summary.entries).toHaveLength(2);
+    expect(summary.totalUsd).toBeCloseTo(1);
+    expect(summary.listPriceUsd).toBeCloseTo(5);
+
+    const resumeResult = await handlers.get("tool_call")!({
+      toolName: "subagent",
+      input: { action: "resume", id: "run-1" },
+    });
+    expect(resumeResult).toMatchObject({ block: true });
+
+    const unsupported = await handlers.get("tool_call")!({
+      toolName: "subagent",
+      input: {
+        agent: "custom",
+        task: "test",
+        model: "xai/grok-4.5",
+      },
+    });
+    expect(unsupported).toMatchObject({
+      block: true,
+      reason: expect.stringMatching(/subscription login/i),
+    });
   });
 });
 

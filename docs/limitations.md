@@ -16,7 +16,7 @@ These are limitations of the selected model, not of K-Dense BYOK itself; as mode
 **Workarounds:**
 
 - If a skill isn't behaving as expected, try **re-running the task** - results can vary between runs.
-- Try a different model in the dropdown. The picker is limited to OpenRouter models that advertise `tools` support, but tool-calling quality still varies across providers.
+- Try a different model in the dropdown. OpenRouter entries advertise `tools` support, while connected subscription entries come from Pi's live provider catalogue; tool-calling quality still varies across both.
 
 ## Ollama / small local models
 
@@ -25,7 +25,23 @@ Local models served through Ollama are supported end-to-end, but they amplify th
 - Tool-calling fidelity is noticeably weaker on sub-frontier models.
 - Skills that rely on multi-tool choreography (running scripts, chaining edits, structured output) are the most fragile.
 
-If a task loops or ignores its skill, try a **larger local model** (or temporarily switch back to an OpenRouter-hosted model) before assuming the workflow is broken. See [Local models with Ollama](./local-models-ollama.md).
+If a task loops or ignores its skill, try a **larger local model** (or temporarily switch to a frontier OpenRouter or connected subscription model) before assuming the workflow is broken. See [Local models with Ollama](./local-models-ollama.md).
+
+## Pi subscription providers
+
+Kady supports Pi OAuth for OpenAI Codex (ChatGPT Plus/Pro), Anthropic (Claude Pro/Max), GitHub Copilot, and xAI, with these boundaries:
+
+- **Provider limits are external.** Kady cannot read remaining subscription quota, premium requests, overage settings, or plan eligibility. A successful OAuth login does not mean usage is free or unlimited.
+- **Reference price is not an invoice.** For OpenAI Codex, Copilot, and xAI, Kady tracks tokens and Pi's list-price equivalent but excludes it from project spend caps. Check the provider for actual quota or overage status.
+- **Anthropic OAuth is different.** Pi documents third-party Claude subscription access as metered extra per-token usage. Kady treats that amount as project spend and applies the cap.
+- **Direct-provider entries require OAuth.** Ambient OpenAI, Anthropic, Copilot, or xAI API keys are not presented as subscription access; use OpenRouter for the supported API-key path.
+- **Some features still require OpenRouter.** Fusion and server-side speech transcription are not authorized by subscription logins.
+
+## Local shell trust boundary
+
+Kady's agent intentionally has a powerful local shell so it can install scientific packages, run analyses, and create artifacts. The shell runs as your operating-system user; it is not an OS-level security boundary. File permissions such as `0600` prevent other users from reading credentials, but cannot prevent a process running as you from reading your own `.env`, `~/.kady`, or other local secrets.
+
+Kady instructs newly created project agents never to inspect or transmit credentials, but instructions are not a substitute for isolation against malicious prompt injection. Do not ask Kady to process adversarial files with secrets accessible to the same account. Use an OS sandbox, container, VM, or separate user account when working with untrusted content or when a stronger credential boundary is required.
 
 ## Tabbed chats
 
