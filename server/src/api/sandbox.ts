@@ -458,12 +458,16 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.get<{ Querystring: { path: string } }>("/sandbox/raw", async (req, reply) => {
     try {
       const target = safePath(req.query.path);
-      if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+      const stat = fs.existsSync(target) ? fs.statSync(target) : null;
+      if (!stat?.isFile()) {
         reply.code(404);
         return { detail: "File not found" };
       }
       reply.type(guessMime(path.basename(target)));
       reply.header("Content-Disposition", contentDisposition("inline", path.basename(target)));
+      // Streams are sent chunked by default. Viewers that refuse to load a
+      // huge file need the size up front, before the body arrives.
+      reply.header("Content-Length", stat.size);
       return reply.send(fs.createReadStream(target));
     } catch (err) {
       return handle(reply, err);
@@ -473,12 +477,14 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.get<{ Querystring: { path: string } }>("/sandbox/download", async (req, reply) => {
     try {
       const target = safePath(req.query.path);
-      if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
+      const stat = fs.existsSync(target) ? fs.statSync(target) : null;
+      if (!stat?.isFile()) {
         reply.code(404);
         return { detail: "File not found" };
       }
       reply.type("application/octet-stream");
       reply.header("Content-Disposition", contentDisposition("attachment", path.basename(target)));
+      reply.header("Content-Length", stat.size);
       return reply.send(fs.createReadStream(target));
     } catch (err) {
       return handle(reply, err);

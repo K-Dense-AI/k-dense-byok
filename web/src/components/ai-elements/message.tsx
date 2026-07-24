@@ -14,6 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { normalizeMarkdown } from "@/lib/markdown-text";
 import { API_BASE } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
@@ -398,16 +399,6 @@ const streamdownComponents = {
   p: SafeParagraph,
   img: SandboxImage,
 } as unknown as ComponentProps<typeof Streamdown>["components"];
-
-/**
- * Insert a paragraph break before an ATX heading that got glued onto the end
- * of a previous line (e.g. "…by condition:## Results" → proper heading). A
- * belt-and-suspenders for the stream-concatenation case; the reducer already
- * separates text around tool calls.
- */
-function normalizeMarkdown(md: string): string {
-  return md.replace(/([^\n])(#{1,6}\s+\S)/g, "$1\n\n$2");
-}
 
 export const MessageResponse = memo(
   ({ className, children, ...props }: MessageResponseProps) => (

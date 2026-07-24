@@ -31,4 +31,26 @@ describe("SkillsPanel", () => {
     await userEvent.click(scanpyToggle);
     await waitFor(() => expect(setSpy).toHaveBeenCalledWith("scanpy", false));
   });
+
+  it("distinguishes an unseeded project from a filter with no hits", async () => {
+    stubProjects();
+    vi.spyOn(caps, "getAllSkills").mockResolvedValue({ enabled: [], disabled: [] });
+
+    render(<SkillsPanel />);
+    expect(await screen.findByText(/No skills installed/i)).toBeInTheDocument();
+    expect(screen.queryByText("No skills match.")).not.toBeInTheDocument();
+  });
+
+  it("says nothing matched once a search hides every skill", async () => {
+    stubProjects();
+    vi.spyOn(caps, "getAllSkills").mockResolvedValue({
+      enabled: [{ id: "scanpy", name: "scanpy", description: "single cell" }],
+      disabled: [],
+    });
+
+    render(<SkillsPanel />);
+    await screen.findByText("scanpy");
+    await userEvent.type(screen.getByPlaceholderText("Search skills…"), "zzz");
+    expect(await screen.findByText("No skills match.")).toBeInTheDocument();
+  });
 });

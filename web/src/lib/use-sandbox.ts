@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import {
   API_BASE,
@@ -133,6 +134,11 @@ export function sciRenderUrl(
   });
   if (axis) params.set("axis", axis);
   return `${API_BASE}/sandbox/sci-render.png?${params.toString()}`;
+}
+
+/** Last segment of a sandbox-relative path (paths are always `/`-separated). */
+function baseName(filePath: string): string {
+  return filePath.split("/").pop() || filePath;
 }
 
 export function flattenFiles(node: TreeNode | null): string[] {
@@ -384,11 +390,33 @@ export function useSandbox(
           );
         }
         const res = await scopedFetch(`/sandbox/upload`, { method: "POST", body });
-        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => null)) as { detail?: string } | null;
+          throw new Error(detail?.detail || `Upload failed (${res.status})`);
+        }
         const data = await res.json();
         await fetchTree();
+        // The backend parks an upload beside a same-named file rather than
+        // overwriting it. Say so, or the user is left looking for a file that
+        // isn't where they expect and assuming their original was replaced.
+        const renamed = (data.renamed as { from: string; to: string }[] | undefined) ?? [];
+        if (renamed.length === 1) {
+          toast.info(`"${baseName(renamed[0].from)}" already existed`, {
+            description: `Saved as "${baseName(renamed[0].to)}" so the original is untouched.`,
+          });
+        } else if (renamed.length > 1) {
+          toast.info(`${renamed.length} files already existed`, {
+            description: "They were saved under numbered names so the originals are untouched.",
+          });
+        }
         return (data.uploaded as string[]) ?? [];
-      } catch {
+      } catch (err) {
+        // Silently returning [] made a rejected upload (too large, backend
+        // down) look like a no-op the user could only detect by hunting the
+        // file tree.
+        toast.error("Upload failed", {
+          description: err instanceof Error ? err.message : "The files were not saved.",
+        });
         return [];
       } finally {
         setUploading(false);

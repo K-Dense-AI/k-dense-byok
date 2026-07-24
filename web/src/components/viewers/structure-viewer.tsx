@@ -16,6 +16,37 @@ function formatBytes(bytes: number): string {
   return `${Math.round(bytes / 1024 ** 2)} MB`;
 }
 
+/**
+ * Read the body, giving up once it passes `limit`.
+ *
+ * `Content-Length` is the cheap check, but a chunked or proxied response
+ * carries no length and the file lands in 3Dmol anyway — which is how a 45MB
+ * structure froze the tab despite the size guard. Counting bytes as they
+ * arrive makes the ceiling hold whatever the headers say.
+ */
+export async function readCapped(
+  res: Response,
+  limit: number,
+): Promise<{ text: string } | { overBytes: number }> {
+  const reader = res.body?.getReader();
+  if (!reader) return { text: await res.text() };
+  const decoder = new TextDecoder();
+  let text = "";
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      return { overBytes: Number(res.headers.get("content-length")) || total };
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return { text: text + decoder.decode() };
+}
+
 interface StructSummary {
   format: string; num_atoms: number; num_chains: number; chains: string[];
   num_residues: number; num_ligands: number; ligands: string[];
@@ -73,7 +104,15 @@ export default function StructureViewer({ path, name, projectId }: ViewerProps) 
           if (!disposed) setOversizeBytes(length);
           return;
         }
-        const [text, $3Dmol] = await Promise.all([res.text(), import("3dmol")]);
+        const [body, $3Dmol] = await Promise.all([
+          loadAnyway ? res.text().then((text) => ({ text })) : readCapped(res, MAX_AUTOLOAD_BYTES),
+          import("3dmol"),
+        ]);
+        if ("overBytes" in body) {
+          if (!disposed) setOversizeBytes(body.overBytes);
+          return;
+        }
+        const { text } = body;
         if (disposed || !mountRef.current) return;
         const v = $3Dmol.createViewer(mountRef.current, { backgroundColor: "white" });
         v.addModel(text, fmtForName(name));

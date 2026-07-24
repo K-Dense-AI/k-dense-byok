@@ -86,7 +86,11 @@ export function SkillsPanel() {
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No skills match.</p>
+        <p className="text-xs text-muted-foreground">
+          {rows.length === 0
+            ? "No skills installed for this project yet. They are seeded on first launch — run npm run prep in server/ if this project was created before seeding."
+            : "No skills match."}
+        </p>
       ) : (
         <div className="flex flex-col gap-1.5">
           {filtered.map((r) => (
