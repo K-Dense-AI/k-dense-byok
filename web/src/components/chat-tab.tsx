@@ -82,6 +82,7 @@ import {
 } from "@/lib/modal-jobs";
 import { useModalCatalog } from "@/lib/use-modal-jobs";
 import { useModels, type ModelAvailability } from "@/lib/use-models";
+import { useSessionRestore } from "@/lib/use-session-restore";
 import {
   SpeechInput,
   type SpeechInputMode,
@@ -1262,30 +1263,19 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const rootRef = useRef<HTMLDivElement>(null);
 
   // Reopened tab: hydrate the transcript from the stored session before any
-  // sends. loadSession refuses to run once the tab is bound to a session, so
-  // this fires meaningfully only on first mount.
-  const [initialSessionReady, setInitialSessionReady] = useState(!initialSessionId);
-  useEffect(() => {
-    if (!initialSessionId) {
-      setInitialSessionReady(true);
-      return;
-    }
-    let cancelled = false;
-    void loadSession(initialSessionId).then((restored) => {
-      if (cancelled) return;
-      setInitialSessionReady(true);
-      // The session is gone from disk (deleted project data, pruned sessions).
-      // Drop the stale binding so the tab behaves like a fresh chat instead of
-      // silently pointing at an id the server will 404 on forever.
-      if (!restored) {
-        onSessionUnavailable?.(tabId);
-        toast.error("That conversation is no longer available — starting a new one.");
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [initialSessionId, loadSession, onSessionUnavailable, tabId]);
+  // sends. The session is gone from disk (deleted project data, pruned
+  // sessions) when the restore fails — drop the stale binding so the tab
+  // behaves like a fresh chat instead of pointing at an id the server will 404
+  // on forever.
+  const handleSessionUnavailable = useCallback(() => {
+    onSessionUnavailable?.(tabId);
+    toast.error("That conversation is no longer available — starting a new one.");
+  }, [onSessionUnavailable, tabId]);
+  const initialSessionReady = useSessionRestore({
+    sessionId: initialSessionId ?? null,
+    loadSession,
+    onUnavailable: handleSessionUnavailable,
+  });
 
   const prevMessageCount = useRef(0);
 
@@ -1657,7 +1647,10 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         setSteerError("Couldn't deliver the steering message — your text was restored.");
         return false;
       }
-      await sendNow();
+      // Not awaited: send() resolves only when the whole turn is done, and the
+      // composer stays filled with the sent prompt until this returns — so the
+      // next thing typed appends to a message the agent is already answering.
+      void sendNow();
       return true;
     },
     [

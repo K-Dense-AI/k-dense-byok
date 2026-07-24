@@ -30,6 +30,44 @@ const KIND_TO_SCRIPT: Record<string, string> = {
 export const HELPER_TIMEOUT_MS = 60_000;
 const HELPER_MAX_BUFFER = 64 * 1024 * 1024;
 
+/** Python warnings emitted at import time, plus the source line each prints. */
+const WARNING_LINE = /^\s*\S+:\d+:\s+\w*(?:Warning|warning):/;
+const WARNING_SOURCE = /^\s{2,}\S/;
+/** RDKit prefixes every log line with a wall-clock time. */
+const LOG_TIMESTAMP = /^\[\d{2}:\d{2}:\d{2}\]\s*/;
+/** The "~~^" caret art RDKit prints under the offending character. */
+const CARET_ART = /^[\s~^]*$/;
+/** Kept short: the routes surface this verbatim to the viewer. */
+const MAX_DETAIL_LINES = 3;
+
+/**
+ * Reduce helper stderr to the part that explains the failure.
+ *
+ * Several helper venv packages warn on import ("hdf5plugin is missing!"), and
+ * those lines land before the real error — so a corrupt mzML told the user
+ * about an unrelated optional dependency and buried "Premature end of data" at
+ * the bottom of the panel.
+ */
+export function distillHelperError(stderr: string): string {
+  const lines = stderr.split(/\r?\n/);
+  const kept: string[] = [];
+  let inWarning = false;
+  for (const raw of lines) {
+    if (!raw.trim()) continue;
+    if (WARNING_LINE.test(raw)) {
+      inWarning = true;
+      continue;
+    }
+    if (inWarning && WARNING_SOURCE.test(raw)) continue;
+    inWarning = false;
+    const line = raw.replace(LOG_TIMESTAMP, "");
+    if (CARET_ART.test(line)) continue;
+    kept.push(line);
+  }
+  const meaningful = kept.length > 0 ? kept : lines.filter((line) => line.trim());
+  return meaningful.slice(-MAX_DETAIL_LINES).join("\n").trim();
+}
+
 export interface HelperResult {
   /** Helper exit-code contract: 0 ok, 3 deps missing, 4 not found, 5 bad value, 1 other. */
   status: number;
@@ -73,7 +111,7 @@ export function runHelperScript(
           signal?: NodeJS.Signals | null;
         };
         const timedOut = err.killed === true || err.signal === "SIGKILL";
-        let detail = stderr ?? "";
+        let detail = distillHelperError(stderr ?? "");
         if (timedOut) {
           detail = `Preview helper timed out after ${Math.round(timeoutMs / 1000)}s`;
         } else if (err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {

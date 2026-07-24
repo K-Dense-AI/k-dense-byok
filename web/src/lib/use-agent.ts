@@ -361,6 +361,9 @@ export interface SequencedAgentFrame extends AgentFrame {
   seq: number;
 }
 
+/** Result of reopening a stored session into a tab. */
+export type SessionLoadOutcome = "restored" | "gone" | "superseded";
+
 interface RunSnapshot {
   runId: string;
   prompt: string;
@@ -683,10 +686,15 @@ export function useAgent(projectId?: string) {
    * Bind an untouched tab to a stored session. The run snapshot is checked
    * before history so a refresh can rebuild an in-flight transcript from its
    * baseline and attach to the sequenced replay/live stream without duplicates.
+   *
+   * `"gone"` is reserved for a session the backend no longer serves; every
+   * other unsuccessful outcome is `"superseded"` (another load or a send took
+   * the tab, the consumer went away, the network hiccuped) and must leave the
+   * tab's stored binding alone — dropping it there loses a live transcript.
    */
   const loadSession = useCallback(
-    async (id: string): Promise<boolean> => {
-      if (sessionIdRef.current || sendClaimRef.current) return false;
+    async (id: string): Promise<SessionLoadOutcome> => {
+      if (sessionIdRef.current || sendClaimRef.current) return "superseded";
       clientFetchRef.current?.abort();
       const controller = new AbortController();
       clientFetchRef.current = controller;
@@ -697,9 +705,11 @@ export function useAgent(projectId?: string) {
           { signal: controller.signal },
           scopedProjectId,
         );
-        if (!stateResponse.ok) return false;
+        if (!stateResponse.ok) return "gone";
         const state = (await stateResponse.json()) as RunStateResponse;
-        if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) return false;
+        if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) {
+          return "superseded";
+        }
 
         if (state.status === "none") {
           const historyResponse = await apiFetch(
@@ -707,22 +717,24 @@ export function useAgent(projectId?: string) {
             { signal: controller.signal },
             scopedProjectId,
           );
-          if (!historyResponse.ok) return false;
+          if (!historyResponse.ok) return "gone";
           const history = (await historyResponse.json()) as {
             messages?: HistoryItem[];
             contextUsage?: unknown;
           };
-          if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) return false;
+          if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) {
+            return "superseded";
+          }
           bindSession(id);
           setMessages(restoreHistory(history.messages ?? [], nextId));
           setContextUsage(parseContextUsage(history.contextUsage));
           setStatus("ready");
           setRunState("idle");
-          return true;
+          return "restored";
         }
 
         const snapshot = state.run;
-        if (!snapshot) return false;
+        if (!snapshot) return "gone";
         bindSession(id);
         const transcript = restoreHistory(snapshot.baseline.messages ?? [], nextId);
         const timestamp = Date.now();
@@ -758,7 +770,7 @@ export function useAgent(projectId?: string) {
 
         if (state.status === "complete") {
           finalizeRun(consumer);
-          return true;
+          return "restored";
         }
 
         await restorePendingInterview(id, consumer, controller.signal);
@@ -775,7 +787,7 @@ export function useAgent(projectId?: string) {
         }
         await consumeRunResponse(eventsResponse, consumer);
         if (clientFetchRef.current === controller && mountedRef.current) finalizeRun(consumer);
-        return true;
+        return "restored";
       } catch (error) {
         if (
           clientFetchRef.current === controller &&
@@ -784,7 +796,9 @@ export function useAgent(projectId?: string) {
         ) {
           failRun(activeConsumer, isAbortError(error));
         }
-        return false;
+        // Aborts and transport errors say nothing about whether the session
+        // still exists, so the binding stays and the tab can try again.
+        return "superseded";
       } finally {
         if (clientFetchRef.current === controller) clientFetchRef.current = null;
       }

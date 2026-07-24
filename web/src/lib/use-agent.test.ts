@@ -1,7 +1,12 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as projects from "@/lib/projects";
-import { buildRunBody, parseContextUsage, useAgent } from "@/lib/use-agent";
+import {
+  buildRunBody,
+  parseContextUsage,
+  useAgent,
+  type SessionLoadOutcome,
+} from "@/lib/use-agent";
 
 /** Build an SSE response body streaming one `data: <json>\n\n` frame per entry. */
 function sseStream(frames: unknown[]): ReadableStream<Uint8Array> {
@@ -319,7 +324,7 @@ describe("useAgent live-run reconnect", () => {
     );
 
     const { result } = renderHook(() => useAgent("project-a"));
-    let loadPromise!: Promise<boolean>;
+    let loadPromise!: Promise<SessionLoadOutcome>;
     act(() => {
       loadPromise = result.current.loadSession("live");
     });
@@ -429,7 +434,7 @@ describe("useAgent live-run reconnect", () => {
 
     const { result } = renderHook(() => useAgent("project-a"));
     await act(async () => {
-      expect(await result.current.loadSession("complete")).toBe(true);
+      expect(await result.current.loadSession("complete")).toBe("restored");
     });
 
     expect(result.current.messages).toHaveLength(2);
@@ -464,7 +469,7 @@ describe("useAgent live-run reconnect", () => {
 
     const { result } = renderHook(() => useAgent("project-z"));
     await act(async () => {
-      expect(await result.current.loadSession("idle")).toBe(true);
+      expect(await result.current.loadSession("idle")).toBe("restored");
     });
 
     expect(result.current.messages.map((message) => message.content)).toEqual(["stored", "reply"]);
@@ -576,7 +581,7 @@ describe("useAgent live-run reconnect", () => {
     );
 
     const { result, unmount } = renderHook(() => useAgent());
-    let loadPromise!: Promise<boolean>;
+    let loadPromise!: Promise<SessionLoadOutcome>;
     act(() => {
       loadPromise = result.current.loadSession("live");
     });
