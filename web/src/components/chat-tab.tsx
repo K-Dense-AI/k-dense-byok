@@ -354,10 +354,15 @@ function MessageQueueDisplay({
   queue,
   steering,
   onRemove,
+  paused = false,
+  onResume,
 }: {
   queue: QueuedMessage[];
   steering: string[];
   onRemove: (id: string) => void;
+  /** True after Stop, while queued messages are held back. */
+  paused?: boolean;
+  onResume?: () => void;
 }) {
   if (queue.length === 0 && steering.length === 0) return null;
 
@@ -392,8 +397,17 @@ function MessageQueueDisplay({
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
               <ListOrderedIcon className="size-3.5 text-muted-foreground" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Run after
+                {paused ? "Paused — stopped" : "Run after"}
               </span>
+              {paused && onResume && (
+                <button
+                  type="button"
+                  onClick={onResume}
+                  className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/10"
+                >
+                  Resume
+                </button>
+              )}
               <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
                 {queue.length}/{MAX_QUEUE}
               </span>
@@ -497,6 +511,8 @@ function ChatInput({
   onSkillsChange,
   queuedMessages,
   onRemoveFromQueue,
+  queuePaused = false,
+  onResumeQueue,
   budgetState = "ok",
   budgetTotalUsd = 0,
   budgetLimitUsd = null,
@@ -508,7 +524,8 @@ function ChatInput({
   onAddFile: (path: string) => void;
   onRemoveFile: (path: string) => void;
   onClearFiles: () => void;
-  onSend: (text: string, intent: SendIntent, images: PromptImage[]) => void;
+  /** Resolves false when the message was rejected; the composer keeps its contents. */
+  onSend: (text: string, intent: SendIntent, images: PromptImage[]) => Promise<boolean>;
   pendingSteers: string[];
   composerRestoreRef: MutableRefObject<((text: string) => void) | null>;
   inlineError: string | null;
@@ -535,6 +552,8 @@ function ChatInput({
   onSkillsChange: (skills: Skill[]) => void;
   queuedMessages: QueuedMessage[];
   onRemoveFromQueue: (id: string) => void;
+  queuePaused?: boolean;
+  onResumeQueue?: () => void;
   budgetState?: "ok" | "warn" | "exceeded";
   budgetTotalUsd?: number;
   budgetLimitUsd?: number | null;
@@ -620,7 +639,13 @@ function ChatInput({
         return false;
       }
       const images = await promptImagesFromParts(msg.files);
-      onSend(baseText + refs + dbCtx + skillsCtx, intent, images);
+      // Only clear once the message is actually accepted: a full queue or a
+      // failed steer used to wipe the composer text and attachment chips.
+      const accepted = await onSend(baseText + refs + dbCtx + skillsCtx, intent, images);
+      if (!accepted) {
+        event?.preventDefault();
+        return false;
+      }
       onClearFiles();
     },
     [budgetBlocked, modelAvailability, modelAvailable, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
@@ -793,7 +818,13 @@ function ChatInput({
         )}
 
         {!isMentionOpen && (
-          <MessageQueueDisplay queue={queuedMessages} steering={pendingSteers} onRemove={onRemoveFromQueue} />
+          <MessageQueueDisplay
+            queue={queuedMessages}
+            steering={pendingSteers}
+            onRemove={onRemoveFromQueue}
+            paused={queuePaused}
+            onResume={onResumeQueue}
+          />
         )}
 
         {(inlineError || attachError) && (
@@ -944,8 +975,9 @@ function ChatInput({
                       <b>Stop</b>
                       <br />
                       Cancel the current turn (⏎ steers it instead). Undelivered
-                      steering messages return to the composer; files the agent
-                      already wrote stay in the sandbox.
+                      steering messages return to the composer, queued prompts
+                      pause until you resume them, and files the agent already
+                      wrote stay in the sandbox.
                     </>
                   ) : queuedMessages.length >= MAX_QUEUE ? (
                     <>
@@ -1174,6 +1206,8 @@ export interface ChatTabProps {
   budgetLimitUsd: number | null;
   onMetaChange: (tabId: string, meta: ChatTabMeta) => void;
   onWorkspaceStateChange?: (tabId: string, state: ChatWorkspaceState) => void;
+  /** The stored session couldn't be reopened; forget the binding for this tab. */
+  onSessionUnavailable?: (tabId: string) => void;
   /** Open the Lab Notebook panel focused on this entry (chat → notebook). */
   onViewInNotebook?: (entryId: string) => void;
   /** Open the Compute panel, optionally focused on a durable Modal job. */
@@ -1202,6 +1236,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     budgetLimitUsd,
     onMetaChange,
     onWorkspaceStateChange,
+    onSessionUnavailable,
     onViewInNotebook,
     onViewCompute,
     onOpenFile,
@@ -1236,14 +1271,21 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       return;
     }
     let cancelled = false;
-    void loadSession(initialSessionId).then(() => {
+    void loadSession(initialSessionId).then((restored) => {
       if (cancelled) return;
       setInitialSessionReady(true);
+      // The session is gone from disk (deleted project data, pruned sessions).
+      // Drop the stale binding so the tab behaves like a fresh chat instead of
+      // silently pointing at an id the server will 404 on forever.
+      if (!restored) {
+        onSessionUnavailable?.(tabId);
+        toast.error("That conversation is no longer available — starting a new one.");
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [initialSessionId, loadSession]);
+  }, [initialSessionId, loadSession, onSessionUnavailable, tabId]);
 
   const prevMessageCount = useRef(0);
 
@@ -1311,6 +1353,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const messageQueueLengthRef = useRef(0);
   messageQueueLengthRef.current = messageQueue.length;
   const composerRestoreRef = useRef<((text: string) => void) | null>(null);
+  // Set by Stop: without it, cancelling a turn immediately started the next
+  // queued message, so "Stop" only ever paused for a fraction of a second.
+  const [queuePaused, setQueuePaused] = useState(false);
   const [steerError, setSteerError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1371,10 +1416,22 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     setMessageQueue((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
+  const copyTimerRef = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    },
+    [],
+  );
+
   const handleCopy = useCallback((id: string, content: string) => {
     navigator.clipboard.writeText(content);
     setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    if (copyTimerRef.current !== null) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => {
+      copyTimerRef.current = null;
+      setCopiedId(null);
+    }, 2000);
   }, []);
 
   // Auto-refresh sandbox tree when this tab finishes a turn
@@ -1392,6 +1449,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
 
   // Auto-send the next queued message when the agent becomes ready
   useEffect(() => {
+    if (queuePaused) return; // Stop halts all work, not just the live turn
     if (!initialSessionReady || status !== "ready" || messageQueue.length === 0) return;
     const [next, ...rest] = messageQueue;
     if (!isModelAvailable(next.model)) return;
@@ -1419,9 +1477,15 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     initialSessionReady,
     isModelAvailable,
     messageQueue,
+    queuePaused,
     send,
     status,
   ]);
+
+  // A fresh submission is an explicit "keep going", so it lifts the pause.
+  useEffect(() => {
+    if (isStreaming) setQueuePaused(false);
+  }, [isStreaming]);
 
   useEffect(() => {
     onWorkspaceStateChange?.(tabId, {
@@ -1492,16 +1556,22 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     onMetaChange,
   ]);
 
+  /** Returns false when the message could not be queued (caller keeps the draft). */
   const enqueue = useCallback(
     (trimmed: string, images: PromptImage[] = []) => {
-      if (messageQueue.length >= MAX_QUEUE) return;
+      if (messageQueue.length >= MAX_QUEUE) {
+        toast.error(
+          `Queue is full (${MAX_QUEUE}/${MAX_QUEUE}). Wait for the agent to work through it.`,
+        );
+        return false;
+      }
       if (!selectedModelAvailable) {
         toast.error(
           selectedModelAvailability === "checking"
             ? "Model provider status is still loading. Try again in a moment."
             : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
         );
-        return;
+        return false;
       }
       setMessageQueue((prev) => [
         ...prev,
@@ -1524,23 +1594,29 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           timestamp: Date.now(),
         },
       ]);
+      return true;
     },
     [messageQueue.length, selectedModel, selectedModelAvailability, selectedModelAvailable, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, selectedComputeOptions, thinkingDisabled, thinkingLevel],
   );
 
+  /**
+   * Route a composer submission. Resolves false when nothing was accepted, so
+   * the composer keeps the user's text *and* file chips instead of clearing
+   * them into the void.
+   */
   const handleSend = useCallback(
-    async (text: string, intent: SendIntent, images: PromptImage[] = []) => {
+    async (text: string, intent: SendIntent, images: PromptImage[] = []): Promise<boolean> => {
       if (!selectedModelAvailable) {
         toast.error(
           selectedModelAvailability === "checking"
             ? "Model provider status is still loading. Try again in a moment."
             : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
         );
-        return;
+        return false;
       }
-      if (selectedBudgetBlocked) return;
+      if (selectedBudgetBlocked) return false;
       const trimmed = text.trim();
-      if (!trimmed) return;
+      if (!trimmed) return false;
       const sendNow = () =>
         send(
           trimmed,
@@ -1563,23 +1639,26 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           ? "queue"
           : routeSubmit(isStreaming, intent);
       if (route === "queue") {
-        enqueue(trimmed, images);
-        return;
+        return enqueue(trimmed, images);
       }
       if (route === "steer") {
         const result = await steer(trimmed);
-        if (result === "ok") return;
+        if (result === "ok") return true;
         if (result === "not_streaming") {
           // The run ended while we typed: keep ordering behind any queue.
-          if (steerNotStreamingFallback(messageQueueLengthRef.current) === "queue") enqueue(trimmed);
-          else void sendNow();
-          return;
+          if (steerNotStreamingFallback(messageQueueLengthRef.current) === "queue") {
+            return enqueue(trimmed);
+          }
+          void sendNow();
+          return true;
         }
-        composerRestoreRef.current?.(trimmed);
+        // Reporting failure keeps the text AND the attachment chips; restoring
+        // only the text used to drop the file context silently.
         setSteerError("Couldn't deliver the steering message — your text was restored.");
-        return;
+        return false;
       }
       await sendNow();
+      return true;
     },
     [
       selectedBudgetBlocked,
@@ -1601,9 +1680,14 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   );
 
   const handleStop = useCallback(async () => {
+    // Pause before awaiting: the moment status flips to "ready" the queue
+    // effect would otherwise fire the next message.
+    setQueuePaused(true);
     const restored = await stop();
     if (restored.length > 0) composerRestoreRef.current?.(restored.join("\n"));
   }, [stop]);
+
+  const resumeQueue = useCallback(() => setQueuePaused(false), []);
 
   // Imperatively launch a workflow into this tab (called by parent on the
   // active tab when the user hits "Launch" on a workflow template).
@@ -1848,6 +1932,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onSkillsChange={setSelectedSkills}
             queuedMessages={messageQueue}
             onRemoveFromQueue={removeFromQueue}
+            queuePaused={queuePaused && messageQueue.length > 0}
+            onResumeQueue={resumeQueue}
             budgetState={budgetState}
             budgetTotalUsd={budgetTotalUsd}
             budgetLimitUsd={budgetLimitUsd}

@@ -55,6 +55,8 @@ const REMOTE_STDERR = `${REMOTE_CONTROL_DIR}/stderr.log`;
 const REMOTE_COMMAND = `${REMOTE_CONTROL_DIR}/command.sh`;
 const REMOTE_WRAPPER = `${REMOTE_CONTROL_DIR}/wrapper.py`;
 const REMOTE_LOG_CAP = 8 * 1024 * 1024;
+/** How long cancel() waits for the worker to reach a terminal, reconciled state. */
+const CANCEL_SETTLE_MS = 10_000;
 
 interface ActiveRuntime {
   promise: Promise<void>;
@@ -447,6 +449,16 @@ export class DurableModalJobManager {
     } else if (!runtime) {
       await this.finish(projectId, jobId, "cancelled", new ModalCancellationError());
     }
+    if (runtime) {
+      // Only the worker can finalize a live job. Give it a bounded window so
+      // callers see a terminal state and a released reservation, rather than
+      // a job that still reports "running" right after they cancelled it.
+      try {
+        return await this.wait(projectId, jobId, CANCEL_SETTLE_MS);
+      } catch {
+        // Fall through to a plain read; cancellation is already recorded.
+      }
+    }
     return this.store.require(projectId, jobId);
   }
 
@@ -600,6 +612,7 @@ export class DurableModalJobManager {
     let lastError: unknown;
     for (const spec of chain) {
       this.assertNotCancelled(projectId, jobId);
+      let created: ModalRemoteSandbox | undefined;
       try {
         const environment = await this.checked(projectId, jobId)(
           prepareModalEnvironment(
@@ -621,6 +634,7 @@ export class DurableModalJobManager {
           name: job.sandboxName,
           tags: job.sandboxTags,
         });
+        created = sandbox;
         runtime.sandbox = sandbox;
         const createdAt = Date.now();
         this.store.update(projectId, jobId, (current) => {
@@ -643,6 +657,23 @@ export class DurableModalJobManager {
         return sandbox;
       } catch (error) {
         if (error instanceof ModalCancellationError) throw error;
+        // A sandbox created just before this failure would keep billing while
+        // we move on to the next instance in the chain. Its identity is also
+        // cleared so a later successful attempt reconciles against its own
+        // creation window rather than this abandoned one.
+        if (created) {
+          try {
+            await created.terminate();
+          } catch {
+            // best effort; the next attempt still needs to proceed
+          }
+          if (runtime.sandbox === created) runtime.sandbox = undefined;
+          this.store.update(projectId, jobId, (current) => {
+            current.sandboxId = undefined;
+            current.sandboxCreatedAt = undefined;
+            current.sandboxTerminatedAt = undefined;
+          });
+        }
         lastError = error;
         this.store.appendEvent(projectId, jobId, {
           type: "instance_fallback",
@@ -872,17 +903,24 @@ export class DurableModalJobManager {
         await this.finish(projectId, jobId, "failed", error);
       }
     } finally {
-      if (sandbox) {
+      // createSandbox can throw *after* creating and persisting a sandbox (a
+      // cancel racing creation), so the local binding is not the source of
+      // truth for whether one exists.
+      const created = sandbox ?? runtime.sandbox;
+      if (created) {
         try {
-          await sandbox.terminate();
+          await created.terminate();
         } catch {
           // terminal state and accounting remain durable
         }
         this.store.update(projectId, jobId, (job) => {
           job.sandboxTerminatedAt ??= Date.now();
         });
-        await this.reconcile(projectId, jobId);
       }
+      // Unconditional: finish() defers reconciliation to here whenever a
+      // sandbox was created, so skipping it strands the budget reservation
+      // for the life of the process. It no-ops when already reconciled.
+      await this.reconcile(projectId, jobId);
     }
   }
 

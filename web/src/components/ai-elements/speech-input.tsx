@@ -150,6 +150,17 @@ export const SpeechInput = ({
   onAudioRecordedRef.current = onAudioRecorded;
   onErrorRef.current = onSpeechError;
 
+  // Declared before the recorder cleanup so it flips first: unmounting stops
+  // the recorder, whose stop handler would otherwise fire a transcription
+  // request whose result has nowhere to go.
+  const mountedRef = useRef(true);
+  useEffect(
+    () => () => {
+      mountedRef.current = false;
+    },
+    [],
+  );
+
   // Detect browser-only APIs after hydration so server and client initially
   // render the same disabled button.
   useEffect(() => {
@@ -304,6 +315,7 @@ export const SpeechInput = ({
         }
         streamRef.current = null;
         mediaRecorderRef.current = null;
+        if (!mountedRef.current) return;
         setIsListening(false);
 
         const audioBlob = new Blob(audioChunksRef.current, {
@@ -317,15 +329,17 @@ export const SpeechInput = ({
           setIsProcessing(true);
           try {
             const transcript = await onAudioRecordedRef.current(audioBlob);
-            if (transcript) {
+            if (transcript && mountedRef.current) {
               onTranscriptionChangeRef.current?.(transcript);
             }
           } catch (error) {
-            onErrorRef.current?.(
-              error instanceof Error ? error.message : "Dictation could not be transcribed.",
-            );
+            if (mountedRef.current) {
+              onErrorRef.current?.(
+                error instanceof Error ? error.message : "Dictation could not be transcribed.",
+              );
+            }
           } finally {
-            setIsProcessing(false);
+            if (mountedRef.current) setIsProcessing(false);
           }
         }
       };

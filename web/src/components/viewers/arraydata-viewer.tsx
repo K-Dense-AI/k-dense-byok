@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { sciSummaryUrl } from "@/lib/use-sandbox";
+import { fetchSciJson, isAbortError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
 
 // ---------------------------------------------------------------------------
@@ -310,26 +311,17 @@ export default function ArrayDataViewer({ path, projectId }: ViewerProps) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const ac = new AbortController();
     setSummary(null);
     setError(null);
-    fetch(sciSummaryUrl(path, "arrays", projectId))
-      .then(async (r) => {
-        if (!r.ok) {
-          const detail = (await r.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(detail.detail || `HTTP ${r.status}`);
-        }
-        return r.json() as Promise<ArraysSummary>;
-      })
+    fetchSciJson<ArraysSummary>(sciSummaryUrl(path, "arrays", projectId), { signal: ac.signal })
       .then((d) => {
-        if (alive) setSummary(d);
+        if (!ac.signal.aborted) setSummary(d);
       })
       .catch((e) => {
-        if (alive) setError(String(e.message ?? e));
+        if (!isAbortError(e)) setError(String(e.message ?? e));
       });
-    return () => {
-      alive = false;
-    };
+    return () => ac.abort();
   }, [path, projectId]);
 
   if (error) {

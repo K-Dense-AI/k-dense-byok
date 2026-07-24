@@ -118,6 +118,36 @@ describe("Modal data hooks", () => {
     window.removeEventListener(MODAL_JOBS_CHANGED_EVENT, changed);
   });
 
+  it("retries detail polling after a transient failure instead of freezing", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: "job-4", status: "running" }))
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValueOnce(jsonResponse({ id: "job-4", status: "succeeded" }));
+
+    const { result } = renderHook(() =>
+      useModalJob("job-4", { projectId: "project-a", activePollMs: 5 }),
+    );
+    // A server restart mid-job used to stop the poll for good, leaving a
+    // running job's detail view stuck until a manual refresh.
+    await waitFor(() => expect(result.current.job?.status).toBe("succeeded"));
+    expect(result.current.error).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("gives up on a detail poll that keeps failing", async () => {
+    fetchMock.mockRejectedValue(new Error("gone"));
+    const { result } = renderHook(() =>
+      useModalJob("job-5", { projectId: "project-a", activePollMs: 1 }),
+    );
+    await waitFor(() => expect(result.current.error).toBe("gone"));
+    // 1 initial + at most MAX_DETAIL_POLL_FAILURES retries; the point is that
+    // it stops rather than hammering a dead id forever.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(7));
+    const settled = fetchMock.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fetchMock).toHaveBeenCalledTimes(settled);
+  });
+
   it("advances log requests by the server's byte cursor and stops at complete", async () => {
     fetchMock
       .mockResolvedValueOnce(

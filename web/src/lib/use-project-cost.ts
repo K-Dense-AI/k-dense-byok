@@ -7,7 +7,15 @@ import { apiFetch, useProjectScopeId } from "@/lib/projects";
 export type BudgetState = "ok" | "warn" | "exceeded";
 
 export interface ProjectBudgetStatus {
+  /** What the cap is measured against: ledgered + reserved + in-flight. */
   totalUsd: number;
+  /** Money already ledgered. */
+  spentUsd?: number;
+  /** Held for admitted-but-unfinished compute jobs. */
+  reservedUsd?: number;
+  /** Accrued by runs that haven't been ledgered yet. */
+  inFlightUsd?: number;
+  committedUsd?: number;
   limitUsd: number | null;
   ratio: number | null;
   state: BudgetState;
@@ -16,6 +24,10 @@ export interface ProjectBudgetStatus {
 export interface ProjectCostSummary {
   projectId: string;
   totalUsd: number;
+  spentUsd?: number;
+  reservedUsd?: number;
+  inFlightUsd?: number;
+  committedUsd?: number;
   listPriceUsd?: number;
   subscriptionTokens?: number;
   totalTokens: number;
@@ -28,12 +40,25 @@ function emptySummary(projectId: string): ProjectCostSummary {
   return {
     projectId,
     totalUsd: 0,
+    spentUsd: 0,
+    reservedUsd: 0,
+    inFlightUsd: 0,
+    committedUsd: 0,
     listPriceUsd: 0,
     subscriptionTokens: 0,
     totalTokens: 0,
     sessionCount: 0,
     limitUsd: null,
-    budget: { totalUsd: 0, limitUsd: null, ratio: null, state: "ok" },
+    budget: {
+      totalUsd: 0,
+      spentUsd: 0,
+      reservedUsd: 0,
+      inFlightUsd: 0,
+      committedUsd: 0,
+      limitUsd: null,
+      ratio: null,
+      state: "ok",
+    },
   };
 }
 
@@ -57,10 +82,15 @@ export function useProjectCost(
   );
   const [loading, setLoading] = useState(false);
 
+  // Clearing on every refreshKey bump made the header pill blink back to $0.00
+  // after each turn; only a project switch invalidates the numbers.
+  useEffect(() => {
+    setSummary(emptySummary(scopedProjectId));
+  }, [scopedProjectId]);
+
   useEffect(() => {
     if (!scopedProjectId) return;
     let cancelled = false;
-    setSummary(emptySummary(scopedProjectId));
 
     const fetchOnce = async () => {
       setLoading(true);

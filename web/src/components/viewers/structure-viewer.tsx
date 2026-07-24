@@ -1,7 +1,20 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { rawFileUrl, sciSummaryUrl } from "@/lib/use-sandbox";
+import { fetchSciJson, isAbortError, SCI_FETCH_TIMEOUT_MS, SciTimeoutError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
+
+/**
+ * 3Dmol parses the whole structure into JS objects on the main thread, so a
+ * multi-hundred-megabyte trajectory freezes the tab outright. Past this size
+ * the user gets an explicit opt-in instead.
+ */
+const MAX_AUTOLOAD_BYTES = 40 * 1024 * 1024;
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  return `${Math.round(bytes / 1024 ** 2)} MB`;
+}
 
 interface StructSummary {
   format: string; num_atoms: number; num_chains: number; chains: string[];
@@ -20,34 +33,47 @@ export default function StructureViewer({ path, name, projectId }: ViewerProps) 
   const [summary, setSummary] = useState<StructSummary | null>(null);
   const [summaryErr, setSummaryErr] = useState<string | null>(null);
   const [viewerErr, setViewerErr] = useState<string | null>(null);
+  const [oversizeBytes, setOversizeBytes] = useState<number | null>(null);
+  const [loadAnyway, setLoadAnyway] = useState(false);
   const mountRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    let alive = true;
+    const ac = new AbortController();
     setSummary(null); setSummaryErr(null);
-    fetch(sciSummaryUrl(path, "structure", projectId))
-      .then(async (r) => {
-        if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || `HTTP ${r.status}`);
-        return r.json() as Promise<StructSummary>;
-      })
-      .then((d) => { if (alive) setSummary(d); })
-      .catch((e) => { if (alive) setSummaryErr(String(e.message ?? e)); });
-    return () => { alive = false; };
+    fetchSciJson<StructSummary>(sciSummaryUrl(path, "structure", projectId), { signal: ac.signal })
+      .then((d) => { if (!ac.signal.aborted) setSummary(d); })
+      .catch((e) => { if (!isAbortError(e)) setSummaryErr(String(e.message ?? e)); });
+    return () => ac.abort();
   }, [path, projectId]);
+
+  useEffect(() => {
+    setLoadAnyway(false);
+    setOversizeBytes(null);
+  }, [path]);
 
   useEffect(() => {
     setViewerErr(null);
     if (!mountRef.current) return;
     let disposed = false;
     let viewer: { clear(): void } | null = null;
-    Promise.all([
-      fetch(rawFileUrl(path, projectId)).then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.text();
-      }),
-      import("3dmol"),
-    ])
-      .then(([text, $3Dmol]) => {
+    const ac = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      ac.abort();
+    }, SCI_FETCH_TIMEOUT_MS);
+    void (async () => {
+      try {
+        const res = await fetch(rawFileUrl(path, projectId), { signal: ac.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const length = Number(res.headers.get("content-length") ?? "");
+        if (!loadAnyway && Number.isFinite(length) && length > MAX_AUTOLOAD_BYTES) {
+          // Bail before pulling the body down; the user opts in explicitly.
+          ac.abort();
+          if (!disposed) setOversizeBytes(length);
+          return;
+        }
+        const [text, $3Dmol] = await Promise.all([res.text(), import("3dmol")]);
         if (disposed || !mountRef.current) return;
         const v = $3Dmol.createViewer(mountRef.current, { backgroundColor: "white" });
         v.addModel(text, fmtForName(name));
@@ -55,10 +81,19 @@ export default function StructureViewer({ path, name, projectId }: ViewerProps) 
         v.zoomTo();
         v.render();
         viewer = v;
-      })
-      .catch((e) => { if (!disposed) setViewerErr(String(e?.message ?? e)); });
-    return () => { disposed = true; viewer?.clear?.(); };
-  }, [path, name, projectId]);
+      } catch (e) {
+        if (disposed || (isAbortError(e) && !timedOut)) return;
+        setViewerErr(
+          timedOut
+            ? new SciTimeoutError(Math.round(SCI_FETCH_TIMEOUT_MS / 1000)).message
+            : String((e as Error)?.message ?? e),
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+    return () => { disposed = true; clearTimeout(timer); ac.abort(); viewer?.clear?.(); };
+  }, [path, name, projectId, loadAnyway]);
 
   return (
     <div className="flex h-full flex-col">
@@ -78,6 +113,22 @@ export default function StructureViewer({ path, name, projectId }: ViewerProps) 
       )}
       <div className="relative flex-1 min-h-0">
         <div ref={mountRef} className="absolute inset-0" />
+        {oversizeBytes !== null && !loadAnyway && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background/90 p-6 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">
+              This structure is {formatBytes(oversizeBytes)}
+            </p>
+            <p className="max-w-md text-xs">
+              Rendering it in the browser may make the tab unresponsive for a while.
+            </p>
+            <button
+              onClick={() => setLoadAnyway(true)}
+              className="rounded border px-3 py-1 text-xs transition-colors hover:bg-muted"
+            >
+              Render anyway
+            </button>
+          </div>
+        )}
         {viewerErr && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/80 p-6 text-center text-sm text-muted-foreground">
             3D viewer failed to load: {viewerErr}

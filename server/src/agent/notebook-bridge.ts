@@ -19,8 +19,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { boundedSetAdd } from "../bounded.ts";
 import { resolvePaths, type ProjectPaths } from "../projects.ts";
-import { appendNotebookEntry } from "./notebook-store.ts";
+import { appendNewNotebookEntries, type NotebookEntry } from "./notebook-store.ts";
 import { notebookEntriesFromSessionFile } from "./notebook-harvest.ts";
 import { currentRunId } from "./run-ids.ts";
 
@@ -161,9 +162,11 @@ export function seedBuiltinAgentNotebookTools(paths: ProjectPaths): boolean {
 }
 
 // Namespaced entry ids already harvested, so a re-delivered async completion
-// (delivered to every live session's listener) can't double-append. Module-level
-// with a size cap, mirroring subagent-bridge's ledgeredAsyncRuns.
+// (delivered to every live session's listener) can't double-append. This is a
+// fast path only — it is empty after a restart, so the durable guard is the
+// parent notebook itself (appendNewNotebookEntries).
 const harvestedIds = new Set<string>();
+const MAX_HARVESTED_IDS = 5_000;
 
 /** Result shape we consume from both the sync and async completion payloads. */
 interface ChildResult {
@@ -189,13 +192,14 @@ export function makeSubagentNotebookExtension(
     for (const r of results ?? []) {
       if (!r.agent || !r.sessionFile) continue;
       const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent, sandboxRoot);
+      const candidates: NotebookEntry[] = [];
       for (const entry of entries) {
         const dedupKey = `${r.sessionFile}:${entry.id}`;
         if (harvestedIds.has(dedupKey)) continue;
-        harvestedIds.add(dedupKey);
-        if (harvestedIds.size > 5000) harvestedIds.clear();
-        appendNotebookEntry(parentSession, runId ? { ...entry, runId } : entry, projectId);
+        boundedSetAdd(harvestedIds, dedupKey, MAX_HARVESTED_IDS);
+        candidates.push(runId ? { ...entry, runId } : entry);
       }
+      appendNewNotebookEntries(parentSession, candidates, projectId);
     }
   };
 

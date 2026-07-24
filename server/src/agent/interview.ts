@@ -171,6 +171,23 @@ export function resolveInterview(
   return true;
 }
 
+/**
+ * Dismiss every interview still waiting on a session. Backstop for POST
+ * /abort: the tool's abort signal normally settles the promise, but a form
+ * left pending would otherwise hold the turn open for its whole timeout.
+ * Returns how many were dismissed.
+ */
+export function cancelInterviewsForSession(projectId: string, sessionId: string): number {
+  let cancelled = 0;
+  for (const [toolCallId, p] of [...pending]) {
+    if (p.projectId !== projectId || p.sessionId !== sessionId) continue;
+    pending.delete(toolCallId);
+    p.settle({ cancelled: true });
+    cancelled++;
+  }
+  return cancelled;
+}
+
 /** The pending interview for a session, if any (lets a reloading UI re-render it). */
 export function pendingInterviewFor(
   projectId: string,
@@ -272,6 +289,12 @@ export function makeInterviewTool(
         Math.max(params.timeout ?? DEFAULT_TIMEOUT_S, MIN_TIMEOUT_S),
         MAX_TIMEOUT_S,
       );
+
+      // Stop can win the race with tool start. Without this check the listener
+      // below is attached to an already-fired signal, nothing ever settles the
+      // promise, and the turn blocks until the (up to 1h) timeout while the
+      // form still claims to be waiting for the user.
+      if (signal?.aborted) throw new Error("Interview aborted");
 
       const answer = await new Promise<InterviewAnswer>((resolve, reject) => {
         const cleanup = () => {

@@ -94,7 +94,7 @@ export function compileLatex(
   targetAbs: string,
   engine: string,
   sandboxRoot: string,
-  opts?: { useLatexmk?: boolean },
+  opts?: { useLatexmk?: boolean; signal?: AbortSignal },
 ): Promise<CompileOutcome> {
   const existing = inflight.get(targetAbs);
   if (existing) return existing;
@@ -109,7 +109,7 @@ async function doCompile(
   targetAbs: string,
   engine: string,
   sandboxRoot: string,
-  opts?: { useLatexmk?: boolean },
+  opts?: { useLatexmk?: boolean; signal?: AbortSignal },
 ): Promise<CompileOutcome> {
   const workDir = path.dirname(targetAbs);
   const stem = path.basename(targetAbs).replace(/\.(tex|latex)$/, "");
@@ -125,6 +125,17 @@ async function doCompile(
   let log = "";
   let lastStatus = 0;
   for (const [cmd, ...args] of plan) {
+    // A closed tab or a superseded compile shouldn't keep burning CPU through
+    // the remaining passes; the signal also kills the running engine.
+    if (opts?.signal?.aborted) {
+      return {
+        success: false,
+        pdf_path: null,
+        log: clampLog(log + "\nCompilation cancelled."),
+        errors: ["Cancelled"],
+        synctex: fs.existsSync(path.join(workDir, stem + ".synctex.gz")),
+      };
+    }
     try {
       const { stdout, stderr } = await execFileAsync(cmd, args, {
         cwd: workDir,
@@ -132,6 +143,7 @@ async function doCompile(
         maxBuffer: MAX_LOG_BUFFER,
         encoding: "utf-8",
         killSignal: "SIGKILL",
+        ...(opts?.signal ? { signal: opts.signal } : {}),
       });
       log += `${stdout}${stderr}`;
       lastStatus = 0;
@@ -152,14 +164,17 @@ async function doCompile(
           synctex: false,
         };
       }
-      if (e.killed) {
+      if (e.killed || opts?.signal?.aborted) {
+        const cancelled = opts?.signal?.aborted === true;
         return {
           success: false,
           pdf_path: null,
           log: clampLog(
-            log + `\nCompilation timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds.`,
+            cancelled
+              ? log + "\nCompilation cancelled."
+              : log + `\nCompilation timed out after ${COMMAND_TIMEOUT_MS / 1000} seconds.`,
           ),
-          errors: ["Timeout"],
+          errors: [cancelled ? "Cancelled" : "Timeout"],
           synctex: fs.existsSync(path.join(workDir, stem + ".synctex.gz")),
         };
       }

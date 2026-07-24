@@ -8,6 +8,7 @@ import {
   readMcpConfig,
   readMcpDisabled,
   writeMcpConfig,
+  writeMcpDisabled,
 } from "../src/agent/mcp.ts";
 
 function reset(): void {
@@ -43,5 +44,19 @@ describe("connectors enable/disable", () => {
     const paths = resolvePaths("p2");
     expect(disableMcpServer(paths, "ghost")).toMatchObject({ ok: false, status: 404 });
     expect(enableMcpServer(paths, "ghost")).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("409s rather than overwriting a name present in both stores", () => {
+    ensureProjectExists("p3");
+    const paths = resolvePaths("p3");
+    // A crash between the two writes of an earlier toggle leaves this state.
+    writeMcpConfig(paths, { linear: { url: "https://new.example/mcp" } });
+    writeMcpDisabled(paths, { linear: { url: "https://stale.example/mcp" } });
+
+    expect(enableMcpServer(paths, "linear")).toMatchObject({ ok: false, status: 409 });
+    expect(disableMcpServer(paths, "linear")).toMatchObject({ ok: false, status: 409 });
+    // Both copies survive so the user can pick which one to keep.
+    expect(readMcpConfig(paths).linear).toEqual({ url: "https://new.example/mcp" });
+    expect(readMcpDisabled(paths).linear).toEqual({ url: "https://stale.example/mcp" });
   });
 });

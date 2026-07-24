@@ -5,7 +5,11 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch, useProjectScopeId } from "@/lib/projects";
-import { mergeNotebookEntries, type NotebookEntry } from "@/lib/notebook";
+import {
+  mergeNotebookEntries,
+  normalizeNotebookEntries,
+  type NotebookEntry,
+} from "@/lib/notebook";
 import { deriveThreads } from "@/lib/notebook-threads";
 import {
   countByType,
@@ -126,7 +130,7 @@ export function LabNotebookView({
         // only covers the effect that kicked this call off unmounting/
         // re-running; `currentSessionRef` covers the cross-effect race.
         if (!cancelled && capturedSessionId === currentSessionRef.current && Array.isArray(data.entries)) {
-          setFetched(data.entries);
+          setFetched(normalizeNotebookEntries(data.entries));
         }
       } catch {
         // Non-fatal: live entries still render.
@@ -185,6 +189,10 @@ export function LabNotebookView({
     refetch,
     signature: fetched.map((e) => e.id).join(","),
     resetKey: subagentCompletions * 2 + (streaming ? 1 : 0),
+    // For async subagents the completion signal fires at dispatch, so a child
+    // dispatched in this session may still be running long after the quiet
+    // budget expires. Keep polling (slower) rather than going blind.
+    hasOutstandingWork: subagentCompletions > 0,
   });
 
   // Project scope: merged read-only view across all sessions.
@@ -211,7 +219,9 @@ export function LabNotebookView({
           }
         }
         if (!cancelled) {
-          setProjectEntries(Array.isArray(nb.entries) ? nb.entries : []);
+          setProjectEntries(
+            Array.isArray(nb.entries) ? normalizeNotebookEntries(nb.entries) : [],
+          );
           setSessionNames(names);
         }
       } catch {

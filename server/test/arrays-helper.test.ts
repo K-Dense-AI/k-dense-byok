@@ -9,8 +9,8 @@ const depsOk =
   spawnSync(helperPython(), ["-c", "import h5py,pyarrow,netCDF4"], { stdio: "ignore" }).status === 0;
 
 describe("arrays_helper", () => {
-  it.runIf(depsOk)("summarizes an .npy array", () => {
-    const res = runSciHelper("arrays", "summarize", [path.join(FIX, "sample.npy")]);
+  it.runIf(depsOk)("summarizes an .npy array", async () => {
+    const res = await runSciHelper("arrays", "summarize", [path.join(FIX, "sample.npy")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("npy");
@@ -23,8 +23,8 @@ describe("arrays_helper", () => {
     expect(arr.preview.length).toBe(12);
   }, 15000);
 
-  it.runIf(depsOk)("summarizes an .npz archive with multiple arrays", () => {
-    const res = runSciHelper("arrays", "summarize", [path.join(FIX, "sample.npz")]);
+  it.runIf(depsOk)("summarizes an .npz archive with multiple arrays", async () => {
+    const res = await runSciHelper("arrays", "summarize", [path.join(FIX, "sample.npz")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("npz");
@@ -33,8 +33,8 @@ describe("arrays_helper", () => {
     expect(names).toEqual(["a", "b"]);
   }, 15000);
 
-  it.runIf(depsOk)("summarizes an HDF5 file as a tree", () => {
-    const res = runSciHelper("arrays", "summarize", [path.join(FIX, "sample.h5")]);
+  it.runIf(depsOk)("summarizes an HDF5 file as a tree", async () => {
+    const res = await runSciHelper("arrays", "summarize", [path.join(FIX, "sample.h5")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("hdf5");
@@ -44,8 +44,8 @@ describe("arrays_helper", () => {
     expect(ds.type).toBe("dataset");
   }, 15000);
 
-  it.runIf(depsOk)("summarizes a Parquet file as a table", () => {
-    const res = runSciHelper("arrays", "summarize", [path.join(FIX, "sample.parquet")]);
+  it.runIf(depsOk)("summarizes a Parquet file as a table", async () => {
+    const res = await runSciHelper("arrays", "summarize", [path.join(FIX, "sample.parquet")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("parquet");
@@ -56,8 +56,8 @@ describe("arrays_helper", () => {
     expect(d.head.length).toBe(3);
   }, 15000);
 
-  it.runIf(depsOk)("summarizes a NetCDF file as variables", () => {
-    const res = runSciHelper("arrays", "summarize", [path.join(FIX, "sample.nc")]);
+  it.runIf(depsOk)("summarizes a NetCDF file as variables", async () => {
+    const res = await runSciHelper("arrays", "summarize", [path.join(FIX, "sample.nc")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("netcdf");
@@ -70,8 +70,8 @@ describe("arrays_helper", () => {
     expect(d.truncated).toBe(false);
   }, 15000);
 
-  it("exits 4 on missing file", () => {
-    const res = runSciHelper("arrays", "summarize", [path.join(FIX, "does-not-exist.h5")]);
+  it("exits 4 on missing file", async () => {
+    const res = await runSciHelper("arrays", "summarize", [path.join(FIX, "does-not-exist.h5")]);
     expect(res.status).toBe(4);
   });
 });

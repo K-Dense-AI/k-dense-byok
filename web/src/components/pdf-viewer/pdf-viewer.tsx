@@ -186,6 +186,9 @@ export function PdfViewer({
   const [lastModified, setLastModified] = useState<string | null>(null);
   const annotationsRef = useRef<AnnotationsDoc>(EMPTY_DOC);
   const lastModifiedRef = useRef<string | null>(null);
+  // Strong validator for the version we last saw; sent as If-Match so a
+  // concurrent edit inside the same clock second can't be silently clobbered.
+  const etagRef = useRef<string | null>(null);
   useEffect(() => {
     annotationsRef.current = annotations;
   }, [annotations]);
@@ -313,6 +316,7 @@ export function PdfViewer({
       if (cancelled) return;
       setAnnotations(res.doc);
       setLastModified(res.lastModified);
+      etagRef.current = res.etag;
     });
     return () => {
       cancelled = true;
@@ -324,9 +328,10 @@ export function PdfViewer({
     const unsub = subscribeAnnotations(
       path,
       lastModifiedRef.current,
-      ({ doc: newDoc, lastModified: newMtime }) => {
+      ({ doc: newDoc, lastModified: newMtime, etag: newEtag }) => {
         setAnnotations(newDoc);
         setLastModified(newMtime);
+        etagRef.current = newEtag;
       },
       3000,
       scopedProjectId,
@@ -344,7 +349,7 @@ export function PdfViewer({
       const res = await saveAnnotations(
         path,
         next,
-        lastModifiedRef.current,
+        { lastModified: lastModifiedRef.current, etag: etagRef.current },
         scopedProjectId,
       );
       if (res.conflict) {
@@ -362,16 +367,23 @@ export function PdfViewer({
         };
         setAnnotations(merged);
         setLastModified(fresh.lastModified);
+        etagRef.current = fresh.etag;
         const retry = await saveAnnotations(
           path,
           merged,
-          fresh.lastModified,
+          { lastModified: fresh.lastModified, etag: fresh.etag },
           scopedProjectId,
         );
-        if (retry.ok) setLastModified(retry.lastModified);
+        if (retry.ok) {
+          setLastModified(retry.lastModified);
+          etagRef.current = retry.etag;
+        }
         return;
       }
-      if (res.ok) setLastModified(res.lastModified);
+      if (res.ok) {
+        setLastModified(res.lastModified);
+        etagRef.current = res.etag;
+      }
     },
     [path, scopedProjectId],
   );

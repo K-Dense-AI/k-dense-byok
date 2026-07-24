@@ -1142,7 +1142,25 @@ function TextEditor({
   const [content, setContent] = useState(initialContent);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const isDirty = content !== initialContent;
+  // The sandbox poll refreshes `initialContent`, so comparing against the prop
+  // made the dirty flag (and the Save button) flip off when the agent touched
+  // the file — leaving real edits unsavable. Track what we last wrote instead.
+  const savedRef = useRef(initialContent);
+  const contentRef = useRef(content);
+  contentRef.current = content;
+  const [diskChanged, setDiskChanged] = useState(false);
+  const isDirty = content !== savedRef.current;
+
+  useEffect(() => {
+    if (initialContent === savedRef.current) return;
+    if (contentRef.current === savedRef.current) {
+      savedRef.current = initialContent;
+      setContent(initialContent);
+      setDiskChanged(false);
+      return;
+    }
+    setDiskChanged(true);
+  }, [initialContent]);
   const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent);
   const { resolvedTheme } = useTheme();
 
@@ -1154,7 +1172,12 @@ function TextEditor({
     setSaving(true);
     const ok = await onSave(content);
     setSaving(false);
-    if (ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    if (ok) {
+      savedRef.current = content;
+      setDiskChanged(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    }
   }, [content, onSave]);
 
   handleSaveRef.current = handleSave;
@@ -1176,6 +1199,19 @@ function TextEditor({
         <span className="text-xs text-muted-foreground">
           {saved ? "Saved" : isDirty ? "Unsaved changes" : "No changes"}
         </span>
+        {diskChanged && (
+          <button
+            onClick={() => {
+              savedRef.current = initialContent;
+              setContent(initialContent);
+              setDiskChanged(false);
+            }}
+            className="rounded border border-amber-500/40 px-1.5 py-0.5 text-[10px] text-amber-700 transition-colors hover:bg-amber-500/10"
+            title="Discard your edits and load the version on disk"
+          >
+            Changed on disk — load it
+          </button>
+        )}
         <span className="ml-auto text-[10px] text-muted-foreground/50 font-mono">{isMac ? "⌘S" : "Ctrl+S"} to save</span>
         <button
           onClick={onDiscard}
@@ -1244,6 +1280,7 @@ function ImageAnnotator({
   const isDrawingRef = useRef(false);
   const [strokeCount, setStrokeCount] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -1274,10 +1311,13 @@ function ImageAnnotator({
   }, [brushWidth]);
 
   useEffect(() => {
+    let cancelled = false;
+    setLoadError(null);
     const img = new window.Image();
     img.crossOrigin = "anonymous";
     img.src = `${rawFileUrl(path, projectId)}&_t=${Date.now()}`;
     img.onload = () => {
+      if (cancelled) return;
       imgRef.current = img;
       if (canvasRef.current) {
         canvasRef.current.width = img.naturalWidth;
@@ -1285,6 +1325,17 @@ function ImageAnnotator({
         redrawAll();
       }
       setLoaded(true);
+    };
+    // Without this the panel sat on "Loading image…" forever whenever the file
+    // was deleted, renamed, or not a decodable image.
+    img.onerror = () => {
+      if (cancelled) return;
+      setLoadError("Couldn't load this image for annotation.");
+    };
+    return () => {
+      cancelled = true;
+      img.onload = null;
+      img.onerror = null;
     };
   }, [path, projectId, redrawAll]);
 
@@ -1397,7 +1448,18 @@ function ImageAnnotator({
         </div>
       </div>
       <div className="flex flex-1 items-center justify-center overflow-auto bg-[repeating-conic-gradient(#f0f0f0_0%_25%,white_0%_50%)] bg-[length:20px_20px] p-4">
-        {!loaded && (
+        {!loaded && loadError && (
+          <div className="flex flex-col items-center gap-2 text-center text-sm text-muted-foreground">
+            <p>{loadError}</p>
+            <button
+              onClick={onDiscard}
+              className="rounded border px-2.5 py-1 text-xs transition-colors hover:bg-muted"
+            >
+              Back to preview
+            </button>
+          </div>
+        )}
+        {!loaded && !loadError && (
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
             Loading…

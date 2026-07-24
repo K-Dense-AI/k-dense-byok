@@ -46,7 +46,9 @@ export function countByType(entries: NotebookEntry[]): Record<NotebookEntryType,
     decision: 0,
     note: 0,
   };
-  for (const e of entries) out[e.type]++;
+  // Guard the index: an unrecognized type from a hand-edited row would create
+  // a NaN bucket and break every count.
+  for (const e of entries) if (e.type in out) out[e.type]++;
   return out;
 }
 

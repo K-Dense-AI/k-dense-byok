@@ -33,6 +33,9 @@ export function useNotebookAnnotations(
   const docRef = useRef(doc);
   docRef.current = doc;
   const lastModifiedRef = useRef<string | null>(null);
+  // Strong validator: Last-Modified alone can't distinguish an edit made in
+  // the same second as ours, so a concurrent write could be lost silently.
+  const etagRef = useRef<string | null>(null);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const currentSessionRef = useRef(sessionId);
   currentSessionRef.current = sessionId;
@@ -40,6 +43,7 @@ export function useNotebookAnnotations(
   useEffect(() => {
     setDoc(EMPTY_DOC);
     lastModifiedRef.current = null;
+    etagRef.current = null;
     if (!enabled || !sessionId) return;
     let cancelled = false;
     (async () => {
@@ -67,6 +71,7 @@ export function useNotebookAnnotations(
             };
           });
           lastModifiedRef.current = res.headers.get("Last-Modified");
+          etagRef.current = res.headers.get("ETag");
         }
       } catch {
         // Non-fatal: annotations stay empty for this session.
@@ -90,6 +95,7 @@ export function useNotebookAnnotations(
           method: "PUT",
           headers: {
             "Content-Type": "application/json",
+            ...(etagRef.current ? { "If-Match": etagRef.current } : {}),
             ...(lastModifiedRef.current
               ? { "If-Unmodified-Since": lastModifiedRef.current }
               : {}),
@@ -103,12 +109,14 @@ export function useNotebookAnnotations(
           const fres = await apiFetch(url, {}, projectId);
           const fresh = fres.ok ? normalizeDoc(await fres.json()) : EMPTY_DOC;
           lastModifiedRef.current = fres.ok ? fres.headers.get("Last-Modified") : null;
+          etagRef.current = fres.ok ? fres.headers.get("ETag") : null;
           const rebased = applyOp(fresh, op);
           if (sid === currentSessionRef.current) setDoc(rebased);
           res = await put(rebased);
         }
         if (res.ok) {
           lastModifiedRef.current = res.headers.get("Last-Modified");
+          etagRef.current = res.headers.get("ETag");
         } else {
           throw new Error(`save failed: ${res.status}`);
         }
@@ -119,6 +127,7 @@ export function useNotebookAnnotations(
           if (fres.ok && sid === currentSessionRef.current) {
             setDoc(normalizeDoc(await fres.json()));
             lastModifiedRef.current = fres.headers.get("Last-Modified");
+            etagRef.current = fres.headers.get("ETag");
           }
         } catch {
           /* keep optimistic state; next save retries */

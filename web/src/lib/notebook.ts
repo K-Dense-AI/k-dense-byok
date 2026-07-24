@@ -87,6 +87,20 @@ export function parseNotebookFrame(
   };
 }
 
+/**
+ * Coerce server-fetched entries into the shape the views assume.
+ *
+ * Rows come from an append-only JSONL file that a user (or a future schema)
+ * can put an unrecognized `type` into. The views index `TYPE_META` by type, so
+ * an unknown one would render as `undefined.spine` and take down the whole
+ * notebook panel; treating it as a plain note keeps the entry visible.
+ */
+export function normalizeNotebookEntries(entries: readonly NotebookEntry[]): NotebookEntry[] {
+  return entries.map((entry) =>
+    isEntryType(entry.type) ? entry : { ...entry, type: "note" as const },
+  );
+}
+
 export function mergeNotebookEntries(
   a: NotebookEntry[],
   b: NotebookEntry[],

@@ -11,8 +11,8 @@ const mzmlPath = path.join(FIX, "sample.mzml");
 const mzxmlPath = path.join(FIX, "sample.mzxml");
 
 describe("massspec_helper", () => {
-  it.runIf(depsOk)("summarizes an MGF peak list", () => {
-    const res = runSciHelper("massspec", "summarize", [path.join(FIX, "sample.mgf")]);
+  it.runIf(depsOk)("summarizes an MGF peak list", async () => {
+    const res = await runSciHelper("massspec", "summarize", [path.join(FIX, "sample.mgf")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("mgf");
@@ -21,8 +21,8 @@ describe("massspec_helper", () => {
     expect(d.spectra[0].intensity.length).toBe(3);
   }, 15000);
 
-  it("summarizes a JCAMP-DX curve (no pyteomics needed)", () => {
-    const res = runSciHelper("massspec", "summarize", [path.join(FIX, "sample.jdx")]);
+  it("summarizes a JCAMP-DX curve (no pyteomics needed)", async () => {
+    const res = await runSciHelper("massspec", "summarize", [path.join(FIX, "sample.jdx")]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("jcamp");
@@ -30,13 +30,14 @@ describe("massspec_helper", () => {
     expect(d.x_label.toLowerCase()).toContain("cm"); // XUNITS=1/CM
   }, 15000);
 
-  it("exits 4 on a missing file", () => {
-    expect(runSciHelper("massspec", "summarize", [path.join(FIX, "nope.mgf")]).status).toBe(4);
+  it("exits 4 on a missing file", async () => {
+    const res = await runSciHelper("massspec", "summarize", [path.join(FIX, "nope.mgf")]);
+    expect(res.status).toBe(4);
   });
 
   // "tiny.pwiz.1.1.mzML" from pyteomics' own test suite (~25KB, ProteoWizard tiny example).
-  it.runIf(depsOk && fs.existsSync(mzmlPath))("summarizes an mzML run with an MS1 chromatogram", () => {
-    const res = runSciHelper("massspec", "summarize", [mzmlPath]);
+  it.runIf(depsOk && fs.existsSync(mzmlPath))("summarizes an mzML run with an MS1 chromatogram", async () => {
+    const res = await runSciHelper("massspec", "summarize", [mzmlPath]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("mzml");
@@ -46,8 +47,8 @@ describe("massspec_helper", () => {
   }, 15000);
 
   // "test.mzXML" from pyteomics' own test suite (~16KB).
-  it.runIf(depsOk && fs.existsSync(mzxmlPath))("summarizes an mzXML run", () => {
-    const res = runSciHelper("massspec", "summarize", [mzxmlPath]);
+  it.runIf(depsOk && fs.existsSync(mzxmlPath))("summarizes an mzXML run", async () => {
+    const res = await runSciHelper("massspec", "summarize", [mzxmlPath]);
     expect(res.status).toBe(0);
     const d = JSON.parse(res.stdout);
     expect(d.format).toBe("mzxml");

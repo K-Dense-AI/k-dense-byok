@@ -23,6 +23,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -216,11 +217,20 @@ export function writeMcpConfig(
   paths: ProjectPaths,
   servers: Record<string, McpServerConfig>,
 ): void {
-  const file = mcpConfigPath(paths);
+  writeServers(mcpConfigPath(paths), servers);
+}
+
+/** Atomic write with a unique temp name (a shared one races other writers). */
+function writeServers(file: string, servers: Record<string, McpServerConfig>): void {
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify({ mcpServers: servers }, null, 2) + "\n", "utf-8");
-  fs.renameSync(tmp, file);
+  const tmp = `${file}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify({ mcpServers: servers }, null, 2) + "\n", "utf-8");
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 function mcpDisabledPath(paths: ProjectPaths): string {
@@ -241,11 +251,7 @@ export function writeMcpDisabled(
   paths: ProjectPaths,
   servers: Record<string, McpServerConfig>,
 ): void {
-  const file = mcpDisabledPath(paths);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify({ mcpServers: servers }, null, 2) + "\n", "utf-8");
-  fs.renameSync(tmp, file);
+  writeServers(mcpDisabledPath(paths), servers);
 }
 
 function moveServer(
@@ -259,6 +265,19 @@ function moveServer(
   const dst = from === "enabled" ? disabled : enabled;
   if (!(name in src)) {
     return { ok: false, status: 404, detail: `No ${from} connector named "${name}"` };
+  }
+  if (name in dst) {
+    // The two stores are duplicated only after a crash between the writes
+    // below. Overwriting here would silently replace the live config with the
+    // stale copy, so make the user resolve it instead.
+    return {
+      ok: false,
+      status: 409,
+      detail:
+        `A connector named "${name}" already exists in the ` +
+        `${from === "enabled" ? "disabled" : "enabled"} list. ` +
+        `Remove one of them first.`,
+    };
   }
   dst[name] = src[name];
   delete src[name];

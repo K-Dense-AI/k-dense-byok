@@ -67,6 +67,40 @@ export function appendNotebookEntry(
   fs.appendFileSync(file, JSON.stringify(entry) + "\n", "utf-8");
 }
 
+/**
+ * Append only entries whose ids are not already in the session notebook.
+ *
+ * Harvest re-reads a child's whole session file on every completion and
+ * relies on stable namespaced entry ids, so an in-memory guard alone loses
+ * its state on restart and re-appends the child's entire history. The parent
+ * notebook is the durable record of what has already been harvested.
+ *
+ * Returns the entries actually written.
+ */
+export function appendNewNotebookEntries(
+  sessionId: string,
+  entries: NotebookEntry[],
+  projectId?: string,
+): NotebookEntry[] {
+  if (entries.length === 0) return [];
+  const file = notebookPath(sessionId, projectId);
+  const seen = new Set(parseNotebookFile(file).map((entry) => entry.id));
+  const fresh: NotebookEntry[] = [];
+  for (const entry of entries) {
+    if (!entry.id || seen.has(entry.id)) continue;
+    seen.add(entry.id);
+    fresh.push(entry);
+  }
+  if (fresh.length === 0) return [];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(
+    file,
+    fresh.map((entry) => JSON.stringify(entry) + "\n").join(""),
+    "utf-8",
+  );
+  return fresh;
+}
+
 function parseNotebookFile(file: string): NotebookEntry[] {
   let raw: string;
   try {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   WORKSPACE_SCHEMA_VERSION,
@@ -8,6 +8,7 @@ import {
   parseWorkspaceMetadata,
   pruneDeletedProjectState,
   pruneWorkspaceMetadata,
+  revokeSnapshotObjectUrls,
   saveProjectWorkspaceState,
   saveWorkspaceShellState,
   validateWorkspaceMetadata,
@@ -289,5 +290,46 @@ describe("workspace persistence schema", () => {
     expect(window.localStorage.getItem(WORKSPACE_STORAGE_KEY)).not.toContain(
       "c2VjcmV0LWltYWdlLWJ5dGVz",
     );
+  });
+
+  it("revokes the blob URLs of a snapshot the caller discards", () => {
+    const revoke = vi.fn();
+    Object.defineProperty(URL, "revokeObjectURL", {
+      value: revoke,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      revokeSnapshotObjectUrls({
+        version: WORKSPACE_SCHEMA_VERSION,
+        screen: "workspace",
+        openedProjectIds: ["project-a"],
+        projects: {
+          "project-a": {
+            ...projectState,
+            tabs: [
+              {
+                ...projectState.tabs[0],
+                chat: {
+                  ...projectState.tabs[0].chat!,
+                  composer: {
+                    text: "restored",
+                    attachments: [
+                      { id: "image-1", filename: "a.png", mediaType: "image/png", url: "blob:a" },
+                      // Data URLs are inline, not handles — nothing to release.
+                      { id: "image-2", filename: "b.png", mediaType: "image/png", url: "data:b" },
+                    ],
+                  },
+                },
+              },
+            ],
+          },
+        },
+      });
+      expect(revoke).toHaveBeenCalledTimes(1);
+      expect(revoke).toHaveBeenCalledWith("blob:a");
+    } finally {
+      Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
   });
 });

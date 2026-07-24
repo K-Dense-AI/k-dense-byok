@@ -4,6 +4,7 @@ import { afterAll, beforeEach, describe, it, expect } from "vitest";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { resolvePaths } from "../src/projects.ts";
 import {
+  appendNewNotebookEntries,
   appendNotebookEntry,
   readNotebookEntries,
   readProjectNotebooks,
@@ -61,6 +62,47 @@ describe("notebook-store", () => {
     // A legacy-shaped row simply has no link fields.
     expect("relatesTo" in got[1]).toBe(false);
     expect("runId" in got[1]).toBe(false);
+  });
+});
+
+describe("appendNewNotebookEntries", () => {
+  it("skips ids already present so a restart cannot re-harvest a child's history", () => {
+    const s = "sess-harvest";
+    const first = appendNewNotebookEntries(s, [
+      entry({ id: "child:1", timestamp: 1 }),
+      entry({ id: "child:2", timestamp: 2 }),
+    ]);
+    expect(first.map((e) => e.id)).toEqual(["child:1", "child:2"]);
+
+    // Harvest re-reads the child's whole session file; the parent notebook is
+    // the durable record of what has already landed.
+    const second = appendNewNotebookEntries(s, [
+      entry({ id: "child:1", timestamp: 1 }),
+      entry({ id: "child:2", timestamp: 2 }),
+      entry({ id: "child:3", timestamp: 3 }),
+    ]);
+    expect(second.map((e) => e.id)).toEqual(["child:3"]);
+    expect(readNotebookEntries(s).map((e) => e.id)).toEqual([
+      "child:1",
+      "child:2",
+      "child:3",
+    ]);
+  });
+
+  it("dedupes within a single batch and ignores id-less rows", () => {
+    const s = "sess-harvest-dupes";
+    const written = appendNewNotebookEntries(s, [
+      entry({ id: "a" }),
+      entry({ id: "a" }),
+      entry({ id: "" }),
+    ]);
+    expect(written.map((e) => e.id)).toEqual(["a"]);
+    expect(readNotebookEntries(s)).toHaveLength(1);
+  });
+
+  it("writes nothing for an empty batch", () => {
+    expect(appendNewNotebookEntries("sess-harvest-empty", [])).toEqual([]);
+    expect(readNotebookEntries("sess-harvest-empty")).toEqual([]);
   });
 });
 

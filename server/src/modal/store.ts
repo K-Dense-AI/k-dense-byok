@@ -22,6 +22,9 @@ export interface ModalJobFiles {
   staging: string;
 }
 
+export const MAX_EVENT_ROWS = 2_000;
+export const EVENT_TRIM_INTERVAL = 200;
+
 function assertJobId(jobId: string): void {
   if (!JOB_ID_RE.test(jobId)) {
     throw new ModalJobError("INVALID_JOB_ID", `Invalid Modal job id "${jobId}"`, 400);
@@ -155,21 +158,48 @@ export class ModalJobStore {
     );
     job.eventSeq = full.seq;
     this.write(job);
+    // Checked periodically rather than every append: events are low-frequency,
+    // but a long-lived job that retries or falls back repeatedly would grow
+    // this file without bound.
+    if (full.seq % EVENT_TRIM_INTERVAL === 0) this.trimEvents(projectId, jobId);
     return full;
+  }
+
+  /** Drop the oldest rows once the log grows past MAX_EVENT_ROWS. */
+  private trimEvents(projectId: string, jobId: string): void {
+    const file = modalJobFiles(projectId, jobId).events;
+    try {
+      const lines = fs.readFileSync(file, "utf-8").split("\n").filter(Boolean);
+      if (lines.length <= MAX_EVENT_ROWS) return;
+      const kept = lines.slice(-MAX_EVENT_ROWS).join("\n") + "\n";
+      const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(tmp, kept, { mode: 0o600 });
+      fs.renameSync(tmp, file);
+    } catch {
+      // Trimming is housekeeping; never fail the job over it.
+    }
   }
 
   events(projectId: string, jobId: string, after = 0): ModalJobEvent[] {
     const file = modalJobFiles(projectId, jobId).events;
+    let raw: string;
     try {
-      return fs
-        .readFileSync(file, "utf-8")
-        .split("\n")
-        .filter(Boolean)
-        .map((line) => JSON.parse(line) as ModalJobEvent)
-        .filter((event) => event.seq > after);
+      raw = fs.readFileSync(file, "utf-8");
     } catch {
       return [];
     }
+    const out: ModalJobEvent[] = [];
+    for (const line of raw.split("\n")) {
+      if (!line.trim()) continue;
+      try {
+        // A single torn row must not hide the whole job's history.
+        const event = JSON.parse(line) as ModalJobEvent;
+        if (event.seq > after) out.push(event);
+      } catch {
+        /* skip */
+      }
+    }
+    return out;
   }
 
   list(projectId: string): ModalJob[] {

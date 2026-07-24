@@ -33,7 +33,7 @@ import { autocompletion } from "@codemirror/autocomplete";
 import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/lint";
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { LoaderCircleIcon, SparklesIcon } from "lucide-react";
+import { AlertTriangleIcon, LoaderCircleIcon, SparklesIcon } from "lucide-react";
 import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
 import { LogPanel, type LogFilter } from "./log-panel";
 import { OutlinePanel } from "./outline-panel";
@@ -86,6 +86,13 @@ export function LatexEditor({
   const lastSavedRef = useRef(initialContent);
   const viewRef = useRef<EditorView | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  // CodeMirror's `value` is controlled: handing it new text replaces the doc.
+  // The sandbox poll rewrites `initialContent` every few seconds, so binding
+  // the prop directly let a background refresh wipe unsaved edits mid-sentence.
+  // The editor is pinned to the text we opened with; later disk versions
+  // surface through `diskContent` instead.
+  const openedContentRef = useRef(initialContent);
+  const [diskContent, setDiskContent] = useState<string | null>(null);
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -238,6 +245,41 @@ export function LatexEditor({
     },
     [],
   );
+
+  const applyDiskContent = useCallback((next: string) => {
+    const view = viewRef.current;
+    if (view) {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: next } });
+    }
+    contentRef.current = next;
+    lastSavedRef.current = next;
+    setIsDirty(false);
+    setDiskContent(null);
+    setWordCount(proseWordCount(next));
+    setOutline(parseOutline(next));
+  }, []);
+
+  // The file changed underneath us — usually the agent editing the same .tex.
+  // Adopt it silently when there is nothing to lose, otherwise let the user
+  // choose rather than deciding for them.
+  useEffect(() => {
+    if (initialContent === lastSavedRef.current) {
+      setDiskContent(null);
+      return;
+    }
+    const current = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    if (current === initialContent) {
+      lastSavedRef.current = initialContent;
+      setIsDirty(false);
+      setDiskContent(null);
+      return;
+    }
+    if (current === lastSavedRef.current) {
+      applyDiskContent(initialContent);
+      return;
+    }
+    setDiskContent(initialContent);
+  }, [initialContent, applyDiskContent]);
 
   // --- save / compile ------------------------------------------------------
   const autoCompileRef = useRef(autoCompile);
@@ -739,10 +781,29 @@ export function LatexEditor({
               </button>
             </div>
           )}
+          {diskContent !== null && (
+            <div className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-3 py-1 text-[11px] text-amber-800 dark:text-amber-300">
+              <AlertTriangleIcon className="size-3" />
+              This file changed on disk while you were editing
+              <span className="flex-1" />
+              <button
+                onClick={() => applyDiskContent(diskContent)}
+                className="rounded border px-2 py-0.5 hover:bg-muted"
+              >
+                Load disk version
+              </button>
+              <button
+                onClick={() => setDiskContent(null)}
+                className="rounded border px-2 py-0.5 hover:bg-muted"
+              >
+                Keep mine
+              </button>
+            </div>
+          )}
           <div className="relative flex-1 min-h-0">
             <div className="absolute inset-0">
               <CodeMirror
-                value={initialContent}
+                value={openedContentRef.current}
                 onChange={handleChange}
                 onCreateEditor={(view) => { viewRef.current = view; }}
                 extensions={extensions}

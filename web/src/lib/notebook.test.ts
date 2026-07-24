@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./notebook";
+import {
+  parseNotebookFrame,
+  mergeNotebookEntries,
+  normalizeNotebookEntries,
+  type NotebookEntry,
+} from "./notebook";
 import type { AgentFrame } from "./use-agent";
 
 const frame = (args: unknown, over: Partial<AgentFrame> = {}): AgentFrame => ({
@@ -65,6 +70,18 @@ describe("parseNotebookFrame", () => {
     const unstamped = parseNotebookFrame(frame({ type: "note", title: "x" }));
     expect(unstamped).not.toBeNull();
     expect("runId" in unstamped!).toBe(false);
+  });
+});
+
+describe("normalizeNotebookEntries", () => {
+  it("falls back to note for an unrecognized type instead of crashing the view", () => {
+    const rows = [
+      { id: "a", type: "sketch" as NotebookEntry["type"], title: "hand-edited", timestamp: 1 },
+      { id: "b", type: "method" as const, title: "kept", timestamp: 2 },
+    ];
+    const out = normalizeNotebookEntries(rows);
+    expect(out[0]).toMatchObject({ id: "a", type: "note", title: "hand-edited" });
+    expect(out[1].type).toBe("method");
   });
 });
 
