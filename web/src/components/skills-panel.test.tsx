@@ -20,6 +20,7 @@ describe("SkillsPanel", () => {
     vi.spyOn(caps, "getAllSkills").mockResolvedValue({
       enabled: [{ id: "scanpy", name: "scanpy", description: "single cell" }],
       disabled: [{ id: "old", name: "old", description: "legacy" }],
+      problems: [],
     });
     const setSpy = vi.spyOn(caps, "setSkillEnabled").mockResolvedValue();
 
@@ -34,7 +35,7 @@ describe("SkillsPanel", () => {
 
   it("distinguishes an unseeded project from a filter with no hits", async () => {
     stubProjects();
-    vi.spyOn(caps, "getAllSkills").mockResolvedValue({ enabled: [], disabled: [] });
+    vi.spyOn(caps, "getAllSkills").mockResolvedValue({ enabled: [], disabled: [], problems: [] });
 
     render(<SkillsPanel />);
     expect(await screen.findByText(/No skills installed/i)).toBeInTheDocument();
@@ -46,11 +47,37 @@ describe("SkillsPanel", () => {
     vi.spyOn(caps, "getAllSkills").mockResolvedValue({
       enabled: [{ id: "scanpy", name: "scanpy", description: "single cell" }],
       disabled: [],
+      problems: [],
     });
 
     render(<SkillsPanel />);
     await screen.findByText("scanpy");
     await userEvent.type(screen.getByPlaceholderText("Search skills…"), "zzz");
     expect(await screen.findByText("No skills match.")).toBeInTheDocument();
+  });
+
+  it("flags an installed skill that failed to parse", async () => {
+    stubProjects();
+    vi.spyOn(caps, "getAllSkills").mockResolvedValue({
+      enabled: [{ id: "scanpy", name: "scanpy", description: "single cell" }],
+      disabled: [],
+      problems: [
+        {
+          name: "genomic-intelligence",
+          state: "enabled",
+          loaded: false,
+          message: "Nested mappings are not allowed in compact mappings at line 2",
+        },
+        // Loaded-with-a-warning skills are not the user's problem — they show up
+        // in the list normally and must not be reported as missing.
+        { name: "scanpy", state: "enabled", loaded: true, message: "description exceeds 1024" },
+      ],
+    });
+
+    render(<SkillsPanel />);
+    expect(await screen.findByText(/1 installed skill could not be loaded/i)).toBeInTheDocument();
+    expect(screen.getByText("genomic-intelligence")).toBeInTheDocument();
+    expect(screen.getByText(/Nested mappings/)).toBeInTheDocument();
+    expect(screen.queryByText(/description exceeds 1024/)).not.toBeInTheDocument();
   });
 });

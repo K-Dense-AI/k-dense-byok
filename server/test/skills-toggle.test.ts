@@ -8,6 +8,7 @@ import {
   enableSkill,
   listDisabledSkills,
   listProjectSkills,
+  listSkillsWithProblems,
   readSkillSource,
   seedProjectSkills,
 } from "../src/agent/skills.ts";
@@ -93,6 +94,32 @@ describe("skills enable/disable", () => {
     expect(enableSkill(paths, "scanpy-analysis")).toEqual({ ok: true });
     expect(listProjectSkills(paths).map((s) => s.name)).toContain("scanpy-analysis");
     expect(listDisabledSkills(paths)).toEqual([]);
+  });
+
+  it("reports an unparseable SKILL.md instead of silently dropping it", () => {
+    ensureProjectExists("p3");
+    const paths = resolvePaths("p3");
+    makeSkill(paths.skillsDir, "good", "fine");
+    // An unquoted plain scalar containing ": " — YAML reads it as a nested
+    // mapping and the whole skill fails to load.
+    makeSkill(paths.skillsDir, "broken", "a hosted server (public demo): promoter regions");
+
+    const { enabled, problems } = listSkillsWithProblems(paths);
+    expect(enabled.map((s) => s.name)).toEqual(["good"]);
+    const broken = problems.find((p) => p.name === "broken");
+    expect(broken).toMatchObject({ name: "broken", state: "enabled", loaded: false });
+    expect(broken?.message).toBeTruthy();
+
+    // Quoting the description makes it load, and the problem goes away.
+    const file = path.join(paths.skillsDir, "broken", "SKILL.md");
+    fs.writeFileSync(
+      file,
+      fs.readFileSync(file, "utf-8").replace(/^description: (.*)$/m, 'description: "$1"'),
+      "utf-8",
+    );
+    const after = listSkillsWithProblems(paths);
+    expect(after.enabled.map((s) => s.name).sort()).toEqual(["broken", "good"]);
+    expect(after.problems).toEqual([]);
   });
 
   it("400 on bad name, 404 when the skill is not in the source location", () => {

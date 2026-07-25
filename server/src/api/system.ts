@@ -14,8 +14,8 @@ import {
   applyDefaultSkillStates,
   disableSkill,
   enableSkill,
-  listDisabledSkills,
   listProjectSkills,
+  listSkillsWithProblems,
   readSkillSource,
   seedProjectSkills,
   SKILL_NAME_RE,
@@ -89,9 +89,11 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
   app.get("/skills/all", async () => {
     const paths = activePaths();
     applyDefaultSkillStates(paths);
+    const { enabled, disabled, problems } = listSkillsWithProblems(paths);
     return {
-      enabled: listProjectSkills(paths).map(toInfo),
-      disabled: listDisabledSkills(paths).map(toInfo),
+      enabled: enabled.map(toInfo),
+      disabled: disabled.map(toInfo),
+      problems,
     };
   });
 

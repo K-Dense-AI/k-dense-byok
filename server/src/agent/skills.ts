@@ -13,7 +13,11 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { loadSkillsFromDir, type Skill } from "@earendil-works/pi-coding-agent";
+import {
+  loadSkillsFromDir,
+  type ResourceDiagnostic,
+  type Skill,
+} from "@earendil-works/pi-coding-agent";
 import { PROJECTS_ROOT } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import type { ToggleResult } from "./capability-state.ts";
@@ -232,10 +236,43 @@ export function seedProjectSkills(paths: ProjectPaths, allowRemote = true): numb
   return countInstalledSkills(paths);
 }
 
+/**
+ * A SKILL.md the loader complained about. `loaded: false` means the skill is
+ * installed on disk but Pi could not parse it, so it is invisible to both the
+ * agent and the Settings list — the failure is otherwise silent.
+ */
+export interface SkillProblem {
+  name: string;
+  state: "enabled" | "disabled";
+  loaded: boolean;
+  message: string;
+}
+
+function loadSkillDir(dir: string): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
+  if (!fs.existsSync(dir)) return { skills: [], diagnostics: [] };
+  return loadSkillsFromDir({ dir, source: "project" });
+}
+
+/** Directory name a diagnostic path points at (…/<name>/SKILL.md). */
+function skillNameFromPath(p: string | undefined): string {
+  if (!p) return "(unknown)";
+  return path.basename(path.dirname(p));
+}
+
+function toProblems(
+  { skills, diagnostics }: { skills: Skill[]; diagnostics: ResourceDiagnostic[] },
+  state: "enabled" | "disabled",
+): SkillProblem[] {
+  const loaded = new Set(skills.map((s) => s.name));
+  return diagnostics.map((d) => {
+    const name = d.collision?.name ?? skillNameFromPath(d.path);
+    return { name, state, loaded: loaded.has(name), message: d.message.trim() };
+  });
+}
+
 /** List installed skills for the project (parsed SKILL.md frontmatter). */
 export function listProjectSkills(paths: ProjectPaths): Skill[] {
-  if (!fs.existsSync(paths.skillsDir)) return [];
-  return loadSkillsFromDir({ dir: paths.skillsDir, source: "project" }).skills;
+  return loadSkillDir(paths.skillsDir).skills;
 }
 
 /** Skill directory names: no separators, no dot-dot. */
@@ -243,9 +280,26 @@ export const SKILL_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
 /** Installed-but-disabled skills (parsed SKILL.md frontmatter). */
 export function listDisabledSkills(paths: ProjectPaths): Skill[] {
-  const dir = skillsDisabledDir(paths);
-  if (!fs.existsSync(dir)) return [];
-  return loadSkillsFromDir({ dir, source: "project" }).skills;
+  return loadSkillDir(skillsDisabledDir(paths)).skills;
+}
+
+/**
+ * Both skill lists plus every loader diagnostic, in one pass over each dir.
+ * The API surfaces `problems` so a malformed SKILL.md shows up in Settings
+ * instead of just disappearing from the catalogue.
+ */
+export function listSkillsWithProblems(paths: ProjectPaths): {
+  enabled: Skill[];
+  disabled: Skill[];
+  problems: SkillProblem[];
+} {
+  const enabled = loadSkillDir(paths.skillsDir);
+  const disabled = loadSkillDir(skillsDisabledDir(paths));
+  return {
+    enabled: enabled.skills,
+    disabled: disabled.skills,
+    problems: [...toProblems(enabled, "enabled"), ...toProblems(disabled, "disabled")],
+  };
 }
 
 /** Raw SKILL.md text from whichever location holds the skill; null if absent. */

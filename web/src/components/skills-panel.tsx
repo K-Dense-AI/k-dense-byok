@@ -2,7 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useProjects } from "@/lib/use-projects";
-import { getAllSkills, setSkillEnabled, type SkillInfo } from "@/lib/capabilities";
+import {
+  getAllSkills,
+  setSkillEnabled,
+  type SkillInfo,
+  type SkillProblem,
+} from "@/lib/capabilities";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 
@@ -13,6 +18,7 @@ interface Row extends SkillInfo {
 export function SkillsPanel() {
   const { activeProject, activeProjectId } = useProjects();
   const [rows, setRows] = useState<Row[]>([]);
+  const [problems, setProblems] = useState<SkillProblem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -21,12 +27,15 @@ export function SkillsPanel() {
     setLoading(true);
     setError(null);
     try {
-      const { enabled, disabled } = await getAllSkills();
+      const { enabled, disabled, problems: found } = await getAllSkills();
       const merged: Row[] = [
         ...enabled.map((s) => ({ ...s, enabled: true })),
         ...disabled.map((s) => ({ ...s, enabled: false })),
       ].sort((a, b) => a.name.localeCompare(b.name));
       setRows(merged);
+      // Skills that failed to parse are absent from both lists above; without
+      // this the only symptom is a skill missing from the catalogue.
+      setProblems(found.filter((p) => !p.loaded));
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Failed to load skills");
     } finally {
@@ -73,6 +82,28 @@ export function SkillsPanel() {
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           {error}
+        </div>
+      )}
+
+      {problems.length > 0 && (
+        <div className="rounded-lg border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs">
+          <div className="font-medium">
+            {problems.length === 1
+              ? "1 installed skill could not be loaded"
+              : `${problems.length} installed skills could not be loaded`}
+          </div>
+          <p className="mt-1 text-muted-foreground">
+            These are on disk but their SKILL.md failed to parse, so they are hidden from the
+            list below and from the agent. Fix the frontmatter and reopen this tab.
+          </p>
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {problems.map((p) => (
+              <li key={`${p.state}/${p.name}`}>
+                <span className="font-medium">{p.name}</span>
+                <span className="text-muted-foreground"> — {p.message.split("\n")[0]}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 

@@ -13,16 +13,32 @@ export interface SkillInfo {
   description: string;
 }
 
+/**
+ * A SKILL.md the loader complained about. `loaded: false` means it is installed
+ * but unparseable, so it appears in neither list here nor to the agent.
+ */
+export interface SkillProblem {
+  name: string;
+  state: "enabled" | "disabled";
+  loaded: boolean;
+  message: string;
+}
+
 export interface SkillsListing {
   enabled: SkillInfo[];
   disabled: SkillInfo[];
+  problems: SkillProblem[];
 }
 
 export async function getAllSkills(): Promise<SkillsListing> {
   const res = await apiFetch("/skills/all");
   if (!res.ok) throw new Error(`getAllSkills ${res.status}`);
   const data = (await res.json()) as Partial<SkillsListing>;
-  return { enabled: data.enabled ?? [], disabled: data.disabled ?? [] };
+  return {
+    enabled: data.enabled ?? [],
+    disabled: data.disabled ?? [],
+    problems: data.problems ?? [],
+  };
 }
 
 export async function setSkillEnabled(name: string, enabled: boolean): Promise<void> {

@@ -14,6 +14,24 @@ describe("capabilities client", () => {
     const listing = await getAllSkills();
     expect(listing.enabled.map((s) => s.name)).toEqual(["a"]);
     expect(listing.disabled).toEqual([]);
+    expect(listing.problems).toEqual([]);
+  });
+
+  it("getAllSkills passes loader problems through", async () => {
+    vi.spyOn(projects, "apiFetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          enabled: [],
+          disabled: [],
+          problems: [{ name: "broken", state: "enabled", loaded: false, message: "bad yaml" }],
+        }),
+        { status: 200 },
+      ),
+    );
+    const listing = await getAllSkills();
+    expect(listing.problems).toEqual([
+      { name: "broken", state: "enabled", loaded: false, message: "bad yaml" },
+    ]);
   });
 
   it("setSkillEnabled posts to the enable/disable route and throws detail on error", async () => {
