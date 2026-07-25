@@ -12,7 +12,7 @@
 
 **Your own AI research assistant, running on your computer, powered by the accounts and API keys you choose.**
 
-![K-Dense BYOK — Kady running an end-to-end single-cell RNA-seq analysis, with the project file browser, a rendered analysis report, and the live chat panel](docs/app-screenshot.png)
+![K-Dense BYOK — Kady running an end-to-end single-cell RNA-seq analysis: asking in plain language, streaming tool calls, the generated figures and report, the living lab notebook, and the skills and specialists settings](docs/kady-demo.gif)
 
 K-Dense BYOK (Bring Your Own Keys) is a free, open-source app that gives you **Kady** — an AI research assistant for scientists in any field. Describe a task in plain language — *analyze this dataset*, *review my manuscript*, *search the literature*, *build this figure* — and Kady works through it in a complete research workspace. It can inspect your files, write and run analysis code, search and read sources, create figures and reports, and keep a living record of what it did.
 
@@ -148,7 +148,3 @@ If you run into a problem or have an idea for something new, please [open a GitH
 ## About K-Dense
 
 K-Dense BYOK is open source because [K-Dense](https://github.com/K-Dense-AI) believes in giving back to the community that makes this kind of work possible.
-
-## Star history
-
-[![Star History Chart](https://api.star-history.com/image?repos=K-Dense-AI/k-dense-byok&type=date&legend=top-left)](https://www.star-history.com/?repos=K-Dense-AI/k-dense-byok&type=date&legend=top-left)
