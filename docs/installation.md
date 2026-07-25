@@ -122,4 +122,13 @@ The startup script picks up any new packages and skills automatically.
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
 - **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys**, start Ollama, or connect a supported subscription in **Settings → Model providers**.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
+- **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node does not read `HTTP_PROXY` / `HTTPS_PROXY` by itself, so Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
+
+  ```bash
+  HTTPS_PROXY=http://proxy.example.com:3128
+  HTTP_PROXY=http://proxy.example.com:3128
+  NO_PROXY=localhost,127.0.0.1
+  ```
+
+  Keep `localhost` in `NO_PROXY` so Ollama and the app's own services stay direct. On restart the backend log confirms it with `routing outbound HTTP through the configured proxy`. To check whether a 403 is really coming from the provider, call it directly from the same machine — `curl -sS https://openrouter.ai/api/v1/models -H "Authorization: Bearer $OPENROUTER_API_KEY"`. An error that isn't shaped like the provider's own JSON is coming from something in between.
 - **Something else?** — [Open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues); we read every one.
