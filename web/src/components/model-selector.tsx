@@ -44,7 +44,8 @@ export function modelUsesBillableBudget(model: {
     model.id.startsWith("openai-codex/") ||
     model.id.startsWith("github-copilot/") ||
     model.id.startsWith("xai/") ||
-    model.id.startsWith("ollama/")
+    model.id.startsWith("ollama/") ||
+    model.id.startsWith("openai-compatible/")
   );
 }
 
@@ -72,10 +73,16 @@ const PROVIDER_COLORS: Record<string, string> = {
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
   Ollama:    "text-teal-600 dark:text-teal-400",
+  "OpenAI-Compatible": "text-teal-600 dark:text-teal-400",
   "Openrouter Fusion": "text-red-600 dark:text-red-400",
 };
 
 const isOllama = (m: Model) => m.provider === "Ollama" || m.id.startsWith("ollama/");
+const isOpenAICompatible = (m: Model) =>
+  m.provider === "OpenAI-Compatible" || m.id.startsWith("openai-compatible/");
+/** Runs on the user's own hardware — priced at $0 and grouped under "Local". */
+const isLocal = (m: Model) => isOllama(m) || isOpenAICompatible(m);
+const LOCAL_GROUP_IDS = new Set(["ollama", "openai-compatible"]);
 
 function TierDot({ tier, isFusion }: { tier: string; isFusion?: boolean }) {
   if (isFusion) {
@@ -110,11 +117,14 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     models: allModels,
     ollamaAvailable,
     ollamaModels,
+    openaiCompatibleAvailable,
+    openaiCompatibleModels,
+    openaiCompatibleConfigured,
     refresh,
   } = useModels();
 
-  // PopoverContent unmounts when closed, so this effectively re-probes
-  // Ollama each time the user opens the picker — lets them start the
+  // PopoverContent unmounts when closed, so this effectively re-probes both
+  // local servers each time the user opens the picker — lets them start the
   // daemon and see models appear without a full reload.
   useEffect(() => {
     refresh();
@@ -133,10 +143,20 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       if (!matches(m)) continue;
       const sourceId = m.isFusion
         ? "fusion"
-        : m.sourceId ?? (isOllama(m) ? "ollama" : "openrouter");
+        : m.sourceId ??
+          (isOllama(m)
+            ? "ollama"
+            : isOpenAICompatible(m)
+              ? "openai-compatible"
+              : "openrouter");
       const label = m.isFusion
         ? "OpenRouter Fusion"
-        : m.sourceLabel ?? (isOllama(m) ? "Local (Ollama)" : "OpenRouter");
+        : m.sourceLabel ??
+          (isOllama(m)
+            ? "Local (Ollama)"
+            : isOpenAICompatible(m)
+              ? "Local (OpenAI-compatible)"
+              : "OpenRouter");
       const group = grouped.get(sourceId) ?? { label, models: [] };
       group.models.push(m);
       grouped.set(sourceId, group);
@@ -149,6 +169,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       "xai",
       "openrouter",
       "ollama",
+      "openai-compatible",
     ];
     const groups = [...grouped.entries()]
       .sort(([left], [right]) => {
@@ -170,7 +191,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     const isSelected = selected.id === model.id;
     const available = model.available !== false;
     const providerColor = PROVIDER_COLORS[model.provider] ?? "text-muted-foreground";
-    const local = isOllama(model);
+    const local = isLocal(model);
     return (
       <div
         key={model.id}
@@ -272,7 +293,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
           <div key={group.id}>
             {index > 0 ? <div className="my-1 border-t border-border/60" /> : null}
             <div className="flex items-center gap-1.5 px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              {group.id === "ollama" ? (
+              {LOCAL_GROUP_IDS.has(group.id) ? (
                 <HardDriveIcon className="size-3" aria-hidden />
               ) : (
                 <BrainCircuitIcon className="size-3" aria-hidden />
@@ -283,7 +304,11 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                   ? ollamaAvailable
                     ? `${ollamaModels.length} available`
                     : "not running"
-                  : `${group.models.length} model${group.models.length === 1 ? "" : "s"}`}
+                  : group.id === "openai-compatible"
+                    ? openaiCompatibleAvailable
+                      ? `${openaiCompatibleModels.length} available`
+                      : "not running"
+                    : `${group.models.length} model${group.models.length === 1 ? "" : "s"}`}
               </span>
             </div>
             {group.models.map(renderModelRow)}
@@ -313,6 +338,41 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                 <>
                   Start Ollama to use local models, then pull a model and reopen
                   this menu.
+                </>
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* Unlike Ollama's section, this one stays hidden until the user opts
+            in with OPENAI_COMPATIBLE_BASE_URL or a server actually answers —
+            most users have never run one and don't need a dead row. */}
+        {!search &&
+        (openaiCompatibleConfigured || openaiCompatibleAvailable) &&
+        !groups.some((group) => group.id === "openai-compatible") ? (
+          <div>
+            {groups.length > 0 ? <div className="my-1 border-t border-border/60" /> : null}
+            <div className="flex items-center gap-1.5 px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <HardDriveIcon className="size-3" aria-hidden />
+              <span>Local (OpenAI-compatible)</span>
+              <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">
+                {openaiCompatibleAvailable ? "0 available" : "not running"}
+              </span>
+            </div>
+            <div className="px-3 py-2 text-[11px] leading-relaxed text-muted-foreground/80">
+              {openaiCompatibleAvailable ? (
+                <>
+                  The server is up but serving no models. Load one and reopen
+                  this menu.
+                </>
+              ) : (
+                <>
+                  No server answered at{" "}
+                  <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
+                    OPENAI_COMPATIBLE_BASE_URL
+                  </code>
+                  . Start LM Studio, vLLM, or another OpenAI-compatible server
+                  and reopen this menu.
                 </>
               )}
             </div>

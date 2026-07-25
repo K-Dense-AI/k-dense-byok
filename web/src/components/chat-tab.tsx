@@ -117,9 +117,9 @@ const MAX_QUEUE = 5;
 
 type QueuedMessage = WorkspaceQueuedMessage;
 
-/** Models whose runs must NOT carry a thinkingLevel: Ollama models are built
+/** Models whose runs must NOT carry a thinkingLevel: local models are built
  *  with reasoning:false (Pi clamps to off) and Fusion rewrites the wire body,
- *  so a level is meaningless there. Mirrors isOllama in model-selector.tsx. */
+ *  so a level is meaningless there. Mirrors isLocal in model-selector.tsx. */
 function thinkingUnsupported(model: {
   id: string;
   provider?: string;
@@ -128,7 +128,9 @@ function thinkingUnsupported(model: {
   return (
     model.reasoning === false ||
     model.provider === "Ollama" ||
+    model.provider === "OpenAI-Compatible" ||
     model.id.startsWith("ollama/") ||
+    model.id.startsWith("openai-compatible/") ||
     model.id.startsWith("fusion/")
   );
 }

@@ -67,7 +67,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 - **Connect supported subscriptions directly through Pi OAuth.** In **Settings → Model providers**, connect ChatGPT Plus/Pro (`openai-codex`), Claude Pro/Max (`anthropic`), GitHub Copilot, or xAI. Kady handles the provider's browser, device-code, or manual sign-in flow and makes its available models appear in the picker.
 - **Use major hosted models** from OpenAI, Anthropic, Google, xAI, Qwen, and others through one [OpenRouter](https://openrouter.ai/) account. Change the model and reasoning level independently in each chat.
-- **Run free local models with [Ollama](./docs/local-models-ollama.md)** when cost or data locality matters. Local models appear in the same model picker.
+- **Run free local models with [Ollama or any OpenAI-compatible server](./docs/local-models-ollama.md)** (LM Studio, vLLM, …) when cost or data locality matters. Local models appear in the same model picker.
 - **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information. Fusion remains OpenRouter-only and requires an OpenRouter API key.
 - **Move demanding computation to [Modal](./docs/modal-compute.md).** Select an on-demand cloud CPU or single-/multi-GPU environment for a chat. Kady persists and monitors the job, stages validated inputs, brings outputs atomically back into the local project, and reserves estimated compute cost against the project budget. Long jobs survive chat turns and backend restarts and remain controllable from the Compute tab.
 
@@ -130,7 +130,7 @@ All guides live in the [`docs/`](./docs) folder:
 | [Living Lab Notebook](./docs/lab-notebook.md) | Real-time record of Kady's work — structured entries, export, and PDF |
 | [Sub-agents](./docs/sub-agents.md) | Kady's team of 21 scientific specialists and how to customize them |
 | [Connecting external tools (MCP)](./docs/mcp-servers.md) | Give Kady extra abilities like GitHub, reference managers, and databases |
-| [Local models with Ollama](./docs/local-models-ollama.md) | Run everything on free local models, no API keys required |
+| [Local models](./docs/local-models-ollama.md) | Run everything on free local models (Ollama or any OpenAI-compatible server), no API keys required |
 | [Model selection](./docs/model-selection.md) | OpenRouter, Pi subscription, Ollama, model refs, and billing behavior |
 | [OpenRouter Fusion](./docs/openrouter-fusion.md) | Multi-model deliberation presets — what they are and how the integration works |
 | [Architecture](./docs/architecture.md) | How the two local services fit together (for the technically curious) |

@@ -220,6 +220,9 @@ function billingFromModelRef(
     return billingForProvider("unknown", "api_key");
   }
   if (ref.startsWith("ollama/")) return billingForProvider("ollama", "local");
+  if (ref.startsWith("openai-compatible/")) {
+    return billingForProvider("openai-compatible", "local");
+  }
   if (ref.startsWith("fusion/") || ref.startsWith("openrouter/")) {
     return billingForProvider("openrouter", "api_key");
   }

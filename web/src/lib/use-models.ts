@@ -18,6 +18,13 @@ interface OllamaListResponse {
   models?: Model[];
 }
 
+interface OpenAICompatibleListResponse {
+  available?: boolean;
+  /** True when OPENAI_COMPATIBLE_BASE_URL was set explicitly. */
+  configured?: boolean;
+  models?: Model[];
+}
+
 export type ModelAvailability = "checking" | "available" | "unavailable";
 
 interface ProviderDiscovery {
@@ -35,6 +42,12 @@ let ollamaDiscoveryCache:
   | { value: OllamaListResponse; loadedAt: number }
   | undefined;
 let ollamaDiscoveryInFlight: Promise<OllamaListResponse> | undefined;
+let oaiCompatDiscoveryCache:
+  | { value: OpenAICompatibleListResponse; loadedAt: number }
+  | undefined;
+let oaiCompatDiscoveryInFlight:
+  | Promise<OpenAICompatibleListResponse>
+  | undefined;
 
 function discoverProviders(force = false): Promise<ProviderDiscovery> {
   if (
@@ -108,6 +121,37 @@ function discoverOllama(force = false): Promise<OllamaListResponse> {
   return inFlight;
 }
 
+/** Parallel to discoverOllama; a separate endpoint speaking a separate protocol. */
+function discoverOpenAICompatible(
+  force = false,
+): Promise<OpenAICompatibleListResponse> {
+  if (
+    !force &&
+    oaiCompatDiscoveryCache &&
+    Date.now() - oaiCompatDiscoveryCache.loadedAt < DISCOVERY_CACHE_MS
+  ) {
+    return Promise.resolve(oaiCompatDiscoveryCache.value);
+  }
+  if (oaiCompatDiscoveryInFlight) return oaiCompatDiscoveryInFlight;
+  const request = apiFetch("/openai-compatible/models").then(async (response) =>
+    response.ok
+      ? ((await response.json()) as OpenAICompatibleListResponse)
+      : { available: false, configured: false, models: [] },
+  );
+  const inFlight = request
+    .then((value) => {
+      oaiCompatDiscoveryCache = { value, loadedAt: Date.now() };
+      return value;
+    })
+    .finally(() => {
+      if (oaiCompatDiscoveryInFlight === inFlight) {
+        oaiCompatDiscoveryInFlight = undefined;
+      }
+    });
+  oaiCompatDiscoveryInFlight = inFlight;
+  return inFlight;
+}
+
 export interface UseModelsReturn {
   /** Every model available to the user: static OpenRouter catalogue + live Ollama tags + user Fusion configs. */
   models: Model[];
@@ -115,6 +159,16 @@ export interface UseModelsReturn {
   ollamaModels: Model[];
   /** True when the backend was able to reach `OLLAMA_BASE_URL/api/tags`. */
   ollamaAvailable: boolean;
+  /** Entries from a local OpenAI-compatible server, backend order. */
+  openaiCompatibleModels: Model[];
+  /** True when the backend reached `OPENAI_COMPATIBLE_BASE_URL/v1/models`. */
+  openaiCompatibleAvailable: boolean;
+  /**
+   * True when the user set OPENAI_COMPATIBLE_BASE_URL. The picker shows the
+   * section when this or `openaiCompatibleAvailable` holds, so users who never
+   * run one of these servers never see it.
+   */
+  openaiCompatibleConfigured: boolean;
   /** Direct Pi-provider models available through connected subscriptions. */
   providerModels: Model[];
   providerStatuses: ModelProviderStatus[];
@@ -136,6 +190,10 @@ export function useModels(): UseModelsReturn {
   const [ollamaModels, setOllamaModels] = useState<Model[]>([]);
   const [ollamaAvailable, setOllamaAvailable] = useState(false);
   const [ollamaLoaded, setOllamaLoaded] = useState(false);
+  const [oaiCompatModels, setOaiCompatModels] = useState<Model[]>([]);
+  const [oaiCompatAvailable, setOaiCompatAvailable] = useState(false);
+  const [oaiCompatConfigured, setOaiCompatConfigured] = useState(false);
+  const [oaiCompatLoaded, setOaiCompatLoaded] = useState(false);
   const [providerModels, setProviderModels] = useState<Model[]>([]);
   const [providerStatuses, setProviderStatuses] = useState<ModelProviderStatus[]>([]);
   const [providerStatusLoaded, setProviderStatusLoaded] = useState(false);
@@ -155,6 +213,21 @@ export function useModels(): UseModelsReturn {
         setOllamaAvailable(false);
         setOllamaModels([]);
         setOllamaLoaded(true);
+      });
+  }, []);
+
+  const fetchOpenAICompatible = useCallback((force = false) => {
+    void discoverOpenAICompatible(force)
+      .then((data) => {
+        setOaiCompatAvailable(Boolean(data.available));
+        setOaiCompatConfigured(Boolean(data.configured));
+        setOaiCompatModels(Array.isArray(data.models) ? data.models : []);
+        setOaiCompatLoaded(true);
+      })
+      .catch(() => {
+        setOaiCompatAvailable(false);
+        setOaiCompatModels([]);
+        setOaiCompatLoaded(true);
       });
   }, []);
 
@@ -178,16 +251,18 @@ export function useModels(): UseModelsReturn {
 
   useEffect(() => {
     fetchOllama();
+    fetchOpenAICompatible();
     fetchProviders();
-  }, [fetchOllama, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchProviders]);
 
   useEffect(
     () =>
       onProjectChange(() => {
         fetchOllama(true);
+        fetchOpenAICompatible(true);
         fetchProviders();
       }),
-    [fetchOllama, fetchProviders],
+    [fetchOllama, fetchOpenAICompatible, fetchProviders],
   );
 
   useEffect(() => {
@@ -302,14 +377,34 @@ export function useModels(): UseModelsReturn {
     [ollamaAvailable, ollamaModels],
   );
 
+  const enrichedOpenAICompatibleModels = useMemo<Model[]>(
+    () =>
+      oaiCompatModels.map((model) => ({
+        ...model,
+        sourceId: "openai-compatible",
+        sourceLabel: "Local (OpenAI-compatible)",
+        billingMode: "local",
+        reasoning: false,
+        available: oaiCompatAvailable,
+      })),
+    [oaiCompatAvailable, oaiCompatModels],
+  );
+
   const models = useMemo(
     () => [
       ...fusionModels,
       ...providerModels,
       ...openrouterModels,
       ...enrichedOllamaModels,
+      ...enrichedOpenAICompatibleModels,
     ],
-    [enrichedOllamaModels, fusionModels, openrouterModels, providerModels],
+    [
+      enrichedOllamaModels,
+      enrichedOpenAICompatibleModels,
+      fusionModels,
+      openrouterModels,
+      providerModels,
+    ],
   );
 
   const connectedProviders = useMemo(
@@ -325,6 +420,9 @@ export function useModels(): UseModelsReturn {
   const modelAvailability = useCallback(
     (model: Pick<Model, "id">): ModelAvailability => {
       if (model.id.startsWith("ollama/") && !ollamaLoaded) return "checking";
+      if (model.id.startsWith("openai-compatible/") && !oaiCompatLoaded) {
+        return "checking";
+      }
       if (
         (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) &&
         openrouterConfigured === null
@@ -342,6 +440,8 @@ export function useModels(): UseModelsReturn {
       const current = models.find((candidate) => candidate.id === model.id);
       if (current) return current.available === false ? "unavailable" : "available";
       if (model.id.startsWith("ollama/")) return "unavailable";
+      // A persisted selection whose server stopped, or whose model was unloaded.
+      if (model.id.startsWith("openai-compatible/")) return "unavailable";
       if (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) {
         return openrouterConfigured === false ? "unavailable" : "available";
       }
@@ -355,6 +455,7 @@ export function useModels(): UseModelsReturn {
     [
       connectedProviders,
       models,
+      oaiCompatLoaded,
       ollamaLoaded,
       openrouterConfigured,
       providerStatusLoaded,
@@ -370,13 +471,17 @@ export function useModels(): UseModelsReturn {
 
   const refresh = useCallback(() => {
     fetchOllama(true);
+    fetchOpenAICompatible(true);
     fetchProviders(true);
-  }, [fetchOllama, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchProviders]);
 
   return {
     models,
     ollamaModels: enrichedOllamaModels,
     ollamaAvailable,
+    openaiCompatibleModels: enrichedOpenAICompatibleModels,
+    openaiCompatibleAvailable: oaiCompatAvailable,
+    openaiCompatibleConfigured: oaiCompatConfigured,
     providerModels,
     providerStatuses,
     modelAvailability,

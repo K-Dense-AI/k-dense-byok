@@ -35,7 +35,10 @@ export function billingForProvider(
   provider: string,
   authType: LedgerAuthType = "none",
 ): BillingContext {
-  if (provider === "ollama") {
+  // Local model servers only. Both are $0 because the model runs on the user's
+  // own hardware — do not extend this branch to a hosted gateway, whose real
+  // spend would then be invisible to the project cap.
+  if (provider === "ollama" || provider === "openai-compatible") {
     return { provider, authType: "local", billingMode: "local" };
   }
   if (provider === "modal") {
@@ -63,7 +66,9 @@ export async function billingForModel(
   model: Model<Api>,
   runtime: Pick<ModelRuntime, "checkAuth">,
 ): Promise<BillingContext> {
-  if (model.provider === "ollama") return billingForProvider("ollama", "local");
+  if (model.provider === "ollama" || model.provider === "openai-compatible") {
+    return billingForProvider(model.provider, "local");
+  }
   const auth = await runtime.checkAuth(model.provider);
   return billingForProvider(model.provider, auth?.type ?? "none");
 }

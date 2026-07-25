@@ -113,6 +113,9 @@ function inferredBilling(model: string, role?: CostEntry["role"]): BillingContex
     return billingForProvider("modal");
   }
   if (model.startsWith("ollama/")) return billingForProvider("ollama", "local");
+  if (model.startsWith("openai-compatible/")) {
+    return billingForProvider("openai-compatible", "local");
+  }
   if (model.startsWith("openrouter/") || model.startsWith("fusion/")) {
     return billingForProvider("openrouter", "api_key");
   }

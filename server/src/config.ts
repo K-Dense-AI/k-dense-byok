@@ -48,6 +48,24 @@ export const DEFAULT_MODEL_ID =
 export const OLLAMA_BASE_URL =
   process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 
+/**
+ * Local OpenAI-compatible model server (LM Studio, vLLM, text-generation-webui,
+ * …) discovered through the standard `/v1/models` endpoint. Defaults to LM
+ * Studio's port so that case needs no configuration; vLLM's default (8000)
+ * collides with this backend, so those users must move one of the two.
+ */
+export const OPENAI_COMPATIBLE_BASE_URL =
+  process.env.OPENAI_COMPATIBLE_BASE_URL?.trim() || "http://localhost:1234";
+
+/**
+ * Whether the user explicitly pointed us at a server. The picker hides the
+ * section entirely unless this is true or a server actually answers, so the
+ * majority who have never run one never see a dead "not running" row.
+ */
+export const OPENAI_COMPATIBLE_CONFIGURED = Boolean(
+  process.env.OPENAI_COMPATIBLE_BASE_URL?.trim(),
+);
+
 /** Whether Modal-style remote compute is configured (kept for /config parity). */
 export function modalConfigured(): boolean {
   return Boolean(process.env.MODAL_TOKEN_ID && process.env.MODAL_TOKEN_SECRET);

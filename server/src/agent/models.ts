@@ -20,6 +20,7 @@ import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
   OLLAMA_BASE_URL,
+  OPENAI_COMPATIBLE_BASE_URL,
   REPO_ROOT,
 } from "../config.ts";
 import {
@@ -195,6 +196,30 @@ function buildOllamaModel(name: string): Model<Api> {
   };
 }
 
+/**
+ * A model served by a local OpenAI-compatible server. Deliberately a parallel
+ * path to buildOllamaModel rather than a shared base — the two only look alike
+ * because both endpoints happen to be OpenAI-shaped.
+ *
+ * `/v1/models` carries no pricing or context length anywhere near reliably, so
+ * this uses the same $0 / 32K defaults Ollama does. $0 is honest here only
+ * because the provider is local-only; see `billingForProvider`.
+ */
+export function buildOpenAICompatibleModel(name: string): Model<Api> {
+  return {
+    id: name,
+    name,
+    api: "openai-completions",
+    provider: "openai-compatible",
+    baseUrl: `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1`,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 32_768,
+    maxTokens: 8192,
+  };
+}
+
 /** Configure app-specific providers and runtime credentials. */
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   modelRuntime.registerProvider("ollama", {
@@ -202,6 +227,15 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
     baseUrl: `${OLLAMA_BASE_URL.replace(/\/+$/, "")}/v1`,
     api: "openai-completions",
     apiKey: "ollama",
+  });
+
+  // Local servers ignore the credential, but Pi needs *something* to resolve
+  // before it will dispatch — same placeholder arrangement as Ollama.
+  modelRuntime.registerProvider("openai-compatible", {
+    name: "OpenAI-Compatible",
+    baseUrl: `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1`,
+    api: "openai-completions",
+    apiKey: "openai-compatible",
   });
 
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
@@ -274,7 +308,9 @@ export async function assertModelAuthentication(
   model: Model<Api>,
   modelRuntime: ModelRuntime,
 ): Promise<void> {
-  if (model.provider === "ollama") return;
+  // Local servers authenticate with a placeholder credential, so there is no
+  // real auth state to assert — reachability is the only failure mode.
+  if (model.provider === "ollama" || model.provider === "openai-compatible") return;
   const auth = await modelRuntime.checkAuth(model.provider);
   if (!auth) {
     throw new ModelAuthenticationError(
@@ -317,6 +353,15 @@ export function resolveModel(
   }
   if (r.startsWith("ollama/")) {
     return buildOllamaModel(r.slice("ollama/".length));
+  }
+  // Everything after the prefix is the model id verbatim — LM Studio ids often
+  // contain slashes themselves (e.g. "qwen/qwen3-8b"), so this must not split.
+  if (r.startsWith("openai-compatible/")) {
+    const id = r.slice("openai-compatible/".length);
+    if (!id) {
+      throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
+    }
+    return buildOpenAICompatibleModel(id);
   }
   const direct = directProviderRef(r);
   if (direct) {

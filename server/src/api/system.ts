@@ -1,10 +1,14 @@
 /**
- * System + misc endpoints: /skills (installed catalogue), /ollama/models
- * (local model discovery), and /sandbox/init (heavier per-project bootstrap).
- * /health and /config live in index.ts.
+ * System + misc endpoints: /skills (installed catalogue), /ollama/models and
+ * /openai-compatible/models (local model discovery), and /sandbox/init
+ * (heavier per-project bootstrap). /health and /config live in index.ts.
  */
 import type { FastifyInstance } from "fastify";
-import { OLLAMA_BASE_URL } from "../config.ts";
+import {
+  OLLAMA_BASE_URL,
+  OPENAI_COMPATIBLE_BASE_URL,
+  OPENAI_COMPATIBLE_CONFIGURED,
+} from "../config.ts";
 import { activePaths } from "../projects.ts";
 import {
   applyDefaultSkillStates,
@@ -157,6 +161,52 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
       return { available: true, models };
     } catch {
       return { available: false, models: [] };
+    }
+  });
+
+  // Same idea for any server speaking the standard OpenAI `/v1/models` shape
+  // (LM Studio, vLLM, text-generation-webui, …). Kept as a parallel path to the
+  // Ollama route above rather than factored into a shared helper: the two
+  // discovery protocols are unrelated, and Ollama's is upstream-owned.
+  //
+  // `configured` tells the picker whether the user explicitly asked for this
+  // provider, so it can stay hidden for everyone else instead of showing a
+  // permanently dead section.
+  app.get("/openai-compatible/models", async () => {
+    const configured = OPENAI_COMPATIBLE_CONFIGURED;
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 2000);
+      const resp = await fetch(
+        `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1/models`,
+        { signal: ctrl.signal },
+      );
+      clearTimeout(t);
+      if (!resp.ok) return { available: false, configured, models: [] };
+      const data = (await resp.json()) as { data?: unknown };
+      // Deliberately lenient: take `id` off each entry and skip anything that
+      // doesn't have one, so a single odd row can't blank out the whole list.
+      // Nothing beyond `id` is trusted — servers disagree on every other field.
+      const seen = new Set<string>();
+      const models = [];
+      for (const entry of Array.isArray(data.data) ? data.data : []) {
+        const id = (entry as { id?: unknown })?.id;
+        if (typeof id !== "string" || !id.trim() || seen.has(id)) continue;
+        seen.add(id);
+        models.push({
+          id: `openai-compatible/${id}`,
+          label: id,
+          provider: "OpenAI-Compatible",
+          tier: "budget",
+          context_length: 0,
+          pricing: { prompt: 0, completion: 0 },
+          modality: "text->text",
+          description: `Local OpenAI-compatible model: ${id}`,
+        });
+      }
+      return { available: true, configured, models };
+    } catch {
+      return { available: false, configured, models: [] };
     }
   });
 }
