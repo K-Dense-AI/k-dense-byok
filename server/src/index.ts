@@ -28,6 +28,7 @@ import { registerModalRoutes } from "./api/modal.ts";
 import { registerModelProviderRoutes } from "./api/model-providers.ts";
 import { modalJobManager } from "./modal/manager.ts";
 import { syncHelperVenv } from "./helpers-env.ts";
+import { configureHttpProxy } from "./http-proxy.ts";
 
 function readCookie(req: FastifyRequest, name: string): string | undefined {
   const raw = req.headers.cookie;
@@ -150,8 +151,18 @@ const isMain = (() => {
   }
 })();
 if (isMain) {
+  // Before anything makes an outbound request: Node's fetch ignores
+  // HTTP_PROXY/HTTPS_PROXY on its own, so a proxied network would otherwise
+  // only be used by the child `pi` processes that run subagents.
+  const proxy = configureHttpProxy();
   syncHelperVenv(); // best-effort; previews degrade gracefully if it fails
   const app = await buildApp();
+  if (proxy.enabled) {
+    app.log.info(
+      { httpProxy: proxy.httpProxy, httpsProxy: proxy.httpsProxy, noProxy: proxy.noProxy },
+      "routing outbound HTTP through the configured proxy",
+    );
+  }
   app
     .listen({ port: PORT, host: HOST })
     .then((addr) => app.log.info(`kady-server listening on ${addr}`))
