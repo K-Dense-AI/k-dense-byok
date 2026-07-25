@@ -37,6 +37,7 @@ import { apiFetch } from "@/lib/projects";
 import { notifyModalCredentialsChanged } from "@/lib/modal-jobs";
 import {
   FUSION_DEFAULTS_VERSION,
+  fusionJudgeModel,
   fusionPanelModels,
   loadFusionConfigs,
   type StoredFusionConfig,
@@ -825,7 +826,7 @@ function FusionPanel() {
             try {
               const p = JSON.parse(c.config);
               const panel = fusionPanelModels(p).join(", ");
-              const judge = p?.plugins?.[0]?.model || "-";
+              const judge = fusionJudgeModel(p) ?? "-";
               const r = p.reasoning_effort || "-";
               const t = p.temperature ?? "default";
               summary = (

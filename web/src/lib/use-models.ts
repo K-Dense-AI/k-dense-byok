@@ -5,7 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import staticModels from "@/data/models.json";
 import type { Model } from "@/components/model-selector";
 import { apiFetch, onProjectChange } from "@/lib/projects";
-import { fusionPanelModels, loadFusionConfigs } from "@/lib/fusion-presets";
+import {
+  JUDGE_CALLS_PER_TURN,
+  fusionJudgeModel,
+  fusionPanelModels,
+  loadFusionConfigs,
+} from "@/lib/fusion-presets";
 import {
   PROVIDER_AUTH_CHANGED_EVENT,
   type ModelProviderStatus,
@@ -301,26 +306,39 @@ export function useModels(): UseModelsReturn {
       }
 
       const panel = fusionPanelModels(cfg);
+      const judgeId = fusionJudgeModel(cfg);
       const reasoning = (cfg.reasoning_effort as string) || "standard";
 
-      // Combined input/output price = sum of the panel models' catalogue prices.
+      // Combined price = each panel model once + the judge JUDGE_CALLS_PER_TURN
+      // times. Must match buildFusionModel() on the server, which is what
+      // actually gets ledgered — the two are separate copies of this formula.
       let totalPrompt = 0;
       let totalCompletion = 0;
       const missing: string[] = [];
-      for (const modelId of panel) {
+      const priceOf = (modelId: string) => {
         const cleanId = modelId.replace(/^openrouter\//, "");
         const found = OPENROUTER_MODELS.find(
           (m) => m.id === `openrouter/${cleanId}` || m.id === modelId,
         );
-        if (found) {
-          totalPrompt += found.pricing.prompt;
-          totalCompletion += found.pricing.completion;
-        } else {
-          missing.push(cleanId);
+        if (!found) missing.push(cleanId);
+        return found?.pricing;
+      };
+      for (const modelId of panel) {
+        const pricing = priceOf(modelId);
+        if (!pricing) continue;
+        totalPrompt += pricing.prompt;
+        totalCompletion += pricing.completion;
+      }
+      if (judgeId) {
+        const pricing = priceOf(judgeId);
+        if (pricing) {
+          totalPrompt += JUDGE_CALLS_PER_TURN * pricing.prompt;
+          totalCompletion += JUDGE_CALLS_PER_TURN * pricing.completion;
         }
       }
 
       const panelNames = panel.length > 0 ? panel.join(", ") : "custom panel";
+      const judgeLine = judgeId ? ` • judge ${judgeId} (×${JUDGE_CALLS_PER_TURN})` : "";
       const noteLine = fc.note ? `\n${fc.note}` : "";
       const missingLine = missing.length
         ? `\n⚠ no catalogue price for: ${missing.join(", ")}`
@@ -335,8 +353,9 @@ export function useModels(): UseModelsReturn {
         pricing: { prompt: totalPrompt, completion: totalCompletion },
         modality: "text->text",
         description:
-          `OpenRouter Fusion • ${panelNames} • ${reasoning} reasoning` +
-          `\n$${totalPrompt.toFixed(2)} in / $${totalCompletion.toFixed(2)} out per 1M tok (combined)` +
+          `OpenRouter Fusion • ${panelNames}${judgeLine} • ${reasoning} reasoning` +
+          `\n$${totalPrompt.toFixed(2)} in / $${totalCompletion.toFixed(2)} out per 1M tok` +
+          ` (panel + ${JUDGE_CALLS_PER_TURN}× judge)` +
           noteLine +
           missingLine,
         isFusion: true,

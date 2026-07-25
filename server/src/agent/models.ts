@@ -140,15 +140,46 @@ function fusionPanelModels(fusionConfig: Record<string, unknown>): string[] {
   return Array.isArray(panel) ? (panel as string[]) : [];
 }
 
+/** Judge model id out of a Fusion request body (`plugins[0].model`). */
+function fusionJudgeModel(fusionConfig: Record<string, unknown>): string | undefined {
+  const plugins = fusionConfig.plugins as Array<Record<string, unknown>> | undefined;
+  const judge = plugins?.[0]?.model;
+  return typeof judge === "string" && judge.trim() ? judge : undefined;
+}
+
+/**
+ * How many times the judge model is billed on one fusion turn.
+ *
+ * OpenRouter runs "N panel calls + 1 judge call in addition to your normal
+ * request" [1]. fusion-bridge.ts always rewrites the body to the
+ * `openrouter/fusion` alias, and under that alias the plugin's judge "also
+ * becomes the model that writes your final answer" [2] — so the judge bills
+ * once for the structured analysis and once for the final answer, while each
+ * panel model bills once.
+ *
+ * Deliberately duplicated from web/src/lib/fusion-presets.ts (the frontend
+ * can't import server code and vice versa). The picker's displayed price and
+ * the ledgered price must agree; a parity test over the shipped presets guards
+ * the two copies.
+ *
+ * [1] https://openrouter.ai/docs/guides/routing/routers/fusion-router
+ * [2] https://openrouter.ai/docs/guides/features/plugins/fusion
+ */
+const JUDGE_CALLS_PER_TURN = 2;
+
 /**
  * Build the Pi Model for an OpenRouter Fusion run. The id is "openrouter/fusion"
  * (the wire model the extension rewrites the body to), but its cost MUST be the
- * SUM of the analysis panel models' catalogue prices — otherwise Pi ledgers the
- * turn at $0 (cost flows from model.cost, not the rewritten HTTP body) and the
- * project spend cap is silently bypassed.
+ * SUM of every model the turn bills — the analysis panel once each, plus the
+ * judge JUDGE_CALLS_PER_TURN times. Otherwise Pi ledgers the turn short (cost
+ * flows from model.cost, not the rewritten HTTP body) and the project spend cap
+ * is eroded on every fusion message.
  *
- * Throws if the catalogue priced none of the panel models, so the caller can
- * abort the run rather than proceed with a $0-priced (cap-bypassing) Fusion model.
+ * Throws if the catalogue priced nothing at all, so the caller can abort rather
+ * than proceed with a $0-priced (cap-bypassing) Fusion model. A config that is
+ * only partly priceable still runs — it under-counts, but refusing would break
+ * working presets whose judge or panel we simply have no catalogue row for. The
+ * picker surfaces those ids in its "no catalogue price for" warning.
  */
 export function buildFusionModel(fusionConfig: Record<string, unknown>): Model<Api> {
   let costInput = 0;
@@ -161,9 +192,16 @@ export function buildFusionModel(fusionConfig: Record<string, unknown>): Model<A
     costOutput += entry.costOutput;
     priced++;
   }
+  const judgeId = fusionJudgeModel(fusionConfig);
+  const judge = judgeId ? catalogueEntryFor(stripOpenRouter(judgeId)) : undefined;
+  if (judge) {
+    costInput += JUDGE_CALLS_PER_TURN * judge.costInput;
+    costOutput += JUDGE_CALLS_PER_TURN * judge.costOutput;
+    priced++;
+  }
   if (priced === 0 || (costInput === 0 && costOutput === 0)) {
     throw new Error(
-      "Fusion panel has no priceable models in the catalogue; refusing to run a " +
+      "Fusion config has no priceable models in the catalogue; refusing to run a " +
         "$0-priced Fusion model (spend cap would be bypassed).",
     );
   }

@@ -157,6 +157,37 @@ export function fusionPanelModels(cfg: Record<string, unknown>): string[] {
   return Array.isArray(legacy) ? (legacy as string[]) : [];
 }
 
+/**
+ * Judge model id for a parsed Fusion body (`plugins[0].model`).
+ *
+ * Under the `openrouter/fusion` alias this is billed twice per turn — see
+ * JUDGE_CALLS_PER_TURN. Undefined means the request didn't name one, so
+ * OpenRouter falls back to the first model of its Quality preset; we can't
+ * resolve that server-side slug locally, so such a config prices panel-only.
+ */
+export function fusionJudgeModel(cfg: Record<string, unknown>): string | undefined {
+  const plugins = cfg.plugins as Array<Record<string, unknown>> | undefined;
+  const judge = plugins?.[0]?.model;
+  return typeof judge === "string" && judge.trim() ? judge : undefined;
+}
+
+/**
+ * How many times the judge model is billed on one fusion turn.
+ *
+ * OpenRouter runs "N panel calls + 1 judge call in addition to your normal
+ * request" [1]. Kady always sends the `openrouter/fusion` alias (see
+ * server/src/agent/fusion-bridge.ts), and under that alias the plugin's judge
+ * "also becomes the model that writes your final answer" [2] — so the judge is
+ * billed once for the structured analysis and once for the final answer, while
+ * each panel model is billed once. Pricing the panel alone modelled a 3-model
+ * preset at ~3x a solo completion where the docs say to expect ~4-5x, which
+ * under-counted every fusion turn against the project spend cap.
+ *
+ * [1] https://openrouter.ai/docs/guides/routing/routers/fusion-router
+ * [2] https://openrouter.ai/docs/guides/features/plugins/fusion
+ */
+export const JUDGE_CALLS_PER_TURN = 2;
+
 // Ids of built-in presets that shipped in earlier versions and are retired now.
 // They're dropped on migration so they don't linger as fake "user" configs.
 const RETIRED_DEFAULT_IDS = new Set(["research-fusion", "frontier-council", "budget-trio"]);
