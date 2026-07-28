@@ -37,70 +37,67 @@ import { useProjectScopeId } from "@/lib/projects";
 import { cn } from "@/lib/utils";
 import { fileCategory, rawFileUrl } from "@/lib/use-sandbox";
 
+/**
+ * Per-type accents. Colour is carried by the icon and a faint bordered tint —
+ * never by card borders or background washes, so a dense list of mixed types
+ * still reads as one surface (see the flat panel language in
+ * `modal-jobs-panel.tsx`).
+ */
 export const TYPE_META: Record<
   NotebookEntryType,
   {
     label: string;
     Icon: typeof LightbulbIcon;
-    spine: string;
+    /** Foreground colour for the type icon and its label. */
     chip: string;
-    border: string;
-    wash: string;
-    iconSurface: string;
+    /** Faint bordered tint behind the icon (badges, rail nodes, headers). */
+    surface: string;
+    /** Solid accent for dots and count bars. */
+    dot: string;
   }
 > = {
   hypothesis: {
     label: "Hypothesis",
     Icon: LightbulbIcon,
-    spine: "bg-amber-400",
-    chip: "text-amber-700 dark:text-amber-300",
-    border: "border-amber-500/25",
-    wash: "from-amber-500/10",
-    iconSurface: "border-amber-500/25 bg-amber-500/10",
+    chip: "text-amber-600 dark:text-amber-400",
+    surface: "border-amber-500/25 bg-amber-500/10",
+    dot: "bg-amber-500",
   },
   method: {
     label: "Method",
     Icon: FlaskConicalIcon,
-    spine: "bg-blue-400",
-    chip: "text-blue-700 dark:text-blue-300",
-    border: "border-blue-500/25",
-    wash: "from-blue-500/10",
-    iconSurface: "border-blue-500/25 bg-blue-500/10",
+    chip: "text-blue-600 dark:text-blue-400",
+    surface: "border-blue-500/25 bg-blue-500/10",
+    dot: "bg-blue-500",
   },
   observation: {
     label: "Observation",
     Icon: BarChart3Icon,
-    spine: "bg-emerald-400",
-    chip: "text-emerald-700 dark:text-emerald-300",
-    border: "border-emerald-500/25",
-    wash: "from-emerald-500/10",
-    iconSurface: "border-emerald-500/25 bg-emerald-500/10",
+    chip: "text-emerald-600 dark:text-emerald-400",
+    surface: "border-emerald-500/25 bg-emerald-500/10",
+    dot: "bg-emerald-500",
   },
   decision: {
     label: "Decision",
     Icon: SignpostIcon,
-    spine: "bg-purple-400",
-    chip: "text-purple-700 dark:text-purple-300",
-    border: "border-purple-500/25",
-    wash: "from-purple-500/10",
-    iconSurface: "border-purple-500/25 bg-purple-500/10",
+    chip: "text-violet-600 dark:text-violet-400",
+    surface: "border-violet-500/25 bg-violet-500/10",
+    dot: "bg-violet-500",
   },
   note: {
     label: "Note",
     Icon: StickyNoteIcon,
-    spine: "bg-neutral-400",
-    chip: "text-neutral-600 dark:text-neutral-300",
-    border: "border-neutral-500/20",
-    wash: "from-neutral-500/8",
-    iconSurface: "border-neutral-500/20 bg-neutral-500/10",
+    chip: "text-muted-foreground",
+    surface: "border-border bg-muted",
+    dot: "bg-muted-foreground/60",
   },
 };
 
 const CODE_FILE_RE = /\.(py|r|jl|sh|ts|js|ipynb|sql)$/i;
 
 const CONFIDENCE_META = {
-  low: { filled: 1, color: "bg-rose-400" },
-  medium: { filled: 2, color: "bg-amber-400" },
+  low: { filled: 1, color: "bg-rose-500" },
+  medium: { filled: 2, color: "bg-amber-500" },
   high: { filled: 3, color: "bg-emerald-500" },
 } as const;
 
@@ -110,7 +107,7 @@ function ConfidenceMeter({ level }: { level: "low" | "medium" | "high" }) {
     <Tooltip>
       <TooltipTrigger asChild>
         <span
-          className="inline-flex h-5 items-end gap-0.5 rounded-full border bg-background/70 px-1.5 py-1"
+          className="inline-flex h-5 items-end gap-0.5 px-1"
           aria-label={`Confidence: ${level}`}
           role="img"
         >
@@ -118,9 +115,9 @@ function ConfidenceMeter({ level }: { level: "low" | "medium" | "high" }) {
             <span
               key={index}
               className={cn(
-                "w-1 rounded-sm",
+                "w-0.5 rounded-full",
                 index === 0 ? "h-1.5" : index === 1 ? "h-2" : "h-2.5",
-                index < meta.filled ? meta.color : "bg-muted",
+                index < meta.filled ? meta.color : "bg-border",
               )}
             />
           ))}
@@ -132,10 +129,10 @@ function ConfidenceMeter({ level }: { level: "low" | "medium" | "high" }) {
 }
 
 const STATUS_META = {
-  open: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+  open: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
   supported:
-    "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
-  refuted: "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300",
+    "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  refuted: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
 } as const;
 
 function displayTime(timestamp: number): string {
@@ -220,31 +217,28 @@ export function LabNotebookEntryCard({
     <div data-testid={`nb-entry-${entry.id}`} data-nb-type={entry.type}>
       <Card
         className={cn(
-          "group/card relative gap-0 overflow-hidden py-0 shadow-sm transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-md",
-          meta.border,
-          pinned && "ring-1 ring-amber-400/40",
+          "group/card relative gap-0 overflow-hidden rounded-lg py-0 shadow-none transition-colors hover:border-foreground/20",
+          pinned && "ring-1 ring-amber-500/30",
           superseded && "opacity-60",
         )}
       >
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-br via-transparent to-transparent opacity-80",
-            meta.wash,
-          )}
-          aria-hidden
-        />
-
-        <CardHeader className="relative gap-2 px-4 pb-0 pt-3.5">
-          <div className="flex min-w-0 items-center gap-2">
+        {/* `minmax(0,1fr)`: the relation links below use `truncate`, whose
+            `white-space: nowrap` would otherwise blow the auto track out to
+            the untruncated text width and overflow the panel. */}
+        <CardHeader className="relative grid-cols-[minmax(0,1fr)] gap-1.5 px-3 pb-0 pt-2.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <Badge
               variant="outline"
-              className={cn("h-6 gap-1.5 bg-background/70 backdrop-blur", meta.iconSurface, meta.chip)}
+              className={cn("h-5 gap-1 px-1.5 text-[10px] font-medium", meta.surface, meta.chip)}
             >
               <meta.Icon data-icon="inline-start" />
               {meta.label}
             </Badge>
             {agentBadge !== undefined && (
-              <Badge variant="secondary" className="h-5 max-w-40 gap-1 text-[10px] font-normal">
+              <Badge
+                variant="outline"
+                className="h-5 max-w-40 gap-1 px-1.5 text-[10px] font-normal text-muted-foreground"
+              >
                 <span
                   className={cn("size-1.5 shrink-0 rounded-full", agentAccent(entry.role ?? "agent").dot)}
                 />
@@ -252,7 +246,7 @@ export function LabNotebookEntryCard({
               </Badge>
             )}
             <time
-              className="shrink-0 text-[10px] text-muted-foreground"
+              className="shrink-0 text-[10px] tabular-nums text-muted-foreground"
               dateTime={new Date(entry.timestamp).toISOString()}
               title={new Date(entry.timestamp).toLocaleString()}
             >
@@ -262,7 +256,7 @@ export function LabNotebookEntryCard({
               {status && (
                 <Badge
                   variant="outline"
-                  className={cn("h-5 text-[9px] uppercase tracking-wider", STATUS_META[status])}
+                  className={cn("h-5 px-1.5 text-[9px] uppercase tracking-wider", STATUS_META[status])}
                 >
                   {status}
                 </Badge>
@@ -299,7 +293,7 @@ export function LabNotebookEntryCard({
 
           <CardTitle
             className={cn(
-              "text-[15px] leading-snug tracking-tight",
+              "text-[13px] font-medium leading-snug",
               superseded && "line-through decoration-muted-foreground/50",
             )}
           >
@@ -307,16 +301,16 @@ export function LabNotebookEntryCard({
           </CardTitle>
 
           {(entry.relatesTo || entry.supersedes || thread?.supersededBy) && (
-            <div className="flex flex-col gap-1 text-xs">
+            <div className="flex min-w-0 flex-col gap-1 text-[11px]">
               {entry.relatesTo && (
                 <button
                   type="button"
                   className={cn(
-                    "flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 text-left transition-colors hover:bg-muted",
+                    "flex min-w-0 items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-left transition-colors hover:bg-muted",
                     entry.stance === "supports" &&
-                      "border-emerald-500/25 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
+                      "border-emerald-500/25 text-emerald-600 dark:text-emerald-400",
                     entry.stance === "refutes" &&
-                      "border-rose-500/25 bg-rose-500/5 text-rose-700 dark:text-rose-300",
+                      "border-rose-500/25 text-rose-600 dark:text-rose-400",
                     (!entry.stance || entry.stance === "neutral") && "text-muted-foreground",
                   )}
                   onClick={() => onJumpToEntry?.(entry.relatesTo!)}
@@ -337,7 +331,7 @@ export function LabNotebookEntryCard({
               {entry.supersedes && (
                 <button
                   type="button"
-                  className="flex min-w-0 items-center gap-1.5 rounded-md border bg-muted/30 px-2 py-1 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  className="flex min-w-0 items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   onClick={() => onJumpToEntry?.(entry.supersedes!)}
                 >
                   <RotateCcwIcon className="size-3 shrink-0" />
@@ -352,7 +346,7 @@ export function LabNotebookEntryCard({
               {thread?.supersededBy && (
                 <button
                   type="button"
-                  className="flex min-w-0 items-center gap-1.5 rounded-md border border-rose-500/25 bg-rose-500/5 px-2 py-1 text-left text-rose-700 transition-colors hover:bg-rose-500/10 dark:text-rose-300"
+                  className="flex min-w-0 items-center gap-1.5 rounded-md border border-rose-500/25 px-1.5 py-0.5 text-left text-rose-600 transition-colors hover:bg-rose-500/10 dark:text-rose-400"
                   onClick={() => onJumpToEntry?.(thread.supersededBy!)}
                 >
                   <RotateCcwIcon className="size-3 shrink-0" />
@@ -368,32 +362,32 @@ export function LabNotebookEntryCard({
           )}
 
           {entry.type === "hypothesis" && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background/55 px-2.5 py-1.5 text-[10px]">
-              <span className="font-semibold uppercase tracking-wider text-muted-foreground">
-                Evidence trail
-              </span>
-              <span className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-300">
-                <span className="size-1.5 rounded-full bg-emerald-500" />
-                {supportingEvidence} support{supportingEvidence === 1 ? "" : "s"}
-              </span>
-              <span className="inline-flex items-center gap-1 text-rose-700 dark:text-rose-300">
-                <span className="size-1.5 rounded-full bg-rose-500" />
-                {challengingEvidence} challenge{challengingEvidence === 1 ? "" : "s"}
-              </span>
-              {supportingEvidence + challengingEvidence === 0 && (
-                <span className="text-muted-foreground">Awaiting linked evidence</span>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+              {supportingEvidence + challengingEvidence === 0 ? (
+                <span>Awaiting linked evidence</span>
+              ) : (
+                <>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    {supportingEvidence} support{supportingEvidence === 1 ? "" : "s"}
+                  </span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="size-1.5 rounded-full bg-rose-500" />
+                    {challengingEvidence} challenge{challengingEvidence === 1 ? "" : "s"}
+                  </span>
+                </>
               )}
             </div>
           )}
         </CardHeader>
 
-        <CardContent className="relative flex flex-col gap-3 px-4 pb-3 pt-2.5">
+        <CardContent className="relative flex flex-col gap-2.5 px-3 pb-2.5 pt-2">
           {entry.body && (
-            <div className="flex flex-col items-start gap-1">
+            <div className="flex flex-col items-start gap-0.5">
               <div
                 className={cn(
-                  "relative w-full text-sm leading-relaxed text-muted-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-                  bodyCollapsible && !detailsOpen && "max-h-28 overflow-hidden",
+                  "relative w-full text-xs leading-relaxed text-muted-foreground [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+                  bodyCollapsible && !detailsOpen && "max-h-24 overflow-hidden",
                 )}
               >
                 <MessageResponse>{entry.body}</MessageResponse>
@@ -409,7 +403,7 @@ export function LabNotebookEntryCard({
                   type="button"
                   variant="ghost"
                   size="xs"
-                  className="-ml-2 text-muted-foreground"
+                  className="-ml-2 h-6 text-[11px] font-normal text-muted-foreground"
                   onClick={() => setDetailsOpen((open) => !open)}
                   aria-expanded={detailsOpen}
                 >
@@ -424,15 +418,15 @@ export function LabNotebookEntryCard({
           )}
 
           {entry.code && (
-            <div className="overflow-hidden rounded-lg border bg-muted/25">
-              <div className="flex items-center gap-1 p-1">
+            <div className="overflow-hidden rounded-md border bg-muted/25">
+              <div className="flex items-center gap-1 p-0.5">
                 <Button
                   type="button"
                   variant="ghost"
                   size="xs"
                   onClick={() => setCodeOpen((open) => !open)}
                   aria-expanded={codeOpen}
-                  className="text-muted-foreground"
+                  className="h-6 text-[11px] font-normal text-muted-foreground"
                 >
                   <ChevronRightIcon
                     data-icon="inline-start"
@@ -447,7 +441,7 @@ export function LabNotebookEntryCard({
                     variant="ghost"
                     size="xs"
                     onClick={() => onOpenFile(codeFilePath!)}
-                    className="ml-auto text-muted-foreground"
+                    className="ml-auto h-6 text-[11px] font-normal text-muted-foreground"
                   >
                     <ExternalLinkIcon data-icon="inline-start" />
                     Open as file
@@ -455,7 +449,7 @@ export function LabNotebookEntryCard({
                 )}
               </div>
               {codeOpen && (
-                <div className="border-t bg-background/60 px-2 py-1 text-xs [&_pre]:my-0">
+                <div className="border-t bg-background/60 px-2 py-1 text-[11px] [&_pre]:my-0">
                   <MessageResponse>
                     {"```" +
                       (entry.code.lang ?? "") +
@@ -477,7 +471,7 @@ export function LabNotebookEntryCard({
                   onClick={() => onOpenFile(path)}
                   title={path}
                   className={cn(
-                    "group/image relative overflow-hidden rounded-lg border bg-muted/30 text-left transition-all hover:border-foreground/25 hover:shadow-sm",
+                    "group/image relative overflow-hidden rounded-md border bg-muted/30 text-left transition-colors hover:border-foreground/25",
                     imageArtifacts.length % 2 === 1 && index === 0 && "col-span-2",
                   )}
                 >
@@ -486,9 +480,9 @@ export function LabNotebookEntryCard({
                     src={rawFileUrl(path, projectId)}
                     alt={path.split("/").pop() ?? path}
                     loading="lazy"
-                    className="h-40 w-full bg-white object-contain p-1 transition-transform duration-300 group-hover/image:scale-[1.01]"
+                    className="h-32 w-full bg-white object-contain p-1"
                   />
-                  <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/75 to-transparent px-2 pb-1.5 pt-5 text-[10px] text-white">
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 pb-1 pt-4 text-[10px] text-white">
                     {path.split("/").pop()}
                   </span>
                 </button>
@@ -506,11 +500,11 @@ export function LabNotebookEntryCard({
                   size="xs"
                   onClick={() => onOpenFile(path)}
                   title={path}
-                  className="max-w-full justify-start bg-background/60"
+                  className="h-6 max-w-full justify-start text-[11px] font-normal text-muted-foreground hover:text-foreground"
                 >
                   <FileIcon data-icon="inline-start" />
                   <span className="truncate">{path.split("/").pop()}</span>
-                  <span className="rounded bg-muted px-1 text-[9px] text-muted-foreground">
+                  <span className="rounded bg-muted px-1 text-[9px] tracking-wide text-muted-foreground">
                     {fileExtension(path)}
                   </span>
                 </Button>
@@ -524,10 +518,10 @@ export function LabNotebookEntryCard({
                 <Button
                   key={tag}
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="xs"
                   onClick={() => onTagClick?.(tag)}
-                  className="h-5 rounded-full px-2 text-[10px] font-normal text-muted-foreground"
+                  className="h-5 rounded-full px-1.5 text-[10px] font-normal text-muted-foreground hover:text-foreground"
                 >
                   #{tag}
                 </Button>
@@ -537,12 +531,12 @@ export function LabNotebookEntryCard({
         </CardContent>
 
         {hasFooter && (
-          <CardFooter className="flex-col items-stretch gap-2 border-t bg-muted/20 px-4 py-2">
+          <CardFooter className="flex-col items-stretch gap-2 border-t bg-muted/20 px-3 py-1.5">
             <Button
               type="button"
               variant="ghost"
               size="xs"
-              className="w-fit px-1 text-muted-foreground"
+              className="h-6 w-fit px-1 text-[11px] font-normal text-muted-foreground"
               onClick={() => setCommentsOpen((open) => !open)}
               aria-expanded={commentsOpen}
             >
@@ -556,11 +550,11 @@ export function LabNotebookEntryCard({
               />
             </Button>
             {commentsOpen && (
-              <div className="flex flex-col gap-2 border-l-2 border-amber-400/60 pl-3">
+              <div className="flex flex-col gap-2 border-l border-amber-500/40 pl-2.5">
                 {(comments ?? []).map((comment) => (
-                  <div key={comment.id} className="text-xs">
+                  <div key={comment.id} className="text-[11px]">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="font-medium text-amber-700 dark:text-amber-300">You</span>
+                      <span className="font-medium text-amber-600 dark:text-amber-400">You</span>
                       <time className="text-[10px] text-muted-foreground">
                         {new Date(comment.createdAt).toLocaleString()}
                       </time>
@@ -577,7 +571,7 @@ export function LabNotebookEntryCard({
                     }}
                     placeholder="Add a comment…"
                     aria-label="Add a comment"
-                    className="h-8 bg-background text-xs shadow-none"
+                    className="h-7 bg-background text-[11px] shadow-none"
                   />
                 )}
               </div>

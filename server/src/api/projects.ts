@@ -16,12 +16,16 @@ import {
 } from "../projects.ts";
 import { projectCostSummary } from "../cost/ledger.ts";
 import { readProjectNotebooks } from "../agent/notebook-store.ts";
+import { readNotebookAnnotations } from "../agent/notebook-annotations.ts";
+import { notebookToMarkdown } from "../agent/notebook-export.ts";
+import { buildNotebookZip } from "../agent/notebook-zip.ts";
 import { disposeMcpClients } from "../agent/mcp.ts";
 import { seedProjectSkills } from "../agent/skills.ts";
 import { runBroker } from "../agent/run-broker.ts";
 import {
   abortProjectSessions,
   disposeProjectSessions,
+  listSessions,
 } from "../agent/session-registry.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
 import { listProjectActivities } from "../project-activity.ts";
@@ -111,6 +115,78 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       return { detail: (err as Error).message };
     }
   });
+
+  // Project-scope export, the "All chats" counterpart to
+  // /sessions/:id/notebook/export. Same three formats, merged across every
+  // session, with each chat's annotation sidecar folded in — the session route
+  // would silently export only the active chat's slice of what's on screen.
+  app.get<{ Params: { projectId: string }; Querystring: { format?: string } }>(
+    "/projects/:projectId/notebook/export",
+    async (req, reply) => {
+      const format = req.query.format ?? "md";
+      if (format !== "md" && format !== "json" && format !== "zip") {
+        reply.code(400);
+        return { detail: "format must be md, json, or zip (PDF is exported client-side)" };
+      }
+      const projectId = req.params.projectId;
+      try {
+        const notebooks = readProjectNotebooks(projectId);
+        const entries = notebooks
+          .flatMap((nb) => nb.entries.map((e) => ({ ...e, sessionId: nb.sessionId })))
+          .sort((a, b) => a.timestamp - b.timestamp || a.sessionId.localeCompare(b.sessionId));
+        const annotations = notebooks.flatMap(
+          (nb) => readNotebookAnnotations(nb.sessionId, projectId).doc.annotations,
+        );
+        const paths = resolvePaths(projectId);
+        const projectName = getProject(projectId)?.name ?? projectId;
+
+        // Label chats the way the UI does: title, else first message, else id.
+        const sessionLabels = new Map<string, string>();
+        for (const info of await listSessions(paths)) {
+          const raw = (info.name ?? info.firstMessage ?? info.id ?? "").trim();
+          sessionLabels.set(info.id, raw.length > 60 ? raw.slice(0, 57) + "…" : raw || info.id);
+        }
+        for (const nb of notebooks) {
+          if (!sessionLabels.has(nb.sessionId)) sessionLabels.set(nb.sessionId, nb.sessionId);
+        }
+
+        const attachment = (ext: string) =>
+          reply.header(
+            "Content-Disposition",
+            `attachment; filename="lab-notebook-${projectId}.${ext}"`,
+          );
+        if (format === "json") {
+          reply.header("Content-Type", "application/json; charset=utf-8");
+          attachment("json");
+          return {
+            projectId,
+            projectName,
+            sessions: [...sessionLabels].map(([id, label]) => ({ id, label })),
+            entries,
+            annotations,
+          };
+        }
+        if (format === "zip") {
+          const { buffer } = buildNotebookZip(entries, {
+            projectName,
+            sandboxRoot: paths.sandbox,
+            annotations,
+            sessionLabels,
+          });
+          reply.type("application/zip");
+          attachment("zip");
+          return buffer;
+        }
+        const md = notebookToMarkdown(entries, { projectName, annotations, sessionLabels });
+        reply.header("Content-Type", "text/markdown; charset=utf-8");
+        attachment("md");
+        return md;
+      } catch (err) {
+        reply.code(400);
+        return { detail: (err as Error).message };
+      }
+    },
+  );
 
   // Heavier per-project bootstrap (seed scientific skills). The frontend posts
   // here with the project in the path; also available unprefixed at /sandbox/init.

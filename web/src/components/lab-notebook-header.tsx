@@ -3,14 +3,12 @@
 import { useState } from "react";
 import {
   ActivityIcon,
-  ArrowRightIcon,
+  BookOpenIcon,
   CheckCircle2Icon,
   DownloadIcon,
   FileTextIcon,
-  FlaskConicalIcon,
   ListIcon,
   MapIcon,
-  PaperclipIcon,
   PrinterIcon,
   SearchIcon,
   SignpostIcon,
@@ -20,7 +18,6 @@ import {
   XCircleIcon,
   XIcon,
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -66,41 +63,93 @@ const ALL_TYPES: NotebookEntryType[] = [
 ];
 
 function relativeUpdate(timestamp?: number): string {
-  if (!timestamp) return "No activity yet";
+  if (!timestamp) return "no activity yet";
   const minutes = Math.floor(Math.max(0, Date.now() - timestamp) / 60_000);
-  if (minutes < 1) return "Updated just now";
-  if (minutes < 60) return `Updated ${minutes}m ago`;
+  if (minutes < 1) return "updated just now";
+  if (minutes < 60) return `updated ${minutes}m ago`;
   const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `Updated ${hours}h ago`;
-  return `Updated ${Math.floor(hours / 24)}d ago`;
+  if (hours < 24) return `updated ${hours}h ago`;
+  return `updated ${Math.floor(hours / 24)}d ago`;
 }
 
+/**
+ * Two-state (or three-state) switch. Mirrors the scope switch in
+ * `modal-jobs-panel.tsx` so the two pinned panels read as one family.
+ */
 function SegmentedToggle<T extends string>({
+  label,
   value,
   options,
   onChange,
 }: {
+  label: string;
   value: T;
   options: { value: T; label: string; Icon?: typeof ListIcon; title?: string }[];
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border bg-muted/50 p-0.5 text-xs">
+    <div
+      role="group"
+      aria-label={label}
+      className="flex items-center rounded-md border bg-muted/20 p-0.5"
+    >
       {options.map((option) => (
         <button
           key={option.value}
           type="button"
           title={option.title}
-          data-active={value === option.value}
           aria-pressed={value === option.value}
           onClick={() => onChange(option.value)}
-          className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-muted-foreground transition-colors hover:text-foreground data-[active=true]:bg-background data-[active=true]:text-foreground data-[active=true]:shadow-sm"
+          className={cn(
+            "inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-medium transition-colors",
+            value === option.value
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
         >
           {option.Icon && <option.Icon className="size-3" />}
           {option.label}
         </button>
       ))}
     </div>
+  );
+}
+
+/** One-line jump to the newest decision / observation. */
+function Highlight({
+  kind,
+  title,
+  onClick,
+}: {
+  kind: "direction" | "signal";
+  title: string;
+  onClick: () => void;
+}) {
+  const Icon = kind === "direction" ? SignpostIcon : ActivityIcon;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <Icon
+        className={cn(
+          "size-3 shrink-0",
+          kind === "direction"
+            ? "text-violet-600 dark:text-violet-400"
+            : "text-emerald-600 dark:text-emerald-400",
+        )}
+      />
+      {/* Label and title share one text node so the header highlight doesn't
+          shadow the entry card's own title in text queries. */}
+      <span className="min-w-0 truncate">
+        <span className="font-medium text-foreground/70">
+          {kind === "direction" ? "Direction" : "Signal"}
+        </span>{" "}
+        · {title}
+      </span>
+    </button>
   );
 }
 
@@ -117,6 +166,7 @@ export function LabNotebookHeader({
   filteredCount,
   overview,
   canAnnotate,
+  canExport,
   onExport,
   onPrint,
   onTagClick,
@@ -136,6 +186,8 @@ export function LabNotebookHeader({
   filteredCount: number;
   overview: NotebookOverview;
   canAnnotate: boolean;
+  /** False when the scope has no exportable target (session scope, no chat yet). */
+  canExport: boolean;
   onExport: (format: NotebookExportFormat) => void;
   onPrint: () => void;
   onTagClick: (tag: string) => void;
@@ -154,338 +206,175 @@ export function LabNotebookHeader({
   const hasEntries = totalCount > 0;
   const hypothesisTotal =
     overview.hypotheses.open + overview.hypotheses.supported + overview.hypotheses.refuted;
+  const hasMeta =
+    Boolean(overview.latestDecision || overview.latestObservation) ||
+    hypothesisTotal > 0 ||
+    overview.topTags.length > 0;
+
+  // Subtitle carries what the removed stats card used to spell out, in the
+  // same "one muted line under the panel title" slot every panel header uses.
+  const subtitle = hasEntries
+    ? [
+        `${totalCount} ${totalCount === 1 ? "entry" : "entries"}`,
+        overview.collaboratorCount > 1
+          ? `${overview.collaboratorCount} contributors`
+          : null,
+        overview.artifactCount > 0
+          ? `${overview.artifactCount} artifact${overview.artifactCount === 1 ? "" : "s"}`
+          : null,
+        relativeUpdate(overview.updatedAt),
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : "Ideas, evidence, and decisions as the research unfolds";
 
   return (
-    <header className="@container/notebook relative overflow-hidden border-b bg-card">
-      <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-[radial-gradient(circle_at_12%_0%,color-mix(in_oklab,var(--chart-2)_18%,transparent),transparent_48%),radial-gradient(circle_at_82%_18%,color-mix(in_oklab,var(--chart-4)_12%,transparent),transparent_42%)]"
-        aria-hidden
-      />
-
-      <div className="relative flex flex-col gap-3 px-4 py-3">
-        <div className="flex flex-wrap items-start gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <div className="relative flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background/80 shadow-sm backdrop-blur">
-              <FlaskConicalIcon className="size-5" />
-              {streaming && (
-                <span className="absolute -right-1 -top-1 flex size-3">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-70" />
-                  <span className="relative inline-flex size-3 rounded-full border-2 border-card bg-emerald-500" />
-                </span>
-              )}
-            </div>
-            <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-semibold tracking-tight">Living Lab Notebook</h2>
-                {streaming ? (
-                  <Badge
-                    variant="outline"
-                    className="border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  >
-                    <ActivityIcon data-icon="inline-start" />
-                    Recording live
-                  </Badge>
-                ) : (
-                  <span className="text-[11px] text-muted-foreground">
-                    {relativeUpdate(overview.updatedAt)}
-                  </span>
-                )}
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                Ideas, evidence, decisions, and files — captured as the research unfolds.
-              </p>
-            </div>
+    <header className="@container/notebook shrink-0">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-2.5">
+        <div className="flex min-w-0 items-center gap-2">
+          <BookOpenIcon className="size-4 shrink-0 text-orange-500" />
+          <div className="min-w-0">
+            <h1 className="text-xs font-semibold">Lab Notebook</h1>
+            <p className="truncate text-[10px] text-muted-foreground">{subtitle}</p>
           </div>
+        </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
-            {scope === "session" && hasEntries && (
-              <Popover open={methodsOpen} onOpenChange={setMethodsOpen}>
-                <PopoverTrigger asChild>
+        {streaming && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" />
+            Recording
+          </span>
+        )}
+
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          {scope === "session" && hasEntries && (
+            <Popover open={methodsOpen} onOpenChange={setMethodsOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={!methods.enabled || methods.busy}
+                >
+                  {methods.busy ? (
+                    <Spinner data-icon="inline-start" />
+                  ) : (
+                    <SparklesIcon data-icon="inline-start" />
+                  )}
+                  Methods draft
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-80" align="end">
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-medium">Turn the trail into a Methods section</p>
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Kady synthesizes the recorded methods, decisions, and observations in one
+                    budgeted AI call, then saves an editable draft to the sandbox.
+                  </p>
+                </div>
+                <div className="mt-4 flex justify-end gap-2">
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="xs"
-                    disabled={!methods.enabled || methods.busy}
+                    onClick={() => setMethodsOpen(false)}
                   >
-                    {methods.busy ? (
-                      <Spinner data-icon="inline-start" />
-                    ) : (
-                      <SparklesIcon data-icon="inline-start" />
-                    )}
-                    Methods draft
+                    Cancel
                   </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-80" align="end">
-                  <div className="flex flex-col gap-1">
-                    <p className="text-sm font-medium">Turn the trail into a Methods section</p>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Kady synthesizes the recorded methods, decisions, and observations in one
-                      budgeted AI call, then saves an editable draft to the sandbox.
-                    </p>
-                  </div>
-                  <div className="mt-4 flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="xs"
-                      onClick={() => setMethodsOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      type="button"
-                      size="xs"
-                      onClick={() => {
-                        setMethodsOpen(false);
-                        methods.run();
-                      }}
-                    >
-                      <SparklesIcon data-icon="inline-start" />
-                      Generate
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-            {hasEntries && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" size="xs">
-                    <DownloadIcon data-icon="inline-start" />
-                    Export
+                  <Button
+                    type="button"
+                    size="xs"
+                    onClick={() => {
+                      setMethodsOpen(false);
+                      methods.run();
+                    }}
+                  >
+                    <SparklesIcon data-icon="inline-start" />
+                    Generate
                   </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem onClick={() => onExport("md")}>
-                      <FileTextIcon /> Markdown (.md)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onExport("zip")}>
-                      <DownloadIcon /> Bundle with artifacts (.zip)
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => onExport("json")}>
-                      <FileTextIcon /> JSON (.json)
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-            {hasEntries && (
-              <Button
-                type="button"
-                variant="outline"
-                size="icon-xs"
-                onClick={onPrint}
-                aria-label="Save notebook as PDF"
-                title="Export as PDF"
-              >
-                <PrinterIcon />
-              </Button>
-            )}
-          </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {hasEntries && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="xs"
+                  disabled={!canExport}
+                  title={
+                    canExport
+                      ? undefined
+                      : "Start a chat before exporting its notebook"
+                  }
+                >
+                  <DownloadIcon data-icon="inline-start" />
+                  Export
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuGroup>
+                  <DropdownMenuItem onClick={() => onExport("md")}>
+                    <FileTextIcon /> Markdown (.md)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onExport("zip")}>
+                    <DownloadIcon /> Bundle with artifacts (.zip)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onExport("json")}>
+                    <FileTextIcon /> JSON (.json)
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+          {hasEntries && (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-xs"
+              onClick={onPrint}
+              aria-label="Save notebook as PDF"
+              title="Export as PDF"
+            >
+              <PrinterIcon />
+            </Button>
+          )}
         </div>
+      </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-b px-4 py-1.5">
+        <SegmentedToggle
+          label="Notebook scope"
+          value={scope}
+          onChange={onScopeChange}
+          options={[
+            { value: "session", label: "This chat" },
+            { value: "project", label: "All chats" },
+          ]}
+        />
+        {scope === "session" && hasEntries && (
           <SegmentedToggle
-            value={scope}
-            onChange={onScopeChange}
+            label="Notebook layout"
+            value={viewMode}
+            onChange={onViewModeChange}
             options={[
-              { value: "session", label: "This chat" },
-              { value: "project", label: "All chats" },
+              { value: "story", label: "Research story", Icon: MapIcon },
+              { value: "agents", label: "By agent", Icon: UsersIcon },
+              { value: "chrono", label: "Timeline", Icon: ListIcon },
             ]}
           />
-          {scope === "session" && hasEntries && (
-            <SegmentedToggle
-              value={viewMode}
-              onChange={onViewModeChange}
-              options={[
-                { value: "story", label: "Research story", Icon: MapIcon },
-                { value: "agents", label: "By agent", Icon: UsersIcon },
-                { value: "chrono", label: "Timeline", Icon: ListIcon },
-              ]}
-            />
-          )}
-          <span className="text-xs text-muted-foreground">
-            {filteredCount === totalCount
-              ? `${totalCount} ${totalCount === 1 ? "entry" : "entries"}`
-              : `${filteredCount} of ${totalCount} entries`}
+        )}
+        {hasEntries && filteredCount !== totalCount && (
+          <span className="text-[10px] tabular-nums text-muted-foreground">
+            {filteredCount} of {totalCount} shown
           </span>
-        </div>
-
-        {hasEntries && (
-          <div className="overflow-hidden rounded-xl border bg-background/70 shadow-sm backdrop-blur">
-            <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.16em]">
-                <MapIcon className="size-3.5 text-muted-foreground" />
-                Research map
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {totalCount} recorded · {relativeUpdate(overview.updatedAt).replace("Updated ", "")}
-              </span>
-              <span className="ml-auto inline-flex items-center gap-3 text-[10px] text-muted-foreground">
-                <span className="inline-flex items-center gap-1">
-                  <UsersIcon className="size-3" />
-                  {overview.collaboratorCount} contributor
-                  {overview.collaboratorCount === 1 ? "" : "s"}
-                </span>
-                <span className="inline-flex items-center gap-1">
-                  <PaperclipIcon className="size-3" />
-                  {overview.artifactCount} artifact{overview.artifactCount === 1 ? "" : "s"}
-                </span>
-                {overview.pinnedCount > 0 && (
-                  <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
-                    <StarIcon className="size-3 fill-current" />
-                    {overview.pinnedCount} pinned
-                  </span>
-                )}
-              </span>
-            </div>
-
-            <div className="grid @3xl/notebook:grid-cols-[minmax(0,1.2fr)_minmax(16rem,.8fr)]">
-              <div className="relative flex min-w-0 items-center overflow-x-auto px-3 py-3">
-                {(
-                  [
-                    ["hypothesis", "Questions"],
-                    ["method", "Methods"],
-                    ["observation", "Findings"],
-                    ["decision", "Decisions"],
-                  ] as const
-                ).map(([type, label], index) => {
-                  const meta = TYPE_META[type];
-                  return (
-                    <div key={type} className="flex min-w-0 flex-1 items-center">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onFiltersChange({ ...filters, types: new Set([type]) })
-                        }
-                        className="group/stage flex min-w-20 flex-1 items-center gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
-                        aria-label={`Show ${label.toLowerCase()}`}
-                      >
-                        <span
-                          className={cn(
-                            "flex size-8 shrink-0 items-center justify-center rounded-lg border transition-transform group-hover/stage:-translate-y-0.5",
-                            meta.iconSurface,
-                            meta.chip,
-                          )}
-                        >
-                          <meta.Icon className="size-3.5" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-base font-semibold leading-none tabular-nums">
-                            {typeCounts[type]}
-                          </span>
-                          <span className="block truncate text-[10px] text-muted-foreground">
-                            {label}
-                          </span>
-                        </span>
-                      </button>
-                      {index < 3 && (
-                        <ArrowRightIcon className="mx-0.5 size-3 shrink-0 text-border" aria-hidden />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex flex-col gap-1 border-t bg-muted/15 p-2 @3xl/notebook:border-l @3xl/notebook:border-t-0">
-                {overview.latestDecision ? (
-                  <button
-                    type="button"
-                    onClick={() => onEntryJump(overview.latestDecision!.id)}
-                    className="group/highlight flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-background"
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-purple-500/25 bg-purple-500/10 text-purple-700 dark:text-purple-300">
-                      <SignpostIcon className="size-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Current direction
-                      </span>
-                      <span className="block truncate text-xs font-medium">
-                        Direction · {overview.latestDecision.title}
-                      </span>
-                    </span>
-                    <ArrowRightIcon className="size-3 text-muted-foreground transition-transform group-hover/highlight:translate-x-0.5" />
-                  </button>
-                ) : null}
-                {overview.latestObservation ? (
-                  <button
-                    type="button"
-                    onClick={() => onEntryJump(overview.latestObservation!.id)}
-                    className="group/highlight flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-background"
-                  >
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md border border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300">
-                      <ActivityIcon className="size-3.5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                        Latest signal
-                      </span>
-                      <span className="block truncate text-xs font-medium">
-                        Signal · {overview.latestObservation.title}
-                      </span>
-                    </span>
-                    <ArrowRightIcon className="size-3 text-muted-foreground transition-transform group-hover/highlight:translate-x-0.5" />
-                  </button>
-                ) : null}
-                {!overview.latestDecision && !overview.latestObservation && (
-                  <div className="flex min-h-12 items-center px-2 text-xs text-muted-foreground">
-                    Findings and decisions will surface here as the story develops.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {(hypothesisTotal > 0 || overview.topTags.length > 0) && (
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5 border-t px-3 py-1.5">
-                {hypothesisTotal > 0 && (
-                  <>
-                    <span className="text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Evidence
-                    </span>
-                    <Badge variant="ghost" className="h-5 text-[10px] text-emerald-700 dark:text-emerald-300">
-                      <CheckCircle2Icon data-icon="inline-start" />
-                      {overview.hypotheses.supported} supported
-                    </Badge>
-                    <Badge variant="ghost" className="h-5 text-[10px] text-amber-700 dark:text-amber-300">
-                      <ActivityIcon data-icon="inline-start" />
-                      {overview.hypotheses.open} open
-                    </Badge>
-                    <Badge variant="ghost" className="h-5 text-[10px] text-rose-700 dark:text-rose-300">
-                      <XCircleIcon data-icon="inline-start" />
-                      {overview.hypotheses.refuted} refuted
-                    </Badge>
-                  </>
-                )}
-                {overview.topTags.length > 0 && (
-                  <span className="ml-auto flex min-w-0 items-center gap-1 overflow-hidden">
-                    <span className="shrink-0 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Focus
-                    </span>
-                    {overview.topTags.map((tag) => (
-                      <Button
-                        key={tag.label}
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        className="h-5 rounded-full px-1.5 text-[10px] text-muted-foreground"
-                        onClick={() => onTagClick(tag.label)}
-                      >
-                        #{tag.label}
-                        <span>{tag.count}</span>
-                      </Button>
-                    ))}
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
         )}
       </div>
 
       {hasEntries && (
-        <div className="relative flex flex-wrap items-center gap-1.5 border-t bg-background/75 px-4 py-2 text-xs backdrop-blur">
+        <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-1.5">
           {ALL_TYPES.map((type) => {
             const meta = TYPE_META[type];
             const active = filters.types.has(type);
@@ -499,13 +388,13 @@ export function LabNotebookHeader({
                 aria-pressed={active}
                 onClick={() => toggleType(type)}
                 className={cn(
-                  "inline-flex h-6 items-center gap-1 rounded-full border bg-background px-2 text-muted-foreground transition-all hover:-translate-y-px hover:text-foreground hover:shadow-sm",
-                  "data-[active=true]:border-foreground/30 data-[active=true]:bg-muted data-[active=true]:text-foreground data-[active=true]:shadow-sm",
+                  "inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  "data-[active=true]:border-foreground/25 data-[active=true]:bg-muted data-[active=true]:text-foreground",
                 )}
               >
                 <meta.Icon className={cn("size-3", meta.chip)} />
                 {meta.label}
-                <span className="text-[10px]">{count}</span>
+                <span className="tabular-nums text-muted-foreground">{count}</span>
               </button>
             );
           })}
@@ -518,9 +407,12 @@ export function LabNotebookHeader({
                 onFiltersChange({ ...filters, pinnedOnly: !filters.pinnedOnly })
               }
               title="Pinned only"
-              className="inline-flex h-6 items-center gap-1 rounded-full border bg-background px-2 text-muted-foreground transition-all hover:-translate-y-px hover:text-foreground hover:shadow-sm data-[active=true]:border-amber-500/50 data-[active=true]:bg-amber-500/10 data-[active=true]:text-amber-700 dark:data-[active=true]:text-amber-300"
+              className="inline-flex h-6 items-center gap-1 rounded-full border px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[active=true]:border-amber-500/40 data-[active=true]:bg-amber-500/10 data-[active=true]:text-amber-600 dark:data-[active=true]:text-amber-400"
             >
               <StarIcon className="size-3" /> Pinned
+              {overview.pinnedCount > 0 && (
+                <span className="tabular-nums">{overview.pinnedCount}</span>
+              )}
             </button>
           )}
           <span className="relative ml-auto inline-flex min-w-36 flex-1 items-center @xl/notebook:max-w-56">
@@ -532,7 +424,7 @@ export function LabNotebookHeader({
               }
               placeholder="Search entries…"
               aria-label="Search entries"
-              className="h-7 rounded-full bg-background pl-8 pr-7 text-xs shadow-none"
+              className="h-6 rounded-full bg-background pl-8 pr-7 text-[11px] shadow-none"
             />
             {filters.query && (
               <Button
@@ -541,12 +433,78 @@ export function LabNotebookHeader({
                 size="icon-xs"
                 aria-label="Clear search"
                 onClick={() => onFiltersChange({ ...filters, query: "" })}
-                className="absolute right-0.5 size-6 rounded-full text-muted-foreground"
+                className="absolute right-0.5 size-5 rounded-full text-muted-foreground"
               >
                 <XIcon />
               </Button>
             )}
           </span>
+        </div>
+      )}
+
+      {hasEntries && hasMeta && (
+        <div className="flex flex-col gap-1 border-b px-4 py-1.5 text-[10px] text-muted-foreground">
+          {(overview.latestDecision || overview.latestObservation) && (
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3">
+              {overview.latestDecision && (
+                <Highlight
+                  kind="direction"
+                  title={overview.latestDecision.title}
+                  onClick={() => onEntryJump(overview.latestDecision!.id)}
+                />
+              )}
+              {overview.latestObservation && (
+                <Highlight
+                  kind="signal"
+                  title={overview.latestObservation.title}
+                  onClick={() => onEntryJump(overview.latestObservation!.id)}
+                />
+              )}
+            </div>
+          )}
+          {(hypothesisTotal > 0 || overview.topTags.length > 0) && (
+            <div className="flex min-w-0 items-center gap-x-3">
+              {hypothesisTotal > 0 && (
+                <span className="inline-flex shrink-0 items-center gap-2 tabular-nums">
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={`${overview.hypotheses.supported} supported`}
+                  >
+                    <CheckCircle2Icon className="size-3 text-emerald-600 dark:text-emerald-400" />
+                    {overview.hypotheses.supported}
+                  </span>
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={`${overview.hypotheses.open} open`}
+                  >
+                    <ActivityIcon className="size-3 text-amber-600 dark:text-amber-400" />
+                    {overview.hypotheses.open}
+                  </span>
+                  <span
+                    className="inline-flex items-center gap-1"
+                    title={`${overview.hypotheses.refuted} refuted`}
+                  >
+                    <XCircleIcon className="size-3 text-rose-600 dark:text-rose-400" />
+                    {overview.hypotheses.refuted}
+                  </span>
+                </span>
+              )}
+              {overview.topTags.length > 0 && (
+                <span className="ml-auto flex min-w-0 items-center gap-1 overflow-hidden">
+                  {overview.topTags.map((tag) => (
+                    <button
+                      key={tag.label}
+                      type="button"
+                      onClick={() => onTagClick(tag.label)}
+                      className="shrink-0 rounded px-1 py-0.5 transition-colors hover:bg-muted hover:text-foreground"
+                    >
+                      #{tag.label} <span className="tabular-nums">{tag.count}</span>
+                    </button>
+                  ))}
+                </span>
+              )}
+            </div>
+          )}
         </div>
       )}
     </header>

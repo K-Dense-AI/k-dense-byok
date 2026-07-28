@@ -193,3 +193,80 @@ describe("GET /projects/:projectId/notebook", () => {
     ]);
   });
 });
+
+describe("GET /projects/:projectId/notebook/export", () => {
+  const exportProject = (format: string) =>
+    app.inject({
+      method: "GET",
+      url: `/projects/default/notebook/export?format=${format}`,
+      headers: { "x-project-id": "default" },
+    });
+
+  it("rejects an unsupported format", async () => {
+    expect((await exportProject("pdf")).statusCode).toBe(400);
+  });
+
+  it("merges every session into one markdown document, grouped by chat", async () => {
+    appendNotebookEntry("sess-1", entry({ id: "a", timestamp: 1, title: "From chat one" }), "default");
+    appendNotebookEntry("sess-2", entry({ id: "b", timestamp: 2, title: "From chat two" }), "default");
+
+    const res = await exportProject("md");
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/markdown");
+    expect(res.headers["content-disposition"]).toContain("lab-notebook-default.md");
+    const md = res.body;
+    // Both chats present — the whole point of the project-scope route.
+    expect(md).toContain("From chat one");
+    expect(md).toContain("From chat two");
+    expect(md).toContain("**Chats:** 2");
+    // Grouped: chat heading at h2, entries demoted to h3.
+    expect(md).toContain("## sess-1");
+    expect(md).toContain("## sess-2");
+    expect(md).toContain("### Method: From chat one");
+  });
+
+  it("includes every session's annotation sidecar in the json export", async () => {
+    appendNotebookEntry("sess-1", entry({ id: "a", timestamp: 1 }), "default");
+    appendNotebookEntry("sess-2", entry({ id: "b", timestamp: 2 }), "default");
+    const dir = resolvePaths("default").notebookDir;
+    fs.mkdirSync(dir, { recursive: true });
+    for (const [sess, entryId] of [["sess-1", "a"], ["sess-2", "b"]]) {
+      fs.writeFileSync(
+        path.join(dir, `${sess}.annotations.json`),
+        JSON.stringify({
+          version: 1,
+          annotations: [
+            { id: `pin-${sess}`, kind: "pin", entryId, createdAt: 10 },
+          ],
+        }),
+      );
+    }
+
+    const body = (await exportProject("json")).json();
+    expect(body.projectId).toBe("default");
+    expect(body.entries.map((e: NotebookEntry) => e.id)).toEqual(["a", "b"]);
+    expect(body.annotations.map((a: { id: string }) => a.id).sort()).toEqual([
+      "pin-sess-1",
+      "pin-sess-2",
+    ]);
+  });
+
+  it("bundles artifacts from every session into one zip", async () => {
+    const sandbox = resolvePaths("default").sandbox;
+    fs.mkdirSync(path.join(sandbox, "figures"), { recursive: true });
+    fs.writeFileSync(path.join(sandbox, "figures", "one.png"), "png-one");
+    fs.writeFileSync(path.join(sandbox, "figures", "two.png"), "png-two");
+    appendNotebookEntry("sess-1", entry({ id: "a", timestamp: 1, artifacts: ["figures/one.png"] }), "default");
+    appendNotebookEntry("sess-2", entry({ id: "b", timestamp: 2, artifacts: ["figures/two.png"] }), "default");
+
+    const res = await exportProject("zip");
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("application/zip");
+    const names = new AdmZip(res.rawPayload).getEntries().map((e) => e.entryName).sort();
+    expect(names).toEqual([
+      "artifacts/figures/one.png",
+      "artifacts/figures/two.png",
+      "lab-notebook.md",
+    ]);
+  });
+});

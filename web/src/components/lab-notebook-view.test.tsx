@@ -290,6 +290,55 @@ describe("LabNotebookView", () => {
     }
   });
 
+  // Regression: Export used to always hit /sessions/:id/notebook/export, so
+  // exporting from "All chats" silently downloaded only the active chat's
+  // slice of the notebook on screen — and did nothing at all when that chat
+  // had not been started yet.
+  it("exports the whole project when the scope is All chats", async () => {
+    const user = userEvent.setup();
+    const createURL = vi.fn(() => "blob:x");
+    Object.defineProperty(URL, "createObjectURL", { value: createURL, configurable: true, writable: true });
+    Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true, writable: true });
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    routeFetch((url) => {
+      if (url === "/projects/default/notebook") {
+        return okJson({ entries: [e({ id: "p1", title: "From another chat" })] });
+      }
+      return undefined;
+    });
+    try {
+      // No render() helper — stay in the default "All chats" scope.
+      rtlRender(<LabNotebookView {...baseProps} sessionId={null} />);
+      await waitFor(() => expect(screen.getByText("From another chat")).toBeInTheDocument());
+      await user.click(screen.getByRole("button", { name: /export/i }));
+      await user.click(await screen.findByRole("menuitem", { name: /markdown/i }));
+      await waitFor(() => expect(createURL).toHaveBeenCalled());
+      expect(
+        spy.mock.calls.some(
+          ([u]) => u === "/projects/default/notebook/export?format=md",
+        ),
+      ).toBe(true);
+      // The session route must not be used for a project-scope export.
+      expect(
+        spy.mock.calls.some(
+          ([u]) => typeof u === "string" && (u as string).startsWith("/sessions/") && (u as string).includes("/export"),
+        ),
+      ).toBe(false);
+    } finally {
+      clickSpy.mockRestore();
+      Reflect.deleteProperty(URL, "createObjectURL");
+      Reflect.deleteProperty(URL, "revokeObjectURL");
+    }
+  });
+
+  it("disables Export in chat scope until the chat has a session", async () => {
+    rtlRender(<LabNotebookView {...baseProps} sessionId={null} liveEntries={[e({})]} />);
+    fireEvent.click(screen.getByRole("button", { name: /this chat/i }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /export/i })).toBeDisabled(),
+    );
+  });
+
   it("defaults to a research story grouped by scientific phase", () => {
     render(
       <LabNotebookView

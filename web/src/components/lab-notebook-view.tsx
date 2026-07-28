@@ -1,9 +1,10 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpIcon, FlaskConicalIcon, SparklesIcon } from "lucide-react";
+import { ArrowUpIcon, BookOpenIcon, StickyNoteIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import { apiFetch, useProjectScopeId } from "@/lib/projects";
 import {
   mergeNotebookEntries,
@@ -30,6 +31,7 @@ import {
   type NotebookViewMode,
 } from "./lab-notebook-header";
 import { LabNotebookTimeline } from "./lab-notebook-timeline";
+import { TYPE_META } from "./lab-notebook-entry-card";
 
 const VIEW_MODE_KEY = "kady:notebook:view:v2";
 const FOCUS_DEADLINE_MS = 4000;
@@ -373,20 +375,28 @@ export function LabNotebookView({
   );
 
   // --- Header actions ---
+  // Export follows the scope toggle, like Print does. Exporting the active
+  // session while "All chats" is on screen silently hands back a different
+  // (much smaller) document than the one the user is looking at.
   async function handleExport(format: NotebookExportFormat) {
-    if (!sessionId) return;
+    const target =
+      scope === "project"
+        ? { path: `/projects/${encodeURIComponent(scopedProjectId)}/notebook/export`, name: scopedProjectId }
+        : sessionId
+          ? { path: `/sessions/${encodeURIComponent(sessionId)}/notebook/export`, name: sessionId }
+          : null;
+    if (!target) {
+      toast.error("Start a chat before exporting its notebook.");
+      return;
+    }
     try {
-      const res = await apiFetch(
-        `/sessions/${encodeURIComponent(sessionId)}/notebook/export?format=${format}`,
-        {},
-        scopedProjectId,
-      );
+      const res = await apiFetch(`${target.path}?format=${format}`, {}, scopedProjectId);
       if (!res.ok) throw new Error(`export failed: ${res.status}`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `lab-notebook-${sessionId}.${format}`;
+      a.download = `lab-notebook-${target.name}.${format}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -484,6 +494,7 @@ export function LabNotebookView({
         filteredCount={visible.length}
         overview={overview}
         canAnnotate={canAnnotate}
+        canExport={scope === "project" || Boolean(sessionId)}
         onExport={handleExport}
         onPrint={handlePrint}
         onTagClick={(tag) => setFilters((current) => ({ ...current, query: tag }))}
@@ -495,32 +506,33 @@ export function LabNotebookView({
         }}
       />
       {displayEntries.length === 0 ? (
-        <div className="relative flex flex-1 items-center justify-center overflow-hidden p-8 text-center">
-          <div
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,color-mix(in_oklab,var(--chart-2)_10%,transparent),transparent_58%)]"
-            aria-hidden
-          />
-          <div className="relative flex max-w-sm flex-col items-center gap-4">
-            <div className="relative flex size-16 items-center justify-center rounded-2xl border bg-card shadow-lg">
-              <FlaskConicalIcon className="size-7" />
-              <SparklesIcon className="absolute -right-2 -top-2 size-5 text-amber-500" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <h3 className="font-semibold tracking-tight">
-                {scope === "project" ? "Your project story starts here" : "The experiment starts here"}
-              </h3>
-              <p className="text-sm leading-relaxed text-muted-foreground">
-                {scope === "project"
-                  ? "No notebook entries in this project yet. Findings from every chat will collect here."
-                  : "Kady’s notebook — entries appear here as it works, connecting hypotheses to evidence and decisions."}
-              </p>
-            </div>
-            <div className="flex flex-wrap justify-center gap-1.5 text-[10px] text-muted-foreground">
-              <span className="rounded-full border bg-card px-2 py-1">Hypotheses</span>
-              <span className="rounded-full border bg-card px-2 py-1">Methods</span>
-              <span className="rounded-full border bg-card px-2 py-1">Observations</span>
-              <span className="rounded-full border bg-card px-2 py-1">Decisions</span>
-            </div>
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
+          <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/50">
+            <BookOpenIcon className="size-6 text-muted-foreground/40" />
+          </div>
+          <div className="flex max-w-xs flex-col gap-1">
+            <p className="text-xs font-medium">
+              {scope === "project" ? "No entries in this project" : "Nothing recorded yet"}
+            </p>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {scope === "project"
+                ? "Findings from every chat in this project collect here."
+                : "Kady’s notebook — entries appear here as it works, linking hypotheses to evidence and decisions."}
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-1">
+            {(["hypothesis", "method", "observation", "decision"] as const).map((type) => {
+              const meta = TYPE_META[type];
+              return (
+                <span
+                  key={type}
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground"
+                >
+                  <meta.Icon className={cn("size-3", meta.chip)} />
+                  {meta.label}
+                </span>
+              );
+            })}
           </div>
         </div>
       ) : (
@@ -547,16 +559,16 @@ export function LabNotebookView({
       )}
       {canAnnotate && (
         <form
-          className="flex items-center gap-2 border-t bg-background/95 px-4 py-3 backdrop-blur"
+          className="flex shrink-0 items-center gap-1.5 border-t px-3 py-2"
           onSubmit={(event) => {
             event.preventDefault();
             submitNote();
           }}
         >
           <div className="relative flex min-w-0 flex-1 items-center">
-            <SparklesIcon className="pointer-events-none absolute left-3 size-3.5 text-muted-foreground" />
+            <StickyNoteIcon className="pointer-events-none absolute left-2.5 size-3.5 text-muted-foreground" />
             <Input
-            value={noteDraft}
+              value={noteDraft}
               onChange={(event) => setNoteDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -566,20 +578,17 @@ export function LabNotebookView({
               }}
               placeholder="Capture your own observation…"
               aria-label="Add a note"
-              className="h-9 rounded-xl bg-muted/35 pl-9 pr-14 text-xs shadow-none"
-          />
-            <kbd className="pointer-events-none absolute right-3 rounded border bg-background px-1.5 py-0.5 text-[9px] text-muted-foreground shadow-xs">
-              Enter
-            </kbd>
+              className="h-7 bg-background pl-8 text-[11px] shadow-none"
+            />
           </div>
           <Button
             type="button"
-            size="icon-sm"
+            variant="outline"
+            size="icon-xs"
             disabled={!noteDraft.trim()}
             aria-label="Save note"
             title="Save note"
             onClick={submitNote}
-            className="rounded-xl"
           >
             <ArrowUpIcon />
           </Button>

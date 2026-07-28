@@ -26,10 +26,13 @@ function normalizeRel(rel: string): string {
 export function buildNotebookZip(
   entries: NotebookEntry[],
   opts: {
-    sessionId: string;
+    /** Session-scope export only; omit for a project-scope bundle. */
+    sessionId?: string;
     projectName?: string;
     sandboxRoot: string;
     annotations?: readonly NotebookAnnotation[];
+    /** Project-scope export: session id → label, grouping the markdown. */
+    sessionLabels?: ReadonlyMap<string, string>;
   },
 ): NotebookZipResult {
   const zip = new AdmZip();
@@ -57,6 +60,7 @@ export function buildNotebookZip(
     sessionId: opts.sessionId,
     projectName: opts.projectName,
     annotations: opts.annotations,
+    sessionLabels: opts.sessionLabels,
     artifactHref: (p) => (bundled.has(p) ? "artifacts/" + normalizeRel(p) : undefined),
     missingArtifacts: missing,
   });

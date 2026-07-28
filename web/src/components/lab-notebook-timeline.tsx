@@ -1,6 +1,6 @@
 "use client";
 import { useMemo } from "react";
-import { ChevronDownIcon, NetworkIcon, SparklesIcon } from "lucide-react";
+import { ChevronDownIcon, NetworkIcon, SearchXIcon, SparklesIcon } from "lucide-react";
 import {
   Conversation,
   ConversationContent,
@@ -75,34 +75,39 @@ function EntryRow({
   const isUserNote = entry.role === "you";
   const meta = TYPE_META[entry.type];
   return (
-    <div className="relative motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-1 [content-visibility:auto] [contain-intrinsic-size:auto_11rem]">
+    <div className="relative motion-safe:animate-in motion-safe:fade-in">
       <span
         className={cn(
-          "absolute -left-[34px] top-3 flex size-7 items-center justify-center rounded-full border-2 border-background shadow-sm ring-1 ring-border",
-          meta.spine,
+          "absolute -left-[26px] top-2.5 flex size-5 items-center justify-center rounded-full border bg-background",
+          meta.surface,
         )}
         aria-hidden
       >
-        <meta.Icon className="size-3.5 text-white drop-shadow-sm" />
+        <meta.Icon className={cn("size-2.5", meta.chip)} />
       </span>
-      <LabNotebookEntryCard
-        entry={entry}
-        onOpenFile={ctx.cb.onOpenFile}
-        thread={thread}
-        relatedEntry={entry.relatesTo ? ctx.entryById.get(entry.relatesTo) : undefined}
-        supersedesEntry={entry.supersedes ? ctx.entryById.get(entry.supersedes) : undefined}
-        supersededByEntry={
-          thread?.supersededBy ? ctx.entryById.get(thread.supersededBy) : undefined
-        }
-        agentBadge={showAgentBadge ? (entry.role ?? "agent") : undefined}
-        pinned={ctx.pinnedIds.has(entry.id)}
-        onTogglePin={ctx.canAnnotate && !isUserNote ? ctx.cb.onTogglePin : undefined}
-        comments={ctx.commentsByEntry.get(entry.id)}
-        onAddComment={ctx.canAnnotate && !isUserNote ? ctx.cb.onAddComment : undefined}
-        onJumpToChat={!isUserNote ? ctx.cb.onJumpToChat : undefined}
-        onJumpToEntry={ctx.cb.onJumpToEntry}
-        onTagClick={ctx.cb.onTagClick}
-      />
+      {/* `content-visibility` implies paint containment, so it has to sit on a
+          wrapper *inside* the positioning context — on the outer element it
+          clips the rail node, which hangs off the left edge. */}
+      <div className="[contain-intrinsic-size:auto_11rem] [content-visibility:auto]">
+        <LabNotebookEntryCard
+          entry={entry}
+          onOpenFile={ctx.cb.onOpenFile}
+          thread={thread}
+          relatedEntry={entry.relatesTo ? ctx.entryById.get(entry.relatesTo) : undefined}
+          supersedesEntry={entry.supersedes ? ctx.entryById.get(entry.supersedes) : undefined}
+          supersededByEntry={
+            thread?.supersededBy ? ctx.entryById.get(thread.supersededBy) : undefined
+          }
+          agentBadge={showAgentBadge ? (entry.role ?? "agent") : undefined}
+          pinned={ctx.pinnedIds.has(entry.id)}
+          onTogglePin={ctx.canAnnotate && !isUserNote ? ctx.cb.onTogglePin : undefined}
+          comments={ctx.commentsByEntry.get(entry.id)}
+          onAddComment={ctx.canAnnotate && !isUserNote ? ctx.cb.onAddComment : undefined}
+          onJumpToChat={!isUserNote ? ctx.cb.onJumpToChat : undefined}
+          onJumpToEntry={ctx.cb.onJumpToEntry}
+          onTagClick={ctx.cb.onTagClick}
+        />
+      </div>
     </div>
   );
 }
@@ -110,18 +115,16 @@ function EntryRow({
 function Divider({ item }: { item: Exclude<TimelineItem, { kind: "entry" }> }) {
   if (item.kind === "day") {
     return (
-      <div className="-ml-10 flex items-center gap-2 py-1 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
-        <span className="h-px flex-1 bg-gradient-to-r from-transparent to-border" />
-        <span className="rounded-full border bg-background px-2.5 py-1 shadow-xs">{item.label}</span>
-        <span className="h-px flex-1 bg-gradient-to-l from-transparent to-border" />
+      <div className="-ml-8 flex items-center gap-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+        <span className="shrink-0">{item.label}</span>
+        <span className="h-px flex-1 bg-border" />
       </div>
     );
   }
   if (item.kind === "run") {
     return (
-      <div className="-ml-10 flex items-center gap-2 py-0.5 text-[10px] text-muted-foreground/70">
-        <span className="h-px flex-1 border-t border-dashed border-border" />
-        <span className="inline-flex items-center gap-1">
+      <div className="-ml-8 flex items-center gap-2 py-0.5 text-[10px] text-muted-foreground/70">
+        <span className="inline-flex shrink-0 items-center gap-1">
           <SparklesIcon className="size-3" />
           new run
         </span>
@@ -130,17 +133,18 @@ function Divider({ item }: { item: Exclude<TimelineItem, { kind: "entry" }> }) {
     );
   }
   return (
-    <div className="-ml-10 flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-xs font-medium">
-      <NetworkIcon className="size-3.5 text-muted-foreground" />
+    <div className="-ml-8 flex items-center gap-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <NetworkIcon className="size-3 shrink-0" />
       <span className="truncate">{item.name}</span>
+      <span className="h-px flex-1 bg-border" />
     </div>
   );
 }
 
-/** Rail container: continuous vertical line the entry nodes sit on. */
+/** Rail container: continuous vertical hairline the entry nodes sit on. */
 function Rail({ children }: { children: React.ReactNode }) {
   return (
-    <div className="relative flex flex-col gap-4 pl-10 before:absolute before:bottom-1 before:left-[19px] before:top-1 before:w-px before:bg-gradient-to-b before:from-border/20 before:via-border before:to-border/20">
+    <div className="relative flex flex-col gap-3 pl-8 before:absolute before:bottom-1 before:left-[15px] before:top-1 before:w-px before:bg-border">
       {children}
     </div>
   );
@@ -226,16 +230,12 @@ export function LabNotebookTimeline({
 
   if (entries.length === 0) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8 text-center">
-        <div className="flex max-w-xs flex-col items-center gap-2">
-          <div className="flex size-10 items-center justify-center rounded-xl border bg-muted/30">
-            <NetworkIcon className="size-4 text-muted-foreground" />
-          </div>
-          <p className="text-sm font-medium">No matching entries</p>
-          <p className="text-xs text-muted-foreground">
-            Try another entry type, tag, or search phrase.
-          </p>
-        </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+        <SearchXIcon className="size-7 text-muted-foreground/40" />
+        <p className="text-xs font-medium">No matching entries</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Try another entry type, tag, or search phrase.
+        </p>
       </div>
     );
   }
@@ -247,55 +247,33 @@ export function LabNotebookTimeline({
       : {};
 
   return (
-    <Conversation
-      key={`${scope}:${viewMode}`}
-      {...motionProps}
-      className="flex-1 bg-[radial-gradient(circle_at_50%_0%,color-mix(in_oklab,var(--chart-2)_5%,transparent),transparent_38%)]"
-    >
-      <ConversationContent className="@container/story flex flex-col gap-4 p-4">
+    <Conversation key={`${scope}:${viewMode}`} {...motionProps} className="flex-1">
+      <ConversationContent className="@container/story flex flex-col gap-3 p-3">
         {story ? (
-          <div className="grid items-start gap-4 @4xl/story:grid-cols-2">
+          <div className="grid items-start gap-3 @4xl/story:grid-cols-2">
             {storyPhases.map((phase) => {
               const meta = TYPE_META[phase.type];
               return (
                 <section
                   key={phase.type}
                   className={cn(
-                    "overflow-hidden rounded-2xl border bg-card/80 shadow-sm",
-                    meta.border,
+                    "overflow-hidden rounded-xl border bg-card",
                     phase.type === "note" && "@4xl/story:col-span-2",
                   )}
                 >
-                  <div className="relative flex items-center gap-3 border-b px-4 py-3">
-                    <div
-                      className={cn(
-                        "absolute inset-0 bg-gradient-to-r via-transparent to-transparent opacity-70",
-                        meta.wash,
-                      )}
-                      aria-hidden
-                    />
-                    <span
-                      className={cn(
-                        "relative flex size-9 shrink-0 items-center justify-center rounded-xl border",
-                        meta.iconSurface,
-                        meta.chip,
-                      )}
-                    >
-                      <meta.Icon className="size-4" />
-                    </span>
-                    <span className="relative min-w-0 flex-1">
-                      <span className="block text-sm font-semibold tracking-tight">
-                        {phase.title}
-                      </span>
+                  <div className="flex items-center gap-2 border-b px-3 py-2">
+                    <meta.Icon className={cn("size-3.5 shrink-0", meta.chip)} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-semibold">{phase.title}</span>
                       <span className="block truncate text-[10px] text-muted-foreground">
                         {phase.description}
                       </span>
                     </span>
-                    <span className="relative text-2xl font-semibold tabular-nums text-muted-foreground/30">
-                      {phase.entries.length.toString().padStart(2, "0")}
+                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                      {phase.entries.length}
                     </span>
                   </div>
-                  <div className="bg-muted/5 p-3">
+                  <div className="bg-muted/20 p-3">
                     <Rail>
                       {phase.entries.map((entry) => (
                         <EntryRow
@@ -341,25 +319,17 @@ export function LabNotebookTimeline({
             <details
               key={lane.role}
               open
-              className="group/lane overflow-hidden rounded-xl border bg-card shadow-sm"
+              className="group/lane overflow-hidden rounded-xl border bg-card"
             >
-              <summary className="flex cursor-pointer list-none select-none items-center gap-2.5 px-3.5 py-3 text-xs font-medium transition-colors hover:bg-muted/35 [&::-webkit-details-marker]:hidden">
-                <span
-                  className={cn(
-                    "flex size-6 items-center justify-center rounded-full bg-background ring-2",
-                    lane.accent.ring,
-                  )}
-                  aria-hidden
-                >
-                  <span className={cn("size-2 rounded-full", lane.accent.dot)} />
-                </span>
+              <summary className="flex cursor-pointer list-none select-none items-center gap-2 px-3 py-2 text-xs font-semibold transition-colors hover:bg-muted/40 [&::-webkit-details-marker]:hidden">
+                <span className={cn("size-1.5 shrink-0 rounded-full", lane.accent.dot)} aria-hidden />
                 <span className="truncate">{lane.label}</span>
-                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] tabular-nums text-muted-foreground">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-normal tabular-nums text-muted-foreground">
                   {lane.count}
                 </span>
                 <ChevronDownIcon className="ml-auto size-3.5 text-muted-foreground transition-transform group-open/lane:rotate-180" />
               </summary>
-              <div className="border-t bg-muted/10 p-4">
+              <div className="border-t bg-muted/20 p-3">
                 <Rail>
                   {lane.items.map((item) =>
                     item.kind === "entry" ? (

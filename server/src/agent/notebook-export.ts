@@ -18,9 +18,19 @@ const LABEL: Record<NotebookEntryType, string> = {
 
 const IMAGE_RE = /\.(png|jpe?g|gif|svg|webp)$/i;
 
+/** Entry carrying the project-scope `sessionId` stamp the merge route adds. */
+type ScopedEntry = NotebookEntry & { sessionId?: string };
+
 export interface NotebookMarkdownOpts {
-  sessionId: string;
+  /** Session-scope export: the session's id. Omit for a project-scope export. */
+  sessionId?: string;
   projectName?: string;
+  /**
+   * Project-scope export: session id → display label. When present, entries
+   * are grouped under a heading per session (mirroring the "All chats" view
+   * and its PDF export) and entry headings drop a level.
+   */
+  sessionLabels?: ReadonlyMap<string, string>;
   /** Optional user layer included by complete-project exports. */
   annotations?: readonly NotebookAnnotation[];
   /** Rewrite an artifact link target (e.g. into a zip bundle); undefined keeps the path. */
@@ -38,10 +48,16 @@ export function notebookToMarkdown(
   entries: NotebookEntry[],
   opts: NotebookMarkdownOpts,
 ): string {
+  const grouped = opts.sessionLabels !== undefined;
+  const h = grouped ? "###" : "##";
   const lines: string[] = [];
   lines.push(`# Lab Notebook`);
   if (opts.projectName) lines.push(`**Project:** ${opts.projectName}`);
-  lines.push(`**Session:** ${opts.sessionId}`);
+  if (opts.sessionId) lines.push(`**Session:** ${opts.sessionId}`);
+  if (grouped) {
+    const chats = new Set(entries.map((e) => (e as ScopedEntry).sessionId ?? ""));
+    lines.push(`**Chats:** ${chats.size}`);
+  }
   if (entries.length > 0) {
     const start = new Date(entries[0].timestamp).toISOString();
     const end = new Date(entries[entries.length - 1].timestamp).toISOString();
@@ -73,9 +89,19 @@ export function notebookToMarkdown(
   }
 
   const t0 = entries[0]?.timestamp ?? 0;
+  let openSession: string | undefined;
   for (const e of entries) {
+    if (grouped) {
+      // Entries arrive chronologically with a sessionId stamp; start a new
+      // section whenever the chat changes (same grouping as the PDF export).
+      const sid = (e as ScopedEntry).sessionId ?? "";
+      if (sid !== openSession) {
+        openSession = sid;
+        lines.push(`## ${opts.sessionLabels?.get(sid) || sid || "Unattributed"}`, "");
+      }
+    }
     const elapsed = Math.max(0, Math.round((e.timestamp - t0) / 1000));
-    lines.push(`## ${LABEL[e.type]}: ${e.title}`);
+    lines.push(`${h} ${LABEL[e.type]}: ${e.title}`);
     const bits = [`+${elapsed}s`, `by ${e.role}`];
     if (e.confidence) bits.push(`confidence: ${e.confidence}`);
     if (e.tags?.length) bits.push(e.tags.map((t) => `#${t}`).join(" "));
@@ -120,7 +146,7 @@ export function notebookToMarkdown(
     }
     const comments = entryAnnotations.filter((annotation) => annotation.kind === "comment");
     if (comments.length > 0) {
-      lines.push("### User comments", "");
+      lines.push(`${h}# User comments`, "");
       for (const comment of comments) {
         lines.push(`**${annotationTime(comment.createdAt)}**`, "", comment.body ?? "", "");
       }
