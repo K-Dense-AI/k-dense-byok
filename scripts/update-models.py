@@ -17,18 +17,22 @@ Inclusion rules: every OpenRouter model that
 The `default` / `expertDefault` flags are carried forward from the
 existing file by model id; a flagged model is kept even past the age
 cutoff (dropping the app's default would break new chats), and the
-script warns if one has disappeared from OpenRouter entirely.
+script warns if one has disappeared from OpenRouter entirely. Models
+named by a shipped Fusion preset are pinned the same way — see
+fusion_preset_models().
 """
 
 import calendar
 from datetime import datetime, timezone
 import json
 import pathlib
+import re
 import sys
 import urllib.request
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 OUT = ROOT / "web" / "src" / "data" / "models.json"
+FUSION_PRESETS = ROOT / "web" / "src" / "lib" / "fusion-presets.ts"
 API = "https://openrouter.ai/api/v1/models"
 
 # Vendor slugs whose display name isn't just title-cased words.
@@ -81,6 +85,23 @@ def label_for(name: str, provider: str) -> str:
     return name[len(prefix):] if name.startswith(prefix) else name
 
 
+def fusion_preset_models() -> set[str]:
+    """Model ids named by the shipped Fusion presets, as `openrouter/...` refs.
+
+    These are pinned past the age cutoff. The picker quotes a fusion turn from
+    models.json (web/src/lib/use-models.ts) and the ledger prices it from the
+    same rows (buildFusionModel in server/src/agent/models.ts), so dropping a
+    panel or judge model doesn't hide the preset — it silently under-counts
+    every one of its turns against the project spend cap. The presets cite
+    OpenRouter's benchmarked panels, so they outlive MAX_AGE_MONTHS by design.
+
+    Every model ref in that file is a quoted `vendor/slug`; nothing else there
+    contains a slash (comment URLs aren't string literals).
+    """
+    refs = re.findall(r'"([a-z0-9][\w.-]*/[\w.:-]+)"', FUSION_PRESETS.read_text())
+    return {f"openrouter/{ref}" for ref in refs if ref != "openrouter/fusion"}
+
+
 def truncate(description: str) -> str:
     words = description.split()
     if len(words) <= DESCRIPTION_WORDS:
@@ -101,6 +122,9 @@ def main() -> None:
     except FileNotFoundError:
         pass
 
+    fusion_pinned = fusion_preset_models()
+    pinned = set(flags) | fusion_pinned
+
     cutoff = months_ago(datetime.now(timezone.utc), MAX_AGE_MONTHS).timestamp()
     out = []
     for m in live:
@@ -110,12 +134,13 @@ def main() -> None:
         if not is_fusion:
             if "tools" not in (m.get("supported_parameters") or []):
                 continue
-            # Age gate — but never drop a default/expertDefault model, nor a
-            # `~vendor/*-latest` alias, which redirects to the newest model in
-            # its family and so is never stale however old the alias itself is.
+            # Age gate — but never drop a pinned model (an app default or a
+            # Fusion preset member), nor a `~vendor/*-latest` alias, which
+            # redirects to the newest model in its family and so is never stale
+            # however old the alias itself is.
             or_id = f"openrouter/{model_id}"
             is_alias = model_id.startswith("~")
-            if (m.get("created") or 0) < cutoff and not is_alias and or_id not in flags:
+            if (m.get("created") or 0) < cutoff and not is_alias and or_id not in pinned:
                 continue
             prompt = round(float(m["pricing"]["prompt"]) * 1_000_000, 6)
             completion = round(float(m["pricing"]["completion"]) * 1_000_000, 6)
@@ -146,6 +171,15 @@ def main() -> None:
         print(
             f"warning: {model_id} had {'/'.join(carried)} set but is no longer "
             "on OpenRouter; the flag was dropped",
+            file=sys.stderr,
+        )
+
+    written = {entry["id"] for entry in out}
+    for model_id in sorted(fusion_pinned - written):
+        print(
+            f"warning: {model_id} is named by a Fusion preset but is not in the "
+            "catalogue (delisted, or no tool support); its turns will be "
+            "under-priced until the preset is updated",
             file=sys.stderr,
         )
 

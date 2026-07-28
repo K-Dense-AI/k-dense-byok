@@ -225,31 +225,17 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/openai/gpt-5.6-terra",
-    "label": "GPT-5.6 Terra",
-    "provider": "OpenAI",
+    "id": "openrouter/google/gemini-3.1-pro-preview",
+    "label": "Gemini 3.1 Pro Preview",
+    "provider": "Google",
     "tier": "high",
-    "context_length": 1050000,
+    "context_length": 1048576,
     "pricing": {
-      "prompt": 2.5,
-      "completion": 15.0
+      "prompt": 2.0,
+      "completion": 12.0
     },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.6 Terra is a balanced model in OpenAI's GPT-5.6 series, positioned between the flagship Sol tier and the cost-efficient Luna tier. It is suited for everyday coding, reasoning, and agentic...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.6-terra-pro",
-    "label": "GPT-5.6 Terra Pro",
-    "provider": "OpenAI",
-    "tier": "high",
-    "context_length": 1050000,
-    "pricing": {
-      "prompt": 2.5,
-      "completion": 15.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.6 Terra Pro is the same underlying model as [GPT-5.6 Terra](https://openrouter.ai/openai/gpt-5.6-terra), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
+    "modality": "text+image+file+audio+video->text",
+    "description": "Gemini 3.1 Pro Preview is Google\u2019s frontier reasoning model, delivering enhanced software engineering performance, improved agentic reliability, and more efficient token usage across complex workflows. Building on the multimodal foundation...",
     "isFusion": false
   },
   {
@@ -385,8 +371,8 @@
     "tier": "mid",
     "context_length": 1050000,
     "pricing": {
-      "prompt": 1.0,
-      "completion": 6.0
+      "prompt": 0.5,
+      "completion": 3.0
     },
     "modality": "text+image+file->text",
     "description": "GPT-5.6 Luna is a fast, cost-efficient model in OpenAI's GPT-5.6 series. It is suited for high-volume, latency-sensitive tasks such as chat, classification, and lightweight agentic workflows, providing capable reasoning for...",
@@ -399,11 +385,39 @@
     "tier": "mid",
     "context_length": 1050000,
     "pricing": {
-      "prompt": 1.0,
-      "completion": 6.0
+      "prompt": 0.5,
+      "completion": 3.0
     },
     "modality": "text+image+file->text",
     "description": "GPT-5.6 Luna Pro is the same underlying model as [GPT-5.6 Luna](https://openrouter.ai/openai/gpt-5.6-luna), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/openai/gpt-5.6-terra",
+    "label": "GPT-5.6 Terra",
+    "provider": "OpenAI",
+    "tier": "mid",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 1.25,
+      "completion": 7.5
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.6 Terra is a balanced model in OpenAI's GPT-5.6 series, positioned between the flagship Sol tier and the cost-efficient Luna tier. It is suited for everyday coding, reasoning, and agentic...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/openai/gpt-5.6-terra-pro",
+    "label": "GPT-5.6 Terra Pro",
+    "provider": "OpenAI",
+    "tier": "mid",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 1.25,
+      "completion": 7.5
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-5.6 Terra Pro is the same underlying model as [GPT-5.6 Terra](https://openrouter.ai/openai/gpt-5.6-terra), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
     "isFusion": false
   },
   {
@@ -484,8 +498,8 @@
     "tier": "mid",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.791,
-      "completion": 2.486
+      "prompt": 0.7378,
+      "completion": 2.3188
     },
     "modality": "text->text",
     "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,...",
@@ -526,8 +540,8 @@
     "tier": "mid",
     "context_length": 512288,
     "pricing": {
-      "prompt": 0.5,
-      "completion": 2.2
+      "prompt": 0.6,
+      "completion": 3.6
     },
     "modality": "text->text",
     "description": "NVIDIA Nemotron 3 Ultra is an open frontier-reasoning and orchestration model from NVIDIA, with 55B active parameters out of 550B total (MoE). Built on a hybrid Transformer-Mamba mixture-of-experts architecture, it...",
@@ -562,31 +576,31 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/moonshotai/kimi-k2.6",
+    "label": "MoonshotAI: Kimi K2.6",
+    "provider": "Moonshotai",
+    "tier": "mid",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.646,
+      "completion": 2.72
+    },
+    "modality": "text+image->text",
+    "description": "Kimi K2.6 is Moonshot AI's next-generation multimodal model, designed for long-horizon coding, coding-driven UI/UX generation, and multi-agent orchestration. It handles complex end-to-end coding tasks across Python, Rust, and Go, and...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/moonshotai/kimi-k2.7-code",
     "label": "MoonshotAI: Kimi K2.7 Code",
     "provider": "Moonshotai",
     "tier": "mid",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.82,
-      "completion": 3.75
+      "prompt": 0.73,
+      "completion": 3.5
     },
     "modality": "text+image->text",
     "description": "MoonshotAI: Kimi K2.7 Code is a coding-focused model in Moonshot AI's Kimi K2 family, built to complete end-to-end programming tasks reliably over long contexts. It uses a native multimodal mixture-of-experts...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.6-max-preview",
-    "label": "Qwen3.6 Max Preview",
-    "provider": "Qwen",
-    "tier": "mid",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 1.04,
-      "completion": 6.24
-    },
-    "modality": "text->text",
-    "description": "Qwen3.6-Max-Preview is a proprietary frontier model from Alibaba Cloud built on a sparse mixture-of-experts architecture with approximately 1 trillion total parameters. It is optimized for agentic coding, tool use, and...",
     "isFusion": false
   },
   {
@@ -660,6 +674,20 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/deepseek/deepseek-v4-pro",
+    "label": "DeepSeek V4 Pro",
+    "provider": "DeepSeek",
+    "tier": "budget",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 0.435,
+      "completion": 0.87
+    },
+    "modality": "text->text",
+    "description": "DeepSeek V4 Pro is a large-scale Mixture-of-Experts model from DeepSeek with 1.6T total parameters and 49B activated parameters, supporting a 1M-token context window. It is designed for advanced reasoning, coding,...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/google/gemini-3.1-flash-lite",
     "label": "Gemini 3.1 Flash Lite",
     "provider": "Google",
@@ -730,31 +758,17 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/qwen/qwen3.5-plus-20260420",
-    "label": "Qwen3.5 Plus 2026-04-20",
+    "id": "openrouter/qwen/qwen3.7-flash",
+    "label": "Qwen3.7 Flash",
     "provider": "Qwen",
     "tier": "budget",
     "context_length": 1000000,
     "pricing": {
-      "prompt": 0.3,
-      "completion": 1.8
+      "prompt": 0.03,
+      "completion": 0.13
     },
     "modality": "text+image+video->text",
-    "description": "Qwen3.5 Plus (April 2026) is a large-scale multimodal language model from Alibaba. It accepts text, image, and video input and produces text output, with a 1M token context window. This...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.6-flash",
-    "label": "Qwen3.6 Flash",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 1000000,
-    "pricing": {
-      "prompt": 0.1875,
-      "completion": 1.125
-    },
-    "modality": "text+image+video->text",
-    "description": "Qwen3.6 Flash is a fast, efficient language model from Alibaba's Qwen 3.6 series. It supports text, image, and video input with a 1M token context window. Tiered pricing kicks in...",
+    "description": "Qwen3.7 Flash is a vision-language reasoning model from Alibaba. It is suited for multimodal agents, visual coding, search, and computer interaction, with strengths in object recognition, spatial understanding, and real-world...",
     "isFusion": false
   },
   {
@@ -895,34 +909,6 @@
     },
     "modality": "text+image->text",
     "description": "Nex-N2-Pro is an agentic mixture-of-experts model from Nex AGI, with 17B active parameters out of 397B total. Built on the Qwen3.5 architecture, it accepts text and image input and produces...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.6-27b",
-    "label": "Qwen3.6 27B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.288,
-      "completion": 2.4
-    },
-    "modality": "text+image+video->text",
-    "description": "Qwen3.6 27B is a dense 27-billion-parameter language model from the Qwen Team at Alibaba, released in April 2026. It features hybrid multimodal capabilities \u2014 accepting text, image, and video inputs...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/qwen/qwen3.6-35b-a3b",
-    "label": "Qwen3.6 35B A3B",
-    "provider": "Qwen",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.14,
-      "completion": 1.0
-    },
-    "modality": "text+image+video->text",
-    "description": "Qwen3.6-35B-A3B is an open-weight multimodal model from Alibaba Cloud with 35 billion total parameters and 3 billion active parameters per token. It uses a hybrid sparse mixture-of-experts architecture combining Gated...",
     "isFusion": false
   },
   {
