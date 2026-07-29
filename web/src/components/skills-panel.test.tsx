@@ -14,6 +14,14 @@ function stubProjects() {
   } as unknown as ReturnType<typeof useProjects.useProjects>);
 }
 
+function syncStatus(overrides: Partial<caps.SkillSyncStatus> = {}): caps.SkillSyncStatus {
+  return {
+    ...caps.EMPTY_SKILL_SYNC_STATUS,
+    lastCheckedAt: "2026-07-29T20:00:00.000Z",
+    ...overrides,
+  };
+}
+
 describe("SkillsPanel", () => {
   it("lists enabled and disabled skills and toggles one off", async () => {
     stubProjects();
@@ -79,5 +87,55 @@ describe("SkillsPanel", () => {
     expect(screen.getByText("genomic-intelligence")).toBeInTheDocument();
     expect(screen.getByText(/Nested mappings/)).toBeInTheDocument();
     expect(screen.queryByText(/description exceeds 1024/)).not.toBeInTheDocument();
+  });
+
+  it("refreshes the upstream catalogue on demand", async () => {
+    stubProjects();
+    const listing = {
+      enabled: [{ id: "paperclip", name: "paperclip", description: "papers" }],
+      disabled: [],
+      problems: [],
+      sync: syncStatus(),
+    };
+    const getSpy = vi.spyOn(caps, "getAllSkills").mockResolvedValue(listing);
+    const syncSpy = vi.spyOn(caps, "syncSkills").mockResolvedValue();
+
+    render(<SkillsPanel />);
+    await screen.findByText("paperclip");
+    await userEvent.click(screen.getByRole("button", { name: /refresh now/i }));
+
+    await waitFor(() => expect(syncSpy).toHaveBeenCalledOnce());
+    await waitFor(() => expect(getSpy).toHaveBeenCalledTimes(2));
+  });
+
+  it("surfaces conflicts and replaces a local copy only after confirmation", async () => {
+    stubProjects();
+    const initial = {
+      enabled: [{ id: "scanpy", name: "scanpy", description: "single cell" }],
+      disabled: [],
+      problems: [],
+      sync: syncStatus({
+        updatesAvailable: ["scanpy"],
+        customized: ["scanpy"],
+      }),
+    };
+    const after = {
+      ...initial,
+      sync: syncStatus({ updatesAvailable: [], customized: [] }),
+    };
+    vi.spyOn(caps, "getAllSkills")
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValue(after);
+    const updateSpy = vi.spyOn(caps, "updateSkillFromUpstream").mockResolvedValue();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<SkillsPanel />);
+    expect(await screen.findByText("Update available")).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: /use upstream version of scanpy/i }),
+    );
+
+    await waitFor(() => expect(updateSpy).toHaveBeenCalledWith("scanpy"));
+    await waitFor(() => expect(screen.queryByText("Update available")).not.toBeInTheDocument());
   });
 });

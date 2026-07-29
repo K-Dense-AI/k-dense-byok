@@ -20,6 +20,12 @@ import {
   seedProjectSkills,
   SKILL_NAME_RE,
 } from "../agent/skills.ts";
+import {
+  getSkillSyncStatus,
+  isSkillSyncActive,
+  replaceProjectSkillFromRemote,
+  syncProjectSkillsFromRemote,
+} from "../agent/skills-sync.ts";
 import { syncSandboxVenv } from "../sandbox-seed.ts";
 import { getSystemStats } from "../system-stats.ts";
 
@@ -94,7 +100,24 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
       enabled: enabled.map(toInfo),
       disabled: disabled.map(toInfo),
       problems,
+      sync: {
+        ...getSkillSyncStatus(paths),
+        syncing: isSkillSyncActive(),
+      },
     };
+  });
+
+  app.post("/skills/sync", async (_req, reply) => {
+    const paths = activePaths();
+    try {
+      const result = await syncProjectSkillsFromRemote(paths);
+      return { ok: true, result };
+    } catch (err) {
+      reply.code(502);
+      return {
+        detail: err instanceof Error ? err.message : "Failed to synchronize skills",
+      };
+    }
   });
 
   app.get<{ Params: { name: string } }>("/skills/:name/source", async (req, reply) => {
@@ -126,6 +149,22 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
       return { detail: r.detail };
     }
     return { ok: true };
+  });
+
+  app.post<{ Params: { name: string } }>("/skills/:name/update", async (req, reply) => {
+    const { name } = req.params;
+    if (!SKILL_NAME_RE.test(name)) {
+      reply.code(400);
+      return { detail: `Invalid skill name "${name}"` };
+    }
+    try {
+      const sync = await replaceProjectSkillFromRemote(activePaths(), name);
+      return { ok: true, sync };
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "Failed to update skill";
+      reply.code(detail.startsWith("No such upstream skill:") ? 404 : 502);
+      return { detail };
+    }
   });
 
   // Seed the project's skills (network clone allowed). Used by first-run / a

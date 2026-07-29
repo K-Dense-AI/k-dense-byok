@@ -35,6 +35,7 @@ describe("skills enable/disable", () => {
     const source = resolvePaths("source");
     for (const name of [
       "scanpy",
+      "openpiv",
       "modal",
       "hypogenic",
       "diffdock",
@@ -48,10 +49,11 @@ describe("skills enable/disable", () => {
 
     ensureProjectExists("target");
     const target = resolvePaths("target");
-    expect(seedProjectSkills(target, false)).toBe(8);
+    expect(seedProjectSkills(target, false)).toBe(9);
     expect(listDisabledSkills(target).map((s) => s.name).sort()).toEqual([
       "hypogenic",
       "modal",
+      "openpiv",
       "scanpy",
     ]);
     expect(listProjectSkills(target).map((s) => s.name).sort()).toEqual([

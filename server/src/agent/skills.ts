@@ -22,9 +22,10 @@ import { PROJECTS_ROOT } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import type { ToggleResult } from "./capability-state.ts";
 
-const SKILLS_REPO = process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
+export const SKILLS_REPO =
+  process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
 const SKILLS_SUBPATH = "skills";
-const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
+export const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
 const DEFAULT_DISABLED_MIGRATION = "package-skills-disabled-v1";
 
 /**
@@ -69,6 +70,7 @@ const DEFAULT_DISABLED_SKILLS = new Set([
   "molfeat",
   "networkx",
   "neurokit2",
+  "openpiv",
   "pathml",
   "pennylane",
   "polars",
@@ -110,6 +112,10 @@ const DEFAULT_DISABLED_SKILLS = new Set([
   "vaex",
   "zarr-python",
 ]);
+
+export function isSkillDefaultDisabled(name: string): boolean {
+  return DEFAULT_DISABLED_SKILLS.has(name);
+}
 
 function countSkillDirs(dir: string): number {
   try {

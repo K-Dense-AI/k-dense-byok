@@ -26,6 +26,7 @@ import { registerAgentRoutes } from "./api/agents.ts";
 import { registerSpeechRoutes } from "./api/speech.ts";
 import { registerModalRoutes } from "./api/modal.ts";
 import { registerModelProviderRoutes } from "./api/model-providers.ts";
+import { startAutomaticSkillSync } from "./agent/skills-sync.ts";
 import { modalJobManager } from "./modal/manager.ts";
 import { syncHelperVenv } from "./helpers-env.ts";
 import { configureHttpProxy } from "./http-proxy.ts";
@@ -165,7 +166,10 @@ if (isMain) {
   }
   app
     .listen({ port: PORT, host: HOST })
-    .then((addr) => app.log.info(`kady-server listening on ${addr}`))
+    .then((addr) => {
+      app.log.info(`kady-server listening on ${addr}`);
+      startAutomaticSkillSync(app.log);
+    })
     .catch((err) => {
       app.log.error(err);
       process.exit(1);
