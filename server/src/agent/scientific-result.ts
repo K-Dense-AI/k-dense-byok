@@ -96,8 +96,15 @@ const StatisticalTestSchema = Type.Object(
     adjustedPValue: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     effectSize: Type.Optional(Type.Number()),
     effectSizeLabel: Type.Optional(ShortString),
+    // A 2-element array rather than Type.Tuple: TypeBox emits tuples in
+    // draft-07 style (`items: [...]` plus `additionalItems`), and
+    // `additionalItems` was removed in JSON Schema draft 2020-12. Anthropic
+    // validates tool schemas against 2020-12 and rejects the whole request
+    // ("input_schema: JSON schema is invalid"), so a tuple anywhere in a tool's
+    // parameters breaks every call on that provider. Both positions are plain
+    // numbers, so nothing is lost.
     confidenceInterval: Type.Optional(
-      Type.Tuple([Type.Number(), Type.Number()]),
+      Type.Array(Type.Number(), { minItems: 2, maxItems: 2 }),
     ),
     confidenceLevel: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     sampleSize: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -142,14 +149,16 @@ const ArtifactListCardSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const QcStatus = Type.Union([
+  Type.Literal("pass"),
+  Type.Literal("warn"),
+  Type.Literal("fail"),
+]);
+
 const QcCheckSchema = Type.Object(
   {
     name: ShortString,
-    status: Type.Union([
-      Type.Literal("pass"),
-      Type.Literal("warn"),
-      Type.Literal("fail"),
-    ]),
+    status: QcStatus,
     value: Type.Optional(Scalar),
     expected: Type.Optional(MediumString),
     message: Type.Optional(LongString),
@@ -162,11 +171,7 @@ const QcReportCardSchema = Type.Object(
   {
     ...commonProperties,
     kind: Type.Literal("qc-report"),
-    overall: Type.Union([
-      Type.Literal("pass"),
-      Type.Literal("warn"),
-      Type.Literal("fail"),
-    ]),
+    overall: QcStatus,
     checks: Type.Array(QcCheckSchema, { minItems: 1, maxItems: 100 }),
   },
   { additionalProperties: false },
@@ -268,7 +273,14 @@ const MoleculeCardSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const ScientificResultParams = Type.Union(
+/**
+ * The stored card envelope: a discriminated union, one branch per kind.
+ *
+ * This is the shape persisted in the tool-result details and consumed by the
+ * frontend (`web/src/lib/scientific-results.ts` mirrors it). It is deliberately
+ * NOT the tool's input schema — see ScientificResultParams for why.
+ */
+export const ScientificResultCardSchema = Type.Union(
   [
     TableCardSchema,
     StatisticalTestCardSchema,
@@ -285,7 +297,202 @@ export const ScientificResultParams = Type.Union(
   },
 );
 
-export type ScientificResultCard = Static<typeof ScientificResultParams>;
+export type ScientificResultCard = Static<typeof ScientificResultCardSchema>;
+
+/**
+ * The tool's INPUT schema: one flat object, with `kind` as the discriminant and
+ * every kind-specific field optional.
+ *
+ * Why not reuse the union above? Pi passes `tool.parameters` to the provider
+ * verbatim, and OpenAI-style function calling requires `parameters` to be an
+ * object schema with `properties`. A top-level `anyOf` has neither, so on the
+ * `openai-completions` API (which is how OpenRouter models are driven here) the
+ * model received no property names or types at all: it guessed, sent
+ * `schemaVersion: "1"` and JSON-encoded strings for arrays, and every call
+ * failed validation. Flattening restores a real schema for the model.
+ *
+ * The cost is that kind/field agreement is no longer expressed in the schema.
+ * It is enforced in `cardFromParams`, which validates the assembled card
+ * against that kind's exact branch — so the stored envelope is still guaranteed
+ * to satisfy ScientificResultCardSchema.
+ *
+ * `additionalProperties` is left open on purpose: a stray field is stripped
+ * during assembly, which beats failing the call and burning a retry.
+ */
+export const ScientificResultParams = Type.Object(
+  {
+    kind: Type.Union(
+      [
+        Type.Literal("table"),
+        Type.Literal("statistical-test"),
+        Type.Literal("plot"),
+        Type.Literal("artifact-list"),
+        Type.Literal("qc-report"),
+        Type.Literal("dataset-schema"),
+        Type.Literal("citation-list"),
+        Type.Literal("molecule"),
+      ],
+      {
+        description:
+          "Which kind of result card this is. Supply only that kind's fields: table -> columns+rows; statistical-test -> tests; plot -> images; artifact-list -> items; qc-report -> overall+checks; dataset-schema -> path/shape/dimensions/fields (at least one); citation-list -> entries; molecule -> path, smiles or inchi.",
+      },
+    ),
+    title: ShortString,
+    summary: Type.Optional(LongString),
+    artifacts: Type.Optional(Type.Array(ScientificArtifactSchema, { maxItems: 25 })),
+
+    // table
+    columns: Type.Optional(Type.Array(TableColumnSchema, { minItems: 1, maxItems: 25 })),
+    rows: Type.Optional(
+      Type.Array(Type.Array(Scalar, { maxItems: 25 }), { maxItems: 100 }),
+    ),
+    totalRows: Type.Optional(Type.Integer({ minimum: 0 })),
+    truncated: Type.Optional(Type.Boolean()),
+
+    // statistical-test
+    tests: Type.Optional(Type.Array(StatisticalTestSchema, { minItems: 1, maxItems: 20 })),
+
+    // plot
+    images: Type.Optional(Type.Array(PlotImageSchema, { minItems: 1, maxItems: 8 })),
+
+    // artifact-list
+    items: Type.Optional(Type.Array(ScientificArtifactSchema, { minItems: 1, maxItems: 25 })),
+
+    // qc-report
+    overall: Type.Optional(QcStatus),
+    checks: Type.Optional(Type.Array(QcCheckSchema, { minItems: 1, maxItems: 100 })),
+
+    // dataset-schema (`path` is shared with molecule)
+    format: Type.Optional(ShortString),
+    shape: Type.Optional(
+      Type.Array(Type.Integer({ minimum: 0 }), { minItems: 1, maxItems: 8 }),
+    ),
+    dimensions: Type.Optional(Type.Array(DatasetDimensionSchema, { maxItems: 20 })),
+    fields: Type.Optional(Type.Array(DatasetFieldSchema, { maxItems: 100 })),
+
+    // citation-list
+    entries: Type.Optional(Type.Array(CitationSchema, { minItems: 1, maxItems: 100 })),
+
+    // molecule
+    path: Type.Optional(PathString),
+    index: Type.Optional(Type.Integer({ minimum: 0 })),
+    name: Type.Optional(ShortString),
+    formula: Type.Optional(ShortString),
+    smiles: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+    inchi: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+    molecularWeight: Type.Optional(Type.Number({ minimum: 0 })),
+    atomCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    bondCount: Type.Optional(Type.Integer({ minimum: 0 })),
+    properties: Type.Optional(Type.Array(MoleculePropertySchema, { maxItems: 30 })),
+  },
+  {
+    description:
+      "A compact, typed scientific result card. Put large/full data in sandbox artifacts and show only a bounded preview here.",
+  },
+);
+
+export type ScientificResultParamsT = Static<typeof ScientificResultParams>;
+
+/**
+ * Per-kind field ownership. `props` are the fields copied onto the card for that
+ * kind (anything else the model sent is dropped); `required` drives a friendly
+ * error before schema validation, whose union-wide messages are unreadable.
+ *
+ * `dataset-schema` and `molecule` have no single required field — each needs one
+ * of several alternatives, which normalizeCard already checks and reports.
+ */
+const KIND_SPEC = {
+  table: {
+    schema: TableCardSchema,
+    props: ["columns", "rows", "totalRows", "truncated"],
+    required: ["columns", "rows"],
+  },
+  "statistical-test": {
+    schema: StatisticalTestCardSchema,
+    props: ["tests"],
+    required: ["tests"],
+  },
+  plot: { schema: PlotCardSchema, props: ["images"], required: ["images"] },
+  "artifact-list": {
+    schema: ArtifactListCardSchema,
+    props: ["items"],
+    required: ["items"],
+  },
+  "qc-report": {
+    schema: QcReportCardSchema,
+    props: ["overall", "checks"],
+    required: ["overall", "checks"],
+  },
+  "dataset-schema": {
+    schema: DatasetSchemaCardSchema,
+    props: ["path", "format", "shape", "dimensions", "fields"],
+    required: [],
+  },
+  "citation-list": {
+    schema: CitationListCardSchema,
+    props: ["entries"],
+    required: ["entries"],
+  },
+  molecule: {
+    schema: MoleculeCardSchema,
+    props: [
+      "path",
+      "index",
+      "name",
+      "formula",
+      "smiles",
+      "inchi",
+      "molecularWeight",
+      "atomCount",
+      "bondCount",
+      "properties",
+    ],
+    required: [],
+  },
+} as const satisfies Record<
+  ScientificResultParamsT["kind"],
+  { schema: unknown; props: readonly string[]; required: readonly string[] }
+>;
+
+/**
+ * Assemble the stored card from flat params, stamping the schema version.
+ *
+ * The version is server-supplied rather than model-supplied: it is not the
+ * model's to choose, and asking for it was one of the things that broke —
+ * `Type.Literal(1)` arrived as the string "1".
+ */
+export function cardFromParams(params: ScientificResultParamsT): ScientificResultCard {
+  const spec = KIND_SPEC[params.kind];
+  const supplied = params as unknown as Record<string, unknown>;
+  const missing = spec.required.filter((key) => supplied[key] === undefined);
+  if (missing.length > 0) {
+    throw new Error(
+      `A ${params.kind} result requires ${spec.required.join(" and ")}; missing ${missing.join(", ")}.`,
+    );
+  }
+
+  const card: Record<string, unknown> = {
+    schemaVersion: SCIENTIFIC_RESULT_VERSION,
+    kind: params.kind,
+    title: params.title,
+    ...(params.summary !== undefined ? { summary: params.summary } : {}),
+    ...(params.artifacts !== undefined ? { artifacts: params.artifacts } : {}),
+  };
+  for (const key of spec.props) {
+    if (supplied[key] !== undefined) card[key] = supplied[key];
+  }
+
+  // Validate against this kind's branch, not the union: union errors enumerate
+  // every branch at once and are useless to a model trying to correct itself.
+  if (!Value.Check(spec.schema as typeof TableCardSchema, card)) {
+    const detail = [...Value.Errors(spec.schema as typeof TableCardSchema, card)]
+      .slice(0, 5)
+      .map((err) => `${err.instancePath || "(root)"} ${err.message}`)
+      .join("; ");
+    throw new Error(`Invalid ${params.kind} result: ${detail}`);
+  }
+  return card as ScientificResultCard;
+}
 export interface ScientificResultDetails {
   scientificResult: ScientificResultCard;
 }
@@ -411,7 +618,7 @@ export function scientificResultFromDetails(
   if (!details || typeof details !== "object") return undefined;
   const result = (details as { scientificResult?: unknown }).scientificResult;
   try {
-    if (!Value.Check(ScientificResultParams, result)) return undefined;
+    if (!Value.Check(ScientificResultCardSchema, result)) return undefined;
     if (
       Buffer.byteLength(JSON.stringify(result), "utf-8") >
       MAX_SCIENTIFIC_RESULT_BYTES
@@ -432,6 +639,16 @@ export function makeScientificResultTool(
     label: "Scientific result",
     description: [
       "Present a concrete scientific result as a typed card in the user's chat.",
+      "Set `kind`, `title`, and only the fields belonging to that kind:",
+      "  table -> columns, rows (every row needs one value per column)",
+      "  statistical-test -> tests",
+      "  plot -> images (must be image files)",
+      "  artifact-list -> items",
+      "  qc-report -> overall, checks",
+      "  dataset-schema -> at least one of path, shape, dimensions, fields",
+      "  citation-list -> entries",
+      "  molecule -> at least one of path, smiles, inchi",
+      "Do not send a schemaVersion; it is stamped for you. Every path must be an existing, user-visible sandbox file.",
       "Use only values you actually observed or computed; this tool presents evidence but does not independently verify it.",
       "Keep previews compact and save complete tables, plots, scripts, and reports as sandbox artifacts.",
       "Use the notebook tool separately for hypotheses, methods, observations, and decisions.",
@@ -440,12 +657,14 @@ export function makeScientificResultTool(
       "scientific_result: present observed tables, statistics, plots, QC, schemas, citations, molecules, and artifacts as typed cards",
     promptGuidelines: [
       "After obtaining a meaningful scientific result, call `scientific_result` with a compact typed preview and links to the underlying sandbox artifacts.",
+      "Pick one `kind` and send only that kind's fields — mixing fields from different kinds is rejected.",
+      "Send real JSON arrays and numbers, not strings containing JSON.",
       "Never invent values for a result card. Cards are presentation, not independent verification.",
       "Do not paste large datasets into a card; save them to files and include the files as artifacts.",
     ],
     parameters: ScientificResultParams,
     async execute(_toolCallId, params) {
-      const card = normalizeCard(projectId, params);
+      const card = normalizeCard(projectId, cardFromParams(params));
       return {
         content: [
           {
