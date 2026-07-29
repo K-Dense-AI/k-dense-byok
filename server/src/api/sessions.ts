@@ -46,6 +46,7 @@ import {
 import { MethodsDraftError, runMethodsDraft } from "../agent/methods-draft.ts";
 import { mintRunId, setSessionRunId } from "../agent/run-ids.ts";
 import { runBroker, type RunHandle } from "../agent/run-broker.ts";
+import { ProvenanceRecorder } from "../provenance/recorder.ts";
 import { SandboxError } from "../sandbox-fs.ts";
 import {
   findSessionFile,
@@ -721,7 +722,19 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             // can shrink the cumulative stats and make the before/after delta lie
             // low; the per-turn events are immune to that.
             const turnTally = emptySnapshot();
+            // Observational provenance: binds each tool call to the sandbox
+            // files it actually read and wrote. Constructed before prompt() so
+            // its baseline sandbox walk overlaps the first model round-trip.
+            const provenance = new ProvenanceRecorder({
+              projectId,
+              sessionId,
+              sandboxRoot: paths.sandbox,
+              runId,
+              getModel: () => (session.model ? modelReference(session.model) : undefined),
+              onError: (err) => log.warn({ err }, "provenance recorder step failed"),
+            });
             unsubscribePi = session.subscribe((ev) => {
+              provenance.observe(ev);
               if (ev.type === "turn_end") {
                 const usage = (ev.message as {
                   usage?: Parameters<typeof addTurnUsage>[1];
@@ -760,6 +773,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             } finally {
               unsubscribePi();
               unsubscribePi = null;
+              // Drain queued provenance scans before the terminal frames go out,
+              // so a client that reads provenance on `done` sees a complete file.
+              try {
+                await provenance.flush();
+              } catch (err) {
+                log.warn({ err }, "failed to flush provenance");
+              }
               // Ledger in the finally: a run that threw mid-turn still spent real
               // tokens. The stats delta catches a partial turn that never reached
               // turn_end; the tally catches compaction — take the max of the two.

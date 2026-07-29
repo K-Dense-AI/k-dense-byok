@@ -51,6 +51,7 @@ export interface ProjectPaths {
   kadyDir: string;
   runsDir: string;
   notebookDir: string;
+  provenanceDir: string;
   modalDir: string;
   modalJobsDir: string;
   modalReservationsDir: string;
@@ -128,6 +129,7 @@ export function resolvePaths(projectId: string): ProjectPaths {
     kadyDir,
     runsDir: path.join(kadyDir, "runs"),
     notebookDir: path.join(kadyDir, "notebook"),
+    provenanceDir: path.join(kadyDir, "provenance"),
     modalDir,
     modalJobsDir: path.join(modalDir, "jobs"),
     modalReservationsDir: path.join(modalDir, "reservations"),

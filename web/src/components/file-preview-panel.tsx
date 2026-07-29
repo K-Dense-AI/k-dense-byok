@@ -5,6 +5,7 @@ import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
 import { KadyFileIcon } from "@/components/file-icon";
 import { LabNotebookView } from "@/components/lab-notebook-view";
 import { ModalJobsPanel } from "@/components/modal-jobs-panel";
+import { ProvenancePanel } from "@/components/provenance-panel";
 import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { NotebookEntry } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ import {
   RefreshCcwIcon,
   AlertCircleIcon,
   ServerCogIcon,
+  GitBranchIcon,
 } from "lucide-react";
 import {
   Suspense,
@@ -134,7 +136,7 @@ function parseCsv(text: string): string[][] {
 // TabBar
 // ---------------------------------------------------------------------------
 
-type PanelMode = "view" | "edit" | "annotate";
+type PanelMode = "view" | "edit" | "annotate" | "provenance";
 
 function TabBar({
   tabs,
@@ -1958,6 +1960,8 @@ export interface FilePreviewPanelProps {
   notebookFocus?: { id: string; token: number } | null;
   /** Scroll the chat transcript to a notebook entry's tool call. */
   onNotebookJumpToChat?: (entryId: string) => void;
+  /** Open the Lab Notebook focused on an entry (used by artifact citations). */
+  onOpenNotebookEntry?: (entryId: string) => void;
 }
 
 export function FilePreviewPanel({
@@ -1989,6 +1993,7 @@ export function FilePreviewPanel({
   onOpenNotebookFile,
   notebookFocus,
   onNotebookJumpToChat,
+  onOpenNotebookEntry,
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
   const [tabModes, setTabModes] = useState<Record<string, PanelMode>>({});
@@ -2027,6 +2032,20 @@ export function FilePreviewPanel({
       <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         {categoryLabel(selectedName ?? "")}
       </span>
+      {(mode === "view" || mode === "provenance") && (
+        <button
+          onClick={() => setMode(selectedPath, mode === "provenance" ? "view" : "provenance")}
+          className={cn(
+            "flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors",
+            mode === "provenance"
+              ? "bg-muted text-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+          title="Where this file came from"
+        >
+          <GitBranchIcon className="size-3" /> Provenance
+        </button>
+      )}
       {canEdit && mode === "view" && (
         <button
           onClick={() => setMode(selectedPath, "edit")}
@@ -2153,6 +2172,22 @@ export function FilePreviewPanel({
               projectId={projectId}
               onSave={(blob) => onSaveImageBlob(selectedPath, blob)}
               onDiscard={() => setMode(selectedPath, "view")}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Provenance mode — lineage instead of contents */}
+      {selectedPath && mode === "provenance" && (
+        <>
+          {header}
+          <div className="flex-1 min-h-0">
+            <ProvenancePanel
+              key={selectedPath}
+              path={selectedPath}
+              projectId={projectId}
+              onOpenFile={onTabSelect}
+              onOpenNotebookEntry={onOpenNotebookEntry}
             />
           </div>
         </>

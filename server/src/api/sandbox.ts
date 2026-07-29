@@ -16,6 +16,7 @@ import { ZipArchive } from "archiver";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { buildProjectArchive } from "../project-archive.ts";
+import { artifactProvenance } from "../provenance/lookup.ts";
 import { currentProjectId } from "../scope.ts";
 import { apiRelative, guessMime, isUserVisible, isWithin, safePath, SandboxError } from "../sandbox-fs.ts";
 import { sciHelperFor, runSciHelper, runHelperScript } from "./sci-helpers.ts";
@@ -565,6 +566,24 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       reply.header("Last-Modified", saved.mtime.toUTCString());
       if (saved.etag) reply.header("ETag", saved.etag);
       return { saved: req.query.path, count: doc.annotations.length };
+    } catch (err) {
+      return handle(reply, err);
+    }
+  });
+
+  // --- provenance ---
+  app.get<{ Querystring: { path: string } }>("/sandbox/provenance", async (req, reply) => {
+    try {
+      const rel = req.query.path;
+      if (!rel) {
+        reply.code(400);
+        return { detail: "path is required" };
+      }
+      // safePath enforces the traversal/symlink guard; artifactProvenance
+      // re-derives the sandbox-relative form it indexes by.
+      safePath(rel);
+      reply.header("Cache-Control", "no-store");
+      return artifactProvenance(currentProjectId(), rel);
     } catch (err) {
       return handle(reply, err);
     }

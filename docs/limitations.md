@@ -91,7 +91,8 @@ tracked in the center-panel Compute tab. The remaining boundaries are:
   workspace.
 - **Security and provenance have separate scopes.** Remote jobs do not receive
   model credentials by default. Fine-grained egress policy, per-job secrets,
-  and full scientific provenance manifests remain future work.
+  and provenance for remote steps remain future work — local tool calls are
+  recorded (see [Provenance](./provenance.md)), Modal job steps are not yet.
 
 See [Durable Modal compute](./modal-compute.md) for lifecycle and recovery details.
 
@@ -101,4 +102,4 @@ The app now runs natively on Windows 10/11 (no WSL needed) as of this release. I
 
 ## Features deferred during the Pi migration
 
-First-party literature/regulatory search (Paperclip), document conversion, browser automation, citation verification, and the provenance-aware "Copy as Methods" export are not available yet in the Pi-based backend. Web research and Modal remote compute are available now. In the meantime, many additional capabilities (GitHub, reference managers, databases, and more) can be added by connecting an [MCP server](./mcp-servers.md).
+First-party literature/regulatory search (Paperclip), document conversion, browser automation, citation verification, and the provenance-aware "Copy as Methods" export are not available yet in the Pi-based backend. Web research and Modal remote compute are available now, as is per-artifact [provenance](./provenance.md) — the record the Methods export will eventually draw on. In the meantime, many additional capabilities (GitHub, reference managers, databases, and more) can be added by connecting an [MCP server](./mcp-servers.md).

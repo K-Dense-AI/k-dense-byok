@@ -1075,6 +1075,7 @@ function WorkspacePage({
               onOpenNotebookFile={handleFileSelect}
               notebookFocus={notebookFocus}
               onNotebookJumpToChat={handleNotebookJumpToChat}
+              onOpenNotebookEntry={handleViewInNotebook}
             />
           )}
         </div>
