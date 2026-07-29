@@ -121,6 +121,14 @@ function ArtifactRow({
           {hash}
         </span>
       )}
+      {ref_.identityAt === "harvest" && (
+        <span
+          className="shrink-0 text-[10px] text-muted-foreground"
+          title="Hashed when the subagent's record was parsed, not when the step wrote the file — the bytes may already have changed by then."
+        >
+          hashed later
+        </span>
+      )}
       {ref_.hashSkipped && (
         <span
           className="shrink-0 text-[10px] text-amber-600 dark:text-amber-400"
@@ -160,6 +168,17 @@ function StepCard({
           </span>
         )}
         {outputRef && <ConfidenceBadge confidence={outputRef.confidence} />}
+        {/* The target's own ref is summarised by the badge above rather than
+            rendered as an ArtifactRow, so its timing marker has to live here or
+            the card silently implies a write-time hash it does not have. */}
+        {outputRef?.identityAt === "harvest" && (
+          <span
+            className="shrink-0 text-[10px] text-muted-foreground"
+            title="This step ran inside a subagent, so the file was hashed when its record was parsed rather than when the step wrote it."
+          >
+            hashed later
+          </span>
+        )}
         <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
           {formatWhen(step.timestamp)}
         </span>
@@ -190,7 +209,9 @@ function StepCard({
           <AlertTriangleIcon className="mt-px size-2.5 shrink-0" />
           {step.degraded === "sandbox-too-large"
             ? "Sandbox exceeded the scan budget — file attribution for this step is incomplete."
-            : "The sandbox scan failed — file attribution for this step is incomplete."}
+            : step.degraded === "scan-failed"
+              ? "The sandbox scan failed — file attribution for this step is incomplete."
+              : "Ran inside a subagent and was reconstructed afterward, so this step's file effects could not be observed directly. Any files below are attributed by timing, not observation."}
         </p>
       )}
 
@@ -256,6 +277,16 @@ const STALENESS_COPY = {
     Icon: CircleHelpIcon,
     className: "text-muted-foreground",
     text: "Unverified — no recorded hash to compare against, so sameness could not be checked.",
+  },
+  /**
+   * Also "unknown" on the wire, but for a different reason worth stating: the
+   * bytes match a hash taken when the subagent's record was parsed rather than
+   * when the step wrote the file, so this only rules out changes since then.
+   */
+  unknownRetrospective: {
+    Icon: CircleHelpIcon,
+    className: "text-muted-foreground",
+    text: "Unchanged since this record was reconstructed — but the producing step ran inside a subagent and its bytes were never hashed at the time, so a match cannot confirm this is what it produced.",
   },
 } as const;
 
@@ -327,8 +358,14 @@ export function ProvenancePanel({
 
   if (!data) return null;
 
-  const staleness = STALENESS_COPY[data.staleness];
   const hasHistory = data.producedBy.length > 0;
+  // Distinguish "we have no hash" from "we have one, but it was taken too late
+  // to certify anything" — both arrive as `unknown`.
+  const latestRef = data.producedBy[0]?.outputs.find((o) => o.path === data.path);
+  const staleness =
+    data.staleness === "unknown" && latestRef?.identityAt === "harvest" && latestRef.sha256
+      ? STALENESS_COPY.unknownRetrospective
+      : STALENESS_COPY[data.staleness];
 
   return (
     <div className="h-full overflow-auto px-3 py-3">

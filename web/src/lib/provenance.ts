@@ -12,12 +12,27 @@ import { apiFetch } from "@/lib/projects";
 
 export type EdgeConfidence = "observed" | "inferred" | "declared";
 
-export type ArtifactChange = "created" | "modified" | "deleted" | "read" | "unchanged";
+export type ArtifactChange =
+  | "created"
+  | "modified"
+  | "deleted"
+  | "read"
+  | "unchanged"
+  /** Written, but created-vs-modified unknown (no before-state was observed). */
+  | "wrote";
 
 export type Staleness = "current" | "stale" | "unknown";
 
+/**
+ * When the recorded size/hash was measured. `write` (the default) means right
+ * after the producing call, so the hash is what that step produced. `harvest`
+ * means later, when a subagent's session file was parsed — so the bytes may
+ * already have changed, and staleness will not report "current" from it.
+ */
+export type IdentityTiming = "write" | "harvest";
+
 /** Why a step's file attribution is less complete than usual. */
-export type DegradeReason = "sandbox-too-large" | "scan-failed";
+export type DegradeReason = "sandbox-too-large" | "scan-failed" | "no-scan-baseline";
 
 export interface ArtifactRef {
   path: string;
@@ -26,6 +41,7 @@ export interface ArtifactRef {
   mtimeMs: number;
   change: ArtifactChange;
   confidence: EdgeConfidence;
+  identityAt?: IdentityTiming;
   hashSkipped?: "too-large" | "unreadable";
 }
 

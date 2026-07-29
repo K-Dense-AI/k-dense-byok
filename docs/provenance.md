@@ -47,6 +47,56 @@ How each tool class earns its level:
   `interview`, `scientific_result`) are recorded as steps with no file edges and
   trigger no scan.
 
+## Subagent work
+
+Delegated work is recorded too, but it is reconstructed rather than watched, and
+the record says so.
+
+A child `pi` process writes every tool call to its own session file. On
+completion the parent parses that file and appends the steps to its own log —
+the same hook the notebook harvest and the cost ledger already use. Harvested
+steps carry `role: "subagent"` and the specialist's name, plus the child's own
+model, which is often not the lead's.
+
+Nothing is installed inside the child to make this work. The session file exists
+whether or not the child knows it is being observed, which is what keeps
+subagent provenance as unauthorable as the lead's.
+
+Two things are weaker than for the lead agent, because the work is inspected
+after it finished:
+
+- **Bytes are hashed at harvest, not at write.** Every harvested artifact ref is
+  marked `identityAt: "harvest"`, shown as "hashed later". A matching hash then
+  only proves *unchanged since we looked* — so staleness reports **Unverified**
+  rather than Current, and says why. A mismatch is still decisive.
+- **`created` vs `modified` is unknowable**, since no before-state was seen.
+  Harvested writes use `wrote` instead of guessing.
+
+In practice those two weaknesses matter less than they sound, because harvested
+steps *layer* on top of the lead's own record rather than replacing it. The
+lead's `subagent` call is itself an opaque tool, so the lead's scan-diff already
+saw the child's files appear and hashed them at the time. A delegated artifact
+therefore usually ends up with two producing steps: the lead's `subagent` call,
+`observed` with a write-time hash, and the child's own call, which names the
+specialist and the exact tool. The write-time ref is the newer of the two, so
+staleness still reports **Current**.
+
+The harvest-time caveat only bites when the lead never observed the file — an
+asynchronous child whose writes land outside any lead tool call, or a run whose
+scan degraded. Which is exactly when you want to be told.
+
+And `bash` inside a child cannot be scan-attributed at all — the sandbox has
+moved on by the time the parent looks. Those steps are recorded with
+`degraded: "no-scan-baseline"` so the gap is visible. To stop script-written
+outputs from disappearing entirely, a file whose mtime falls inside the child's
+activity window and which no recorded step already claims is attached to the
+child's last opaque call as an **`inferred`** edge. The "already claimed" filter
+is what prevents double-attribution: a synchronous subagent runs while the lead
+executes nothing, and anything an asynchronous child's window overlaps that the
+lead touched has already been claimed by the lead's own scan. The residual false
+positive is two asynchronous children with overlapping windows — the file goes to
+whichever is harvested first. `inferred` is load-bearing here.
+
 ## Staleness
 
 Hashes exist mainly to make one specific hazard detectable. A notebook entry
@@ -76,6 +126,7 @@ Where a limit applies, it is reported rather than hidden:
 |---|---|
 | 20,000 files scanned | Step marked `sandbox-too-large`; file attribution incomplete. |
 | Scan error (permissions, races) | Step marked `scan-failed`; file attribution incomplete. |
+| Opaque call inside a subagent | Step marked `no-scan-baseline`; any files are `inferred` by timing. |
 | 512 MB per file | Recorded with size and mtime, marked `unhashed`. |
 | 200 file edges per step | Extra edges dropped, count reported as `truncatedEdges`. |
 | 4 KB of tool arguments | Stored as a truncated preview. |
@@ -97,10 +148,9 @@ These are real and worth knowing before you rely on a record:
   folded into the baseline and go unrecorded.
 - **Change detection is size-or-mtime.** A rewrite preserving both is invisible.
   The identity of what *is* reported is exact, because changed files are hashed.
-- **Subagent steps are not yet harvested.** Child `pi` processes write their own
-  session files; only the lead agent's steps are recorded in this version. The
-  lab notebook already harvests child entries and provenance will follow the same
-  route.
+- **Nested subagents are not harvested.** A subagent that itself delegates
+  produces a grandchild session the parent never learns about, so depth > 1 is
+  invisible — the same limit the lab notebook has.
 - **Environment is not captured yet.** Library versions, interpreter versions,
   and seeds are not recorded, so a step tells you *what ran* but not yet *in what
   environment*.

@@ -103,6 +103,82 @@ describe("ProvenancePanel", () => {
     expect(screen.queryByText("observed")).not.toBeInTheDocument();
   });
 
+  it("names the subagent that produced the artifact", async () => {
+    renderPanel(
+      makeProvenance({
+        producedBy: [
+          makeStep({
+            toolName: "write",
+            role: "subagent",
+            agentName: "pipeline-engineer",
+            outputs: [makeRef({ change: "wrote", identityAt: "harvest" })],
+          }),
+        ],
+      }),
+    );
+    expect(await screen.findByText("subagent: pipeline-engineer")).toBeInTheDocument();
+  });
+
+  it("marks a harvested step's own hash as taken later", async () => {
+    renderPanel(
+      makeProvenance({
+        producedBy: [
+          makeStep({
+            role: "subagent",
+            agentName: "pipeline-engineer",
+            outputs: [makeRef({ change: "wrote", identityAt: "harvest" })],
+          }),
+        ],
+        staleness: "unknown",
+      }),
+    );
+    // Without this the card reads as though the hash were captured at write time.
+    expect(await screen.findByText("hashed later")).toBeInTheDocument();
+  });
+
+  it("does not mark a lead-agent step as hashed later", async () => {
+    renderPanel(makeProvenance());
+    expect(await screen.findByText("bash")).toBeInTheDocument();
+    expect(screen.queryByText("hashed later")).not.toBeInTheDocument();
+  });
+
+  it("explains a harvest-time match instead of claiming it is current", async () => {
+    renderPanel(
+      makeProvenance({
+        producedBy: [
+          makeStep({
+            role: "subagent",
+            agentName: "pipeline-engineer",
+            outputs: [makeRef({ change: "wrote", identityAt: "harvest" })],
+          }),
+        ],
+        staleness: "unknown",
+      }),
+    );
+    expect(
+      await screen.findByText(/never hashed at the time, so a match cannot confirm/i),
+    ).toBeInTheDocument();
+  });
+
+  it("explains a subagent step whose file effects could not be observed", async () => {
+    renderPanel(
+      makeProvenance({
+        producedBy: [
+          makeStep({
+            role: "subagent",
+            agentName: "pipeline-engineer",
+            degraded: "no-scan-baseline",
+            outputs: [makeRef({ change: "wrote", confidence: "inferred", identityAt: "harvest" })],
+          }),
+        ],
+      }),
+    );
+    expect(
+      await screen.findByText(/attributed by timing, not observation/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText("inferred")).toBeInTheDocument();
+  });
+
   it("surfaces a degraded scan instead of implying complete attribution", async () => {
     renderPanel(
       makeProvenance({

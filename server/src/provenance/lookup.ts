@@ -102,7 +102,14 @@ export function artifactProvenance(
   let staleness: Staleness = "unknown";
   if (identity && latestRef) {
     if (identity.sha256 && latestRef.sha256) {
-      staleness = identity.sha256 === latestRef.sha256 ? "current" : "stale";
+      const same = identity.sha256 === latestRef.sha256;
+      // A harvest-time hash was measured when the subagent's session file was
+      // parsed, not when the step wrote the file, so agreement only proves
+      // "unchanged since we looked" — never "this is what produced it". Report
+      // that as unknown rather than borrowing confidence we did not earn. A
+      // MISmatch is still decisive: the bytes definitely changed.
+      const identityIsRetrospective = latestRef.identityAt === "harvest";
+      staleness = same ? (identityIsRetrospective ? "unknown" : "current") : "stale";
     } else if (identity.size === latestRef.size && identity.mtimeMs === latestRef.mtimeMs) {
       // No hash on one side (too large / unreadable). Size+mtime agreement is
       // weak evidence of sameness, so this stays "unknown" rather than

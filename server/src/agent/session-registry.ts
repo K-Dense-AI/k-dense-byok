@@ -36,6 +36,7 @@ import {
   seedBuiltinAgentNotebookTools,
   makeSubagentNotebookExtension,
 } from "./notebook-bridge.ts";
+import { makeSubagentProvenanceExtension } from "../provenance/bridge.ts";
 import {
   makeSubagentModalExtension,
   seedBuiltinAgentModalTools,
@@ -173,6 +174,10 @@ async function build(
       // processes get the notebook tool via seedNotebookPackage above) into
       // the parent notebook — the parent is the single writer.
       makeSubagentNotebookExtension(projectId, () => holder.session?.sessionId ?? ""),
+      // Reconstruct provenance for the child's tool calls from its session file
+      // and append it to the parent's log. Needs no tool inside the child — the
+      // session file is the record, which is what makes it unauthorable.
+      makeSubagentProvenanceExtension(projectId, () => holder.session?.sessionId ?? ""),
       // Child Modal jobs are submitted through the localhost bridge under the
       // child run id; reattribute them to this parent session on completion.
       makeSubagentModalExtension(projectId, () => holder.session?.sessionId ?? ""),

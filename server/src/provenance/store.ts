@@ -44,7 +44,27 @@ export type EdgeConfidence =
   /** The model asserted the link and nothing verified it. */
   | "declared";
 
-export type ArtifactChange = "created" | "modified" | "deleted" | "read" | "unchanged";
+export type ArtifactChange =
+  | "created"
+  | "modified"
+  | "deleted"
+  | "read"
+  | "unchanged"
+  /** Written, but created-vs-modified is unknown (no before-state was seen).
+   *  Harvested subagent writes land here rather than guessing one or the other. */
+  | "wrote";
+
+/**
+ * When the recorded size/hash was measured.
+ *
+ * `write` (the default, and the only value for lead-agent steps) means the file
+ * was identified immediately after the producing call, so the hash is what that
+ * step actually produced. `harvest` means it was identified later — when a
+ * subagent's session file was parsed — so the bytes may already have changed
+ * since the step wrote them. Staleness must never report "current" off a
+ * harvest-time hash; see lookup.ts.
+ */
+export type IdentityTiming = "write" | "harvest";
 
 export interface ArtifactRef {
   /** Sandbox-relative, wire format (forward slashes). */
@@ -54,6 +74,8 @@ export interface ArtifactRef {
   mtimeMs: number;
   change: ArtifactChange;
   confidence: EdgeConfidence;
+  /** Omitted means "write" — measured right after the producing call. */
+  identityAt?: IdentityTiming;
   hashSkipped?: "too-large" | "unreadable";
 }
 
@@ -62,7 +84,14 @@ export type DegradeReason =
   /** The sandbox exceeded the scan budget; declared paths only. */
   | "sandbox-too-large"
   /** The scan itself failed (permissions, races); declared paths only. */
-  | "scan-failed";
+  | "scan-failed"
+  /**
+   * The step ran inside a subagent's child process and was reconstructed from
+   * its session file afterward. No before/after sandbox snapshot exists for it,
+   * so an opaque call like `bash` has no observable file effects at all — the
+   * gap is recorded rather than being reported as "wrote nothing".
+   */
+  | "no-scan-baseline";
 
 export interface ProvenanceStep {
   schemaVersion: typeof PROVENANCE_SCHEMA_VERSION;
@@ -182,6 +211,41 @@ export function appendStep(step: ProvenanceStep, projectId?: string): void {
   const file = stepsPath(step.sessionId, projectId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, JSON.stringify(boundStep(step)) + "\n", "utf-8");
+}
+
+/**
+ * Append only steps whose ids are not already in the session's log.
+ *
+ * Subagent harvest re-reads a child's whole session file on every completion and
+ * relies on stable namespaced step ids, so an in-memory guard alone loses its
+ * state on restart and re-appends the child's entire history. The log on disk is
+ * the durable record of what has already been harvested — the same reasoning as
+ * appendNewNotebookEntries.
+ *
+ * Returns the steps actually written.
+ */
+export function appendNewSteps(
+  sessionId: string,
+  steps: ProvenanceStep[],
+  projectId?: string,
+): ProvenanceStep[] {
+  if (steps.length === 0) return [];
+  const file = stepsPath(sessionId, projectId);
+  const seen = new Set(parseStepsFile(file).map((step) => step.id));
+  const fresh: ProvenanceStep[] = [];
+  for (const step of steps) {
+    if (!step.id || seen.has(step.id)) continue;
+    seen.add(step.id);
+    fresh.push(step);
+  }
+  if (fresh.length === 0) return [];
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(
+    file,
+    fresh.map((step) => JSON.stringify(boundStep(step)) + "\n").join(""),
+    "utf-8",
+  );
+  return fresh;
 }
 
 function parseStepsFile(file: string): ProvenanceStep[] {
