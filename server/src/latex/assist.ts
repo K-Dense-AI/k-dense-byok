@@ -161,6 +161,13 @@ export async function runLatexAssist(
   if (msg.stopReason === "error" || msg.stopReason === "aborted") {
     throw new AssistError(502, msg.errorMessage ?? "model call failed");
   }
+  // `complete()` is `stream().result()`, so a provider stream that ends without
+  // ever setting a terminal reason resolves with the initial "pending" one and a
+  // partial message. Accepting it would splice a truncated replacement into the
+  // user's LaTeX, so treat a missing stop reason as the failure it is.
+  if (msg.stopReason === "pending") {
+    throw new AssistError(502, "Model stream ended without a stop reason");
+  }
   const text = msg.content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
     .map((c) => c.text)

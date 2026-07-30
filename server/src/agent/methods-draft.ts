@@ -202,6 +202,12 @@ export async function runMethodsDraft(
   if (msg.stopReason === "error" || msg.stopReason === "aborted") {
     throw new MethodsDraftError(502, msg.errorMessage ?? "model call failed");
   }
+  // `complete()` is `stream().result()`, so a provider stream that ends without
+  // ever setting a terminal reason resolves with the initial "pending" one and a
+  // partial message. Writing that to disk would look like a finished draft.
+  if (msg.stopReason === "pending") {
+    throw new MethodsDraftError(502, "Model stream ended without a stop reason");
+  }
   const text = msg.content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
     .map((c) => c.text)
