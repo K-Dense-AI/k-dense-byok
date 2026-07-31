@@ -18,6 +18,9 @@ export default defineConfig({
       PI_CODING_AGENT_DIR:
         process.env.VITEST_PI_AGENT_DIR ??
         path.join(os.tmpdir(), `kady-vitest-pi-agent-${process.pid}`),
+      KADY_SKILLS_CACHE_DIR:
+        process.env.VITEST_SKILLS_CACHE_DIR ??
+        path.join(os.tmpdir(), `kady-vitest-skills-cache-${process.pid}`),
     },
   },
 });

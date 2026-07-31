@@ -196,7 +196,7 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       const body = req.body ?? {};
       const paths = resolvePaths(req.params.projectId);
       const allowRemote = body.download_skills !== false;
-      const count = seedProjectSkills(paths, allowRemote);
+      const count = await seedProjectSkills(paths, allowRemote);
       const venvSynced = body.sync_venv ? syncSandboxVenv(paths) : false;
       return { ok: true, skills: count, venvSynced };
     },

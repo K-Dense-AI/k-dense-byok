@@ -30,7 +30,7 @@ beforeEach(reset);
 afterAll(() => fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }));
 
 describe("skills enable/disable", () => {
-  it("seeds package skills disabled while keeping borderline workflows enabled", () => {
+  it("seeds package skills disabled while keeping borderline workflows enabled", async () => {
     ensureProjectExists("source");
     const source = resolvePaths("source");
     for (const name of [
@@ -49,7 +49,7 @@ describe("skills enable/disable", () => {
 
     ensureProjectExists("target");
     const target = resolvePaths("target");
-    expect(seedProjectSkills(target, false)).toBe(9);
+    expect(await seedProjectSkills(target, false)).toBe(9);
     expect(listDisabledSkills(target).map((s) => s.name).sort()).toEqual([
       "hypogenic",
       "modal",
@@ -65,18 +65,18 @@ describe("skills enable/disable", () => {
     ]);
   });
 
-  it("migrates existing package skills once without overriding later user choices", () => {
+  it("migrates existing package skills once without overriding later user choices", async () => {
     ensureProjectExists("existing");
     const paths = resolvePaths("existing");
     makeSkill(paths.skillsDir, "scanpy", "single-cell package");
     makeSkill(paths.skillsDir, "literature-review", "review workflow");
 
-    expect(seedProjectSkills(paths, false)).toBe(2);
+    expect(await seedProjectSkills(paths, false)).toBe(2);
     expect(listDisabledSkills(paths).map((s) => s.name)).toContain("scanpy");
     expect(listProjectSkills(paths).map((s) => s.name)).toContain("literature-review");
 
     expect(enableSkill(paths, "scanpy")).toEqual({ ok: true });
-    expect(seedProjectSkills(paths, false)).toBe(2);
+    expect(await seedProjectSkills(paths, false)).toBe(2);
     expect(listProjectSkills(paths).map((s) => s.name)).toContain("scanpy");
   });
 

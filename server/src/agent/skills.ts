@@ -7,26 +7,86 @@
  * and the SKILL.md format is unchanged (Pi-compatible).
  *
  * Fast path: copy an existing sibling project's skills (local I/O). Slow path:
- * shallow-clone the repo once.
+ * fetch the catalogue once through `skills-fetch.ts`.
  */
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import {
   loadSkillsFromDir,
   type ResourceDiagnostic,
   type Skill,
 } from "@earendil-works/pi-coding-agent";
-import { PROJECTS_ROOT } from "../config.ts";
+import { KADY_PI_AGENT_DIR, PROJECTS_ROOT } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import type { ToggleResult } from "./capability-state.ts";
+import { fetchCatalogue } from "./skills-fetch.ts";
 
-export const SKILLS_REPO =
-  process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
-const SKILLS_SUBPATH = "skills";
-export const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
 const DEFAULT_DISABLED_MIGRATION = "package-skills-disabled-v1";
+
+/**
+ * One place skills are installed: a project sandbox, or the user-level Pi agent
+ * directory shared by every project.
+ *
+ * Pi loads both — `package-manager.ts`'s builtin resolution adds
+ * `<agentDir>/skills` unconditionally and `<cwd>/.pi/skills` when the project
+ * is trusted — and child `pi` processes running subagents inherit the same
+ * agent dir, so a global skill reaches them too. Project entries are resolved
+ * first and skill-name collisions are first-wins, so **a project skill shadows
+ * a global one of the same name**.
+ */
+export interface SkillRoot {
+  kind: "project" | "global";
+  /** Project id, or "global"; used in messages only. */
+  id: string;
+  skillsDir: string;
+  disabledDir: string;
+  archivedDir: string;
+  /** Holds this root's manifest, staging area and migration markers. */
+  stateDir: string;
+}
+
+/** Either an explicit root or a project, which implies its own root. */
+export type SkillScopeRef = ProjectPaths | SkillRoot;
+
+export function projectSkillRoot(paths: ProjectPaths): SkillRoot {
+  const piDir = path.join(paths.sandbox, ".pi");
+  return {
+    kind: "project",
+    id: paths.id,
+    skillsDir: paths.skillsDir,
+    disabledDir: path.join(piDir, "skills-disabled"),
+    archivedDir: path.join(piDir, "skills-archived"),
+    stateDir: paths.kadyDir,
+  };
+}
+
+/**
+ * The user-level root. State lives in a `kady-skills/` subdirectory rather than
+ * loose in the agent dir, because `PI_CODING_AGENT_DIR` may deliberately point
+ * at a standalone Pi installation whose files are not ours to crowd.
+ */
+export function globalSkillRoot(): SkillRoot {
+  return {
+    kind: "global",
+    id: "global",
+    skillsDir: path.join(KADY_PI_AGENT_DIR, "skills"),
+    disabledDir: path.join(KADY_PI_AGENT_DIR, "skills-disabled"),
+    archivedDir: path.join(KADY_PI_AGENT_DIR, "skills-archived"),
+    stateDir: path.join(KADY_PI_AGENT_DIR, "kady-skills"),
+  };
+}
+
+/** Normalize either accepted shape to a root. */
+export function asSkillRoot(ref: SkillScopeRef): SkillRoot {
+  return "kind" in ref ? ref : projectSkillRoot(ref);
+}
+
+export type SkillScope = "project" | "global";
+
+/** Resolve a request's `scope` parameter; unknown values fall back to project. */
+export function skillRootForScope(paths: ProjectPaths, scope?: string): SkillRoot {
+  return scope === "global" ? globalSkillRoot() : projectSkillRoot(paths);
+}
 
 /**
  * Package-reference skills add standing context that current models generally
@@ -127,12 +187,13 @@ function countSkillDirs(dir: string): number {
   }
 }
 
-export function skillsDisabledDir(paths: ProjectPaths): string {
-  return path.join(paths.sandbox, ".pi", "skills-disabled");
+export function skillsDisabledDir(ref: SkillScopeRef): string {
+  return asSkillRoot(ref).disabledDir;
 }
 
-function countInstalledSkills(paths: ProjectPaths): number {
-  return countSkillDirs(paths.skillsDir) + countSkillDirs(skillsDisabledDir(paths));
+function countInstalledSkills(ref: SkillScopeRef): number {
+  const root = asSkillRoot(ref);
+  return countSkillDirs(root.skillsDir) + countSkillDirs(root.disabledDir);
 }
 
 function defaultDisabledMigrationMarker(paths: ProjectPaths): string {
@@ -194,27 +255,14 @@ function copySkillDirs(srcDir: string, paths: ProjectPaths): number {
   return copied;
 }
 
-/** Shallow-clone the catalogue repo; returns its skills dir + the tmp root to delete. */
-function cloneCatalogue(): { skillsDir: string; tmpRoot: string } | null {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kady-skills-"));
-  const res = spawnSync(
-    "git",
-    ["clone", "--depth", "1", "--branch", SKILLS_BRANCH, `https://github.com/${SKILLS_REPO}.git`, tmp],
-    { encoding: "utf-8", stdio: "pipe" },
-  );
-  const skillsDir = path.join(tmp, SKILLS_SUBPATH);
-  if (res.status !== 0 || !fs.existsSync(skillsDir)) {
-    fs.rmSync(tmp, { recursive: true, force: true });
-    return null;
-  }
-  return { skillsDir, tmpRoot: tmp };
-}
-
 /**
  * Ensure a project's skills dir is populated. Returns the number of skills.
- * `allowRemote=false` skips the network clone (fast path only).
+ * `allowRemote=false` skips the download (fast path only).
  */
-export function seedProjectSkills(paths: ProjectPaths, allowRemote = true): number {
+export async function seedProjectSkills(
+  paths: ProjectPaths,
+  allowRemote = true,
+): Promise<number> {
   if (countInstalledSkills(paths) > 0) {
     applyDefaultSkillStates(paths);
     return countInstalledSkills(paths);
@@ -229,13 +277,18 @@ export function seedProjectSkills(paths: ProjectPaths, allowRemote = true): numb
     }
   }
   if (allowRemote) {
-    const catalogue = cloneCatalogue();
-    if (catalogue) {
+    try {
+      // Staging is left in place: the sync pass that follows a seed reuses the
+      // same download instead of fetching the catalogue a second time.
+      const catalogue = await fetchCatalogue();
       try {
         copySkillDirs(catalogue.skillsDir, paths);
       } finally {
-        fs.rmSync(catalogue.tmpRoot, { recursive: true, force: true });
+        catalogue.cleanup();
       }
+    } catch {
+      // A failed download leaves the project skill-less but usable; the daily
+      // sync and the Settings refresh both retry.
     }
   }
   applyDefaultSkillStates(paths);
@@ -276,17 +329,17 @@ function toProblems(
   });
 }
 
-/** List installed skills for the project (parsed SKILL.md frontmatter). */
-export function listProjectSkills(paths: ProjectPaths): Skill[] {
-  return loadSkillDir(paths.skillsDir).skills;
+/** List installed (enabled) skills for a scope (parsed SKILL.md frontmatter). */
+export function listProjectSkills(ref: SkillScopeRef): Skill[] {
+  return loadSkillDir(asSkillRoot(ref).skillsDir).skills;
 }
 
 /** Skill directory names: no separators, no dot-dot. */
 export const SKILL_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
 /** Installed-but-disabled skills (parsed SKILL.md frontmatter). */
-export function listDisabledSkills(paths: ProjectPaths): Skill[] {
-  return loadSkillDir(skillsDisabledDir(paths)).skills;
+export function listDisabledSkills(ref: SkillScopeRef): Skill[] {
+  return loadSkillDir(asSkillRoot(ref).disabledDir).skills;
 }
 
 /**
@@ -294,13 +347,14 @@ export function listDisabledSkills(paths: ProjectPaths): Skill[] {
  * The API surfaces `problems` so a malformed SKILL.md shows up in Settings
  * instead of just disappearing from the catalogue.
  */
-export function listSkillsWithProblems(paths: ProjectPaths): {
+export function listSkillsWithProblems(ref: SkillScopeRef): {
   enabled: Skill[];
   disabled: Skill[];
   problems: SkillProblem[];
 } {
-  const enabled = loadSkillDir(paths.skillsDir);
-  const disabled = loadSkillDir(skillsDisabledDir(paths));
+  const root = asSkillRoot(ref);
+  const enabled = loadSkillDir(root.skillsDir);
+  const disabled = loadSkillDir(root.disabledDir);
   return {
     enabled: enabled.skills,
     disabled: disabled.skills,
@@ -308,20 +362,26 @@ export function listSkillsWithProblems(paths: ProjectPaths): {
   };
 }
 
-/** Raw SKILL.md text from whichever location holds the skill; null if absent. */
-export function readSkillSource(paths: ProjectPaths, name: string): string | null {
+/** Directory holding a skill in either state, or null when not installed. */
+export function findSkillDir(ref: SkillScopeRef, name: string): string | null {
   if (!SKILL_NAME_RE.test(name)) return null;
-  for (const base of [paths.skillsDir, skillsDisabledDir(paths)]) {
-    const f = path.join(base, name, "SKILL.md");
-    if (fs.existsSync(f)) {
-      try {
-        return fs.readFileSync(f, "utf-8");
-      } catch {
-        /* fall through */
-      }
-    }
+  const root = asSkillRoot(ref);
+  for (const base of [root.skillsDir, root.disabledDir]) {
+    const dir = path.join(base, name);
+    if (fs.existsSync(path.join(dir, "SKILL.md"))) return dir;
   }
   return null;
+}
+
+/** Raw SKILL.md text from whichever location holds the skill; null if absent. */
+export function readSkillSource(ref: SkillScopeRef, name: string): string | null {
+  const dir = findSkillDir(ref, name);
+  if (!dir) return null;
+  try {
+    return fs.readFileSync(path.join(dir, "SKILL.md"), "utf-8");
+  } catch {
+    return null;
+  }
 }
 
 function moveSkill(fromDir: string, toDir: string, name: string): ToggleResult {
@@ -341,10 +401,12 @@ function moveSkill(fromDir: string, toDir: string, name: string): ToggleResult {
   return { ok: true };
 }
 
-export function disableSkill(paths: ProjectPaths, name: string): ToggleResult {
-  return moveSkill(paths.skillsDir, skillsDisabledDir(paths), name);
+export function disableSkill(ref: SkillScopeRef, name: string): ToggleResult {
+  const root = asSkillRoot(ref);
+  return moveSkill(root.skillsDir, root.disabledDir, name);
 }
 
-export function enableSkill(paths: ProjectPaths, name: string): ToggleResult {
-  return moveSkill(skillsDisabledDir(paths), paths.skillsDir, name);
+export function enableSkill(ref: SkillScopeRef, name: string): ToggleResult {
+  const root = asSkillRoot(ref);
+  return moveSkill(root.disabledDir, root.skillsDir, name);
 }

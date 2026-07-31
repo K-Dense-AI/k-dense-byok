@@ -33,6 +33,26 @@ export const KADY_PI_AGENT_DIR = path.resolve(
       : rawPiAgentDir,
 );
 
+/**
+ * Default skill catalogue. Lives here rather than in `agent/skills.ts` so the
+ * CLI-backed fetcher can reference it without importing back into the module
+ * that installs from it.
+ */
+export const SKILLS_REPO =
+  process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
+export const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
+
+/**
+ * Staging cache the `skills` CLI fetches into. Deliberately outside any
+ * project sandbox: one download per source serves every project, and nothing
+ * here is canonical — `skills-sync.ts` installs from it into the live skill
+ * dirs and remains their only writer.
+ */
+export const KADY_SKILLS_CACHE_DIR = path.resolve(
+  process.env.KADY_SKILLS_CACHE_DIR?.trim() ||
+    path.join(os.homedir(), ".kady", "skills-cache"),
+);
+
 export const DEFAULT_PROJECT_ID = "default";
 
 /** HTTP port for the backend (matches the old ADK server). */

@@ -425,7 +425,7 @@ describe("sandbox-fs", () => {
 });
 
 describe("skills", () => {
-  it("copies sibling skills into their default enabled states", () => {
+  it("copies sibling skills into their default enabled states", async () => {
     const sib = resolvePaths("sib");
     for (const [name, description] of [
       ["anndata", "Annotated matrices."],
@@ -440,7 +440,7 @@ describe("skills", () => {
     }
 
     const target = ensureProjectExists("default");
-    const count = seedProjectSkills(target, false); // no network
+    const count = await seedProjectSkills(target, false); // no network
     expect(count).toBe(2);
     expect(listProjectSkills(target).map((s) => s.name)).toContain("literature-review");
     expect(listDisabledSkills(target).map((s) => s.name)).toContain("anndata");

@@ -43,6 +43,10 @@ Kady's agent intentionally has a powerful local shell so it can install scientif
 
 Kady instructs newly created project agents never to inspect or transmit credentials, but instructions are not a substitute for isolation against malicious prompt injection. Do not ask Kady to process adversarial files with secrets accessible to the same account. Use an OS sandbox, container, VM, or separate user account when working with untrusted content or when a stronger credential boundary is required.
 
+### Installed skills are instructions, not data
+
+A skill is a procedure the agent follows using that same shell, so installing one from a third-party source widens this boundary to whoever wrote it. Kady requires an explicit acknowledgement before an install and shows the parsed skills first, but it does not audit their contents: review a source you do not already trust, and prefer pinning a branch or tag. Installed skills are deliberately never auto-updated — a new version is flagged and waits for you, because silently pulling changed instructions into a running project is worse than a stale skill. See [Skill management](./skill-management.md).
+
 ## Tabbed chats
 
 - **Hard cap of 10 tabs per project.** This keeps the browser snappy and

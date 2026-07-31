@@ -19,6 +19,7 @@ import { withActiveProject } from "./scope.ts";
 import { registerProjectRoutes } from "./api/projects.ts";
 import { registerSessionRoutes } from "./api/sessions.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
+import { registerSkillRoutes } from "./api/skills.ts";
 import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
@@ -120,6 +121,7 @@ export async function buildApp() {
   await registerProjectRoutes(app);
   await registerSessionRoutes(app);
   await registerSandboxRoutes(app);
+  await registerSkillRoutes(app);
   await registerSystemRoutes(app);
   await registerMcpRoutes(app);
   await registerCredentialRoutes(app);
