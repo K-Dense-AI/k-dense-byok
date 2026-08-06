@@ -273,7 +273,7 @@ export function buildNvidiaModel(id: string): Model<Api> {
     api: "openai-completions",
     provider: "nvidia",
     baseUrl: "https://integrate.api.nvidia.com/v1",
-    reasoning: false,
+    reasoning: true,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128_000,
