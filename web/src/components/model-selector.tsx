@@ -44,6 +44,7 @@ export function modelUsesBillableBudget(model: {
     model.id.startsWith("openai-codex/") ||
     model.id.startsWith("github-copilot/") ||
     model.id.startsWith("xai/") ||
+    model.id.startsWith("nvidia/") ||
     model.id.startsWith("ollama/") ||
     model.id.startsWith("openai-compatible/")
   );
@@ -72,6 +73,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
+  NVIDIA:    "text-green-600 dark:text-green-400",
   Ollama:    "text-teal-600 dark:text-teal-400",
   "OpenAI-Compatible": "text-teal-600 dark:text-teal-400",
   "Openrouter Fusion": "text-red-600 dark:text-red-400",
@@ -168,6 +170,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       "github-copilot",
       "xai",
       "openrouter",
+      "nvidia",
       "ollama",
       "openai-compatible",
     ];
@@ -251,7 +254,9 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                 <span>·</span>
               </>
             )}
-            {model.billingMode === "subscription" ? (
+            {model.sourceId === "nvidia" ? (
+              <span>Billed via NVIDIA API credits · not metered by Kady</span>
+            ) : model.billingMode === "subscription" ? (
               <span>Uses provider-managed subscription limits</span>
             ) : model.billingMode === "metered_oauth" ? (
               <span>

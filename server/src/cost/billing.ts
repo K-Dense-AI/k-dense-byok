@@ -47,6 +47,18 @@ export function billingForProvider(
   if (provider === "anthropic" && authType === "oauth") {
     return { provider, authType, billingMode: "metered_oauth" };
   }
+  // NVIDIA NIM (build.nvidia.com) bills against NVIDIA-managed API credits,
+  // not per-token USD — Pi's NIM catalogue prices every model at $0. Like the
+  // OAuth subscription providers, tokens (and any Pi-reported list price) are
+  // recorded but the spend is external, so it neither counts toward nor is
+  // blocked by the project cap.
+  if (provider === "nvidia") {
+    return {
+      provider,
+      authType: authType === "none" ? "api_key" : authType,
+      billingMode: "subscription",
+    };
+  }
   if (
     authType === "oauth" &&
     (provider === "openai-codex" ||

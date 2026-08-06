@@ -69,6 +69,14 @@ const KEY_DEFS: KeyDef[] = [
     hint: "Used for every model call. Required unless you run everything locally through Ollama.",
   },
   {
+    id: "nvidia",
+    bodyField: "nvidiaApiKey",
+    label: "NVIDIA API key (optional)",
+    placeholder: "nvapi-…",
+    keysUrl: "https://build.nvidia.com/settings/api-keys",
+    hint: "Direct access to NVIDIA NIM models (Nemotron, Llama, GPT-OSS, …). Usage draws on your NVIDIA API credits, which Kady cannot meter.",
+  },
+  {
     id: "exa",
     bodyField: "exaApiKey",
     label: "Exa API key (optional)",
@@ -124,7 +132,8 @@ function KeyRow({
           | null;
         if (!res.ok) throw new Error(data?.detail || `Save failed (${res.status})`);
         if (data) onStatus(data as CredentialStatus);
-        if (def.id === "openrouter") notifyProviderAuthChanged();
+        // NVIDIA keys also gate a model-picker section, so both re-probe it.
+        if (def.id === "openrouter" || def.id === "nvidia") notifyProviderAuthChanged();
         setKeyInput("");
         setSaved(true);
       } catch (exc) {

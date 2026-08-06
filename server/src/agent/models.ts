@@ -4,6 +4,7 @@
  * Supported access paths:
  *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY)
  *   - Pi OAuth providers (OpenAI Codex, Anthropic, GitHub Copilot, xAI)
+ *   - NVIDIA NIM (built-in Pi provider, key via NVIDIA_API_KEY)
  *   - Ollama (local, OpenAI-compatible at OLLAMA_BASE_URL)
  *
  * The frontend picker sends model refs like "openrouter/anthropic/claude-opus-4.8"
@@ -258,6 +259,28 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
   };
 }
 
+/**
+ * NVIDIA NIM (build.nvidia.com). A built-in Pi provider, so `registry.find`
+ * normally supplies the model with real metadata; this fallback keeps refs to
+ * models newer than Pi's catalogue snapshot runnable. $0 cost matches Pi's own
+ * NIM entries — the endpoint draws NVIDIA API credits, not per-token USD (see
+ * `billingForProvider`, which classifies the provider as external spend).
+ */
+function buildNvidiaModel(id: string): Model<Api> {
+  return {
+    id,
+    name: id,
+    api: "openai-completions",
+    provider: "nvidia",
+    baseUrl: "https://integrate.api.nvidia.com/v1",
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128_000,
+    maxTokens: 8192,
+  };
+}
+
 /** Configure app-specific providers and runtime credentials. */
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   modelRuntime.registerProvider("ollama", {
@@ -355,7 +378,9 @@ export async function assertModelAuthentication(
       model.provider,
       model.provider === "openrouter"
         ? "OpenRouter is not configured. Add an API key in Settings or choose another model provider."
-        : `${model.provider} is not connected. Connect it in Settings or choose another model.`,
+        : model.provider === "nvidia"
+          ? "NVIDIA is not configured. Add an API key in Settings or choose another model provider."
+          : `${model.provider} is not connected. Connect it in Settings or choose another model.`,
     );
   }
   if (isSubscriptionProvider(model.provider) && auth.type !== "oauth") {
@@ -400,6 +425,15 @@ export function resolveModel(
       throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
     }
     return buildOpenAICompatibleModel(id);
+  }
+  // NIM model ids contain slashes ("meta/llama-3.3-70b-instruct"), so like
+  // openai-compatible everything after the prefix is the id verbatim.
+  if (r.startsWith("nvidia/")) {
+    const id = r.slice("nvidia/".length);
+    if (!id) {
+      throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
+    }
+    return registry.find("nvidia", id) ?? buildNvidiaModel(id);
   }
   const direct = directProviderRef(r);
   if (direct) {

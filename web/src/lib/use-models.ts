@@ -30,6 +30,12 @@ interface OpenAICompatibleListResponse {
   models?: Model[];
 }
 
+interface NvidiaListResponse {
+  /** True when an NVIDIA API key resolved on the backend. */
+  configured?: boolean;
+  models?: Model[];
+}
+
 export type ModelAvailability = "checking" | "available" | "unavailable";
 
 interface ProviderDiscovery {
@@ -53,6 +59,10 @@ let oaiCompatDiscoveryCache:
 let oaiCompatDiscoveryInFlight:
   | Promise<OpenAICompatibleListResponse>
   | undefined;
+let nvidiaDiscoveryCache:
+  | { value: NvidiaListResponse; loadedAt: number }
+  | undefined;
+let nvidiaDiscoveryInFlight: Promise<NvidiaListResponse> | undefined;
 
 function discoverProviders(force = false): Promise<ProviderDiscovery> {
   if (
@@ -157,6 +167,34 @@ function discoverOpenAICompatible(
   return inFlight;
 }
 
+/** NVIDIA NIM models come pre-shaped from the backend (like the subscription
+ *  providers), so discovery only needs the `{configured, models}` envelope. */
+function discoverNvidia(force = false): Promise<NvidiaListResponse> {
+  if (
+    !force &&
+    nvidiaDiscoveryCache &&
+    Date.now() - nvidiaDiscoveryCache.loadedAt < DISCOVERY_CACHE_MS
+  ) {
+    return Promise.resolve(nvidiaDiscoveryCache.value);
+  }
+  if (nvidiaDiscoveryInFlight) return nvidiaDiscoveryInFlight;
+  const request = apiFetch("/nvidia/models").then(async (response) =>
+    response.ok
+      ? ((await response.json()) as NvidiaListResponse)
+      : { configured: false, models: [] },
+  );
+  const inFlight = request
+    .then((value) => {
+      nvidiaDiscoveryCache = { value, loadedAt: Date.now() };
+      return value;
+    })
+    .finally(() => {
+      if (nvidiaDiscoveryInFlight === inFlight) nvidiaDiscoveryInFlight = undefined;
+    });
+  nvidiaDiscoveryInFlight = inFlight;
+  return inFlight;
+}
+
 export interface UseModelsReturn {
   /** Every model available to the user: static OpenRouter catalogue + live Ollama tags + user Fusion configs. */
   models: Model[];
@@ -177,6 +215,10 @@ export interface UseModelsReturn {
   /** Direct Pi-provider models available through connected subscriptions. */
   providerModels: Model[];
   providerStatuses: ModelProviderStatus[];
+  /** NVIDIA NIM models, present once an NVIDIA API key is configured. */
+  nvidiaModels: Model[];
+  /** True when the backend resolved an NVIDIA API key. */
+  nvidiaConfigured: boolean;
   modelAvailability: (model: Pick<Model, "id">) => ModelAvailability;
   /** Whether a current or persisted model can accept a new request. */
   isModelAvailable: (model: Pick<Model, "id">) => boolean;
@@ -202,6 +244,9 @@ export function useModels(): UseModelsReturn {
   const [providerModels, setProviderModels] = useState<Model[]>([]);
   const [providerStatuses, setProviderStatuses] = useState<ModelProviderStatus[]>([]);
   const [providerStatusLoaded, setProviderStatusLoaded] = useState(false);
+  const [nvidiaModels, setNvidiaModels] = useState<Model[]>([]);
+  const [nvidiaConfigured, setNvidiaConfigured] = useState(false);
+  const [nvidiaLoaded, setNvidiaLoaded] = useState(false);
   const [openrouterConfigured, setOpenrouterConfigured] = useState<boolean | null>(
     null,
   );
@@ -236,6 +281,20 @@ export function useModels(): UseModelsReturn {
       });
   }, []);
 
+  const fetchNvidia = useCallback((force = false) => {
+    void discoverNvidia(force)
+      .then((data) => {
+        setNvidiaConfigured(Boolean(data.configured));
+        setNvidiaModels(Array.isArray(data.models) ? data.models : []);
+        setNvidiaLoaded(true);
+      })
+      .catch(() => {
+        setNvidiaConfigured(false);
+        setNvidiaModels([]);
+        setNvidiaLoaded(true);
+      });
+  }, []);
+
   const fetchProviders = useCallback((force = false) => {
     const requestId = ++providerRequestId.current;
     void discoverProviders(force)
@@ -257,25 +316,31 @@ export function useModels(): UseModelsReturn {
   useEffect(() => {
     fetchOllama();
     fetchOpenAICompatible();
+    fetchNvidia();
     fetchProviders();
-  }, [fetchOllama, fetchOpenAICompatible, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders]);
 
   useEffect(
     () =>
       onProjectChange(() => {
         fetchOllama(true);
         fetchOpenAICompatible(true);
+        fetchNvidia(true);
         fetchProviders();
       }),
-    [fetchOllama, fetchOpenAICompatible, fetchProviders],
+    [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders],
   );
 
   useEffect(() => {
-    const refreshProviders = () => fetchProviders(true);
+    // Also re-probes NVIDIA: Settings fires this event when the key changes.
+    const refreshProviders = () => {
+      fetchProviders(true);
+      fetchNvidia(true);
+    };
     window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
     return () =>
       window.removeEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
-  }, [fetchProviders]);
+  }, [fetchProviders, fetchNvidia]);
 
   // Re-read Fusion configs when Settings saves them (or another tab edits them).
   const [fusionRevision, setFusionRevision] = useState(0);
@@ -414,6 +479,7 @@ export function useModels(): UseModelsReturn {
       ...fusionModels,
       ...providerModels,
       ...openrouterModels,
+      ...nvidiaModels,
       ...enrichedOllamaModels,
       ...enrichedOpenAICompatibleModels,
     ],
@@ -421,6 +487,7 @@ export function useModels(): UseModelsReturn {
       enrichedOllamaModels,
       enrichedOpenAICompatibleModels,
       fusionModels,
+      nvidiaModels,
       openrouterModels,
       providerModels,
     ],
@@ -442,6 +509,7 @@ export function useModels(): UseModelsReturn {
       if (model.id.startsWith("openai-compatible/") && !oaiCompatLoaded) {
         return "checking";
       }
+      if (model.id.startsWith("nvidia/") && !nvidiaLoaded) return "checking";
       if (
         (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) &&
         openrouterConfigured === null
@@ -461,6 +529,11 @@ export function useModels(): UseModelsReturn {
       if (model.id.startsWith("ollama/")) return "unavailable";
       // A persisted selection whose server stopped, or whose model was unloaded.
       if (model.id.startsWith("openai-compatible/")) return "unavailable";
+      // A persisted NIM model absent from Pi's catalogue still runs (the
+      // backend synthesizes it), so only a missing key makes it unavailable.
+      if (model.id.startsWith("nvidia/")) {
+        return nvidiaConfigured ? "available" : "unavailable";
+      }
       if (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) {
         return openrouterConfigured === false ? "unavailable" : "available";
       }
@@ -474,6 +547,8 @@ export function useModels(): UseModelsReturn {
     [
       connectedProviders,
       models,
+      nvidiaConfigured,
+      nvidiaLoaded,
       oaiCompatLoaded,
       ollamaLoaded,
       openrouterConfigured,
@@ -491,8 +566,9 @@ export function useModels(): UseModelsReturn {
   const refresh = useCallback(() => {
     fetchOllama(true);
     fetchOpenAICompatible(true);
+    fetchNvidia(true);
     fetchProviders(true);
-  }, [fetchOllama, fetchOpenAICompatible, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders]);
 
   return {
     models,
@@ -503,6 +579,8 @@ export function useModels(): UseModelsReturn {
     openaiCompatibleConfigured: oaiCompatConfigured,
     providerModels,
     providerStatuses,
+    nvidiaModels,
+    nvidiaConfigured,
     modelAvailability,
     isModelAvailable,
     refresh,

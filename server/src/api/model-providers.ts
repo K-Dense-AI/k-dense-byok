@@ -5,6 +5,7 @@ import {
   SUBSCRIPTION_PROVIDERS,
   isSubscriptionProvider,
   modelForClient,
+  nvidiaModelForClient,
   type ProviderAuthRuntime,
 } from "../agent/provider-auth.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
@@ -86,6 +87,21 @@ export async function registerModelProviderRoutes(
         models.push(...available.map((model) => modelForClient(model, definition)));
       }
       return { models };
+    } catch (error) {
+      return errorReply(reply, error);
+    }
+  });
+
+  // NVIDIA NIM model discovery. API-key-based (not an OAuth subscription
+  // provider), so it lives beside — not inside — /model-providers/models.
+  // `configured` reflects whether a key resolved (env NVIDIA_API_KEY or a
+  // stored Pi credential); the picker hides the section for everyone else.
+  app.get("/nvidia/models", async (_req, reply) => {
+    try {
+      const auth = await runtime.checkAuth("nvidia");
+      if (!auth) return { configured: false, models: [] };
+      const available = await runtime.getAvailable("nvidia");
+      return { configured: true, models: available.map(nvidiaModelForClient) };
     } catch (error) {
       return errorReply(reply, error);
     }

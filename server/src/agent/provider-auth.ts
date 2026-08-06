@@ -617,3 +617,37 @@ export function modelForClient(
     available: true,
   };
 }
+
+export interface ClientNvidiaModel
+  extends Omit<ClientProviderModel, "sourceId" | "billingMode"> {
+  sourceId: "nvidia";
+  billingMode: "subscription";
+}
+
+/**
+ * NVIDIA NIM is an API-key provider, deliberately NOT in
+ * SUBSCRIPTION_PROVIDERS (no OAuth flow; the key is NVIDIA_API_KEY, managed by
+ * /credentials). It still bills like the subscription providers — usage draws
+ * NVIDIA-managed API credits that Kady cannot meter — so its picker entries
+ * carry billingMode "subscription", matching `billingForProvider("nvidia")`.
+ */
+export function nvidiaModelForClient(model: Model<Api>): ClientNvidiaModel {
+  return {
+    id: `nvidia/${model.id}`,
+    label: model.name,
+    provider: "NVIDIA",
+    sourceId: "nvidia",
+    sourceLabel: "NVIDIA NIM",
+    tier: tierFor(model),
+    context_length: model.contextWindow,
+    pricing: {
+      prompt: model.cost.input,
+      completion: model.cost.output,
+    },
+    modality: model.input.includes("image") ? "text+image->text" : "text->text",
+    description: "NVIDIA NIM (build.nvidia.com) via NVIDIA API credits",
+    reasoning: model.reasoning,
+    billingMode: "subscription",
+    available: true,
+  };
+}

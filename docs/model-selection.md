@@ -10,6 +10,7 @@ Kady uses canonical `provider/model` references in the picker, backend, cost led
 
 - OpenRouter: `openrouter/<vendor>/<model>`
 - Pi OAuth providers: `openai-codex/<model>`, `anthropic/<model>`, `github-copilot/<model>`, or `xai/<model>`
+- NVIDIA NIM: `nvidia/<vendor>/<model>`
 - Ollama: `ollama/<name>`
 
 This distinction matters: `openrouter/anthropic/<model>` is an OpenRouter API-key request, while `anthropic/<model>` is a direct Anthropic OAuth request. Fusion picker entries use an internal `fusion/<preset>` selector and resolve to the OpenRouter-only `openrouter/fusion` request.
@@ -31,6 +32,12 @@ The model picker is generated from OpenRouter models released within the previou
 
 The checked-in list lives at `web/src/data/models.json`, with ids prefixed as `openrouter/<vendor>/<model>`. The backend (`server/src/agent/models.ts`) resolves a picked id to a Pi `Model`: it prefers Pi's built-in OpenRouter entry, and otherwise synthesizes one using the context window, capabilities, and per-1M-token pricing from this catalogue. Pi computes the cost shown in the session/project meters from that pricing, so keeping `models.json` current keeps cost tracking (and the project spend cap) accurate. If the catalogue can't be loaded, the backend logs a startup warning and unknown models fall back to $0 pricing.
 
+## NVIDIA NIM models
+
+Add an NVIDIA API key (from [build.nvidia.com](https://build.nvidia.com/)) under **Settings → API keys** and an **NVIDIA NIM** section appears in the picker with Pi's built-in NIM catalogue — Nemotron, Llama, GPT-OSS, Kimi, GLM, and others served from `integrate.api.nvidia.com`. The key is stored as `NVIDIA_API_KEY` in `.env`, exactly like the OpenRouter key, and child subagent processes inherit it.
+
+NIM billing is different from OpenRouter: build.nvidia.com draws on NVIDIA-managed API credits rather than per-token dollar pricing, so Kady records tokens but no USD spend. NIM usage neither counts toward nor is blocked by a project spend cap — the same treatment as the ChatGPT, Copilot, and xAI subscriptions. A model id missing from Pi's catalogue snapshot still runs (the backend synthesizes it), so refs to newly released NIM models keep working.
+
 ## OpenRouter Fusion presets
 
 This fork adds an **Openrouter Fusion** section at the top of the picker: named presets where a panel of models deliberates on your prompt and an Opus 4.8 judge synthesizes one answer, with the combined panel price and (where published) the DRACO benchmark score shown on each entry. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.
@@ -41,6 +48,7 @@ This fork adds an **Openrouter Fusion** section at the top of the picker: named 
 - Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-5`, routed by `DEFAULT_MODEL_PROVIDER`).
 - To default to a connected subscription model, set `DEFAULT_MODEL_PROVIDER` to `openai-codex`, `anthropic`, `github-copilot`, or `xai` and set `DEFAULT_MODEL_ID` to that provider's model id.
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
+- To default to a NIM model, set `DEFAULT_MODEL_PROVIDER=nvidia` and `DEFAULT_MODEL_ID` to the NIM model id (e.g. `nvidia/llama-3.3-nemotron-super-49b-v1.5`).
 
 ## Local Ollama models
 

@@ -13,7 +13,8 @@
  *                          into the shared ModelRuntime.
  *
  * Managed keys: OpenRouter (model calls and cross-browser speech
- * transcription); the optional pi-web-access search providers — Exa,
+ * transcription); NVIDIA (direct NVIDIA NIM model access via build.nvidia.com
+ * API credits); the optional pi-web-access search providers — Exa,
  * Perplexity, Gemini (web search works without any of the three via the Exa MCP
  * fallback; a key unlocks the direct provider, and Gemini also unlocks
  * YouTube/video understanding); and the Modal remote-compute token pair
@@ -57,6 +58,19 @@ const MANAGED_KEYS: ManagedKey[] = [
       try {
         if (key) await getModelRuntime().setRuntimeApiKey("openrouter", key);
         else await getModelRuntime().removeRuntimeApiKey("openrouter");
+      } catch {
+        /* Runtime refresh failure does not undo the persisted environment change. */
+      }
+    },
+  },
+  {
+    id: "nvidia",
+    bodyField: "nvidiaApiKey",
+    envVar: "NVIDIA_API_KEY",
+    onChange: async (key) => {
+      try {
+        if (key) await getModelRuntime().setRuntimeApiKey("nvidia", key);
+        else await getModelRuntime().removeRuntimeApiKey("nvidia");
       } catch {
         /* Runtime refresh failure does not undo the persisted environment change. */
       }
