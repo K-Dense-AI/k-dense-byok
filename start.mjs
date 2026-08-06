@@ -197,6 +197,7 @@ async function checkModelAccess() {
   if (
     process.env.OPENROUTER_API_KEY ||
     process.env.OR_API_KEY ||
+    process.env.NVIDIA_API_KEY ||
     hasSubscriptionCredential()
   ) {
     return;

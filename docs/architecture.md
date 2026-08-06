@@ -13,13 +13,13 @@ The start script (`start.sh` on macOS/Linux, `start.cmd` on Windows — both thi
 | **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
 | **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
 
-The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)) and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter**, **Ollama**, or a connected Pi OAuth provider (**OpenAI Codex, Anthropic, GitHub Copilot, or xAI**) — there is no separate proxy.
+The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)) and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter**, **NVIDIA NIM**, **Ollama**, or a connected Pi OAuth provider (**OpenAI Codex, Anthropic, GitHub Copilot, or xAI**) — there is no separate proxy.
 
 When you send a message:
 
 1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
 2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent runs as its own short-lived `pi` process in the same sandbox, with usage ledgered under the parent session).
-3. Model calls go straight to the selected OpenRouter, Ollama, or authenticated Pi provider.
+3. Model calls go straight to the selected OpenRouter, NVIDIA NIM, Ollama, or authenticated Pi provider.
 4. A backend run broker sequences and buffers events (text, tool calls, cost)
    and streams them to the browser over SSE. The broker, rather than an
    individual browser connection, owns the live turn.
@@ -74,7 +74,7 @@ The first time you start the app (`./start.sh` or `start.cmd`), it will automati
 
 - Install backend dependencies (`server/`) and frontend dependencies (`web/`)
 - Install [uv](https://docs.astral.sh/uv/) if missing - the Python manager Kady uses to run analyses in each sandbox
-- Create your `.env` from `.env.example` if you haven't yet, and warn if no OpenRouter key, stored subscription login, or local Ollama is immediately detectable (the UI still opens for provider setup)
+- Create your `.env` from `.env.example` if you haven't yet, and warn if no OpenRouter key, NVIDIA key, stored subscription login, or local Ollama is immediately detectable (the UI still opens for provider setup)
 - Download the scientific skills catalogue into each project's `sandbox/.pi/skills/`
 
 Subsequent starts are much faster.
@@ -120,13 +120,13 @@ The backend creates one process-wide Pi `ModelRuntime` with its auth path set to
 ## Model selection and routing
 
 Each chat tab picks one model. Model refs from the picker look like
-`openrouter/<vendor>/<model>`, `ollama/<name>`, or
+`openrouter/<vendor>/<model>`, `nvidia/<vendor>/<model>`, `ollama/<name>`, or
 `<oauth-provider>/<model>` where the provider is `openai-codex`, `anthropic`,
 `github-copilot`, or `xai`. These canonical `provider/model` refs are also used
 by ledgers and subagents. The backend resolves them to Pi `Model` objects
-(`server/src/agent/models.ts`): OpenRouter uses `OPENROUTER_API_KEY`, Ollama
-points at `OLLAMA_BASE_URL`, and direct providers require a connected OAuth
-credential. There is no proxy — Pi calls the provider directly. OpenRouter
+(`server/src/agent/models.ts`): OpenRouter uses `OPENROUTER_API_KEY`, NVIDIA
+NIM uses `NVIDIA_API_KEY`, Ollama points at `OLLAMA_BASE_URL`, and direct
+providers require a connected OAuth credential. There is no proxy — Pi calls the provider directly. OpenRouter
 Fusion and the server-side speech transcription fallback remain OpenRouter-only.
 See
 [Local models with Ollama](./local-models-ollama.md) and
@@ -134,4 +134,4 @@ See
 
 ## Usage accounting and budgets
 
-Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. Ollama is local, while Modal compute counts its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.
+Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. NVIDIA NIM is classified the same way — build.nvidia.com bills NVIDIA-managed API credits rather than per-token USD, so tokens are recorded without cap-counted spend. Ollama is local, while Modal compute counts its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.

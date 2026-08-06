@@ -4,7 +4,7 @@
 
 K-Dense BYOK is a free, open-source, local-first AI research workspace for scientists. It provides **Kady**, an agent that can move beyond answering questions to carrying out research tasks: inspecting files, writing and running analysis code, searching and reading sources, creating figures and reports, and recording its work in a living lab notebook.
 
-Users choose how Kady reaches AI models. It supports prepaid OpenRouter API access, free local Ollama models, and subscription authentication for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, and xAI accounts. Projects, conversations, notebooks, and outputs remain in ordinary folders on the user’s computer; only material needed for a hosted request is sent to the selected provider.
+Users choose how Kady reaches AI models. It supports prepaid OpenRouter API access, NVIDIA NIM models via build.nvidia.com API credits, free local Ollama models, and subscription authentication for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, and xAI accounts. Projects, conversations, notebooks, and outputs remain in ordinary folders on the user’s computer; only material needed for a hosted request is sent to the selected provider.
 
 ## Core capabilities
 
@@ -24,7 +24,7 @@ The repository contains two services launched together:
 1. A **Next.js 16 / React 19 frontend** on port 3000 provides chat, project and file management, scientific previews, editors, provider settings, cost visibility, and the lab notebook.
 2. A **TypeScript backend built around the Pi coding-agent SDK** on port 8000 manages agent sessions, tools, OAuth and API-key model access, project sandboxes, streaming events, specialists, budgets, and durable compute.
 
-Each project is a self-contained local sandbox. Chat history, skills, specialist definitions, notebook entries, generated artifacts, compute state, and cost ledgers persist on disk. Model calls go directly to OpenRouter, Ollama, or the authenticated subscription provider without a separate model proxy. OAuth tokens live in a Kady-scoped, file-locked Pi credential store and are shared with child specialists without being copied into projects or process arguments.
+Each project is a self-contained local sandbox. Chat history, skills, specialist definitions, notebook entries, generated artifacts, compute state, and cost ledgers persist on disk. Model calls go directly to OpenRouter, NVIDIA NIM, Ollama, or the authenticated subscription provider without a separate model proxy. OAuth tokens live in a Kady-scoped, file-locked Pi credential store and are shared with child specialists without being copied into projects or process arguments.
 
 ## Why it matters
 

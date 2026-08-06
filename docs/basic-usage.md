@@ -32,7 +32,7 @@ Click `+` in the chat tab strip to open a new chat in the same project. Each tab
 
 ### Choosing a model
 
-Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, or xAI through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. See [Model selection](./model-selection.md) for model refs and billing behavior.
+Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, [NVIDIA NIM](./model-selection.md#nvidia-nim-models) (Nemotron, Llama, GPT-OSS, and more with a build.nvidia.com API key), or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, or xAI through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. See [Model selection](./model-selection.md) for model refs and billing behavior.
 
 ### Files
 
@@ -73,7 +73,7 @@ Open any `.tex` file and click **Edit** for a split-pane editor with live PDF co
 The cost pill in the header shows the active tab's session spend (`sess`) and the project total across every tab (`proj`), with token details in its popover. You can set an optional hard spend cap per project in Settings.
 
 - OpenRouter pay-as-you-go and Anthropic OAuth's Pi-documented metered extra per-token usage count toward the cap.
-- OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited.
+- OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited. NVIDIA NIM gets the same treatment: it bills NVIDIA-managed API credits rather than per-token dollars, so Kady records tokens without counting USD spend.
 - Local Ollama usage does not add model spend. Modal compute remains separately estimated and counted.
 
 ## Settings

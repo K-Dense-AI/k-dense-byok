@@ -35,6 +35,10 @@ After Kady starts, open **Settings → Model providers** and click **Connect**. 
 
 A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks OpenAI Codex, Copilot, and xAI subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap.
 
+### NVIDIA NIM
+
+An API key from [build.nvidia.com](https://build.nvidia.com/) gives direct access to NIM-served models — Nemotron, Llama, GPT-OSS, Kimi, GLM, and more. Usage draws on NVIDIA-managed API credits rather than per-token dollar pricing, so Kady records tokens but no USD spend. Add the key as `NVIDIA_API_KEY` in `.env` or under **Settings → API keys**; see [Model selection](./model-selection.md#nvidia-nim-models).
+
 ### Local Ollama
 
 You can run entirely on free local models instead — see [Local models with Ollama](./local-models-ollama.md). No hosted-provider credential is needed.
@@ -85,7 +89,7 @@ The first run takes a few minutes. The script automatically:
 - checks for and installs anything missing (Node.js on a Mac, the [uv](https://docs.astral.sh/uv/) Python manager that Kady uses to run analyses — on every platform),
 - installs the backend and frontend packages,
 - downloads the catalogue of 140+ scientific skills,
-- creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, stored subscription login, or local Ollama (the UI still opens for provider setup).
+- creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, NVIDIA key, stored subscription login, or local Ollama (the UI still opens for provider setup).
 
 When it finishes, your browser opens to **[http://localhost:3000](http://localhost:3000)** — that's the app. Future starts take only a few seconds.
 
@@ -120,7 +124,7 @@ The startup script picks up any new packages and skills automatically.
 - **`./start.sh: Permission denied`** (macOS/Linux) — run `chmod +x start.sh` once, then try again.
 - **Windows says "Windows protected your PC"** when double-clicking `start.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\start.cmd`).
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
-- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys**, start Ollama, or connect a supported subscription in **Settings → Model providers**.
+- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys** (OpenRouter or NVIDIA), start Ollama, or connect a supported subscription in **Settings → Model providers**.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
 - **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node does not read `HTTP_PROXY` / `HTTPS_PROXY` by itself, so Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
 
