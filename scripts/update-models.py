@@ -52,7 +52,7 @@ TIER_ORDER = {"flagship": 0, "high": 1, "mid": 2, "budget": 3}
 DESCRIPTION_WORDS = 30
 
 # Only keep models released on OpenRouter within this calendar-month window.
-MAX_AGE_MONTHS = 3
+MAX_AGE_MONTHS = 6
 
 
 def months_ago(value: datetime, months: int) -> datetime:
