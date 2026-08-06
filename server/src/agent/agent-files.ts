@@ -24,6 +24,22 @@ import { readPiSettings, writePiSettings, type ToggleResult } from "./capability
 
 const require_ = createRequire(import.meta.url);
 
+/**
+ * Root directory of the installed pi-subagents package. The package's exports
+ * map no longer exposes ./package.json (0.42+), so locate the root by walking
+ * up from the resolved main entry.
+ */
+export function subagentsPackageDir(): string {
+  const entry = require_.resolve("pi-subagents");
+  let dir = path.dirname(entry);
+  while (!fs.existsSync(path.join(dir, "package.json"))) {
+    const parent = path.dirname(dir);
+    if (parent === dir) throw new Error("pi-subagents package.json not found");
+    dir = parent;
+  }
+  return dir;
+}
+
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
@@ -225,8 +241,7 @@ export function listProjectAgents(paths: ProjectPaths): AgentFile[] {
 /** Agents bundled inside the pi-subagents package (read-only). */
 export function listBuiltinAgents(): AgentFile[] {
   try {
-    const pkgDir = path.dirname(require_.resolve("pi-subagents/package.json"));
-    const dir = path.join(pkgDir, "agents");
+    const dir = path.join(subagentsPackageDir(), "agents");
     return fs
       .readdirSync(dir)
       .filter((f) => f.endsWith(".md"))

@@ -4,12 +4,10 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import type { ProjectPaths } from "../projects.ts";
+import { subagentsPackageDir } from "./agent-files.ts";
 import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
-
-const require_ = createRequire(import.meta.url);
 
 export function kadyPdfAnnotationPackageDir(): string {
   return path.resolve(
@@ -62,8 +60,7 @@ export function seedPdfAnnotationPackage(paths: ProjectPaths): boolean {
 
 function builtinAgentsDir(): string | null {
   try {
-    const packageJson = require_.resolve("pi-subagents/package.json");
-    return path.join(path.dirname(packageJson), "agents");
+    return path.join(subagentsPackageDir(), "agents");
   } catch {
     return null;
   }

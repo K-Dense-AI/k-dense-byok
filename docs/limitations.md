@@ -64,7 +64,7 @@ A skill is a procedure the agent follows using that same shell, so installing on
 
 ## Web access
 
-Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access)) gives Kady and the sub-agents `web_search`, `code_search`, and `fetch_content` (pages, PDFs, GitHub repos, YouTube). A few edges:
+Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access)) gives Kady and the sub-agents `web_search` and `fetch_content` (pages, PDFs, GitHub repos, YouTube). A few edges:
 
 - **No key = shared fallback.** Without an Exa / Perplexity / Gemini key (Settings → API keys), searches go through a free Exa fallback that can rate-limit under heavy use. Adding any one key removes that bottleneck.
 - **Video understanding needs a Gemini key.** YouTube and local-video analysis are only available once `GEMINI_API_KEY` is set.

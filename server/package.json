@@ -12,9 +12,9 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^0.83.0",
-    "@earendil-works/pi-ai": "^0.83.0",
-    "@earendil-works/pi-coding-agent": "^0.83.0",
+    "@earendil-works/pi-agent-core": "^0.84.0",
+    "@earendil-works/pi-ai": "^0.84.0",
+    "@earendil-works/pi-coding-agent": "^0.84.0",
     "@fastify/cors": "^10.0.1",
     "@fastify/multipart": "^9.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -23,8 +23,8 @@
     "archiver": "^8.0.0",
     "fastify": "^5.2.0",
     "modal": "^0.8.2",
-    "pi-subagents": "^0.28.0",
-    "pi-web-access": "^0.10.7",
+    "pi-subagents": "^0.42.0",
+    "pi-web-access": "^0.18.0",
     "skills": "1.5.21",
     "typebox": "^1.3.7",
     "undici": "8.5.0"

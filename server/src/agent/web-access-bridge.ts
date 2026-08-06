@@ -2,7 +2,7 @@
  * Integration glue for the `pi-web-access` package (npm:pi-web-access).
  *
  * The package is a Pi extension that registers web tools — `web_search`,
- * `code_search`, `fetch_content`, `get_search_content` — covering search
+ * `fetch_content`, `get_search_content` — covering search
  * (Exa / Perplexity / Gemini), URL/PDF extraction, GitHub repo cloning, and
  * YouTube/video understanding. It works without any API key (Exa MCP
  * fallback); EXA_API_KEY / PERPLEXITY_API_KEY / GEMINI_API_KEY unlock the
@@ -32,10 +32,10 @@ import type { ProjectPaths } from "../projects.ts";
 
 const require_ = createRequire(import.meta.url);
 
-/** Tool names registered by the pi-web-access extension. */
+/** Tool names registered by the pi-web-access extension. (`code_search` was
+ *  removed upstream in 0.11 — `web_search`'s Exa provider covers it.) */
 export const WEB_ACCESS_TOOLS = [
   "web_search",
-  "code_search",
   "fetch_content",
   "get_search_content",
 ];

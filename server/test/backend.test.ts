@@ -655,12 +655,7 @@ describe("web access bridge", () => {
     };
 
   it("exposes the pi-web-access tool names", () => {
-    expect(WEB_ACCESS_TOOLS).toEqual([
-      "web_search",
-      "code_search",
-      "fetch_content",
-      "get_search_content",
-    ]);
+    expect(WEB_ACCESS_TOOLS).toEqual(["web_search", "fetch_content", "get_search_content"]);
     expect(fs.existsSync(path.join(webAccessPackageDir(), "index.ts"))).toBe(true);
   });
 

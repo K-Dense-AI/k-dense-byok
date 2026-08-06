@@ -17,15 +17,13 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { boundedSetAdd } from "../bounded.ts";
 import { resolvePaths, type ProjectPaths } from "../projects.ts";
+import { subagentsPackageDir } from "./agent-files.ts";
 import { appendNewNotebookEntries, type NotebookEntry } from "./notebook-store.ts";
 import { notebookEntriesFromSessionFile } from "./notebook-harvest.ts";
 import { currentRunId } from "./run-ids.ts";
-
-const require_ = createRequire(import.meta.url);
 
 /** Absolute dir of the vendored kady-notebook package. */
 export function kadyNotebookPackageDir(): string {
@@ -68,8 +66,7 @@ export function seedNotebookPackage(paths: ProjectPaths): boolean {
 /** Dir of pi-subagents' builtin agent definitions (agents/*.md), if installed. */
 function builtinAgentsDir(): string | null {
   try {
-    const pkgJson = require_.resolve("pi-subagents/package.json");
-    return path.join(path.dirname(pkgJson), "agents");
+    return path.join(subagentsPackageDir(), "agents");
   } catch {
     return null;
   }

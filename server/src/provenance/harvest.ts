@@ -44,7 +44,6 @@ const READ_ONLY_TOOLS = new Set([
   "find",
   "ls",
   "web_search",
-  "code_search",
   "fetch_content",
   "get_search_content",
   "notebook",

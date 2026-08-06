@@ -30,7 +30,7 @@ import {
   type BillingContext,
 } from "../cost/billing.ts";
 import { resolvePaths } from "../projects.ts";
-import { listAgents } from "./agent-files.ts";
+import { listAgents, subagentsPackageDir } from "./agent-files.ts";
 import { modelReference } from "./models.ts";
 import { isSubscriptionProvider } from "./provider-auth.ts";
 
@@ -38,8 +38,12 @@ const require_ = createRequire(import.meta.url);
 
 /** Entry file of the pi-subagents extension (per its package.json `pi.extensions`). */
 export function subagentsExtensionPath(): string {
-  const pkgJson = require_.resolve("pi-subagents/package.json");
-  return path.join(path.dirname(pkgJson), "src", "extension", "index.ts");
+  const dir = subagentsPackageDir();
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8")) as {
+    pi?: { extensions?: string[] };
+  };
+  const declared = manifest.pi?.extensions?.[0];
+  return declared ? path.resolve(dir, declared) : require_.resolve("pi-subagents");
 }
 
 /** Shape of the pi-subagents tool result details we consume (subset). */

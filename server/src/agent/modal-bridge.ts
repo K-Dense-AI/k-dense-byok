@@ -1,13 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { ProjectPaths } from "../projects.ts";
 import { modalJobManager } from "../modal/manager.ts";
+import { subagentsPackageDir } from "./agent-files.ts";
 import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
-
-const require_ = createRequire(import.meta.url);
 
 export function kadyModalPackageDir(): string {
   return path.resolve(import.meta.dirname, "..", "..", "pi-packages", "kady-modal");
@@ -42,8 +40,7 @@ export function seedModalPackage(paths: ProjectPaths): boolean {
 
 function builtinAgentsDir(): string | null {
   try {
-    const packageJson = require_.resolve("pi-subagents/package.json");
-    return path.join(path.dirname(packageJson), "agents");
+    return path.join(subagentsPackageDir(), "agents");
   } catch {
     return null;
   }
