@@ -5,6 +5,7 @@ import {
   assertModelAuthentication,
   modelReference,
   ModelResolutionError,
+  nvidiaExtraModelIds,
   resolveModel,
 } from "../src/agent/models.ts";
 import { getModelRegistry } from "../src/agent/session-registry.ts";
@@ -134,7 +135,30 @@ afterEach(async () => {
   for (const app of apps.splice(0)) await app.close();
 });
 
+describe("NVIDIA_EXTRA_MODELS parsing", () => {
+  afterEach(() => {
+    delete process.env.NVIDIA_EXTRA_MODELS;
+  });
+
+  it("splits on commas and whitespace, dedupes, keeps slashes intact", () => {
+    process.env.NVIDIA_EXTRA_MODELS =
+      "private/vendor/example-model, vendor/other\nprivate/vendor/example-model";
+    expect(nvidiaExtraModelIds()).toEqual([
+      "private/vendor/example-model",
+      "vendor/other",
+    ]);
+  });
+
+  it("returns [] when unset", () => {
+    expect(nvidiaExtraModelIds()).toEqual([]);
+  });
+});
+
 describe("GET /nvidia/models", () => {
+  afterEach(() => {
+    delete process.env.NVIDIA_EXTRA_MODELS;
+  });
+
   it("returns picker-shaped models once a key resolves", async () => {
     const app = await appWithRuntime(runtimeWithNvidiaKey(true));
     const response = await app.inject({ method: "GET", url: "/nvidia/models" });
@@ -150,6 +174,27 @@ describe("GET /nvidia/models", () => {
           available: true,
         }),
       ],
+    });
+  });
+
+  it("appends NVIDIA_EXTRA_MODELS ids the catalogue doesn't know", async () => {
+    process.env.NVIDIA_EXTRA_MODELS =
+      // Second id is already catalogued and must not be duplicated.
+      "private/vendor/example-model,nvidia/llama-3.3-nemotron-super-49b-v1.5";
+    const app = await appWithRuntime(runtimeWithNvidiaKey(true));
+    const response = await app.inject({ method: "GET", url: "/nvidia/models" });
+    expect(response.statusCode).toBe(200);
+    const { models } = response.json();
+    expect(models.map((m: { id: string }) => m.id)).toEqual([
+      "nvidia/nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "nvidia/private/vendor/example-model",
+    ]);
+    expect(models[1]).toMatchObject({
+      sourceId: "nvidia",
+      sourceLabel: "NVIDIA NIM",
+      billingMode: "subscription",
+      pricing: { prompt: 0, completion: 0 },
+      available: true,
     });
   });
 

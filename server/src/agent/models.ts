@@ -266,7 +266,7 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
  * NIM entries — the endpoint draws NVIDIA API credits, not per-token USD (see
  * `billingForProvider`, which classifies the provider as external spend).
  */
-function buildNvidiaModel(id: string): Model<Api> {
+export function buildNvidiaModel(id: string): Model<Api> {
   return {
     id,
     name: id,
@@ -279,6 +279,20 @@ function buildNvidiaModel(id: string): Model<Api> {
     contextWindow: 128_000,
     maxTokens: 8192,
   };
+}
+
+/**
+ * NIM model ids pinned via `NVIDIA_EXTRA_MODELS` (comma/whitespace separated).
+ * Values are model ids exactly as sent to the API — no `nvidia/` ref prefix is
+ * stripped, because NIM ids legitimately start with a vendor segment that can
+ * itself be `nvidia/` (e.g. `nvidia/llama-3.3-nemotron-super-49b-v1.5`).
+ * Lets private/early-access endpoints absent from Pi's catalogue (e.g.
+ * `private/nvidia/...` ids) surface in the picker; the resolver already runs
+ * any such ref via `buildNvidiaModel`.
+ */
+export function nvidiaExtraModelIds(): string[] {
+  const raw = process.env.NVIDIA_EXTRA_MODELS ?? "";
+  return [...new Set(raw.split(/[\s,]+/).filter(Boolean))];
 }
 
 /** Configure app-specific providers and runtime credentials. */

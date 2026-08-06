@@ -8,6 +8,7 @@ import {
   nvidiaModelForClient,
   type ProviderAuthRuntime,
 } from "../agent/provider-auth.ts";
+import { buildNvidiaModel, nvidiaExtraModelIds } from "../agent/models.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 
 export interface RegisterModelProviderRoutesOptions {
@@ -101,7 +102,16 @@ export async function registerModelProviderRoutes(
       const auth = await runtime.checkAuth("nvidia");
       if (!auth) return { configured: false, models: [] };
       const available = await runtime.getAvailable("nvidia");
-      return { configured: true, models: available.map(nvidiaModelForClient) };
+      // NVIDIA_EXTRA_MODELS pins ids Pi's catalogue doesn't know (private/EA
+      // endpoints); synthesized like the resolver does, catalogued ids win.
+      const catalogued = new Set(available.map((model) => model.id));
+      const extras = nvidiaExtraModelIds()
+        .filter((id) => !catalogued.has(id))
+        .map(buildNvidiaModel);
+      return {
+        configured: true,
+        models: [...available, ...extras].map(nvidiaModelForClient),
+      };
     } catch (error) {
       return errorReply(reply, error);
     }
