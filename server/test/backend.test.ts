@@ -27,7 +27,9 @@ import {
   makeSubagentLedgerExtension,
   pinInheritedChildModels,
   usageFromSessionFile,
+  workflowScriptTargets,
 } from "../src/agent/subagent-bridge.ts";
+import { writeProjectAgent } from "../src/agent/agent-files.ts";
 import {
   WEB_ACCESS_TOOLS,
   seedWebAccessPackage,
@@ -327,6 +329,60 @@ describe("subagent model inheritance", () => {
     ]);
   });
 
+  // Since pi-subagents 0.43 children are declared inside a `workflowScript`
+  // source string, so none of them are reachable by walking the tool input.
+  const parent = {
+    provider: "openai-codex",
+    id: "gpt-5.6-sol",
+  } as Parameters<typeof pinInheritedChildModels>[2];
+
+  it("reads agents and models out of a workflowScript", () => {
+    const targets = workflowScriptTargets(
+      `const scan = await runs.run("scan", { agent: "scout", task: "look" });\n` +
+        `return runs.all([{ agent: 'worker', model: "openrouter/openai/gpt-5.5" }]);`,
+    );
+    expect([...targets.agents].sort()).toEqual(["scout", "worker"]);
+    expect([...targets.models]).toEqual(["openrouter/openai/gpt-5.5"]);
+    expect(targets.dynamic).toBe(false);
+  });
+
+  it("flags a computed agent name as dynamic", () => {
+    const targets = workflowScriptTargets(`return runs.run("k", { agent: chosen, task: t })`);
+    expect(targets.agents.size).toBe(0);
+    expect(targets.dynamic).toBe(true);
+  });
+
+  it("pins the parent model as the workflow-wide child default", () => {
+    ensureProjectExists("default");
+    const input: Record<string, unknown> = {
+      workflowScript: `return runs.run("main", { agent: "scout", task: "a" })`,
+    };
+    pinInheritedChildModels("default", input, parent);
+    expect(input.model).toBe("openai-codex/gpt-5.6-sol");
+  });
+
+  it("leaves a workflowScript alone when the pin would outrank a child's own model", () => {
+    ensureProjectExists("pin-guard");
+    writeProjectAgent(resolvePaths("pin-guard"), "pinned-specialist", {
+      name: "pinned-specialist",
+      description: "pinned",
+      systemPrompt: "You are pinned.",
+      model: "openrouter/anthropic/claude-sonnet-5",
+    });
+    // A top-level `model` is a per-run override, the strongest rank there is:
+    // pinning one would silently replace every model below it.
+    for (const script of [
+      `return runs.run("main", { agent: "pinned-specialist", task: "a" })`,
+      `return runs.run("main", { agent: "scout", model: "ollama/llama4", task: "a" })`,
+      `return runs.run("main", { agent: pick(), task: "a" })`,
+      `return runs.run("main", { resume: retained, task: "more" })`,
+    ]) {
+      const input: Record<string, unknown> = { workflowScript: script };
+      pinInheritedChildModels("pin-guard", input, parent);
+      expect(input.model).toBeUndefined();
+    }
+  });
+
   it("ledgers cross-provider attempts separately and gates resume work", async () => {
     createProject({ name: "Subagent billing", projectId: "sub-billing", spendLimitUsd: 0.5 });
     const handlers = new Map<string, (event: any) => any>();
@@ -388,6 +444,20 @@ describe("subagent model inheritance", () => {
       },
     });
     expect(unsupported).toMatchObject({
+      block: true,
+      reason: expect.stringMatching(/subscription login/i),
+    });
+
+    // The same gate has to see a model named inside a workflowScript, which is
+    // the only execution surface pi-subagents still offers.
+    const scripted = await handlers.get("tool_call")!({
+      toolName: "subagent",
+      input: {
+        workflowScript:
+          `return runs.run("main", { agent: "custom", model: "xai/grok-4.5", task: "test" })`,
+      },
+    });
+    expect(scripted).toMatchObject({
       block: true,
       reason: expect.stringMatching(/subscription login/i),
     });

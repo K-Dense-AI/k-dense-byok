@@ -6,6 +6,7 @@ import { modalJobManager } from "../modal/manager.ts";
 import { subagentsPackageDir } from "./agent-files.ts";
 import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
+import { reconcileBuiltinTools } from "./builtin-tool-overrides.ts";
 
 export function kadyModalPackageDir(): string {
   return path.resolve(import.meta.dirname, "..", "..", "pi-packages", "kady-modal");
@@ -67,9 +68,6 @@ function parseFrontmatter(file: string): { name?: string; tools?: string[] } {
   return value;
 }
 
-function sameSet(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value) => right.includes(value));
-}
 
 /**
  * Extend package-owned builtin allowlists while preserving user-pinned lists.
@@ -128,16 +126,15 @@ export function seedBuiltinAgentModalTools(paths: ProjectPaths): boolean {
         ...generatedModal,
         ...PDF_ANNOTATION_TOOL_NAMES,
       ];
-      if (
-        !sameSet(existingTools, generatedNotebook) &&
-        !sameSet(existingTools, generatedModal) &&
-        !sameSet(existingTools, generatedModalWithPdf)
-      ) {
-        continue;
-      }
-      const next = [...existingTools];
-      for (const tool of MODAL_TOOL_NAMES) if (!next.includes(tool)) next.push(tool);
-      if (next.length === existingTools.length) continue;
+      // Reconciled, not only extended: an override seeded before an upstream
+      // release narrowed this builtin still carries the tools it removed.
+      const next = reconcileBuiltinTools({
+        existing: existingTools,
+        declared: builtin.tools,
+        add: MODAL_TOOL_NAMES,
+        shapes: [generatedNotebook, generatedModal, generatedModalWithPdf],
+      });
+      if (!next) continue;
       overrides[builtin.name] = { ...override, tools: next };
       changed = true;
       continue;

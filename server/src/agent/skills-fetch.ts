@@ -149,6 +149,20 @@ function buildAddArgs(options: FetchSkillsOptions): string[] {
   return args;
 }
 
+/**
+ * Recover the absolute path of a local source. Since `skills` 1.5.22 the CLI
+ * records local sources relative to the staging dir rather than absolutely, and
+ * staging dirs are disposable — a path relative to one is meaningless once the
+ * cache is cleared, and it is what we persist as user-visible provenance.
+ * Remote sources (`owner/repo`, URLs) are never paths and are left verbatim.
+ */
+function absoluteLockSource(stagingDir: string, entry: SkillLockEntry): string | undefined {
+  const { source, sourceType } = entry;
+  if (typeof source !== "string" || !source) return source;
+  if (sourceType !== "local" || path.isAbsolute(source)) return source;
+  return path.resolve(stagingDir, source);
+}
+
 export function readStagedLock(stagingDir: string): Record<string, SkillLockEntry> {
   try {
     const raw = JSON.parse(
@@ -159,8 +173,9 @@ export function readStagedLock(stagingDir: string): Record<string, SkillLockEntr
     for (const [name, value] of Object.entries(raw.skills as Record<string, unknown>)) {
       if (!value || typeof value !== "object") continue;
       const entry = value as SkillLockEntry;
+      const source = absoluteLockSource(stagingDir, entry);
       out[name] = {
-        ...(typeof entry.source === "string" ? { source: entry.source } : {}),
+        ...(typeof source === "string" ? { source } : {}),
         ...(typeof entry.sourceType === "string" ? { sourceType: entry.sourceType } : {}),
         ...(typeof entry.skillPath === "string" ? { skillPath: entry.skillPath } : {}),
         ...(typeof entry.ref === "string" ? { ref: entry.ref } : {}),

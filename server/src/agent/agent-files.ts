@@ -103,6 +103,33 @@ export function builtinDisabledNames(paths: ProjectPaths): Set<string> {
   return out;
 }
 
+/**
+ * Models pinned in `.pi/settings.json` under `subagents`, which frontmatter
+ * alone does not reveal. pi-subagents resolves a child model strongest-first:
+ * per-run override → agent frontmatter → `agentOverrides.<name>.model` →
+ * `subagents.defaultModel` → the parent session model. Anything we send as a
+ * per-run override therefore outranks all of these, so the caller needs to see
+ * them before deciding to pin one.
+ */
+export function settingsPinnedModels(paths: ProjectPaths): {
+  defaultModel?: string;
+  byAgent: Map<string, string>;
+} {
+  const sub = (readPiSettings(paths).subagents ?? {}) as Record<string, unknown>;
+  const overrides =
+    sub.agentOverrides && typeof sub.agentOverrides === "object" && !Array.isArray(sub.agentOverrides)
+      ? (sub.agentOverrides as Record<string, { model?: unknown }>)
+      : {};
+  const byAgent = new Map<string, string>();
+  for (const [name, override] of Object.entries(overrides)) {
+    if (typeof override?.model === "string" && override.model.trim()) {
+      byAgent.set(name, override.model.trim());
+    }
+  }
+  const fallback = typeof sub.defaultModel === "string" ? sub.defaultModel.trim() : "";
+  return { ...(fallback ? { defaultModel: fallback } : {}), byAgent };
+}
+
 /** Set/clear a builtin's disabled override, preserving all other settings keys. */
 export function setBuiltinDisabled(paths: ProjectPaths, name: string, disabled: boolean): void {
   const settings = readPiSettings(paths);

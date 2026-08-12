@@ -8,6 +8,7 @@ import type { ProjectPaths } from "../projects.ts";
 import { subagentsPackageDir } from "./agent-files.ts";
 import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
+import { reconcileBuiltinTools } from "./builtin-tool-overrides.ts";
 
 export function kadyPdfAnnotationPackageDir(): string {
   return path.resolve(
@@ -96,12 +97,6 @@ function unique(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
-function sameSet(left: string[], right: string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value) => right.includes(value))
-  );
-}
 
 /**
  * Notebook and Modal bridges run first. Only extend their known generated
@@ -174,13 +169,15 @@ export function seedBuiltinAgentPdfAnnotationTools(
           unique([...tools, ...PDF_ANNOTATION_TOOL_NAMES]),
         ],
       );
-      if (!generated.some((tools) => sameSet(existingTools, tools))) continue;
-
-      const next = unique([
-        ...existingTools,
-        ...PDF_ANNOTATION_TOOL_NAMES,
-      ]);
-      if (next.length === existingTools.length) continue;
+      // Reconciled, not only extended: an override seeded before an upstream
+      // release narrowed this builtin still carries the tools it removed.
+      const next = reconcileBuiltinTools({
+        existing: existingTools,
+        declared: base,
+        add: PDF_ANNOTATION_TOOL_NAMES,
+        shapes: generated,
+      });
+      if (!next) continue;
       overrides[builtin.name] = { ...override, tools: next };
       changed = true;
       continue;

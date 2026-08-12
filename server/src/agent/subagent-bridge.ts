@@ -30,7 +30,7 @@ import {
   type BillingContext,
 } from "../cost/billing.ts";
 import { resolvePaths } from "../projects.ts";
-import { listAgents, subagentsPackageDir } from "./agent-files.ts";
+import { listAgents, settingsPinnedModels, subagentsPackageDir } from "./agent-files.ts";
 import { modelReference } from "./models.ts";
 import { isSubscriptionProvider } from "./provider-auth.ts";
 
@@ -243,6 +243,68 @@ function billingFromModelRef(
   return billingForProvider(provider || "unknown", "api_key");
 }
 
+/**
+ * Child agents and models named inside a `workflowScript`.
+ *
+ * Since pi-subagents 0.43 the `subagent` tool has one execution surface: a
+ * `workflowScript` JavaScript string whose children are declared as
+ * `runs.run(key, { agent, ... })`. Top-level `agent` now only addresses
+ * management actions, so a structural walk of the tool input no longer sees
+ * any child — every check that guards delegation (spend cap, provider
+ * support, model inheritance) would silently pass everything through.
+ *
+ * The script is source text, not data, so this reads the literals rather than
+ * pretending to evaluate it. `dynamic` records that at least one `agent:` or
+ * `model:` was computed instead of written literally: the target list is then
+ * known to be incomplete, which matters for a decision that would override a
+ * child's own model but not for a decision that only widens what we check.
+ */
+export interface WorkflowScriptTargets {
+  agents: Set<string>;
+  models: Set<string>;
+  dynamic: boolean;
+}
+
+// A key, then either a plain string literal (captured) or anything else (a
+// variable, call, or interpolated template — flagged dynamic and not captured).
+const SCRIPT_TARGET_RE =
+  /\b(agent|model)\s*:\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`([^`$\\]*)`|(\S))/g;
+
+/** Bounds on a model-authored string: scripts are prompt-sized, not file-sized. */
+const MAX_SCRIPT_SCAN_CHARS = 200_000;
+const MAX_SCRIPT_TARGETS = 200;
+
+export function workflowScriptTargets(script: string): WorkflowScriptTargets {
+  const agents = new Set<string>();
+  const models = new Set<string>();
+  let dynamic = script.length > MAX_SCRIPT_SCAN_CHARS;
+  SCRIPT_TARGET_RE.lastIndex = 0;
+  for (const match of script.slice(0, MAX_SCRIPT_SCAN_CHARS).matchAll(SCRIPT_TARGET_RE)) {
+    const [, key, doubleQuoted, singleQuoted, backticked, nonLiteral] = match;
+    if (nonLiteral !== undefined) {
+      dynamic = true;
+      continue;
+    }
+    const raw = doubleQuoted ?? singleQuoted ?? backticked ?? "";
+    const value = raw.replace(/\\(.)/g, "$1").trim();
+    if (!value) continue;
+    const out = key === "agent" ? agents : models;
+    if (out.size >= MAX_SCRIPT_TARGETS) {
+      dynamic = true;
+      continue;
+    }
+    out.add(value);
+  }
+  return { agents, models, dynamic };
+}
+
+/** Script targets for a tool input, or empty when this is not an execution call. */
+function scriptTargets(input: Record<string, unknown>): WorkflowScriptTargets {
+  return typeof input.workflowScript === "string"
+    ? workflowScriptTargets(input.workflowScript)
+    : { agents: new Set(), models: new Set(), dynamic: false };
+}
+
 function collectStringFields(
   value: unknown,
   key: "model" | "agent",
@@ -266,11 +328,14 @@ function requestedBillings(
   parentModel?: Model<Api>,
   isProviderUsingOAuth: (providerId: string) => boolean = () => false,
 ): BillingContext[] {
+  const script = scriptTargets(input);
   const explicitModels = collectStringFields(input, "model");
+  for (const model of script.models) explicitModels.add(model);
   const billings = [...explicitModels].map((model) =>
     billingFromModelRef(model, parentModel, isProviderUsingOAuth),
   );
   const agents = collectStringFields(input, "agent");
+  for (const agent of script.agents) agents.add(agent);
   if (agents.size > 0) {
     const definitions = new Map(
       listAgents(resolvePaths(projectId)).map((agent) => [agent.name, agent] as const),
@@ -295,14 +360,19 @@ function unsupportedDirectProviders(
   input: Record<string, unknown>,
   isProviderUsingOAuth: (providerId: string) => boolean,
 ): string[] {
+  const script = scriptTargets(input);
   const refs = collectStringFields(input, "model");
-  const definitions = new Map(
-    listAgents(resolvePaths(projectId)).map((agent) => [agent.name, agent] as const),
-  );
-  for (const name of collectStringFields(input, "agent")) {
-    const model = definitions.get(name)?.model;
+  for (const model of script.models) refs.add(model);
+  const paths = resolvePaths(projectId);
+  const definitions = new Map(listAgents(paths).map((agent) => [agent.name, agent] as const));
+  const pinned = settingsPinnedModels(paths);
+  const agents = collectStringFields(input, "agent");
+  for (const agent of script.agents) agents.add(agent);
+  for (const name of agents) {
+    const model = definitions.get(name)?.model ?? pinned.byAgent.get(name);
     if (model) refs.add(model);
   }
+  if (pinned.defaultModel && agents.size > 0) refs.add(pinned.defaultModel);
   return [
     ...new Set(
       [...refs].flatMap((ref) => {
@@ -329,9 +399,12 @@ export function pinInheritedChildModels(
 ): void {
   if (!parentModel) return;
   const inherited = modelReference(parentModel);
-  const definitions = new Map(
-    listAgents(resolvePaths(projectId)).map((agent) => [agent.name, agent] as const),
-  );
+  const paths = resolvePaths(projectId);
+  const definitions = new Map(listAgents(paths).map((agent) => [agent.name, agent] as const));
+  if (typeof input.workflowScript === "string") {
+    pinWorkflowScriptModel(input, inherited, definitions, settingsPinnedModels(paths));
+    return;
+  }
   const apply = (value: unknown): void => {
     if (!value || typeof value !== "object") return;
     if (Array.isArray(value)) {
@@ -354,6 +427,34 @@ export function pinInheritedChildModels(
   // SINGLE mode has top-level `agent` and `model`; the recursive pass above
   // handles it. Self-contained single-agent calls may omit `agent`, in which
   // case leaving the model unset is safer than guessing their configuration.
+}
+
+/**
+ * Pin the parent's model for a `workflowScript` call, where children live in a
+ * source string we cannot rewrite. The only lever is the top-level `model`,
+ * which pi-subagents forwards to every child as a per-run override — the
+ * strongest rank there is. So this pins only after establishing that nothing it
+ * would outrank exists: no model literal in the script, no frontmatter or
+ * settings model on any named agent, and no `subagents.defaultModel`.
+ *
+ * A script that computes an agent or model name leaves that list incomplete, so
+ * it is left alone. Not pinning is the safe direction: pi-subagents still
+ * inherits the live parent model on its own, and the pin exists to make that
+ * canonical (notably for Fusion, whose id already carries a provider prefix).
+ */
+function pinWorkflowScriptModel(
+  input: Record<string, unknown>,
+  inherited: string,
+  definitions: Map<string, { model?: string }>,
+  pinned: { defaultModel?: string; byAgent: Map<string, string> },
+): void {
+  if (input.model !== undefined || pinned.defaultModel) return;
+  const targets = workflowScriptTargets(input.workflowScript as string);
+  if (targets.dynamic || targets.models.size > 0 || targets.agents.size === 0) return;
+  for (const agent of targets.agents) {
+    if (definitions.get(agent)?.model || pinned.byAgent.get(agent)) return;
+  }
+  input.model = inherited;
 }
 
 function recordModelAttempts(args: {

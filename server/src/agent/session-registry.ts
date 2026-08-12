@@ -205,6 +205,11 @@ async function build(
     tools: [
       ...BUILTIN_TOOLS,
       "subagent",
+      // pi-subagents ≥0.45 registers this alongside `subagent` and enables it by
+      // default. Since 0.47 a workflowScript launch is async by default and
+      // returns a receipt, so without it in this allowlist Pi filters out the
+      // lead's only way to block on the children it just started.
+      "subagent_wait",
       "interview",
       "notebook",
       "scientific_result",

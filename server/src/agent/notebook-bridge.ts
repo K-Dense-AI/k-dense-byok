@@ -21,6 +21,9 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { boundedSetAdd } from "../bounded.ts";
 import { resolvePaths, type ProjectPaths } from "../projects.ts";
 import { subagentsPackageDir } from "./agent-files.ts";
+import { reconcileBuiltinTools, uniqueTools } from "./builtin-tool-overrides.ts";
+import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
+import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
 import { appendNewNotebookEntries, type NotebookEntry } from "./notebook-store.ts";
 import { notebookEntriesFromSessionFile } from "./notebook-harvest.ts";
 import { currentRunId } from "./run-ids.ts";
@@ -72,6 +75,13 @@ function builtinAgentsDir(): string | null {
   }
 }
 
+/** Groups the later bridges add, so a list they already extended is recognized. */
+const MODAL_AND_PDF_SHAPES: readonly (readonly string[])[] = [
+  MODAL_TOOL_NAMES,
+  PDF_ANNOTATION_TOOL_NAMES,
+  [...MODAL_TOOL_NAMES, ...PDF_ANNOTATION_TOOL_NAMES],
+];
+
 /** Minimal frontmatter read: `name:` and comma-separated `tools:` lines. */
 function parseAgentFrontmatter(file: string): { name?: string; tools?: string[] } {
   let raw: string;
@@ -106,8 +116,10 @@ function parseAgentFrontmatter(file: string): { name?: string; tools?: string[] 
  * lanes never populate. Project agents we seed declare no allowlist and are
  * unaffected. For every builtin that pins tools without `notebook`, seed a
  * `subagents.agentOverrides.<name>.tools` entry (declared list + "notebook")
- * in sandbox settings.json. An override that already has ANY `tools` value is
- * left untouched (user edits win). Returns true when the file was written.
+ * in sandbox settings.json. An existing `tools` value is kept unless it still
+ * has the shape we generated, in which case it is reconciled against the
+ * builtin's current frontmatter — see builtin-tool-overrides.ts for why an
+ * upgrade makes extending alone unsafe. Returns true when the file was written.
  */
 export function seedBuiltinAgentNotebookTools(paths: ProjectPaths): boolean {
   const agentsDir = builtinAgentsDir();
@@ -146,7 +158,26 @@ export function seedBuiltinAgentNotebookTools(paths: ProjectPaths): boolean {
       continue; // malformed user entry — leave it alone
     }
     const override = (existing ?? {}) as Record<string, unknown>;
-    if ("tools" in override) continue; // user already pinned tools for this agent
+    if ("tools" in override) {
+      // Not simply "user pinned, skip": an override we seeded before an
+      // upstream release narrowed this builtin still carries the tools that
+      // release removed, so a Kady-shaped list is reconciled rather than left.
+      if (!Array.isArray(override.tools) || override.tools.some((t) => typeof t !== "string")) {
+        continue;
+      }
+      const existingTools = override.tools as string[];
+      const base = uniqueTools([...tools, "notebook"]);
+      const next = reconcileBuiltinTools({
+        existing: existingTools,
+        declared: tools,
+        add: ["notebook"],
+        shapes: [base, ...MODAL_AND_PDF_SHAPES.map((extra) => uniqueTools([...base, ...extra]))],
+      });
+      if (!next) continue;
+      overrides[name] = { ...override, tools: next };
+      changed = true;
+      continue;
+    }
     overrides[name] = { ...override, tools: [...tools, "notebook"] };
     changed = true;
   }

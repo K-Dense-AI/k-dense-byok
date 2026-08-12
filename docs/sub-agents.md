@@ -22,7 +22,7 @@ A few examples of what they do:
 - **`peer-reviewer`** writes a full, journal-style referee report on a manuscript: major concerns, minor concerns, questions for the authors, and a recommendation.
 - **`reproducibility-auditor`** checks whether someone else could re-run your analysis from scratch - and actually tries to.
 
-There are also 8 general-purpose agents that ship with the underlying delegation engine ([pi-subagents](https://github.com/nicobailon/pi-subagents)): `reviewer`, `scout`, `planner`, `worker`, `researcher`, `oracle`, `delegate`, and `context-builder`.
+There are also 6 general-purpose agents that ship with the underlying delegation engine ([pi-subagents](https://github.com/nicobailon/pi-subagents)): `reviewer`, `scout`, `worker`, `researcher`, `oracle`, and `delegate`. (`planner` and `context-builder` were retired upstream in pi-subagents 0.43; the Specialists tab always shows the roster actually installed.)
 
 ## Asking for a specialist directly
 
