@@ -28,7 +28,9 @@ Three things to know up front:
 
 ![Internal benchmark comparing K-Dense BYOK with Claude Science and Biomni Lab across scientific quality and research execution](docs/07_platform_performance_summary.png)
 
-This figure compares K-Dense BYOK, Claude Science, and Biomni Lab across scientific quality and research execution in a 20-prompt benchmark. For these runs, K-Dense BYOK was configured to use Claude Opus 4.8 with the xHigh reasoning level. The benchmark was designed, run, and evaluated internally by K-Dense rather than an independent third party, so the results should be interpreted as an internal evaluation under the tested setup—not as a universal measure of platform performance.
+This figure compares K-Dense BYOK, Claude Science, and Biomni Lab across scientific quality and research execution in a 20-prompt benchmark. For these runs, K-Dense BYOK was configured to use Claude Opus 4.8 with the xHigh reasoning level. The benchmark was designed, run, and evaluated internally by K-Dense rather than an independent third party, so the results should be interpreted as an internal evaluation under the tested setup, not as a universal measure of platform performance.
+
+Related reading on how we evaluate: [K-Dense Web vs. Claude Science](https://www.k-dense.ai/blog/k-dense-web-vs-claude-science) walks through the same 20-task comparison for our hosted platform, and [Introducing K-Bench 01](https://www.k-dense.ai/blog/introducing-k-bench-01-internal-benchmark) covers our broader benchmark of nine frontier models on 178 real scientific tasks.
 
 ## What can it do?
 
@@ -138,6 +140,22 @@ All guides live in the [`docs/`](./docs) folder:
 | [Architecture](./docs/architecture.md) | How the two local services fit together (for the technically curious) |
 | [Contributing workflows](./docs/contributing-workflows.md) | Add new workflow templates to the library |
 | [Known limitations](./docs/limitations.md) | Rough edges to be aware of in the current beta |
+
+## From the K-Dense blog
+
+Background reading on the research and evaluation work behind Kady, from the [K-Dense blog](https://www.k-dense.ai/blog):
+
+| Post | What it covers |
+|------|----------------|
+| [Introducing K-Bench 01](https://www.k-dense.ai/blog/introducing-k-bench-01-internal-benchmark) | Our internal benchmark of nine frontier models across 178 real scientific tasks, and how often confident answers are wrong |
+| [K-Dense Web vs. Claude Science](https://www.k-dense.ai/blog/k-dense-web-vs-claude-science) | A 20-task comparison focused on execution and auditable research output |
+| [AI Scientists Need Lab Escape Rooms, Not More Exams](https://www.k-dense.ai/blog/science-needs-better-black-boxes) | Why hidden lab environments test AI scientists better than exam-style benchmarks |
+| [Reproduction, Not Generation, Is AI's Killer App for Science](https://www.k-dense.ai/blog/reproduction-not-generation-ai-for-science) | The case for reproducing existing research over generating novel claims, and why Kady keeps a full record of its work |
+| [AI Co-Scientists, Answered](https://www.k-dense.ai/blog/ai-co-scientists-answered-20-questions) | 20 questions from a live session with a university research center, including current limitations |
+| [Benchmarking NVIDIA BioNeMo Agent Toolkit Skills for NIM microservices](https://www.k-dense.ai/blog/benchmarking-nvidia-bionemo-nim-skill) | A controlled evaluation of ten BioNeMo skills, relevant if you run [NVIDIA NIM models](#choose-the-right-model-and-compute-for-each-task) |
+| [Benchmarking Nano Banana 2 Lite for Scientific Image Generation](https://www.k-dense.ai/blog/benchmarking-nano-banana-2-lite-scientific-image-model) | A 240-image benchmark of scientific image models, speed versus figure quality |
+| [Benchmarking Google's Omni Flash for Scientific Video](https://www.k-dense.ai/blog/benchmarking-google-omni-flash-scientific-video) | 35 case studies on scientific video generation, strong visuals but unreliable text and physics |
+| [K-Dense Web and Litmus Science](https://www.k-dense.ai/blog/k-dense-litmus-closing-the-loop) | Closing the loop from hypothesis to experiment with lab execution |
 
 ## Want more?
 
