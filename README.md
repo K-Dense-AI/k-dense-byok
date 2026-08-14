@@ -120,6 +120,18 @@ That's it. Create a project, drop in your data, and ask Kady for what you want �
 
 ➡️ **Step-by-step details, optional API keys, and troubleshooting:** [Installation guide](./docs/installation.md)
 ➡️ **Your first session and everyday features:** [Basic usage](./docs/basic-usage.md)
+➡️ **Prefer to watch first?** [Tutorial videos](#tutorial-videos)
+
+## Tutorial videos
+
+Recorded walkthroughs of Kady working through real research tasks, from the [K-Dense YouTube channel](https://www.youtube.com/@K-Dense-Inc):
+
+| Video | What it covers |
+|-------|----------------|
+| [K-Dense BYOK Workflow Demo: Write a Review Article](https://youtu.be/tsPsbAYfCFI) | Using a guided workflow to research and draft a review article |
+| [K-Dense BYOK in Action: End-to-End Workflow Demo](https://youtu.be/2DY4-SYEi3Q) | A full run from research question to results, start to finish |
+| [K-Dense BYOK Workflow Demo: Write a Rebuttal](https://youtu.be/0MmU-Pmtg1o) | Responding to reviewer comments with a point-by-point rebuttal |
+| [K-Dense BYOK Workflow Demo: Draft a Protocol](https://youtu.be/Yz2L5s_M_34) | Turning a planned experiment into a written protocol |
 
 ## Documentation
 
