@@ -9,6 +9,7 @@
 [![X](https://img.shields.io/badge/Follow_on_X-%40k__dense__ai-000000?logo=x)](https://x.com/k_dense_ai)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-K--Dense_Inc.-0A66C2?logo=linkedin)](https://www.linkedin.com/company/k-dense-inc)
 [![YouTube](https://img.shields.io/badge/YouTube-K--Dense_Inc.-FF0000?logo=youtube)](https://www.youtube.com/@K-Dense-Inc)
+[![Reddit](https://img.shields.io/badge/Reddit-u%2F--k--dense---FF4500?logo=reddit)](https://www.reddit.com/user/-k-dense-/)
 
 **Your own AI research assistant, running on your computer, powered by the accounts and API keys you choose.**
 
@@ -22,7 +23,7 @@ Three things to know up front:
 - **Your workspace stays on your computer.** Projects, conversations, notebooks, and results live in ordinary folders on your machine; K-Dense does not host or store them. When you use a hosted AI model, the material needed for that request is sent directly to the provider you selected under that provider's privacy terms. Use a local Ollama model when data must not leave your machine.
 - **The app itself is free; provider charges and limits remain yours.** Use prepaid [OpenRouter](https://openrouter.ai/), connect a supported AI subscription, or run [free local models](./docs/local-models-ollama.md). Kady tracks paid OpenRouter usage and Anthropic OAuth's documented metered extra usage against project spending caps. ChatGPT, Copilot, and xAI subscription usage is tracked separately because those providers manage quotas and overages; a subscription login does not imply unlimited or free usage.
 
-> **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), and [YouTube](https://www.youtube.com/@K-Dense-Inc) for release notes and tutorials.
+> **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), [YouTube](https://www.youtube.com/@K-Dense-Inc), and [Reddit](https://www.reddit.com/user/-k-dense-/) for release notes and tutorials.
 
 ## Internal benchmark
 
