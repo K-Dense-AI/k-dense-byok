@@ -181,3 +181,13 @@ If you run into a problem or have an idea for something new, please [open a GitH
 ## About K-Dense
 
 K-Dense BYOK is open source because [K-Dense](https://github.com/K-Dense-AI) believes in giving back to the community that makes this kind of work possible.
+
+## Star History
+
+<a href="https://star-history.dera.page/#K-Dense-AI/k-dense-byok">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=K-Dense-AI/k-dense-byok&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=K-Dense-AI/k-dense-byok" />
+   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=K-Dense-AI/k-dense-byok" />
+ </picture>
+</a>
