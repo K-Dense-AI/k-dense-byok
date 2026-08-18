@@ -25,6 +25,8 @@ Three things to know up front:
 
 > **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), [YouTube](https://www.youtube.com/@K-Dense-Inc), and [Reddit](https://www.reddit.com/user/-k-dense-/) for release notes and tutorials.
 
+> 🎬 **Prefer to watch first?** [The Future of Research is Open: Introducing K-Dense BYOK](https://youtu.be/wsG3yVV4P5Q) walks through what the app does and how to get set up. More walkthroughs in [Tutorial videos](#tutorial-videos).
+
 ## Internal benchmark
 
 ![Internal benchmark comparing K-Dense BYOK with Claude Science and Biomni Lab across scientific quality and research execution](docs/07_platform_performance_summary.png)
@@ -133,6 +135,10 @@ Recorded walkthroughs of Kady working through real research tasks, from the [K-D
 | [K-Dense BYOK in Action: End-to-End Workflow Demo](https://youtu.be/2DY4-SYEi3Q) | A full run from research question to results, start to finish |
 | [K-Dense BYOK Workflow Demo: Write a Rebuttal](https://youtu.be/0MmU-Pmtg1o) | Responding to reviewer comments with a point-by-point rebuttal |
 | [K-Dense BYOK Workflow Demo: Draft a Protocol](https://youtu.be/Yz2L5s_M_34) | Turning a planned experiment into a written protocol |
+| [The Future of Research is Open: Introducing K-Dense BYOK](https://youtu.be/wsG3yVV4P5Q) | What the app is, what it does, and how to get started |
+| [Literature Review and Hypothesis Generation](https://youtu.be/wKJp8y4ZyiM) | Searching the literature and generating grounded hypotheses |
+| [BYOK Workflow Highlights: Write a Review Paper](https://youtu.be/tHi3VIMKEcQ) | Highlights from a guided review-paper run |
+| [Can AI Reproduce a Nature Medicine Paper?](https://youtu.be/4WTCK9kSfdk) | An end-to-end reproduction attempt on a published analysis |
 
 ## Documentation
 
