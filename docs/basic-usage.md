@@ -76,6 +76,23 @@ The cost pill in the header shows the active tab's session spend (`sess`) and th
 - OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited. NVIDIA NIM gets the same treatment: it bills NVIDIA-managed API credits rather than per-token dollars, so Kady records tokens without counting USD spend.
 - Local Ollama usage does not add model spend. Modal compute remains separately estimated and counted.
 
+## Host resource monitor
+
+The pill next to the cost pill shows live machine-wide CPU, RAM and GPU usage, with a hover card breaking out the Kady backend's own share plus free disk space on the projects volume.
+
+GPU readings come from whichever vendor tool is on `PATH`, tried in this order:
+
+| Tool | Covers |
+|---|---|
+| `nvidia-smi` | NVIDIA, all platforms |
+| `amd-smi` | AMD, ROCm 6 and newer |
+| `rocm-smi` | AMD, older ROCm |
+| `ioreg` | Apple Silicon (utilization only — unified memory has no separate VRAM pool) |
+
+The first tool that answers wins, so a dual-vendor machine reports the NVIDIA card. If none is installed the GPU segment is simply hidden. Some AMD drivers — ROCm on Windows in particular — report VRAM but no utilization counter; the hover card then meters VRAM and says so, while the collapsed pill stays utilization-only.
+
+This monitor is **display-only**. Nothing in Kady routes work based on it: local tools always run locally, and Modal compute is used only when you pick a remote instance in the compute selector or the agent calls a `modal_*` tool.
+
 ## Settings
 
 Click the gear icon in the top-right to:

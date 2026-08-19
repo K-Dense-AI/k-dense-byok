@@ -57,6 +57,17 @@ export function ResourceMonitor({ className }: { className?: string }) {
     stats.gpu?.utilizationPct !== null && stats.gpu?.utilizationPct !== undefined
       ? Math.round(stats.gpu.utilizationPct)
       : null;
+  // ROCm on Windows commonly answers "N/A" for the busy counter while still
+  // reporting VRAM, so the expanded card falls back to a VRAM meter rather than
+  // hiding a GPU we did detect. The collapsed pill stays utilization-only --
+  // there is no room there to say which quantity it is showing.
+  const gpuVramPct =
+    stats.gpu &&
+    stats.gpu.memUsedBytes !== null &&
+    stats.gpu.memTotalBytes !== null &&
+    stats.gpu.memTotalBytes > 0
+      ? Math.round((stats.gpu.memUsedBytes / stats.gpu.memTotalBytes) * 100)
+      : null;
   const diskPct =
     stats.disk && stats.disk.totalBytes > 0
       ? Math.round((stats.disk.usedBytes / stats.disk.totalBytes) * 100)
@@ -100,16 +111,16 @@ export function ResourceMonitor({ className }: { className?: string }) {
               stats.memory.totalBytes,
             )} · app ${formatBytes(stats.memory.processRssBytes)}`}
           />
-          {stats.gpu && gpuPct !== null && (
+          {stats.gpu && (gpuPct !== null || gpuVramPct !== null) && (
             <MeterRow
               icon={GpuIcon}
               label={stats.gpu.name}
-              pct={gpuPct}
+              pct={gpuPct ?? gpuVramPct ?? 0}
               detail={
                 stats.gpu.memUsedBytes !== null && stats.gpu.memTotalBytes !== null
                   ? `${formatBytes(stats.gpu.memUsedBytes)} / ${formatBytes(
                       stats.gpu.memTotalBytes,
-                    )} VRAM`
+                    )} VRAM${gpuPct === null ? " · no utilization counter" : ""}`
                   : "utilization"
               }
             />
