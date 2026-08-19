@@ -11,6 +11,13 @@
 [![YouTube](https://img.shields.io/badge/YouTube-K--Dense_Inc.-FF0000?logo=youtube)](https://www.youtube.com/@K-Dense-Inc)
 [![Reddit](https://img.shields.io/badge/Reddit-u%2F--k--dense---FF4500?logo=reddit)](https://www.reddit.com/user/-k-dense-/)
 
+> ### 📅 Join our free live event: **Getting Started with K-Dense BYOK**
+>
+> An online walkthrough of installing Kady and running your first research task, with live Q&A.
+> **Tuesday, August 25, 2026 · 2:00 PM PT (9:00 PM UTC) · Online**
+>
+> 👉 **[Register for free on Luma](https://luma.com/nucztxt5)**
+
 **Your own AI research assistant, running on your computer, powered by the accounts and API keys you choose.**
 
 ![K-Dense BYOK — Kady running an end-to-end single-cell RNA-seq analysis: asking in plain language, streaming tool calls, the generated figures and report, the living lab notebook, and the skills and specialists settings](docs/kady-demo.gif)
