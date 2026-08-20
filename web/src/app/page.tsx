@@ -681,21 +681,11 @@ function WorkspacePage({
   // ------------------------------------------------------------------
 
   const handleWorkflowLaunch = useCallback(
-    async (
-      prompt: string,
-      model: Model,
-      suggestedSkills: string[],
-      uploadedFiles: string[],
-    ) => {
+    async (prompt: string, model: Model, uploadedFiles: string[]) => {
       const handle = tabHandles.current.get(activeTabId);
       if (!handle) return;
       setView("chat");
-      await handle.launchWorkflow(
-        prompt,
-        model,
-        suggestedSkills,
-        uploadedFiles,
-      );
+      await handle.launchWorkflow(prompt, model, uploadedFiles);
     },
     [activeTabId],
   );

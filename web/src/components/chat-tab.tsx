@@ -1163,7 +1163,6 @@ export interface ChatTabHandle {
   launchWorkflow: (
     prompt: string,
     model: Model,
-    suggestedSkills: string[],
     uploadedFiles: string[],
   ) => Promise<void>;
   /**
@@ -1720,7 +1719,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           thinkingDisabled ? undefined : thinkingLevel,
         );
       },
-      launchWorkflow: async (prompt, model, suggestedSkills, uploadedFiles) => {
+      launchWorkflow: async (prompt, model, uploadedFiles) => {
         const workflowModelAvailability = modelAvailability(model);
         if (workflowModelAvailability !== "available") {
           toast.error(
@@ -1733,16 +1732,13 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         if (budgetState === "exceeded" && modelUsesBillableBudget(model)) return;
         setSelectedModel(model);
         const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
-        const skillsCtx = suggestedSkills.length > 0
-          ? `\n\nMake sure to use the skills: ${suggestedSkills.map((s) => `'${s}'`).join(", ")}`
-          : "";
-        const fullPrompt = prompt + fileRefs + skillsCtx;
+        const fullPrompt = prompt + fileRefs;
         await send(
           fullPrompt,
           model.id,
           {
             attachments: uploadedFiles,
-            skills: suggestedSkills,
+            skills: [],
             databases: [],
           },
           model.fusionConfig,

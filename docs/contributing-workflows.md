@@ -14,7 +14,6 @@ Each workflow is a JSON object with these fields:
   "category": "genomics",
   "icon": "Dna",
   "prompt": "Detailed instructions with {placeholder} syntax for user variables",
-  "suggestedSkills": ["scanpy", "scientific-visualization"],
   "placeholders": [
     { "key": "placeholder", "label": "What to ask the user", "required": true }
   ],
@@ -34,13 +33,12 @@ Set `requiresFiles` to `true` when the workflow needs user-uploaded data (datase
 
    Or propose a new one.
 4. Choose an `icon` name from [Lucide Icons](https://lucide.dev/icons/) (PascalCase, no "Icon" suffix - e.g. `FlaskConical`, `Brain`, `Dna`). If the icon isn't already imported in `workflows-panel.tsx`, add it there too.
-5. List `suggestedSkills` from the [K-Dense scientific skills](https://github.com/K-Dense-AI/scientific-agent-skills) - these are passed to the agent so it knows which tools to load. Only use skill IDs that exist in the repo.
-6. Use `{placeholder}` syntax in the prompt for any variable the user should fill in, and add a matching entry in `placeholders`.
+5. Use `{placeholder}` syntax in the prompt for any variable the user should fill in, and add a matching entry in `placeholders`.
 
 ## Tips for high-quality workflows
 
 - Write prompts with **numbered steps** so the agent follows a clear procedure.
-- Include **2-5 suggested skills** - enough to be helpful, not so many that they dilute focus.
+- **Do not name skills.** The agent discovers and loads the skills it needs from what is installed; a hard-coded name can point at a skill the user has disabled or removed.
 - Mark placeholders as `"required": true` only when the workflow genuinely can't run without them.
 - Keep descriptions under ~120 characters so they display well on the card.
 

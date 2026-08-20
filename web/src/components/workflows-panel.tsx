@@ -115,7 +115,6 @@ export type Workflow = {
   category: string;
   icon: string;
   prompt: string;
-  suggestedSkills: string[];
   placeholders: { key: string; label: string; required: boolean }[];
   requiresFiles: boolean;
 };
@@ -296,7 +295,7 @@ function LaunchDialog({
   workflow: Workflow;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onLaunch: (prompt: string, model: Model, suggestedSkills: string[], uploadedFiles: string[]) => void;
+  onLaunch: (prompt: string, model: Model, uploadedFiles: string[]) => void;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   budgetBlocked?: boolean;
 }) {
@@ -347,13 +346,13 @@ function LaunchDialog({
   const finalPrompt = editedPrompt ?? assembledPrompt;
 
   const handleLaunch = useCallback(() => {
-    onLaunch(finalPrompt, model, workflow.suggestedSkills, uploadedFiles);
+    onLaunch(finalPrompt, model, uploadedFiles);
     onOpenChange(false);
     setPlaceholderValues({});
     setUploadedFiles([]);
     setEditedPrompt(null);
     setIsEditingPrompt(false);
-  }, [finalPrompt, model, workflow.suggestedSkills, uploadedFiles, onLaunch, onOpenChange]);
+  }, [finalPrompt, model, uploadedFiles, onLaunch, onOpenChange]);
 
   const iconColor = CATEGORY_ICON_COLOR[workflow.category] ?? "text-muted-foreground";
 
@@ -487,22 +486,6 @@ function LaunchDialog({
             )}
           </div>
 
-          {workflow.suggestedSkills.length > 0 && (
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">Suggested skills</label>
-              <div className="flex flex-wrap gap-1.5">
-                {workflow.suggestedSkills.map((skill) => (
-                  <span
-                    key={skill}
-                    className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400"
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div className="flex items-center gap-2">
             <ModelSelector selected={model} onChange={setModel} />
           </div>
@@ -540,7 +523,7 @@ export function WorkflowsPanel({
   onUploadFiles,
   budgetBlocked = false,
 }: {
-  onLaunch: (prompt: string, model: Model, suggestedSkills: string[], uploadedFiles: string[]) => void;
+  onLaunch: (prompt: string, model: Model, uploadedFiles: string[]) => void;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
   budgetBlocked?: boolean;
 }) {
@@ -555,8 +538,7 @@ export function WorkflowsPanel({
       (w) =>
         w.name.toLowerCase().includes(q) ||
         w.description.toLowerCase().includes(q) ||
-        w.category.toLowerCase().includes(q) ||
-        w.suggestedSkills.some((s) => s.toLowerCase().includes(q))
+        w.category.toLowerCase().includes(q)
     );
   }, [search]);
 
