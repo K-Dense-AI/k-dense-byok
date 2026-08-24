@@ -52,19 +52,6 @@ function capture(cmd, args) {
   return res.status === 0 ? res.stdout.trim() : null;
 }
 
-/** `capture`, but non-blocking so independent lookups can overlap. */
-function captureAsync(cmd, args) {
-  return new Promise((resolve) => {
-    let out = "";
-    const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "ignore"], shell: isWin });
-    child.stdout.on("data", (chunk) => {
-      out += chunk;
-    });
-    child.on("error", () => resolve(null));
-    child.on("close", (code) => resolve(code === 0 ? out.trim() : null));
-  });
-}
-
 const has = (cmd) => capture(cmd, ["--version"]) !== null;
 
 // ---- Step 1: dependency checks -------------------------------------------
@@ -249,72 +236,46 @@ function installPackages(dir, label, packages = []) {
 }
 
 /**
- * Pi's own packages, published together off one version line — so a single
- * lookup pins all three and guarantees a mutually compatible set.
+ * Harness packages that are PINNED to exact versions in server/package.json:
+ * Pi's own three packages (published together off one version line, so they
+ * always share a version) plus the extension packages that version
+ * independently of Pi.
+ *
+ * Every start installs these as explicit `name@version` specs read from
+ * package.json rather than trusting a machine's lockfile resolution, so a
+ * repo checkout with a stale or hand-edited lockfile still converges on the
+ * pinned set. Upgrading the harness is deliberate: bump the pins in
+ * server/package.json (and its lockfile) after verifying compatibility —
+ * upstream releases no longer reach users automatically at their next start.
  */
-const PI_PACKAGES = [
+const HARNESS_PACKAGES = [
   "@earendil-works/pi-agent-core",
   "@earendil-works/pi-ai",
   "@earendil-works/pi-coding-agent",
+  "pi-subagents",
+  "pi-web-access",
+  "skills",
 ];
-
-/**
- * Harness packages that version INDEPENDENTLY of Pi and of each other, so each
- * needs its own lookup.
- *
- * They cannot be left to `npm install`: a caret range on a 0.x version locks
- * the minor (`^0.42.0` never takes 0.43.0), which is how pi-subagents and
- * pi-web-access silently drifted five and four minors behind a current Pi.
- * `skills` is a 1.x package whose caret does float, but it is force-installed
- * here too so every start converges on one known set rather than on whenever
- * a given machine last resolved its lockfile.
- */
-const TRACKED_PACKAGES = ["pi-subagents", "pi-web-access", "skills"];
 
 const VERSION_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 
-/** Latest published version of `name`, or null if npm could not be reached. */
-async function latestVersion(name) {
-  const version = await captureAsync("npm", ["view", `${name}@latest`, "version"]);
-  return version && VERSION_RE.test(version) ? version : null;
-}
-
-async function installBackendPackages() {
-  // One registry round-trip of wall time instead of four: these lookups are
-  // independent, and they sit in front of every full start.
-  const [piVersion, ...trackedVersions] = await Promise.all([
-    latestVersion("@earendil-works/pi-coding-agent"),
-    ...TRACKED_PACKAGES.map(latestVersion),
-  ]);
-
-  // An explicit @latest-derived version updates package.json/package-lock.json;
-  // a plain `npm install` would just re-resolve the existing lockfile.
+function installBackendPackages() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, "server", "package.json"), "utf-8"));
   const specs = [];
-  const unchecked = [];
-  if (piVersion) {
-    log(`  Pi ${sym.arrow} v${piVersion}`);
-    for (const name of PI_PACKAGES) specs.push(`${name}@${piVersion}`);
-  } else {
-    unchecked.push("Pi");
-  }
-  for (const [index, name] of TRACKED_PACKAGES.entries()) {
-    const version = trackedVersions[index];
-    if (version) {
-      log(`  ${name} ${sym.arrow} v${version}`);
-      specs.push(`${name}@${version}`);
-    } else {
-      unchecked.push(name);
+  for (const name of HARNESS_PACKAGES) {
+    const version = pkg.dependencies?.[name];
+    if (!version || !VERSION_RE.test(version)) {
+      fail(
+        `\n  ${sym.err} server/package.json must pin ${name} to an exact version ` +
+          `(found ${version ?? "nothing"}).\n` +
+          "    The harness packages are pinned deliberately — see HARNESS_PACKAGES in start.mjs.",
+      );
     }
+    log(`  ${name} ${sym.arrow} v${version} (pinned)`);
+    specs.push(`${name}@${version}`);
   }
-  if (unchecked.length > 0) {
-    // Partial results still install: a package we could not check keeps
-    // whatever the lockfile already pins rather than blocking startup.
-    log(
-      `  ${sym.warn} Could not check npm for ${unchecked.join(", ")}; ` +
-        "using the version in package-lock.json.",
-    );
-  }
-  installPackages("server", "backend", specs);
+  // --save-exact: npm's default save-prefix would rewrite the pins as ^ranges.
+  installPackages("server", "backend", ["--save-exact", ...specs]);
 }
 
 // ---- Step 4: free the ports --------------------------------------------------
@@ -527,8 +488,9 @@ checkGit();
 checkPython();
 // Pi itself needs no separate install: it's an npm dependency of server/, and
 // the backend install below keeps Pi and the harness extension packages
-// (pi-subagents, pi-web-access, skills) on their latest releases.
-log(`  Pi agent ${sym.ok} (bundled with backend packages — updated on full startup)`);
+// (pi-subagents, pi-web-access, skills) on the versions pinned in
+// server/package.json.
+log(`  Pi agent ${sym.ok} (bundled with backend packages — pinned in server/package.json)`);
 log("");
 
 setupEnv();
@@ -540,7 +502,7 @@ if (flags.check) {
   process.exit(0);
 }
 
-await installBackendPackages();
+installBackendPackages();
 installPackages("web", "frontend");
 log("");
 
