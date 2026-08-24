@@ -19,6 +19,12 @@ function readAppVersion(): string {
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  // The repo-root package.json (npm-start wrapper, no lockfile) makes Turbopack
+  // infer the monorepo root as its workspace root, which breaks module
+  // resolution (e.g. tailwindcss) against web/node_modules.
+  turbopack: {
+    root: __dirname,
+  },
   env: {
     NEXT_PUBLIC_APP_VERSION: readAppVersion(),
   },
