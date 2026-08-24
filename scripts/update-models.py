@@ -14,7 +14,7 @@ Inclusion rules: every OpenRouter model that
     bugs anyway. `~vendor/*-latest` aliases are exempt from the age gate
     because they always redirect to the newest model in their family.
 
-The `default` / `expertDefault` flags are carried forward from the
+The `default` flag is carried forward from the
 existing file by model id; a flagged model is kept even past the age
 cutoff (dropping the app's default would break new chats), and the
 script warns if one has disappeared from OpenRouter entirely. Models
@@ -116,7 +116,7 @@ def main() -> None:
     flags: dict[str, dict[str, bool]] = {}
     try:
         for entry in json.loads(OUT.read_text()):
-            carried = {k: entry[k] for k in ("default", "expertDefault") if entry.get(k)}
+            carried = {k: entry[k] for k in ("default",) if entry.get(k)}
             if carried:
                 flags[entry["id"]] = carried
     except FileNotFoundError:

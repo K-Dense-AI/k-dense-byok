@@ -23,7 +23,6 @@ export type Model = {
   modality: string | null;
   description: string;
   default?: boolean;
-  expertDefault?: boolean;
   isFusion?: boolean;
   fusionConfig?: Record<string, unknown>;
   sourceId?: string;

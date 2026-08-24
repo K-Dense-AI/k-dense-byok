@@ -712,8 +712,7 @@
     },
     "modality": "text+image+file+audio+video->text",
     "description": "Gemini 3.5 Flash is Google's high-efficiency multimodal model, bringing near-Pro level coding and reasoning at Flash-tier cost and speed. It is highly optimized for coding proficiency and parallel agentic execution...",
-    "isFusion": false,
-    "expertDefault": true
+    "isFusion": false
   },
   {
     "id": "openrouter/google/gemini-3.5-flash:batch",
