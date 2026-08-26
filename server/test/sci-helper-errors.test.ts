@@ -1,9 +1,13 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { distillHelperError, runSciHelper } from "../src/api/sci-helpers.ts";
+import { helperPython } from "../src/helpers-env.ts";
+
+const depsOk = spawnSync(helperPython(), ["-c", "import pyteomics"], { stdio: "ignore" }).status === 0;
 
 describe("distillHelperError", () => {
   it("drops import-time warnings that precede the real error", () => {
@@ -53,7 +57,7 @@ describe("distillHelperError", () => {
 });
 
 describe("helper failures reach the caller as a usable message", () => {
-  it("reports the parse error for a corrupt mzML", async () => {
+  it.runIf(depsOk)("reports the parse error for a corrupt mzML", async () => {
     const file = path.join(
       fs.mkdtempSync(path.join(os.tmpdir(), "kady-sci-")),
       "broken.mzml",

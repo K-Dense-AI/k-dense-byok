@@ -99,7 +99,8 @@ describe("download filename headers", () => {
     expect(disposition).toMatch(/filename="r_sum_\.txt"/);
   });
 
-  it("neutralizes a quote that would truncate the header", async () => {
+  // NTFS forbids `"` in filenames, so the fixture cannot exist on Windows.
+  it.skipIf(process.platform === "win32")("neutralizes a quote that would truncate the header", async () => {
     fs.writeFileSync(path.join(uploadDir(), 'we"ird.txt'), "hi", "utf-8");
     const res = await app.inject({
       method: "GET",
