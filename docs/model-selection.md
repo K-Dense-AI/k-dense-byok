@@ -32,6 +32,10 @@ The model picker is generated from OpenRouter models released within the previou
 
 The checked-in list lives at `web/src/data/models.json`, with ids prefixed as `openrouter/<vendor>/<model>`. The backend (`server/src/agent/models.ts`) resolves a picked id to a Pi `Model`: it prefers Pi's built-in OpenRouter entry, and otherwise synthesizes one using the context window, capabilities, and per-1M-token pricing from this catalogue. Pi computes the cost shown in the session/project meters from that pricing, so keeping `models.json` current keeps cost tracking (and the project spend cap) accurate. If the catalogue can't be loaded, the backend logs a startup warning and unknown models fall back to $0 pricing.
 
+### Claude Fable 5 and the skills index
+
+Claude Fable 5 refuses requests whose system prompt carries certain seeded scientific skill descriptions, before generating anything: the run fails with `Provider finish_reason: content_filter` and zero input tokens, and nothing is billed. It affects subagents too, since they inherit the lead's model. The chat error names the enabled skills responsible; see [Known Limitations](./limitations.md#some-models-refuse-the-skills-index) for the list and the workarounds.
+
 ## NVIDIA NIM models
 
 Add an NVIDIA API key (from [build.nvidia.com](https://build.nvidia.com/)) under **Settings → API keys** and an **NVIDIA NIM** section appears in the picker with Pi's built-in NIM catalogue — Nemotron, Llama, GPT-OSS, Kimi, GLM, and others served from `integrate.api.nvidia.com`. The key is stored as `NVIDIA_API_KEY` in `.env`, exactly like the OpenRouter key, and child subagent processes inherit it.

@@ -14,6 +14,7 @@ import {
   contextUsageForClient,
   contextUsageFrame,
   toClientFrame,
+  type ClientFrame,
 } from "../agent/events.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
@@ -34,6 +35,7 @@ import {
   modelReference,
   resolveModel,
 } from "../agent/models.ts";
+import { explainProviderRefusal } from "../agent/model-refusal.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
@@ -733,6 +735,21 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
               getModel: () => (session.model ? modelReference(session.model) : undefined),
               onError: (err) => log.warn({ err }, "provenance recorder step failed"),
             });
+            // A provider refusal reaches the client as an opaque
+            // "Provider finish_reason: content_filter". Attach what to do about
+            // it, naming the enabled skills known to cause it — the classifier
+            // reads the system prompt, so the user cannot find the cause by
+            // rereading what they typed.
+            const withRefusalGuidance = (frame: ClientFrame): ClientFrame =>
+              frame.type === "error" && typeof frame.message === "string"
+                ? {
+                    ...frame,
+                    message: explainProviderRefusal(frame.message, {
+                      projectId,
+                      modelRef: session.model ? modelReference(session.model) : undefined,
+                    }),
+                  }
+                : frame;
             unsubscribePi = session.subscribe((ev) => {
               provenance.observe(ev);
               if (ev.type === "turn_end") {
@@ -742,7 +759,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
                 if (usage) addTurnUsage(turnTally, usage);
               }
               const frame = toClientFrame(ev, paths.sandbox);
-              if (frame) handle.publish(frame);
+              if (frame) handle.publish(withRefusalGuidance(frame));
               if (ev.type === "turn_end") publishContextUsage();
             });
 
@@ -766,7 +783,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
               // frame (e.g. auth failure with an empty assistant turn).
               const errorMessage = session.state.errorMessage;
               if (errorMessage && errorMessage !== priorError) {
-                handle.publish({ type: "error", message: errorMessage });
+                handle.publish(
+                  withRefusalGuidance({ type: "error", message: errorMessage }),
+                );
               }
             } catch (err) {
               handle.publish({ type: "error", message: (err as Error).message });

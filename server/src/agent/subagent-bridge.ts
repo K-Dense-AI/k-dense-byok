@@ -13,6 +13,9 @@
  *     `subagent` calls once the project's spend cap is hit, and (b) ledgers
  *     each child run's usage (child processes have their own sessions, so
  *     their spend would otherwise be invisible to the project budget).
+ *  3. `makeSubagentRefusalExtension()` — annotates a child's tool result when
+ *     the model provider refused it, since that failure happens in another
+ *     process and reaches us only as opaque runner text.
  * Agent definition files themselves (seeding, parsing, CRUD) live in
  * agent-files.ts; the seeding call happens in session-registry before each
  * session build.
@@ -21,7 +24,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, Model, TextContent } from "@earendil-works/pi-ai";
 import { boundedMapSet, boundedSetAdd } from "../bounded.ts";
 import { isBudgetExceeded, recordSubagentRun } from "../cost/ledger.ts";
 import {
@@ -31,6 +34,7 @@ import {
 } from "../cost/billing.ts";
 import { resolvePaths } from "../projects.ts";
 import { listAgents, settingsPinnedModels, subagentsPackageDir } from "./agent-files.ts";
+import { isProviderRefusal, providerRefusalGuidance } from "./model-refusal.ts";
 import { modelReference } from "./models.ts";
 import { isSubscriptionProvider } from "./provider-auth.ts";
 
@@ -672,3 +676,45 @@ export function makeSubagentLedgerExtension(
   };
 }
 
+/** Tools whose text output can carry a child process's provider error. */
+const CHILD_RESULT_TOOLS = new Set(["subagent", "subagent_wait"]);
+
+/**
+ * Explain a provider refusal that killed a child agent.
+ *
+ * A refused child fails inside its own `pi` process, so the only trace that
+ * reaches the parent is the runner's text — "Provider finish_reason:
+ * content_filter" — inside the tool result. Neither the SSE error frame nor
+ * the run route ever sees it, and the lead agent, having no idea what happened,
+ * tends to relay it verbatim or retry the same delegation.
+ *
+ * Appending the guidance to the tool result puts it in front of the lead (so
+ * its summary to the user is right) and in the tool output the UI already
+ * renders. It is appended, never substituted: the provider's own words stay
+ * first so the underlying failure is not obscured.
+ */
+export function makeSubagentRefusalExtension(
+  projectId: string,
+  getParentModel: () => Model<Api> | undefined = () => undefined,
+): ExtensionFactory {
+  return (pi) => {
+    pi.on("tool_result", async (event) => {
+      if (!CHILD_RESULT_TOOLS.has(event.toolName)) return;
+      const refused = event.content.some(
+        (part) => part.type === "text" && isProviderRefusal(part.text),
+      );
+      if (!refused) return;
+      const parentModel = getParentModel();
+      const note: TextContent = {
+        type: "text",
+        text:
+          `A delegated agent was refused by the model provider.\n\n` +
+          providerRefusalGuidance({
+            projectId,
+            modelRef: parentModel ? modelReference(parentModel) : undefined,
+          }),
+      };
+      return { content: [...event.content, note] };
+    });
+  };
+}

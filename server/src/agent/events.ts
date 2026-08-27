@@ -311,7 +311,16 @@ export function toClientFrame(
       if (a.type === "text_delta") return { type: "text_delta", delta: a.delta };
       if (a.type === "thinking_delta") return { type: "thinking_delta", delta: a.delta };
       if (a.type === "error") {
-        return { type: "error", message: `Model error (${a.reason})`, reason: a.reason };
+        // Pi's `reason` is only "error" | "aborted"; the provider's own words
+        // live on the failed assistant message. Dropping them left every
+        // provider failure — refusal, content filter, upstream 5xx — looking
+        // like the same opaque "Model error (error)".
+        const detail = a.error?.errorMessage?.trim();
+        return {
+          type: "error",
+          message: detail ? `Model error: ${detail}` : `Model error (${a.reason})`,
+          reason: a.reason,
+        };
       }
       return null;
     }

@@ -28,7 +28,11 @@ import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
 import { makeScientificResultTool } from "./scientific-result.ts";
 import { clearSessionCompute, makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
-import { makeSubagentLedgerExtension, subagentsExtensionPath } from "./subagent-bridge.ts";
+import {
+  makeSubagentLedgerExtension,
+  makeSubagentRefusalExtension,
+  subagentsExtensionPath,
+} from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
 import {
@@ -178,6 +182,10 @@ async function build(
       // and append it to the parent's log. Needs no tool inside the child — the
       // session file is the record, which is what makes it unauthorable.
       makeSubagentProvenanceExtension(projectId, () => holder.session?.sessionId ?? ""),
+      // A child refused by the provider dies in its own process; the parent
+      // only sees the runner's "Provider finish_reason" text. Attach what to
+      // do about it so the lead reports something actionable.
+      makeSubagentRefusalExtension(projectId, () => holder.session?.model),
       // Child Modal jobs are submitted through the localhost bridge under the
       // child run id; reattribute them to this parent session on completion.
       makeSubagentModalExtension(projectId, () => holder.session?.sessionId ?? ""),

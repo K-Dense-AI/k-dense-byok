@@ -18,6 +18,23 @@ These are limitations of the selected model, not of K-Dense BYOK itself; as mode
 - If a skill isn't behaving as expected, try **re-running the task** - results can vary between runs.
 - Try a different model in the dropdown. OpenRouter entries advertise `tools` support, while connected subscription entries come from Pi's live provider catalogue; tool-calling quality still varies across both.
 
+## Some models refuse the skills index
+
+Anthropic's Mythos-class models run a safety classifier over the whole request before generating anything. On **Claude Fable 5** that classifier rejects a request whose system prompt lists certain seeded scientific skills — the refusal fires on the skill *description* alone, with nothing sensitive in the conversation at all.
+
+What you see is a run that fails immediately, reporting `Provider finish_reason: content_filter` and zero input tokens. A refusal carries no token usage, so nothing is billed. It happens on the lead agent and on subagents alike (children inherit the lead's model), and it is not a K-Dense bug — the same request refuses when sent straight to the provider.
+
+Skills verified to trigger it individually on `anthropic/claude-fable-5` (2026-08-27), all bio-design or pathogen adjacent:
+
+`adaptyv` · `diffdock` · `ginkgo-cloud-lab` · `glycoengineering` · `pathogen-variant-surveillance` · `phylogenetics` · `tamarind`
+
+**Workarounds:**
+
+- **Switch the chat's model.** Claude Opus 4.8, Claude Sonnet 5, and GPT-5.5 accept the same prompt. If subagents were the ones failing, note they inherit the lead's model unless a specialist pins its own in its frontmatter.
+- **Disable the skills you don't need** under Settings → Skills, then open a new chat tab — a live session keeps the skills it already loaded.
+
+When a run fails this way, the error in the chat names the triggering skills that are currently enabled, so you do not have to bisect them by hand. That list is empirical and providers retune their classifiers, so treat it as a starting point rather than a fixed set.
+
 ## Ollama / small local models
 
 Local models served through Ollama are supported end-to-end, but they amplify the caveats above:
