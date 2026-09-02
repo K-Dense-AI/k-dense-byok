@@ -40,6 +40,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 import { registerLocalProviders } from "../agent/models.ts";
+import { warmOpenAICompatibleContextWindows } from "../agent/openai-compatible-context.ts";
 import {
   DIRECT_PROVIDERS,
   providerKeyBodyField,
@@ -110,11 +111,13 @@ function httpUrl(envVar: string): ManagedKey["validate"] {
 /**
  * Re-register the local model servers after their base URL changed (or was
  * cleared back to the default). config.ts reads both URLs per call, so this
- * only refreshes Pi's provider registration.
+ * only refreshes Pi's provider registration — and re-discovers openai-compatible
+ * context windows, which belong to the old host until re-read.
  */
 async function localProvidersHook(_key: string | null, runtime: ModelRuntime): Promise<void> {
   try {
     registerLocalProviders(runtime);
+    void warmOpenAICompatibleContextWindows();
   } catch {
     /* Runtime refresh failure does not undo the persisted environment change. */
   }

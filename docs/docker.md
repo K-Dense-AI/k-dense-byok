@@ -39,7 +39,7 @@ Then open **http://localhost:3000** in your browser.
 ```bash
 docker compose logs -f kady     # watch startup / runtime logs
 docker compose down             # stop (data persists)
-docker compose build --build-arg WITH_LATEX=0 -t kady:lite .   # smaller image
+WITH_LATEX=0 KADY_TAG=lite docker compose build   # smaller image (no TeX)
 docker compose run --rm kady sh -c "npm --prefix server run prep"   # re-seed
 docker compose run --rm kady sh -c "npm --prefix server run test"   # tests
 ```
@@ -137,8 +137,9 @@ compile returns a clean *"LaTeX compiler not found"* result and SyncTeX reports
 **build-time** choice:
 
 ```bash
-docker compose build --build-arg WITH_LATEX=1 -t kady:latest   # LaTeX ON (default)
-docker compose build --build-arg WITH_LATEX=0 -t kady:lite     # LaTeX OFF (~0.5GB smaller)
+docker compose build                                  # LaTeX ON (default, tags kady:latest)
+WITH_LATEX=0 KADY_TAG=lite docker compose build       # LaTeX OFF (~0.5GB smaller)
+# or: docker build --build-arg WITH_LATEX=0 -t kady:lite .
 ```
 
 Honest trade-off: the image is ~5.2GB even without TeX, because the scientific

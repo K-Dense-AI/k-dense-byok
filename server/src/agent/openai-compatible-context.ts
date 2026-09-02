@@ -74,26 +74,48 @@ export function openAICompatibleContextWindow(id: string): number {
   return discovered.get(id) ?? OPENAI_COMPATIBLE_CONTEXT_WINDOW;
 }
 
+/** In-flight / completed warm, with the URL it was fetched from. */
+let warming: { url: string; promise: Promise<void> } | undefined;
+/** Base URL the cache currently describes. */
+let warmedFrom: string | undefined;
+
 /**
- * Warm the cache at startup so a model ref restored from a saved session is
- * sized correctly even if nobody opened the picker. Failure-tolerant: having no
- * local server is the common case, and the default covers it.
+ * Warm the cache so a model ref restored from a saved session is sized
+ * correctly even if nobody opened the picker. setupModelRuntime awaits this — a
+ * fire-and-forget warm races a session's first model resolution. Failure-
+ * tolerant: no local server is the common case, and the default covers it.
+ *
+ * Re-warms when the base URL moves, since Settings repoints it live
+ * (api/credentials.ts) and a window read off the old host describes nothing on
+ * the new one.
  */
-export async function warmOpenAICompatibleContextWindows(): Promise<void> {
-  try {
-    const resp = await fetch(
-      `${openaiCompatibleBaseUrl().replace(/\/+$/, "")}/v1/models`,
-      { signal: AbortSignal.timeout(2000) },
-    );
-    if (!resp.ok) return;
-    const data = (await resp.json()) as { data?: unknown };
-    noteOpenAICompatibleModels(Array.isArray(data.data) ? data.data : []);
-  } catch {
-    // No server, or one that doesn't answer in time. Defaults apply.
-  }
+export function warmOpenAICompatibleContextWindows(): Promise<void> {
+  const baseUrl = openaiCompatibleBaseUrl().replace(/\/+$/, "");
+  if (warming?.url === baseUrl) return warming.promise;
+  if (warmedFrom && warmedFrom !== baseUrl) discovered.clear();
+
+  const promise = (async () => {
+    try {
+      const resp = await fetch(`${baseUrl}/v1/models`, {
+        signal: AbortSignal.timeout(2000),
+      });
+      if (!resp.ok) return;
+      const data = (await resp.json()) as { data?: unknown };
+      noteOpenAICompatibleModels(Array.isArray(data.data) ? data.data : []);
+      warmedFrom = baseUrl;
+    } catch {
+      // Let a later caller retry; the default covers the gap.
+      if (warming?.url === baseUrl) warming = undefined;
+    }
+  })();
+
+  warming = { url: baseUrl, promise };
+  return promise;
 }
 
 /** Test seam. */
 export function resetOpenAICompatibleContextWindows(): void {
   discovered.clear();
+  warming = undefined;
+  warmedFrom = undefined;
 }

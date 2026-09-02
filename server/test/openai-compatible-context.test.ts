@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   contextWindowFromModelEntry,
   noteOpenAICompatibleModels,
   openAICompatibleContextWindow,
   resetOpenAICompatibleContextWindows,
+  warmOpenAICompatibleContextWindows,
 } from "../src/agent/openai-compatible-context.ts";
 import { OPENAI_COMPATIBLE_CONTEXT_WINDOW } from "../src/config.ts";
 
@@ -85,5 +86,73 @@ describe("openAICompatibleContextWindow", () => {
     expect(() =>
       noteOpenAICompatibleModels([{ meta: { n_ctx: 8_192 } }, { id: "  " }, null]),
     ).not.toThrow();
+  });
+});
+
+describe("warmOpenAICompatibleContextWindows", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("populates the cache from a listing and coalesces concurrent calls", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          data: [{ id: "big", meta: { n_ctx: 131_072 } }],
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    await Promise.all([
+      warmOpenAICompatibleContextWindows(),
+      warmOpenAICompatibleContextWindows(),
+    ]);
+    expect(calls).toBe(1);
+    expect(openAICompatibleContextWindow("big")).toBe(131_072);
+  });
+
+  // Settings repoints the base URL live; a window read from the old host must
+  // not be served for the same model id on the new one.
+  it("drops windows learned from a different base URL", async () => {
+    const original = process.env.OPENAI_COMPATIBLE_BASE_URL;
+    let served = 131_072;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      json: async () => ({ data: [{ id: "same-id", meta: { n_ctx: served } }] }),
+    })) as typeof fetch;
+
+    process.env.OPENAI_COMPATIBLE_BASE_URL = "http://host-a:1234";
+    await warmOpenAICompatibleContextWindows();
+    expect(openAICompatibleContextWindow("same-id")).toBe(131_072);
+
+    served = 8_192;
+    process.env.OPENAI_COMPATIBLE_BASE_URL = "http://host-b:8080";
+    await warmOpenAICompatibleContextWindows();
+    expect(openAICompatibleContextWindow("same-id")).toBe(8_192);
+
+    if (original === undefined) delete process.env.OPENAI_COMPATIBLE_BASE_URL;
+    else process.env.OPENAI_COMPATIBLE_BASE_URL = original;
+  });
+
+  it("retries after a failed warm instead of caching the failure", async () => {
+    let attempts = 0;
+    globalThis.fetch = (async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("connection refused");
+      return {
+        ok: true,
+        json: async () => ({ data: [{ id: "big", meta: { n_ctx: 65_536 } }] }),
+      } as Response;
+    }) as typeof fetch;
+
+    await warmOpenAICompatibleContextWindows();
+    expect(openAICompatibleContextWindow("big")).toBe(DEFAULT_WINDOW);
+    await warmOpenAICompatibleContextWindows();
+    expect(openAICompatibleContextWindow("big")).toBe(65_536);
   });
 });

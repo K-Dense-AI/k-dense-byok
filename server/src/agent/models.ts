@@ -375,9 +375,12 @@ export function pruneStaleOpenRouterCatalog(
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   registerLocalProviders(modelRuntime);
 
-  // Warm the openai-compatible context-window cache from `/v1/models` (not
-  // awaited: startup must not block on a server that may not be running).
-  void warmOpenAICompatibleContextWindows();
+  // Warm the openai-compatible context-window cache from `/v1/models` before
+  // any model can be resolved. Awaited: a restored session can resolve its
+  // model immediately after this returns, and a fire-and-forget warm races
+  // that (fallback 32K → empty replies). The fetch times out at 2s, so a
+  // missing server does not stall boot.
+  await warmOpenAICompatibleContextWindows();
 
   // Let Pi resolve stored credentials before ambient keys, consistently in
   // lead/child runtimes and after restart. A runtime override masks OAuth.
