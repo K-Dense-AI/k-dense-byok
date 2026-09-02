@@ -19,6 +19,11 @@ function reset(): void {
 beforeEach(reset);
 afterAll(() => fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }));
 
+// Pinned so the suite does not inherit DEFAULT_MODEL_PROVIDER/DEFAULT_MODEL_ID
+// from the developer's shell: a local provider bills as free, which silently
+// turns every budget assertion into a no-op.
+const PAID_MODEL = "openrouter/anthropic/claude-opus-5";
+
 function fakeMessage(text: string): AssistantMessage {
   return {
     role: "assistant",
@@ -108,21 +113,20 @@ describe("runLatexAssist", () => {
   it("throws 402 when the project budget is exhausted", async () => {
     const p = createProject({ name: "Broke", spendLimitUsd: 0.000001 });
     updateProject(p.id, {});
+    const req = {
+      mode: "edit" as const,
+      fileName: "m.tex",
+      instruction: "x",
+      selection: "y",
+      model: PAID_MODEL,
+    };
     // Seed spend past the limit
     await withActiveProject(p.id, () =>
-      runLatexAssist(
-        { mode: "edit", fileName: "m.tex", instruction: "x", selection: "y" },
-        p.id,
-        async () => fakeMessage("ok"),
-      ),
+      runLatexAssist(req, p.id, async () => fakeMessage("ok")),
     );
     await expect(
       withActiveProject(p.id, () =>
-        runLatexAssist(
-          { mode: "edit", fileName: "m.tex", instruction: "x", selection: "y" },
-          p.id,
-          async () => fakeMessage("ok"),
-        ),
+        runLatexAssist(req, p.id, async () => fakeMessage("ok")),
       ),
     ).rejects.toMatchObject({ status: 402 });
   });

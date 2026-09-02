@@ -24,6 +24,11 @@ const entryOf = (over: Partial<NotebookEntry> = {}): NotebookEntry => ({
   id: "e1", type: "method", title: "Ran PCA", timestamp: 1000, role: "agent", ...over,
 });
 
+// Pinned so the suite does not inherit DEFAULT_MODEL_PROVIDER/DEFAULT_MODEL_ID
+// from the developer's shell: a local provider bills as free, which silently
+// turns every budget assertion into a no-op.
+const PAID_MODEL = "openrouter/anthropic/claude-opus-5";
+
 function fakeMessage(text: string, over: Partial<AssistantMessage> = {}): AssistantMessage {
   return {
     role: "assistant",
@@ -134,7 +139,9 @@ describe("runMethodsDraft", () => {
     });
     await expect(
       withActiveProject(p.id, () =>
-        runMethodsDraft("s", p.id, {}, async () => fakeMessage("x")),
+        runMethodsDraft("s", p.id, { model: PAID_MODEL }, async () =>
+          fakeMessage("x"),
+        ),
       ),
     ).rejects.toMatchObject({ status: 402 });
   });
