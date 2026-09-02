@@ -78,11 +78,11 @@ OAuth tokens are kept outside the repository and all projects. By default Pi sto
 ## 5. Start the app
 
 ```bash
-./start.sh     # macOS / Linux
-.\start.cmd    # Windows
+./kady         # macOS / Linux
+.\kady.cmd     # Windows
 ```
 
-(Both are thin wrappers around the same cross-platform launcher — `node start.mjs` works anywhere too.)
+(`start.sh` / `start.cmd` remain supported for compatibility; all wrappers use the same cross-platform `start.mjs` launcher.)
 
 The first run takes a few minutes. The script automatically:
 
@@ -109,20 +109,19 @@ The `.env` file also lists keys for specific scientific databases (NCBI, Materia
 
 ## Updating to a new version
 
-From the project folder:
+From the project folder, use the built-in updater:
 
 ```bash
-git pull
-./start.sh     # macOS / Linux
-.\start.cmd    # Windows
+./kady update         # macOS / Linux
+.\kady.cmd update    # Windows
 ```
 
-The startup script picks up any new packages and skills automatically.
+It fast-forwards the current branch from its configured upstream and exits. It refuses to run over tracked local changes, a detached HEAD, or a branch without an upstream, so it never stashes, resets, or merges local work automatically. Start Kady normally afterwards; the launcher picks up any new packages and skills automatically.
 
 ## Troubleshooting
 
-- **`./start.sh: Permission denied`** (macOS/Linux) — run `chmod +x start.sh` once, then try again.
-- **Windows says "Windows protected your PC"** when double-clicking `start.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\start.cmd`).
+- **`./kady: Permission denied`** (macOS/Linux) — run `chmod +x kady start.sh` once, then try again.
+- **Windows says "Windows protected your PC"** when double-clicking `kady.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\kady.cmd`).
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
 - **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys** (OpenRouter or NVIDIA), start Ollama, or connect a supported subscription in **Settings → Model providers**.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.

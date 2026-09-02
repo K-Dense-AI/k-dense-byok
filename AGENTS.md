@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-K-Dense BYOK is a local AI research-assistant app ("Kady") that brings the user's own model credentials (API keys or supported subscriptions). It runs natively on macOS, Linux, and Windows. It is one repo with **two** runtime services started together by the cross-platform launcher `start.mjs` (wrapped by `./start.sh` on macOS/Linux and `start.cmd` on Windows):
+K-Dense BYOK is a local AI research-assistant app ("Kady") that brings the user's own model credentials (API keys or supported subscriptions). It runs natively on macOS, Linux, and Windows. It is one repo with **two** runtime services started together by the cross-platform launcher `start.mjs` (exposed as `./kady` on macOS/Linux and `kady.cmd` on Windows; `start.sh` / `start.cmd` remain compatibility aliases):
 
 | Service | Port | Code |
 |---|---|---|
@@ -38,8 +38,10 @@ npm run test                # vitest
 Full app (both services):
 
 ```bash
-./start.sh                  # installs deps, seeds skills, starts backend + frontend
-start.cmd                   # same, on Windows (both wrap `node start.mjs`)
+./kady                      # installs deps, seeds skills, starts backend + frontend
+kady.cmd                    # same, on Windows
+./kady update               # safely fast-forwards the current checkout and exits
+./start.sh / start.cmd      # compatibility aliases (all wrap `node start.mjs`)
 ```
 
 ## Architecture: how a turn flows

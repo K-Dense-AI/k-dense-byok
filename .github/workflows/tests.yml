@@ -67,6 +67,15 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Run launcher unit tests
+        run: npm run test:launcher
+      - name: Run kady --check
+        if: runner.os != 'Windows'
+        run: ./kady --check
+      - name: Run kady.cmd --check
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: kady.cmd --check
       - name: Run start.sh --check
         if: runner.os != 'Windows'
         run: ./start.sh --check
