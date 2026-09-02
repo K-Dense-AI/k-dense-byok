@@ -26,6 +26,7 @@ import { getBuiltinModelDataGeneratedAt } from "@earendil-works/pi-ai/providers/
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
+  OPENAI_COMPATIBLE_CONTEXT_WINDOW,
   REPO_ROOT,
   ollamaBaseUrl,
   openaiCompatibleBaseUrl,
@@ -260,7 +261,9 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 32_768,
+    // Must track the local server's real context (llama.cpp --ctx-size), or
+    // Pi reserves almost no output tokens once the prompt approaches 32K.
+    contextWindow: OPENAI_COMPATIBLE_CONTEXT_WINDOW,
     maxTokens: 8192,
   };
 }

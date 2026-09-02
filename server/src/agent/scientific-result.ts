@@ -23,7 +23,14 @@ export const MAX_SCIENTIFIC_RESULT_BYTES = 64 * 1024;
 
 const ShortString = Type.String({ minLength: 1, maxLength: 200 });
 const MediumString = Type.String({ minLength: 1, maxLength: 500 });
-const LongString = Type.String({ minLength: 1, maxLength: 2_000 });
+// No `maxLength`: llama.cpp's JSON-schema -> GBNF converter generates an
+// unparseable grammar for a string with a `maxLength` of exactly 2000 when the
+// field is nested inside an array-of-objects (caption/note/interpretation/
+// message), which fails every tool call with "Failed to initialize samplers:
+// failed to parse grammar". Lengths aren't enforced at the schema level
+// anyway — the 64KB card cap in normalizeCard is the real bound — so drop the
+// upper bound to stay compatible with local llama.cpp servers.
+const LongString = Type.String({ minLength: 1 });
 const PathString = Type.String({ minLength: 1, maxLength: 1_000 });
 const Scalar = Type.Union([
   Type.String({ maxLength: 500 }),
@@ -227,7 +234,7 @@ const CitationSchema = Type.Object(
     ]),
     identifier: MediumString,
     title: Type.Optional(MediumString),
-    url: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+    url: Type.Optional(Type.String({ minLength: 1 })), // see LongString: no maxLength for llama.cpp grammar compat
     authors: Type.Optional(Type.Array(ShortString, { maxItems: 20 })),
     year: Type.Optional(Type.Integer({ minimum: 0, maximum: 9999 })),
     note: Type.Optional(LongString),
