@@ -46,26 +46,9 @@ RUN set -eux; \
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
     && uv --version
 
-# ---- Dependencies (layer-cached ahead of source) -----------------------------
-WORKDIR /app
-
-COPY web/package.json web/package-lock.json ./web/
-RUN cd web && npm ci --no-audit --no-fund
-
-COPY server/package.json server/package-lock.json ./server/
-RUN cd server && npm ci --no-audit --no-fund
-
-# ---- Source ------------------------------------------------------------------
-COPY . .
-
-# Bake the scientific helper venv (numpy/anndata/rdkit/…) at build time.
-RUN cd server/src/helpers && uv sync
-
-# Empty root .env stops start.mjs from copying .env.example over compose keys.
-RUN touch /app/.env
-
-# ---- Runtime -----------------------------------------------------------------
-# Listen on all interfaces inside the container; compose still publishes
+# ---- Environment -------------------------------------------------------------
+# Set before the build steps, not just for runtime: npm and uv key their caches
+# off HOME. Listening on 0.0.0.0 is container-internal; compose still publishes
 # 127.0.0.1 only. HOSTNAME=0.0.0.0 does the same for `next dev`.
 ENV \
     HOME=/home/node \
@@ -75,12 +58,42 @@ ENV \
     KADY_HOST=0.0.0.0 \
     HOSTNAME=0.0.0.0
 
-# Owned by node; the entrypoint re-fixes bind-mounts and drops to node.
-RUN mkdir -p /data/projects /data/config/skills-cache \
-    && chown -R node:node /data /app
+# Built as `node` throughout, into dirs it already owns. Chowning /app after
+# the fact instead costs a 2.2 GB layer: chown rewrites metadata on every file,
+# so Docker copies node_modules and the uv venv into a fresh layer.
+RUN mkdir -p /app /data/projects /data/config/skills-cache \
+    && chown -R node:node /app /data
+USER node
 
+# ---- Dependencies (layer-cached ahead of source) -----------------------------
+WORKDIR /app
+
+# Cache mounts keep npm's and uv's caches out of the image (~1.2 GB of bytes
+# nothing at runtime reads) while still making rebuilds fast.
+COPY --chown=node:node web/package.json web/package-lock.json ./web/
+RUN --mount=type=cache,uid=1000,gid=1000,target=/home/node/.npm \
+    cd web && npm ci --no-audit --no-fund
+
+COPY --chown=node:node server/package.json server/package-lock.json ./server/
+RUN --mount=type=cache,uid=1000,gid=1000,target=/home/node/.npm \
+    cd server && npm ci --no-audit --no-fund
+
+# ---- Source ------------------------------------------------------------------
+COPY --chown=node:node . .
+
+# Bake the scientific helper venv (numpy/anndata/rdkit/…) at build time.
+RUN --mount=type=cache,uid=1000,gid=1000,target=/home/node/.cache/uv \
+    cd server/src/helpers && uv sync
+
+# Empty root .env stops start.mjs from copying .env.example over compose keys.
+RUN touch /app/.env
+
+# ---- Runtime -----------------------------------------------------------------
 EXPOSE 3000 8000
 
+# Back to root only for the entrypoint, which must start privileged to chown
+# bind-mounted volumes before setpriv drops back to node.
+USER root
 COPY docker-entrypoint.sh /usr/local/bin/kady-entrypoint
 RUN chmod +x /usr/local/bin/kady-entrypoint
 

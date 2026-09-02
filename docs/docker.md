@@ -91,13 +91,32 @@ Leave off the `/v1`.
 picker's "Local (OpenAI-compatible)" section visible even before a server is
 running, so you can point it at a to-be-started endpoint.
 
-> **Match the context window to the server.** Kady defaults to declaring a
-> 32K window for local models. If you serve a model with a larger context
-> (llama.cpp `--ctx-size`, e.g. `131072`), set `OPENAI_COMPATIBLE_CONTEXT_WINDOW`
-> to match. Otherwise, once the system prompt + tool schemas push the prompt
-> past 32K, Pi reserves almost no output tokens and every run comes back empty
-> (the request shows `max_completion_tokens: 1`).
-> `OPENAI_COMPATIBLE_CONTEXT_WINDOW=131072`
+#### Context windows are detected automatically
+
+Kady reads each model's real context window off the same `/v1/models` listing
+it uses to populate the picker — `meta.n_ctx` on llama.cpp (the served
+`--ctx-size`), `max_model_len` on vLLM. A `llama-server` started with
+`--ctx-size 131072` is declared as 131072 with no configuration, and an 8K
+embedding model served alongside it is declared as 8192. You do not normally
+need to set anything.
+
+This matters because a wrong window fails quietly: declare one *smaller* than
+the prompt and Pi reserves almost no output tokens, so every run comes back
+empty (the request shows `max_completion_tokens: 1`); declare one *larger* than
+the server allocated and the server truncates or rejects.
+
+Detection only works for models the server has actually **loaded** — a
+llama.cpp router lists every configured preset but reports `meta` only for live
+instances — and LM Studio reports context on its own `/api/v0/models` rather
+than the OpenAI-compatible route. For those cases, set the fallback:
+
+```dotenv
+OPENAI_COMPATIBLE_CONTEXT_WINDOW=131072
+```
+
+It applies only where nothing was detected; a window read from the server
+always wins, since one global number cannot be right for every model a server
+hosts.
 
 ### Why not bundle Ollama/llama.cpp in the image?
 

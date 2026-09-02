@@ -23,14 +23,11 @@ export const MAX_SCIENTIFIC_RESULT_BYTES = 64 * 1024;
 
 const ShortString = Type.String({ minLength: 1, maxLength: 200 });
 const MediumString = Type.String({ minLength: 1, maxLength: 500 });
-// No `maxLength`: llama.cpp's JSON-schema -> GBNF converter generates an
-// unparseable grammar for a string with a `maxLength` of exactly 2000 when the
-// field is nested inside an array-of-objects (caption/note/interpretation/
-// message), which fails every tool call with "Failed to initialize samplers:
-// failed to parse grammar". Lengths aren't enforced at the schema level
-// anyway — the 64KB card cap in normalizeCard is the real bound — so drop the
-// upper bound to stay compatible with local llama.cpp servers.
-const LongString = Type.String({ minLength: 1 });
+// 2048, not 2000: llama.cpp emits an unparseable grammar for a nested string
+// bounded at exactly 2000 (1999 and 2001 are both fine), failing every tool
+// call with "failed to parse grammar". Keep the bound — it is enforced, and the
+// 64KB cap below is an aggregate guard, not a per-field one.
+const LongString = Type.String({ minLength: 1, maxLength: 2_048 });
 const PathString = Type.String({ minLength: 1, maxLength: 1_000 });
 const Scalar = Type.Union([
   Type.String({ maxLength: 500 }),
@@ -103,13 +100,8 @@ const StatisticalTestSchema = Type.Object(
     adjustedPValue: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     effectSize: Type.Optional(Type.Number()),
     effectSizeLabel: Type.Optional(ShortString),
-    // A 2-element array rather than Type.Tuple: TypeBox emits tuples in
-    // draft-07 style (`items: [...]` plus `additionalItems`), and
-    // `additionalItems` was removed in JSON Schema draft 2020-12. Anthropic
-    // validates tool schemas against 2020-12 and rejects the whole request
-    // ("input_schema: JSON schema is invalid"), so a tuple anywhere in a tool's
-    // parameters breaks every call on that provider. Both positions are plain
-    // numbers, so nothing is lost.
+    // Not Type.Tuple: TypeBox emits draft-07 `additionalItems`, which draft
+    // 2020-12 removed, and Anthropic rejects the whole tool schema over it.
     confidenceInterval: Type.Optional(
       Type.Array(Type.Number(), { minItems: 2, maxItems: 2 }),
     ),
@@ -234,7 +226,7 @@ const CitationSchema = Type.Object(
     ]),
     identifier: MediumString,
     title: Type.Optional(MediumString),
-    url: Type.Optional(Type.String({ minLength: 1 })), // see LongString: no maxLength for llama.cpp grammar compat
+    url: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
     authors: Type.Optional(Type.Array(ShortString, { maxItems: 20 })),
     year: Type.Optional(Type.Integer({ minimum: 0, maximum: 9999 })),
     note: Type.Optional(LongString),
@@ -268,8 +260,8 @@ const MoleculeCardSchema = Type.Object(
     index: Type.Optional(Type.Integer({ minimum: 0 })),
     name: Type.Optional(ShortString),
     formula: Type.Optional(ShortString),
-    smiles: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
-    inchi: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+    smiles: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
+    inchi: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
     molecularWeight: Type.Optional(Type.Number({ minimum: 0 })),
     atomCount: Type.Optional(Type.Integer({ minimum: 0 })),
     bondCount: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -281,11 +273,9 @@ const MoleculeCardSchema = Type.Object(
 );
 
 /**
- * The stored card envelope: a discriminated union, one branch per kind.
- *
- * This is the shape persisted in the tool-result details and consumed by the
- * frontend (`web/src/lib/scientific-results.ts` mirrors it). It is deliberately
- * NOT the tool's input schema — see ScientificResultParams for why.
+ * The stored card envelope, persisted in the tool-result details and mirrored by
+ * `web/src/lib/scientific-results.ts`. Not the tool's input schema — see
+ * ScientificResultParams.
  */
 export const ScientificResultCardSchema = Type.Union(
   [
@@ -307,24 +297,15 @@ export const ScientificResultCardSchema = Type.Union(
 export type ScientificResultCard = Static<typeof ScientificResultCardSchema>;
 
 /**
- * The tool's INPUT schema: one flat object, with `kind` as the discriminant and
- * every kind-specific field optional.
+ * The tool's INPUT schema: one flat object, `kind` as the discriminant, every
+ * kind-specific field optional.
  *
- * Why not reuse the union above? Pi passes `tool.parameters` to the provider
- * verbatim, and OpenAI-style function calling requires `parameters` to be an
- * object schema with `properties`. A top-level `anyOf` has neither, so on the
- * `openai-completions` API (which is how OpenRouter models are driven here) the
- * model received no property names or types at all: it guessed, sent
- * `schemaVersion: "1"` and JSON-encoded strings for arrays, and every call
- * failed validation. Flattening restores a real schema for the model.
- *
- * The cost is that kind/field agreement is no longer expressed in the schema.
- * It is enforced in `cardFromParams`, which validates the assembled card
- * against that kind's exact branch — so the stored envelope is still guaranteed
- * to satisfy ScientificResultCardSchema.
- *
- * `additionalProperties` is left open on purpose: a stray field is stripped
- * during assembly, which beats failing the call and burning a retry.
+ * Not the union above, because OpenAI-style function calling requires
+ * `parameters` to be an object schema with `properties`. A top-level `anyOf`
+ * has neither, so the model saw no property names at all and every call failed
+ * validation. Kind/field agreement moves to `cardFromParams`, which validates
+ * against that kind's exact branch. `additionalProperties` stays open: a stray
+ * field is stripped during assembly rather than burning a retry.
  */
 export const ScientificResultParams = Type.Object(
   {
@@ -385,8 +366,8 @@ export const ScientificResultParams = Type.Object(
     index: Type.Optional(Type.Integer({ minimum: 0 })),
     name: Type.Optional(ShortString),
     formula: Type.Optional(ShortString),
-    smiles: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
-    inchi: Type.Optional(Type.String({ minLength: 1, maxLength: 2_000 })),
+    smiles: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
+    inchi: Type.Optional(Type.String({ minLength: 1, maxLength: 2_048 })),
     molecularWeight: Type.Optional(Type.Number({ minimum: 0 })),
     atomCount: Type.Optional(Type.Integer({ minimum: 0 })),
     bondCount: Type.Optional(Type.Integer({ minimum: 0 })),
@@ -401,12 +382,10 @@ export const ScientificResultParams = Type.Object(
 export type ScientificResultParamsT = Static<typeof ScientificResultParams>;
 
 /**
- * Per-kind field ownership. `props` are the fields copied onto the card for that
- * kind (anything else the model sent is dropped); `required` drives a friendly
- * error before schema validation, whose union-wide messages are unreadable.
- *
- * `dataset-schema` and `molecule` have no single required field — each needs one
- * of several alternatives, which normalizeCard already checks and reports.
+ * Per-kind field ownership. `props` are copied onto the card (anything else is
+ * dropped); `required` drives a friendly error ahead of schema validation.
+ * `dataset-schema` and `molecule` list none — each needs one of several
+ * alternatives, which normalizeCard checks instead.
  */
 const KIND_SPEC = {
   table: {
@@ -462,11 +441,8 @@ const KIND_SPEC = {
 >;
 
 /**
- * Assemble the stored card from flat params, stamping the schema version.
- *
- * The version is server-supplied rather than model-supplied: it is not the
- * model's to choose, and asking for it was one of the things that broke —
- * `Type.Literal(1)` arrived as the string "1".
+ * Assemble the stored card from flat params. The schema version is stamped
+ * server-side: asking the model for it produced the string "1".
  */
 export function cardFromParams(params: ScientificResultParamsT): ScientificResultCard {
   const spec = KIND_SPEC[params.kind];
@@ -489,8 +465,8 @@ export function cardFromParams(params: ScientificResultParamsT): ScientificResul
     if (supplied[key] !== undefined) card[key] = supplied[key];
   }
 
-  // Validate against this kind's branch, not the union: union errors enumerate
-  // every branch at once and are useless to a model trying to correct itself.
+  // This kind's branch, not the union: union errors enumerate every branch and
+  // are useless to a model trying to correct itself.
   if (!Value.Check(spec.schema as typeof TableCardSchema, card)) {
     const detail = [...Value.Errors(spec.schema as typeof TableCardSchema, card)]
       .slice(0, 5)

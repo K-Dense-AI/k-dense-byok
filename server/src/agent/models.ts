@@ -26,7 +26,6 @@ import { getBuiltinModelDataGeneratedAt } from "@earendil-works/pi-ai/providers/
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
-  OPENAI_COMPATIBLE_CONTEXT_WINDOW,
   REPO_ROOT,
   ollamaBaseUrl,
   openaiCompatibleBaseUrl,
@@ -35,6 +34,10 @@ import { readAppDefaults } from "../app-settings.ts";
 import { isSubscriptionProvider, subscriptionProvider } from "./provider-auth.ts";
 import { customProviderName, isCustomProvider } from "./custom-models.ts";
 import { canonicalProviderId, directProvider, isDirectProvider } from "./provider-catalog.ts";
+import {
+  openAICompatibleContextWindow,
+  warmOpenAICompatibleContextWindows,
+} from "./openai-compatible-context.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
 // OpenAI-compatible provider can point at any compatible gateway — e.g.
@@ -247,9 +250,12 @@ function buildOllamaModel(name: string): Model<Api> {
  * path to buildOllamaModel rather than a shared base — the two only look alike
  * because both endpoints happen to be OpenAI-shaped.
  *
- * `/v1/models` carries no pricing or context length anywhere near reliably, so
- * this uses the same $0 / 32K defaults Ollama does. $0 is honest here only
- * because the provider is local-only; see `billingForProvider`.
+ * `/v1/models` carries no pricing, so this uses the same $0 default Ollama
+ * does. $0 is honest here only because the provider is local-only; see
+ * `billingForProvider`.
+ *
+ * The context window is read back from the server's own listing — see
+ * `openai-compatible-context.ts`.
  */
 export function buildOpenAICompatibleModel(name: string): Model<Api> {
   return {
@@ -261,9 +267,7 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    // Must track the local server's real context (llama.cpp --ctx-size), or
-    // Pi reserves almost no output tokens once the prompt approaches 32K.
-    contextWindow: OPENAI_COMPATIBLE_CONTEXT_WINDOW,
+    contextWindow: openAICompatibleContextWindow(name),
     maxTokens: 8192,
   };
 }
@@ -370,6 +374,10 @@ export function pruneStaleOpenRouterCatalog(
 /** Configure app-specific providers and normalize the legacy OpenRouter alias. */
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   registerLocalProviders(modelRuntime);
+
+  // Warm the openai-compatible context-window cache from `/v1/models` (not
+  // awaited: startup must not block on a server that may not be running).
+  void warmOpenAICompatibleContextWindows();
 
   // Let Pi resolve stored credentials before ambient keys, consistently in
   // lead/child runtimes and after restart. A runtime override masks OAuth.
