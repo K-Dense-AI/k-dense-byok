@@ -1,0 +1,26 @@
+# Git and editor state
+.git
+.gitignore
+.github
+.vscode
+.idea
+.DS_Store
+
+# Never copy local credentials or user data into an image
+.env
+.env.*
+!.env.example
+projects
+
+# Dependencies and build output are recreated in the image
+**/node_modules
+**/.next
+**/dist
+**/coverage
+**/.turbo
+
+# Local/runtime noise
+**/*.log
+**/.venv
+**/__pycache__
+**/.pytest_cache

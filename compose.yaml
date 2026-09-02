@@ -1,0 +1,28 @@
+services:
+  kady:
+    image: ghcr.io/k-dense-ai/k-dense-byok:latest
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_ADK_API_URL: ${NEXT_PUBLIC_ADK_API_URL:-http://localhost:8000}
+    ports:
+      - "${KADY_FRONTEND_PORT:-3000}:3000"
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      KADY_HOST: 0.0.0.0
+      KADY_PORT: 8000
+      KADY_FRONTEND_PORT: 3000
+      KADY_PROJECTS_ROOT: /data/projects
+      KADY_PI_AGENT_DIR: /home/node/.kady/pi-agent
+    volumes:
+      - ./projects:/data/projects
+      - kady-state:/home/node/.kady
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+volumes:
+  kady-state:

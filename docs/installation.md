@@ -12,6 +12,8 @@ This guide walks you through installing K-Dense BYOK from scratch. No coding exp
 
 Everything else (Python tooling, packages, scientific skills) is installed automatically the first time you start the app.
 
+If you prefer Docker, Node.js and the other host requirements are not needed. Install Docker Desktop or Docker Engine with Compose and follow the [Docker guide](./docker.md).
+
 > **Optional — LaTeX PDF reports:** if you want Kady's LaTeX editor to compile PDFs, install a TeX distribution: [MacTeX](https://www.tug.org/mactex/) (macOS), TeX Live (Linux), or [MiKTeX](https://miktex.org/) / [TeX Live](https://www.tug.org/texlive/) (Windows). Not needed for normal use.
 
 ## 2. Choose model access

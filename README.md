@@ -127,6 +127,18 @@ The first start installs everything automatically (it takes a few minutes); then
 
 That's it. Create a project, drop in your data, and ask Kady for what you want — for example: *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
 
+### Docker
+
+If you already have Docker, the same app can run in one container:
+
+```bash
+git clone https://github.com/K-Dense-AI/k-dense-byok.git
+cd k-dense-byok
+docker compose up -d
+```
+
+Open **http://localhost:3000**. Project files stay in `./projects`, while provider logins and Kady state use a persistent Docker volume. See [Docker](./docs/docker.md) for the pre-built image, local-model networking, updates, and custom ports.
+
 ➡️ **Step-by-step details, optional API keys, and troubleshooting:** [Installation guide](./docs/installation.md)
 ➡️ **Your first session and everyday features:** [Basic usage](./docs/basic-usage.md)
 ➡️ **Prefer to watch first?** [Tutorial videos](#tutorial-videos)
@@ -154,6 +166,7 @@ All guides live in the [`docs/`](./docs) folder:
 |-------|----------------|
 | [Codebase summary](./docs/codebase-summary.md) | One-page overview of what K-Dense BYOK is, what it can do, and why it matters |
 | [Installation](./docs/installation.md) | Full setup walkthrough, subscriptions, optional API keys, updating, troubleshooting |
+| [Docker](./docs/docker.md) | Run Kady with Docker Compose or the pre-built GHCR image |
 | [Basic usage](./docs/basic-usage.md) | First session, chat tabs, files, workflows, databases, costs, tips |
 | [File previews](./docs/file-previews.md) | Every scientific format Kady can render — structures, spectra, imaging, arrays, and more |
 | [Living Lab Notebook](./docs/lab-notebook.md) | Real-time record of Kady's work — structured entries, export, and PDF |
