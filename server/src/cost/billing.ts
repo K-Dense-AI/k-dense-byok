@@ -1,10 +1,12 @@
 import type { Api, AuthType, Model } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { openAICompatibleBillingMode } from "../config.ts";
 
 export type BillingMode =
   | "payg"
   | "metered_oauth"
   | "subscription"
+  | "external"
   | "local"
   | "compute";
 
@@ -35,11 +37,23 @@ export function billingForProvider(
   provider: string,
   authType: LedgerAuthType = "none",
 ): BillingContext {
-  // Local model servers only. Both are $0 because the model runs on the user's
-  // own hardware — do not extend this branch to a hosted gateway, whose real
-  // spend would then be invisible to the project cap.
-  if (provider === "ollama" || provider === "openai-compatible") {
+  if (provider === "ollama") {
     return { provider, authType: "local", billingMode: "local" };
+  }
+  if (provider === "openai-compatible") {
+    const mode =
+      authType === "none"
+        ? openAICompatibleBillingMode()
+        : authType === "local"
+          ? "local"
+          : "external";
+    return mode === "local"
+      ? { provider, authType: "local", billingMode: "local" }
+      : {
+          provider,
+          authType: authType === "none" ? "api_key" : authType,
+          billingMode: "external",
+        };
   }
   if (provider === "modal") {
     return { provider, authType: "none", billingMode: "compute" };
@@ -78,8 +92,12 @@ export async function billingForModel(
   model: Model<Api>,
   runtime: Pick<ModelRuntime, "checkAuth">,
 ): Promise<BillingContext> {
-  if (model.provider === "ollama" || model.provider === "openai-compatible") {
-    return billingForProvider(model.provider, "local");
+  if (model.provider === "ollama") return billingForProvider("ollama", "local");
+  if (model.provider === "openai-compatible") {
+    return billingForProvider(
+      "openai-compatible",
+      openAICompatibleBillingMode() === "external" ? "api_key" : "local",
+    );
   }
   const auth = await runtime.checkAuth(model.provider);
   return billingForProvider(model.provider, auth?.type ?? "none");

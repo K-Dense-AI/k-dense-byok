@@ -26,6 +26,7 @@ import { createRequire } from "node:module";
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, TextContent } from "@earendil-works/pi-ai";
 import { boundedMapSet, boundedSetAdd } from "../bounded.ts";
+import { openAICompatibleBillingMode } from "../config.ts";
 import { isBudgetExceeded, recordSubagentRun } from "../cost/ledger.ts";
 import {
   billingCountsTowardBudget,
@@ -229,7 +230,10 @@ function billingFromModelRef(
   }
   if (ref.startsWith("ollama/")) return billingForProvider("ollama", "local");
   if (ref.startsWith("openai-compatible/")) {
-    return billingForProvider("openai-compatible", "local");
+    return billingForProvider(
+      "openai-compatible",
+      openAICompatibleBillingMode() === "external" ? "api_key" : "local",
+    );
   }
   if (ref.startsWith("fusion/") || ref.startsWith("openrouter/")) {
     return billingForProvider("openrouter", "api_key");

@@ -8,6 +8,7 @@ import {
   resolveModel,
   ModelResolutionError,
   assertModelAuthentication,
+  setupModelRuntime,
 } from "../src/agent/models.ts";
 import { getModelRegistry } from "../src/agent/session-registry.ts";
 import {
@@ -22,9 +23,9 @@ import {
   pinInheritedChildModels,
 } from "../src/agent/subagent-bridge.ts";
 
-// A local OpenAI-compatible server (LM Studio, vLLM, …) discovered through the
-// standard /v1/models endpoint. Everything here is local-only by design: the $0
-// pricing below is only honest because the model runs on the user's hardware.
+// OpenAI-compatible endpoints discovered through the standard /v1/models endpoint.
+// No-key endpoints retain local/free semantics; authenticated generic proxies are
+// marked externally billed because their real pricing is not reliably discoverable.
 
 describe("buildOpenAICompatibleModel", () => {
   it("builds a $0, non-reasoning model against the configured base URL", () => {
@@ -41,6 +42,23 @@ describe("buildOpenAICompatibleModel", () => {
   it("round-trips through modelReference", () => {
     const model = buildOpenAICompatibleModel("qwen3-8b");
     expect(modelReference(model)).toBe("openai-compatible/qwen3-8b");
+  });
+});
+
+describe("setupModelRuntime (openai-compatible auth)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("registers the configured endpoint key with the OpenAI-compatible provider", async () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "proxy-secret");
+    const registerProvider = vi.fn();
+    const runtime = { registerProvider, setRuntimeApiKey: vi.fn() };
+
+    await setupModelRuntime(runtime as never);
+
+    expect(registerProvider).toHaveBeenCalledWith(
+      "openai-compatible",
+      expect.objectContaining({ apiKey: "proxy-secret", api: "openai-completions" }),
+    );
   });
 });
 
@@ -75,7 +93,10 @@ describe("resolveModel (openai-compatible refs)", () => {
 });
 
 describe("billing", () => {
-  it("is local, so it never counts against the project spend cap", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is local without an endpoint key, so it never counts against the project spend cap", () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "");
     const billing = billingForProvider("openai-compatible");
     expect(billing).toEqual({
       provider: "openai-compatible",
@@ -85,7 +106,34 @@ describe("billing", () => {
     expect(billingCountsTowardBudget(billing)).toBe(false);
   });
 
-  it("classifies the model without consulting provider auth", async () => {
+
+  it("marks authenticated generic endpoints as externally billed", async () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "proxy-secret");
+    const billing = billingForProvider("openai-compatible");
+    expect(billing).toEqual({
+      provider: "openai-compatible",
+      authType: "api_key",
+      billingMode: "external",
+    });
+    expect(billingCountsTowardBudget(billing)).toBe(false);
+
+    const runtime = { checkAuth: vi.fn() };
+    const modelBilling = await billingForModel(
+      buildOpenAICompatibleModel("proxy-model"),
+      runtime as never,
+    );
+    expect(modelBilling.billingMode).toBe("external");
+    expect(runtime.checkAuth).not.toHaveBeenCalled();
+  });
+
+  it("allows an authenticated local endpoint to opt back into local billing", () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "local-secret");
+    vi.stubEnv("OPENAI_COMPATIBLE_BILLING_MODE", "local");
+    expect(billingForProvider("openai-compatible").billingMode).toBe("local");
+  });
+
+  it("classifies the local model without consulting provider auth", async () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "");
     const runtime = { checkAuth: vi.fn() };
     const billing = await billingForModel(
       buildOpenAICompatibleModel("qwen3-8b"),
@@ -98,6 +146,7 @@ describe("billing", () => {
   // Without the prefix rule in the ledger, an openai-compatible row falls
   // through to the payg default and is counted as billable spend.
   it("ledgers a run as local rather than payg", () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "");
     createProject({ name: "OAI compat", projectId: "oai-compat" });
     resolvePaths("oai-compat");
     const entry = recordRun({
@@ -117,6 +166,7 @@ describe("billing", () => {
   // Subagents resolve their own billing from the child's model ref, on a code
   // path separate from the ledger's — it needs the same prefix rule.
   it("ledgers a subagent run on a local model as local", async () => {
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", "");
     createProject({ name: "OAI compat sub", projectId: "oai-compat-sub" });
     const handlers = new Map<string, (event: any) => any>();
     const extension = makeSubagentLedgerExtension(
@@ -163,15 +213,18 @@ describe("GET /openai-compatible/models", () => {
   /** Set by each test to control what the fake server returns. */
   let respond: (res: http.ServerResponse) => void;
   let requestedPaths: string[];
+  let requestedAuthHeaders: Array<string | undefined>;
 
   beforeEach(async () => {
     requestedPaths = [];
+    requestedAuthHeaders = [];
     respond = (res) => {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ data: [] }));
     };
     server = http.createServer((req, res) => {
       requestedPaths.push(req.url ?? "");
+      requestedAuthHeaders.push(req.headers.authorization);
       respond(res);
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -189,13 +242,15 @@ describe("GET /openai-compatible/models", () => {
    * config.ts reads the environment once at import, so the route has to be
    * loaded fresh per test with the base URL already pointing at the fake server.
    */
-  async function buildRoutes(envBaseUrl: string | undefined) {
+  async function buildRoutes(
+    envBaseUrl: string | undefined,
+    apiKey = "",
+    billingMode = "",
+  ) {
     vi.resetModules();
-    if (envBaseUrl === undefined) {
-      vi.stubEnv("OPENAI_COMPATIBLE_BASE_URL", "");
-    } else {
-      vi.stubEnv("OPENAI_COMPATIBLE_BASE_URL", envBaseUrl);
-    }
+    vi.stubEnv("OPENAI_COMPATIBLE_BASE_URL", envBaseUrl ?? "");
+    vi.stubEnv("OPENAI_COMPATIBLE_API_KEY", apiKey);
+    vi.stubEnv("OPENAI_COMPATIBLE_BILLING_MODE", billingMode);
     const { registerSystemRoutes } = await import("../src/api/system.ts");
     const app = Fastify();
     await registerSystemRoutes(app);
@@ -220,6 +275,7 @@ describe("GET /openai-compatible/models", () => {
     expect(requestedPaths).toEqual(["/v1/models"]);
     expect(body.available).toBe(true);
     expect(body.configured).toBe(true);
+    expect(body.billingMode).toBe("local");
     expect(body.models).toEqual([
       {
         id: "openai-compatible/qwen/qwen3-8b",
@@ -230,6 +286,7 @@ describe("GET /openai-compatible/models", () => {
         pricing: { prompt: 0, completion: 0 },
         modality: "text->text",
         description: "Local OpenAI-compatible model: qwen/qwen3-8b",
+        billingMode: "local",
       },
       {
         id: "openai-compatible/llama-3.1-8b-instruct",
@@ -240,8 +297,37 @@ describe("GET /openai-compatible/models", () => {
         pricing: { prompt: 0, completion: 0 },
         modality: "text->text",
         description: "Local OpenAI-compatible model: llama-3.1-8b-instruct",
+        billingMode: "local",
       },
     ]);
+    await app.close();
+  });
+
+  it("accepts a copied /v1 base URL without duplicating the path", async () => {
+    const app = await buildRoutes(`${baseUrl}/v1`);
+
+    await app.inject({ url: "/openai-compatible/models" });
+
+    expect(requestedPaths).toEqual(["/v1/models"]);
+    await app.close();
+  });
+
+  it("sends Bearer auth and marks proxy models externally billed", async () => {
+    respond = (res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ data: [{ id: "openai/gpt-5" }] }));
+    };
+    const app = await buildRoutes(baseUrl, "proxy-secret");
+
+    const body = (await app.inject({ url: "/openai-compatible/models" })).json();
+
+    expect(requestedAuthHeaders).toEqual(["Bearer proxy-secret"]);
+    expect(body.billingMode).toBe("external");
+    expect(body.models[0]).toMatchObject({
+      id: "openai-compatible/openai/gpt-5",
+      billingMode: "external",
+      description: "OpenAI-compatible endpoint model: openai/gpt-5 (externally billed)",
+    });
     await app.close();
   });
 
@@ -282,7 +368,7 @@ describe("GET /openai-compatible/models", () => {
 
     const body = (await app.inject({ url: "/openai-compatible/models" })).json();
 
-    expect(body).toEqual({ available: false, configured: true, models: [] });
+    expect(body).toEqual({ available: false, configured: true, billingMode: "local", models: [] });
     await app.close();
   });
 
@@ -295,7 +381,7 @@ describe("GET /openai-compatible/models", () => {
 
     const body = (await app.inject({ url: "/openai-compatible/models" })).json();
 
-    expect(body).toEqual({ available: false, configured: true, models: [] });
+    expect(body).toEqual({ available: false, configured: true, billingMode: "local", models: [] });
     await app.close();
   });
 

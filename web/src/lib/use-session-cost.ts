@@ -17,7 +17,7 @@ export interface CostEntry {
   costUsd: number;
   provider?: string;
   authType?: "api_key" | "oauth" | "local" | "none";
-  billingMode?: "payg" | "metered_oauth" | "subscription" | "local" | "compute";
+  billingMode?: "payg" | "metered_oauth" | "subscription" | "external" | "local" | "compute";
   listPriceUsd?: number;
 }
 

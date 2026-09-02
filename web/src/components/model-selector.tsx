@@ -27,7 +27,7 @@ export type Model = {
   fusionConfig?: Record<string, unknown>;
   sourceId?: string;
   sourceLabel?: string;
-  billingMode?: "payg" | "metered_oauth" | "subscription" | "local";
+  billingMode?: "payg" | "metered_oauth" | "subscription" | "external" | "local";
   reasoning?: boolean;
   available?: boolean;
 };
@@ -36,7 +36,11 @@ export function modelUsesBillableBudget(model: {
   id: string;
   billingMode?: Model["billingMode"];
 }): boolean {
-  if (model.billingMode === "subscription" || model.billingMode === "local") {
+  if (
+    model.billingMode === "subscription" ||
+    model.billingMode === "external" ||
+    model.billingMode === "local"
+  ) {
     return false;
   }
   return !(
@@ -82,7 +86,8 @@ const isOllama = (m: Model) => m.provider === "Ollama" || m.id.startsWith("ollam
 const isOpenAICompatible = (m: Model) =>
   m.provider === "OpenAI-Compatible" || m.id.startsWith("openai-compatible/");
 /** Runs on the user's own hardware — priced at $0 and grouped under "Local". */
-const isLocal = (m: Model) => isOllama(m) || isOpenAICompatible(m);
+const isLocal = (m: Model) =>
+  isOllama(m) || (isOpenAICompatible(m) && m.billingMode !== "external");
 const LOCAL_GROUP_IDS = new Set(["ollama", "openai-compatible"]);
 
 function TierDot({ tier, isFusion }: { tier: string; isFusion?: boolean }) {
@@ -121,6 +126,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     openaiCompatibleAvailable,
     openaiCompatibleModels,
     openaiCompatibleConfigured,
+    openaiCompatibleBillingMode,
     refresh,
   } = useModels();
 
@@ -170,6 +176,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       "xai",
       "openrouter",
       "nvidia",
+      "openai-compatible-external",
       "ollama",
       "openai-compatible",
     ];
@@ -257,6 +264,8 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
               <span>Billed via NVIDIA API credits · not metered by Kady</span>
             ) : model.billingMode === "subscription" ? (
               <span>Uses provider-managed subscription limits</span>
+            ) : model.billingMode === "external" ? (
+              <span>Billed by configured endpoint · not metered by Kady</span>
             ) : model.billingMode === "metered_oauth" ? (
               <span>
                 ${model.pricing.prompt.toFixed(2)} in / ${model.pricing.completion.toFixed(2)} out per 1M tok · extra usage
@@ -357,10 +366,22 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
           <div>
             {groups.length > 0 ? <div className="my-1 border-t border-border/60" /> : null}
             <div className="flex items-center gap-1.5 px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              <HardDriveIcon className="size-3" aria-hidden />
-              <span>Local (OpenAI-compatible)</span>
+              {openaiCompatibleBillingMode === "external" ? (
+                <BrainCircuitIcon className="size-3" aria-hidden />
+              ) : (
+                <HardDriveIcon className="size-3" aria-hidden />
+              )}
+              <span>
+                {openaiCompatibleBillingMode === "external"
+                  ? "OpenAI-compatible endpoint"
+                  : "Local (OpenAI-compatible)"}
+              </span>
               <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">
-                {openaiCompatibleAvailable ? "0 available" : "not running"}
+                {openaiCompatibleAvailable
+                  ? "0 available"
+                  : openaiCompatibleBillingMode === "external"
+                    ? "unavailable"
+                    : "not running"}
               </span>
             </div>
             <div className="px-3 py-2 text-[11px] leading-relaxed text-muted-foreground/80">
@@ -371,12 +392,12 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                 </>
               ) : (
                 <>
-                  No server answered at{" "}
+                  No endpoint answered at{" "}
                   <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
                     OPENAI_COMPATIBLE_BASE_URL
                   </code>
-                  . Start LM Studio, vLLM, or another OpenAI-compatible server
-                  and reopen this menu.
+                  . Start a local server or check the configured proxy URL/key,
+                  then reopen this menu.
                 </>
               )}
             </div>

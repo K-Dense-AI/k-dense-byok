@@ -86,6 +86,25 @@ export const OPENAI_COMPATIBLE_CONFIGURED = Boolean(
   process.env.OPENAI_COMPATIBLE_BASE_URL?.trim(),
 );
 
+/** Accept either an endpoint root or a copied `/v1` API base. */
+export function openAICompatibleV1BaseUrl(): string {
+  const base = OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "");
+  return /\/v1$/i.test(base) ? base : `${base}/v1`;
+}
+
+export type OpenAICompatibleBillingMode = "local" | "external";
+
+/**
+ * Generic authenticated proxies do not expose reliable per-model USD pricing.
+ * Treat them as externally billed by default so Kady never labels them free.
+ * Auth-protected local inference can opt back into local billing explicitly.
+ */
+export function openAICompatibleBillingMode(): OpenAICompatibleBillingMode {
+  const configured = process.env.OPENAI_COMPATIBLE_BILLING_MODE?.trim().toLowerCase();
+  if (configured === "local" || configured === "external") return configured;
+  return process.env.OPENAI_COMPATIBLE_API_KEY?.trim() ? "external" : "local";
+}
+
 /** Whether Modal-style remote compute is configured (kept for /config parity). */
 export function modalConfigured(): boolean {
   return Boolean(process.env.MODAL_TOKEN_ID && process.env.MODAL_TOKEN_SECRET);

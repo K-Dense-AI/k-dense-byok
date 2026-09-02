@@ -1,13 +1,14 @@
 /**
  * System + misc endpoints: version/resource probes plus /ollama/models and
- * /openai-compatible/models (local model discovery). Skill management lives in
- * api/skills.ts; /health and /config live in index.ts.
+ * /openai-compatible/models (local or authenticated endpoint discovery). Skill
+ * management lives in api/skills.ts; /health and /config live in index.ts.
  */
 import type { FastifyInstance } from "fastify";
 import {
   OLLAMA_BASE_URL,
-  OPENAI_COMPATIBLE_BASE_URL,
   OPENAI_COMPATIBLE_CONFIGURED,
+  openAICompatibleBillingMode,
+  openAICompatibleV1BaseUrl,
 } from "../config.ts";
 import { getSystemStats } from "../system-stats.ts";
 
@@ -87,24 +88,23 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
   });
 
   // Same idea for any server speaking the standard OpenAI `/v1/models` shape
-  // (LM Studio, vLLM, text-generation-webui, …). Kept as a parallel path to the
-  // Ollama route above rather than factored into a shared helper: the two
-  // discovery protocols are unrelated, and Ollama's is upstream-owned.
-  //
-  // `configured` tells the picker whether the user explicitly asked for this
-  // provider, so it can stay hidden for everyone else instead of showing a
-  // permanently dead section.
+  // (LM Studio, vLLM, New API, Sub2API, …). An optional Bearer token makes the
+  // same path usable for authenticated endpoints without introducing a second
+  // model namespace. Generic proxy pricing is unknown, so billing metadata says
+  // external instead of incorrectly calling those runs free/local.
   app.get("/openai-compatible/models", async () => {
     const configured = OPENAI_COMPATIBLE_CONFIGURED;
+    const billingMode = openAICompatibleBillingMode();
+    const apiKey = process.env.OPENAI_COMPATIBLE_API_KEY?.trim();
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 2000);
-      const resp = await fetch(
-        `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1/models`,
-        { signal: ctrl.signal },
-      );
+      const resp = await fetch(`${openAICompatibleV1BaseUrl()}/models`, {
+        signal: ctrl.signal,
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
+      });
       clearTimeout(t);
-      if (!resp.ok) return { available: false, configured, models: [] };
+      if (!resp.ok) return { available: false, configured, billingMode, models: [] };
       const data = (await resp.json()) as { data?: unknown };
       // Deliberately lenient: take `id` off each entry and skip anything that
       // doesn't have one, so a single odd row can't blank out the whole list.
@@ -115,6 +115,7 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
         const id = (entry as { id?: unknown })?.id;
         if (typeof id !== "string" || !id.trim() || seen.has(id)) continue;
         seen.add(id);
+        const external = billingMode === "external";
         models.push({
           id: `openai-compatible/${id}`,
           label: id,
@@ -123,12 +124,15 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
           context_length: 0,
           pricing: { prompt: 0, completion: 0 },
           modality: "text->text",
-          description: `Local OpenAI-compatible model: ${id}`,
+          description: external
+            ? `OpenAI-compatible endpoint model: ${id} (externally billed)`
+            : `Local OpenAI-compatible model: ${id}`,
+          billingMode,
         });
       }
-      return { available: true, configured, models };
+      return { available: true, configured, billingMode, models };
     } catch {
-      return { available: false, configured, models: [] };
+      return { available: false, configured, billingMode, models: [] };
     }
   });
 }

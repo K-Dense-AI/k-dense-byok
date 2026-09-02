@@ -55,7 +55,7 @@ interface KeyDef {
   bodyField: string;
   label: string;
   placeholder: string;
-  keysUrl: string;
+  keysUrl?: string;
   hint: string;
 }
 
@@ -75,6 +75,13 @@ const KEY_DEFS: KeyDef[] = [
     placeholder: "nvapi-…",
     keysUrl: "https://build.nvidia.com/settings/api-keys",
     hint: "Direct access to NVIDIA NIM models (Nemotron, Llama, GPT-OSS, …). Usage draws on your NVIDIA API credits, which Kady cannot meter.",
+  },
+  {
+    id: "openaiCompatible",
+    bodyField: "openaiCompatibleApiKey",
+    label: "OpenAI-compatible endpoint API key (optional)",
+    placeholder: "sk-…",
+    hint: "Bearer token for an authenticated OPENAI_COMPATIBLE_BASE_URL, including New API or Sub2API. Generic proxy prices are not reliable, so Kady marks these runs externally billed instead of treating them as free.",
   },
   {
     id: "exa",
@@ -132,8 +139,14 @@ function KeyRow({
           | null;
         if (!res.ok) throw new Error(data?.detail || `Save failed (${res.status})`);
         if (data) onStatus(data as CredentialStatus);
-        // NVIDIA keys also gate a model-picker section, so both re-probe it.
-        if (def.id === "openrouter" || def.id === "nvidia") notifyProviderAuthChanged();
+        // These credentials gate model-picker sections, so re-probe after save/clear.
+        if (
+          def.id === "openrouter" ||
+          def.id === "nvidia" ||
+          def.id === "openaiCompatible"
+        ) {
+          notifyProviderAuthChanged();
+        }
         setKeyInput("");
         setSaved(true);
       } catch (exc) {
@@ -148,14 +161,18 @@ function KeyRow({
   return (
     <div className="flex flex-col gap-2">
       <label className="text-xs font-medium">
-        <a
-          href={def.keysUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:underline"
-        >
-          {def.label}
-        </a>
+        {def.keysUrl ? (
+          <a
+            href={def.keysUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:underline"
+          >
+            {def.label}
+          </a>
+        ) : (
+          def.label
+        )}
       </label>
       {error && (
         <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">

@@ -21,7 +21,7 @@ import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
   OLLAMA_BASE_URL,
-  OPENAI_COMPATIBLE_BASE_URL,
+  openAICompatibleV1BaseUrl,
   REPO_ROOT,
 } from "../config.ts";
 import {
@@ -236,13 +236,11 @@ function buildOllamaModel(name: string): Model<Api> {
 }
 
 /**
- * A model served by a local OpenAI-compatible server. Deliberately a parallel
- * path to buildOllamaModel rather than a shared base — the two only look alike
- * because both endpoints happen to be OpenAI-shaped.
- *
- * `/v1/models` carries no pricing or context length anywhere near reliably, so
- * this uses the same $0 / 32K defaults Ollama does. $0 is honest here only
- * because the provider is local-only; see `billingForProvider`.
+ * A model served by an OpenAI-compatible endpoint. This covers local servers
+ * (LM Studio, vLLM, llama.cpp) and authenticated proxy projects such as New API
+ * or Sub2API. Generic endpoints do not expose reliable pricing, so the model
+ * carries $0 metadata while billing policy separately distinguishes local from
+ * externally billed proxy usage.
  */
 export function buildOpenAICompatibleModel(name: string): Model<Api> {
   return {
@@ -250,7 +248,7 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
     name,
     api: "openai-completions",
     provider: "openai-compatible",
-    baseUrl: `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1`,
+    baseUrl: openAICompatibleV1BaseUrl(),
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -304,13 +302,14 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
     apiKey: "ollama",
   });
 
-  // Local servers ignore the credential, but Pi needs *something* to resolve
-  // before it will dispatch — same placeholder arrangement as Ollama.
+  // Local servers usually ignore the credential, while remote OpenAI-compatible
+  // proxies commonly require a Bearer token. Keep a placeholder for unauthenticated
+  // local servers because Pi still needs a resolved credential to dispatch.
   modelRuntime.registerProvider("openai-compatible", {
     name: "OpenAI-Compatible",
-    baseUrl: `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1`,
+    baseUrl: openAICompatibleV1BaseUrl(),
     api: "openai-completions",
-    apiKey: "openai-compatible",
+    apiKey: process.env.OPENAI_COMPATIBLE_API_KEY?.trim() || "openai-compatible",
   });
 
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
