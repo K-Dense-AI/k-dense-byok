@@ -1,12 +1,6 @@
-# Kady — single-container Docker Compose setup.
-#
-# Runs BOTH services (backend :8000, frontend :3000) in one container,
-# exactly as `./start.sh` starts them on a host. Local models (Ollama,
-# llama.cpp, LM Studio, vLLM, …) are NOT bundled here — you run them yourself
-# and Kady just points at their base URL, which is the usual pattern.
-# By default Kady reaches those servers on the HOST via `host.docker.internal`
-# (see OLLAMA_BASE_URL / OPENAI_COMPATIBLE_BASE_URL below); override them in
-# your .env to point anywhere else.
+# Kady — single container running both services (backend :8000, frontend :3000)
+# as `./start.sh` does. Local models are not bundled; Kady just points at their
+# base URL, reaching the host via `host.docker.internal` unless you override in .env.
 
 services:
   kady:
@@ -15,45 +9,34 @@ services:
       # --build-arg equivalent. Set WITH_LATEX=0 in your shell/.env to build a
       # smaller image without TeX Live (LaTeX compile + SyncTeX disabled).
       args:
+        # Set WITH_LATEX=0 in your shell/.env for a smaller image without TeX.
         WITH_LATEX: ${WITH_LATEX:-1}
     image: kady:${KADY_TAG:-latest}
     container_name: kady
-    # Host ports bound to 127.0.0.1 only — a local research app should not be
-    # reachable from the LAN. To expose it (e.g. to a LAN client), change the
-    # prefix to 0.0.0.0 or your host's LAN IP; to reach it over SSH, tunnel it.
+    # Localhost-only; change the prefix to expose on the LAN.
     ports:
       - "127.0.0.1:${KADY_UI_PORT:-3000}:3000"
       - "127.0.0.1:${KADY_API_PORT:-8000}:8000"
-    # Optional: load your API keys from .env. `required: false` lets you start
-    # with no .env at all (and set keys later in Settings → API keys).
+    # Optional API keys; required:false lets you start with no .env.
     env_file:
       - path: .env
         required: false
     environment:
-      # Local model servers live on the HOST; `host.docker.internal` is the
-      # alias Docker gives the host from inside the container. Override these
-      # in .env to point elsewhere, e.g. a remote machine or a LAN server.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      # llama.cpp (`llama-server`), LM Studio, vLLM, etc. expose an
-      # OpenAI-compatible API; OPENAI_COMPATIBLE_CONFIGURED=1 shows the
-      # picker section even before a server answers on the default port.
+      # =1 keeps the picker section visible even before a server answers.
       OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-http://host.docker.internal:1234}
       OPENAI_COMPATIBLE_CONFIGURED: ${OPENAI_COMPATIBLE_CONFIGURED:-1}
-      # Persistent user data lives here (inside the container).
+      # Must match the server's real context (llama.cpp --ctx-size).
+      OPENAI_COMPATIBLE_CONTEXT_WINDOW: ${OPENAI_COMPATIBLE_CONTEXT_WINDOW:-32768}
       KADY_PROJECTS_ROOT: /data/projects
-      # Pi auth/settings/skills-cache persist here.
       KADY_PI_AGENT_DIR: /data/config
       KADY_SKILLS_CACHE_DIR: /data/config/skills-cache
-    # Lets the container reach the host for OLLAMA_BASE_URL /
-    # OPENAI_COMPATIBLE_BASE_URL on Linux (Docker Desktop does this already).
+    # Let the container reach the host (needed on Linux; Desktop does it already).
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # Your projects (chat sessions, sandbox files, provenance, …).
       - ./projects:/data/projects
-      # OAuth tokens (auth.json), Pi settings, and the skills cache survive
-      # container rebuilds. It's a named volume so perms are handled for you.
-      - kady-config:/data/config
+      - kady-config:/data/config  # auth, settings, skills cache (survive rebuilds)
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:3000/"]

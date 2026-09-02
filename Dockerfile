@@ -1,26 +1,21 @@
 # syntax=docker/dockerfile:1
 #
-# Kady (K-Dense BYOK) — single-container image.
+# Kady (K-Dense BYOK) — single-container image: the TS backend (Pi agent,
+# :8000) and Next.js frontend (:3000) as start.mjs starts them, inside one
+# isolated container so the agent sandbox (bash/python/latex) never runs as
+# the host user and never sees the docker socket.
 #
-# Builds BOTH runtime services exactly as start.mjs starts them on a host —
-# the TS backend (Pi agent, port 8000) and the Next.js frontend (port 3000) —
-# inside one isolated container. The container is deliberately an OS-level
-# boundary for the agent's bash/python/latex sandbox: agent tools never run
-# as the host user and never see the docker socket.
-#
-# Build with LaTeX:        docker build -t kady:latest .
-# Build WITHOUT LaTeX:     docker build --build-arg WITH_LATEX=0 -t kady:lite .
+#   docker build -t kady:latest .                                     # with LaTeX
+#   docker build --build-arg WITH_LATEX=0 -t kady:lite .              # without
 
-# ---- Build args -------------------------------------------------------------
 ARG NODE_VERSION=22
-# Include TeX Live (latexmk/pdflatex/synctex) for LaTeX compile + SyncTeX.
-# Set to 0 for a smaller "lite" image; the app already degrades gracefully
-# (compile returns a clean "compiler not found"; SyncTeX reports unavailable).
+# TeX Live for LaTeX compile + SyncTeX; set 0 for a smaller image (the app
+# degrades gracefully when TeX is missing).
 ARG WITH_LATEX=1
 
 FROM node:${NODE_VERSION}-bookworm-slim AS base
 
-# Redeclare so the stage RUN can use it (global ARGs only reach the FROM line).
+# Redeclare: global ARGs only reach the FROM line.
 ARG WITH_LATEX=1
 
 # ---- OS packages ------------------------------------------------------------
@@ -47,8 +42,7 @@ RUN set -eux; \
     fi; \
     rm -rf /var/lib/apt/lists/*
 
-# uv — the agent runs ALL sandbox Python through uv, and the backend shells
-# into it for the scientific helper venv. Must be on PATH for every user.
+# uv — all sandbox Python (and the helper venv) runs through it.
 RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
     && uv --version
 
@@ -64,21 +58,15 @@ RUN cd server && npm ci --no-audit --no-fund
 # ---- Source ------------------------------------------------------------------
 COPY . .
 
-# Bake the scientific file-preview helper venv (numpy/scipy/anndata/rdkit/
-# gemmi/…) at build time so first boot doesn't need to download them.
+# Bake the scientific helper venv (numpy/anndata/rdkit/…) at build time.
 RUN cd server/src/helpers && uv sync
 
-# A present-but-empty root .env stops start.mjs from copying .env.example over
-# the real API keys/env passed in from docker compose. All config stays
-# external to the image.
+# Empty root .env stops start.mjs from copying .env.example over compose keys.
 RUN touch /app/.env
 
 # ---- Runtime -----------------------------------------------------------------
-# 0.0.0.0: the backend must listen on the container's network interface so the
-# host-published port can reach it (binding 127.0.0.1 would be container-local
-# only). Host ports are bound to 127.0.0.1 in compose, so this is still
-# localhost-only from the host's perspective. HOSTNAME=0.0.0.0 tells `next dev`
-# to do the same for the frontend.
+# Listen on all interfaces inside the container; compose still publishes
+# 127.0.0.1 only. HOSTNAME=0.0.0.0 does the same for `next dev`.
 ENV \
     HOME=/home/node \
     KADY_PROJECTS_ROOT=/data/projects \
@@ -87,8 +75,7 @@ ENV \
     KADY_HOST=0.0.0.0 \
     HOSTNAME=0.0.0.0
 
-# Data dirs + writable app dir. Owned by `node` (uid 1000); the entrypoint
-# re-fixes bind-mount ownership at runtime and drops privileges to node.
+# Owned by node; the entrypoint re-fixes bind-mounts and drops to node.
 RUN mkdir -p /data/projects /data/config/skills-cache \
     && chown -R node:node /data /app
 
@@ -98,6 +85,5 @@ COPY docker-entrypoint.sh /usr/local/bin/kady-entrypoint
 RUN chmod +x /usr/local/bin/kady-entrypoint
 
 ENTRYPOINT ["/usr/local/bin/kady-entrypoint"]
-# Matches `./start.sh` but without trying to open a host browser. Installs the
-# pinned harness, preps projects/skills, frees ports, starts both services.
+# Matches ./start.sh without opening a host browser.
 CMD ["node", "start.mjs", "--no-browser"]

@@ -86,6 +86,17 @@ export const OPENAI_COMPATIBLE_CONFIGURED = Boolean(
   process.env.OPENAI_COMPATIBLE_BASE_URL?.trim(),
 );
 
+/**
+ * Declared context window for openai-compatible (local llama.cpp / LM Studio /
+ * vLLM) models. This must match the server's real context (llama.cpp `--ctx-size`)
+ * so Pi leaves room for output tokens; a window smaller than the actual prompt
+ * makes every run send ~0 output tokens. Defaults to 32K if unset.
+ */
+export const OPENAI_COMPATIBLE_CONTEXT_WINDOW = (() => {
+  const raw = Number(process.env.OPENAI_COMPATIBLE_CONTEXT_WINDOW);
+  return Number.isFinite(raw) && raw > 0 ? raw : 32_768;
+})();
+
 /** Whether Modal-style remote compute is configured (kept for /config parity). */
 export function modalConfigured(): boolean {
   return Boolean(process.env.MODAL_TOKEN_ID && process.env.MODAL_TOKEN_SECRET);
