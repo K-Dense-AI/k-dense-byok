@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   contextWindowFromModelEntry,
   noteOpenAICompatibleModels,
   openAICompatibleContextWindow,
   resetOpenAICompatibleContextWindows,
+  warmOpenAICompatibleContextWindows,
 } from "../src/agent/openai-compatible-context.ts";
 import { OPENAI_COMPATIBLE_CONTEXT_WINDOW } from "../src/config.ts";
 
@@ -85,5 +86,33 @@ describe("openAICompatibleContextWindow", () => {
     expect(() =>
       noteOpenAICompatibleModels([{ meta: { n_ctx: 8_192 } }, { id: "  " }, null]),
     ).not.toThrow();
+  });
+});
+
+describe("warmOpenAICompatibleContextWindows", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it("populates the cache from a listing and coalesces concurrent calls", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          data: [{ id: "big", meta: { n_ctx: 131_072 } }],
+        }),
+      } as Response;
+    }) as typeof fetch;
+
+    await Promise.all([
+      warmOpenAICompatibleContextWindows(),
+      warmOpenAICompatibleContextWindows(),
+    ]);
+    expect(calls).toBe(1);
+    expect(openAICompatibleContextWindow("big")).toBe(131_072);
   });
 });

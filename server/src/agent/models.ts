@@ -320,8 +320,11 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
     apiKey: "openai-compatible",
   });
 
-  // Not awaited: startup must not block on a server that may not be running.
-  void warmOpenAICompatibleContextWindows();
+  // Awaited: a restored session can resolve its model immediately after this
+  // returns, and a fire-and-forget warm races that (fallback 32K → empty
+  // replies). The fetch itself times out at 2s, so a missing server does not
+  // stall boot.
+  await warmOpenAICompatibleContextWindows();
 
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
   if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
