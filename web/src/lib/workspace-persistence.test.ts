@@ -244,6 +244,18 @@ describe("workspace persistence schema", () => {
     expect(restored.openedProjectIds).toEqual(["project-b"]);
   });
 
+  it("refuses to prune against an empty project list", async () => {
+    // A failed GET /projects leaves the caller with []; that must never be
+    // read as "every project was deleted".
+    await saveProjectWorkspaceState("project-a", projectState);
+    await saveWorkspaceShellState("workspace", ["project-a"]);
+
+    await pruneDeletedProjectState([]);
+    const restored = await loadWorkspaceSnapshot();
+    expect(Object.keys(restored.projects)).toEqual(["project-a"]);
+    expect(restored.openedProjectIds).toEqual(["project-a"]);
+  });
+
   it("removes closed tabs from durable metadata immediately", async () => {
     await saveProjectWorkspaceState("project-a", {
       ...projectState,

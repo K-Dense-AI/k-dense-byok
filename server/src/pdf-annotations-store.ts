@@ -213,7 +213,24 @@ async function acquireLock(sidecar: string): Promise<() => void> {
     const token = `${process.pid}:${randomUUID()}`;
     try {
       const fd = fs.openSync(lock, "wx");
-      fs.writeFileSync(fd, `${token}\n${Date.now()}\n`, "utf-8");
+      try {
+        fs.writeFileSync(fd, `${token}\n${Date.now()}\n`, "utf-8");
+      } catch (error) {
+        // We created the file, so it is ours to remove. Leaving a zero-byte
+        // lock behind (e.g. ENOSPC) would make every later writer wait out
+        // LOCK_STALE_MS for a holder that never existed.
+        try {
+          fs.closeSync(fd);
+        } catch {
+          // best-effort
+        }
+        try {
+          fs.rmSync(lock, { force: true });
+        } catch {
+          // best-effort
+        }
+        throw error;
+      }
       return () => {
         try {
           fs.closeSync(fd);
@@ -227,20 +244,28 @@ async function acquireLock(sidecar: string): Promise<() => void> {
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      // Everything below is synchronous, so every path through this branch
+      // must reach the deadline check or the delay: an early `continue` on a
+      // lock we cannot clear would spin and block the event loop forever.
+      let clearedStale = false;
       try {
         if (Date.now() - fs.statSync(lock).mtimeMs > LOCK_STALE_MS) {
-          // Only clear the exact lock we observed as stale. (A fresh lock
-          // taken between this read and the unlink would still be lost, but
-          // that requires a holder to have already hung past LOCK_STALE_MS.)
+          // Only clear the exact lock we observed as stale. An empty or
+          // unreadable lock has no live holder (its creator died between
+          // create and write), so it is removable too. (A fresh lock taken
+          // between this read and the unlink would still be lost, but that
+          // requires a holder to have already hung past LOCK_STALE_MS.)
           const stale = readLockToken(lock);
-          if (stale !== null && readLockToken(lock) === stale) {
+          if (stale === null || readLockToken(lock) === stale) {
             fs.rmSync(lock, { force: true });
+            clearedStale = true;
           }
-          continue;
         }
       } catch {
-        continue;
+        // The lock vanished under us, or is not ours to stat/remove. Fall
+        // through and let the deadline decide.
       }
+      if (clearedStale && Date.now() < deadline) continue;
       if (Date.now() >= deadline) {
         throw new PdfAnnotationStoreError(
           "LOCK_TIMEOUT",

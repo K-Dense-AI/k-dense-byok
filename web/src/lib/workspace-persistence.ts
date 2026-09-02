@@ -811,6 +811,9 @@ export async function deletePersistedProjectState(projectId: string): Promise<vo
 
 export async function pruneDeletedProjectState(validProjectIds: Iterable<string>): Promise<void> {
   const valid = new Set(validProjectIds);
+  // The server always has at least the default project, so an empty set can
+  // only come from a failed listing. Refuse rather than erase everything.
+  if (valid.size === 0) return;
   const current = readMetadata();
   const removed = [...new Set([
     ...Object.keys(current.projects),

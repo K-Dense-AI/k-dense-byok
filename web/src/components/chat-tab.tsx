@@ -73,6 +73,11 @@ import {
 import type { NotebookEntry } from "@/lib/notebook";
 import { routeSubmit, steerNotStreamingFallback, type SendIntent } from "@/lib/chat-routing";
 import {
+  moveQueuedMessage,
+  updateQueuedMessageText,
+  type QueueDirection,
+} from "@/lib/message-queue";
+import {
   type ChatWorkspaceState,
   type WorkspaceQueuedMessage,
 } from "@/lib/workspace-persistence";
@@ -89,11 +94,14 @@ import {
 } from "@/components/ai-elements/speech-input";
 import {
   CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
   CopyIcon,
   DatabaseIcon,
   ImageIcon,
   ListOrderedIcon,
   PaperclipIcon,
+  PencilIcon,
   SparklesIcon,
   XIcon,
   ZapIcon,
@@ -353,16 +361,88 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
   );
 }
 
+/** Inline editor for one queued message. Keyed by item id so state resets per item. */
+function QueuedMessageEditor({
+  initialText,
+  onSave,
+  onCancel,
+}: {
+  initialText: string;
+  onSave: (text: string) => void;
+  onCancel: () => void;
+}) {
+  const [draft, setDraft] = useState(initialText);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  const trimmed = draft.trim();
+  const canSave = trimmed.length > 0;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <textarea
+        ref={ref}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          // Keep composer shortcuts (Enter to send, ⌥⏎ to queue) out of here.
+          e.stopPropagation();
+          if (e.key === "Escape") {
+            e.preventDefault();
+            onCancel();
+          } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            if (canSave) onSave(trimmed);
+          }
+        }}
+        rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+        className="w-full resize-y rounded-md border bg-background px-2 py-1.5 text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        aria-label="Edit queued message"
+      />
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onSave(trimmed)}
+          disabled={!canSave}
+          className="rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="rounded px-2 py-0.5 text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted"
+        >
+          Cancel
+        </button>
+        <span className="ml-auto text-[10px] text-muted-foreground">⌘⏎ save · Esc cancel</span>
+      </div>
+    </div>
+  );
+}
+
 function MessageQueueDisplay({
   queue,
   steering,
   onRemove,
+  onMove,
+  onEdit,
+  editingId,
+  onEditingChange,
   paused = false,
   onResume,
 }: {
   queue: QueuedMessage[];
   steering: string[];
   onRemove: (id: string) => void;
+  onMove: (id: string, direction: QueueDirection) => void;
+  onEdit: (id: string, text: string) => void;
+  /** Item currently open in the inline editor; auto-send holds while set. */
+  editingId: string | null;
+  onEditingChange: (id: string | null) => void;
   /** True after Stop, while queued messages are held back. */
   paused?: boolean;
   onResume?: () => void;
@@ -400,7 +480,7 @@ function MessageQueueDisplay({
             <div className="flex items-center gap-2 border-b px-3 py-1.5">
               <ListOrderedIcon className="size-3.5 text-muted-foreground" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {paused ? "Paused — stopped" : "Run after"}
+                {editingId ? "Held while editing" : paused ? "Paused — stopped" : "Run after"}
               </span>
               {paused && onResume && (
                 <button
@@ -416,18 +496,32 @@ function MessageQueueDisplay({
               </span>
             </div>
             <div className="max-h-52 overflow-y-auto py-1">
-              {queue.map((item, i) => (
+              {queue.map((item, i) => {
+                const editing = editingId === item.id;
+                return (
                 <div
                   key={item.id}
-                  className="group flex items-center gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/50"
+                  className="group flex items-start gap-2.5 px-3 py-2 text-xs transition-colors hover:bg-muted/50"
                 >
-                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
                     {i + 1}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-foreground">
-                      {item.rawText || item.text.split("\n")[0]}
-                    </div>
+                    {editing ? (
+                      <QueuedMessageEditor
+                        key={item.id}
+                        initialText={item.text}
+                        onSave={(text) => {
+                          onEdit(item.id, text);
+                          onEditingChange(null);
+                        }}
+                        onCancel={() => onEditingChange(null)}
+                      />
+                    ) : (
+                      <div className="truncate text-foreground">
+                        {item.rawText || item.text.split("\n")[0]}
+                      </div>
+                    )}
                     <div className="mt-0.5 flex flex-wrap gap-1">
                       <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         {item.model.label}
@@ -458,16 +552,47 @@ function MessageQueueDisplay({
                       )}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onRemove(item.id)}
-                    className="shrink-0 rounded p-1 text-muted-foreground/40 opacity-0 transition-all group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                    aria-label={`Remove queued message ${i + 1}`}
-                  >
-                    <XIcon className="size-3" />
-                  </button>
+                  {!editing && (
+                    <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                      <button
+                        type="button"
+                        onClick={() => onMove(item.id, "up")}
+                        disabled={i === 0}
+                        className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                        aria-label={`Move queued message ${i + 1} up`}
+                      >
+                        <ChevronUpIcon className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onMove(item.id, "down")}
+                        disabled={i === queue.length - 1}
+                        className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-30"
+                        aria-label={`Move queued message ${i + 1} down`}
+                      >
+                        <ChevronDownIcon className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onEditingChange(item.id)}
+                        className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
+                        aria-label={`Edit queued message ${i + 1}`}
+                      >
+                        <PencilIcon className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onRemove(item.id)}
+                        className="rounded p-1 text-muted-foreground/60 transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        aria-label={`Remove queued message ${i + 1}`}
+                      >
+                        <XIcon className="size-3" />
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}
@@ -514,6 +639,10 @@ function ChatInput({
   onSkillsChange,
   queuedMessages,
   onRemoveFromQueue,
+  onMoveInQueue,
+  onEditQueued,
+  queueEditingId,
+  onQueueEditingChange,
   queuePaused = false,
   onResumeQueue,
   budgetState = "ok",
@@ -555,6 +684,10 @@ function ChatInput({
   onSkillsChange: (skills: Skill[]) => void;
   queuedMessages: QueuedMessage[];
   onRemoveFromQueue: (id: string) => void;
+  onMoveInQueue: (id: string, direction: QueueDirection) => void;
+  onEditQueued: (id: string, text: string) => void;
+  queueEditingId: string | null;
+  onQueueEditingChange: (id: string | null) => void;
   queuePaused?: boolean;
   onResumeQueue?: () => void;
   budgetState?: "ok" | "warn" | "exceeded";
@@ -825,6 +958,10 @@ function ChatInput({
             queue={queuedMessages}
             steering={pendingSteers}
             onRemove={onRemoveFromQueue}
+            onMove={onMoveInQueue}
+            onEdit={onEditQueued}
+            editingId={queueEditingId}
+            onEditingChange={onQueueEditingChange}
             paused={queuePaused}
             onResume={onResumeQueue}
           />
@@ -1406,6 +1543,20 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const removeFromQueue = useCallback((id: string) => {
     setMessageQueue((prev) => prev.filter((item) => item.id !== id));
   }, []);
+  const moveInQueue = useCallback((id: string, direction: QueueDirection) => {
+    setMessageQueue((prev) => moveQueuedMessage(prev, id, direction));
+  }, []);
+  const editQueuedMessage = useCallback((id: string, text: string) => {
+    setMessageQueue((prev) => updateQueuedMessageText(prev, id, text));
+  }, []);
+  // Which queued message has its inline editor open. Derived against the live
+  // queue (ids are never reused) so a removal or send while editing releases
+  // the hold without an effect.
+  const [editingQueueIdState, setEditingQueueIdState] = useState<string | null>(null);
+  const queueEditingId =
+    editingQueueIdState !== null && messageQueue.some((item) => item.id === editingQueueIdState)
+      ? editingQueueIdState
+      : null;
 
   const copyTimerRef = useRef<number | null>(null);
   useEffect(
@@ -1441,6 +1592,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   // Auto-send the next queued message when the agent becomes ready
   useEffect(() => {
     if (queuePaused) return; // Stop halts all work, not just the live turn
+    // Hold while an inline edit is open: otherwise the head of the queue can
+    // fire mid-edit with the old text and the editor vanishes under the user.
+    if (queueEditingId !== null) return;
     if (!initialSessionReady || status !== "ready" || messageQueue.length === 0) return;
     const [next, ...rest] = messageQueue;
     if (!isModelAvailable(next.model)) return;
@@ -1468,6 +1622,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     initialSessionReady,
     isModelAvailable,
     messageQueue,
+    queueEditingId,
     queuePaused,
     send,
     status,
@@ -1923,6 +2078,10 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onSkillsChange={setSelectedSkills}
             queuedMessages={messageQueue}
             onRemoveFromQueue={removeFromQueue}
+            onMoveInQueue={moveInQueue}
+            onEditQueued={editQueuedMessage}
+            queueEditingId={queueEditingId}
+            onQueueEditingChange={setEditingQueueIdState}
             queuePaused={queuePaused && messageQueue.length > 0}
             onResumeQueue={resumeQueue}
             budgetState={budgetState}

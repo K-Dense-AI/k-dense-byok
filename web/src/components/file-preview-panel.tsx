@@ -9,6 +9,10 @@ import { ProvenancePanel } from "@/components/provenance-panel";
 import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { NotebookEntry } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
+import {
+  sanitizeNotebookHtml,
+  sanitizeNotebookSvg,
+} from "@/lib/notebook-output-sanitize";
 import { getViewerDef } from "@/lib/viewers/registry";
 import {
   fileCategory,
@@ -655,14 +659,14 @@ function NotebookOutput({ out }: { out: NbOutput }) {
       );
     }
     if (data["image/svg+xml"]) {
-      const svg = nbText(data["image/svg+xml"] as string | string[]);
+      const svg = sanitizeNotebookSvg(nbText(data["image/svg+xml"] as string | string[]));
       return (
         <div className="border-t px-4 py-3 overflow-x-auto [&_svg]:max-w-full"
           dangerouslySetInnerHTML={{ __html: svg }} />
       );
     }
     if (data["text/html"]) {
-      const html = nbText(data["text/html"] as string | string[]);
+      const html = sanitizeNotebookHtml(nbText(data["text/html"] as string | string[]));
       return (
         <div className="border-t px-4 py-2 text-xs overflow-x-auto [&_table]:text-xs [&_td]:px-2 [&_th]:px-2"
           dangerouslySetInnerHTML={{ __html: html }} />

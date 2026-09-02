@@ -110,7 +110,12 @@ export default function HomePage() {
   const [projectActivities, setProjectActivities] = useState<
     Record<string, ProjectActivitySummary>
   >({});
-  const { activeProjectId, projects, loading: projectsLoading } = useProjects();
+  const {
+    activeProjectId,
+    projects,
+    loading: projectsLoading,
+    error: projectsError,
+  } = useProjects();
   const serverProjectActivities = useProjectActivities(
     workspaceHydrated && screen === "projects",
   );
@@ -181,6 +186,11 @@ export default function HomePage() {
   // this unmount only disconnects browser-side event observers.
   useEffect(() => {
     if (projectsLoading || !workspaceHydrated) return;
+    // A failed or empty list is not "every project was deleted". On a fetch
+    // error `projects` keeps its initial [] with loading=false, and the server
+    // always has at least the default project, so pruning against an empty
+    // set would wipe every project's persisted workspace on a backend blip.
+    if (projectsError || projects.length === 0) return;
     const existing = new Set(projects.map((project) => project.id));
     setOpenedProjectIds((prev) => {
       const next = prev.filter((id) => existing.has(id));
@@ -199,7 +209,7 @@ export default function HomePage() {
       return Object.keys(next).length === Object.keys(prev).length ? prev : next;
     });
     void pruneDeletedProjectState(existing);
-  }, [projects, projectsLoading, workspaceHydrated]);
+  }, [projects, projectsError, projectsLoading, workspaceHydrated]);
 
   useEffect(() => {
     if (!workspaceHydrated) return;
