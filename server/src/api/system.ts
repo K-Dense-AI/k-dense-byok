@@ -9,6 +9,10 @@ import {
   OPENAI_COMPATIBLE_BASE_URL,
   OPENAI_COMPATIBLE_CONFIGURED,
 } from "../config.ts";
+import {
+  contextWindowFromModelEntry,
+  noteOpenAICompatibleModels,
+} from "../agent/openai-compatible-context.ts";
 import { getSystemStats } from "../system-stats.ts";
 
 const GITHUB_REPO = "K-Dense-AI/k-dense-byok";
@@ -106,12 +110,16 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
       clearTimeout(t);
       if (!resp.ok) return { available: false, configured, models: [] };
       const data = (await resp.json()) as { data?: unknown };
+      const entries = Array.isArray(data.data) ? data.data : [];
+      // Cache reported context windows for buildOpenAICompatibleModel.
+      noteOpenAICompatibleModels(entries);
       // Deliberately lenient: take `id` off each entry and skip anything that
       // doesn't have one, so a single odd row can't blank out the whole list.
-      // Nothing beyond `id` is trusted — servers disagree on every other field.
+      // Beyond `id` and the context window, nothing is trusted — servers
+      // disagree on every other field.
       const seen = new Set<string>();
       const models = [];
-      for (const entry of Array.isArray(data.data) ? data.data : []) {
+      for (const entry of entries) {
         const id = (entry as { id?: unknown })?.id;
         if (typeof id !== "string" || !id.trim() || seen.has(id)) continue;
         seen.add(id);
@@ -120,7 +128,8 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
           label: id,
           provider: "OpenAI-Compatible",
           tier: "budget",
-          context_length: 0,
+          // 0 when unreported; the picker hides the badge rather than guess.
+          context_length: contextWindowFromModelEntry(entry) ?? 0,
           pricing: { prompt: 0, completion: 0 },
           modality: "text->text",
           description: `Local OpenAI-compatible model: ${id}`,

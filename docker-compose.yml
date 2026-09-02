@@ -26,7 +26,8 @@ services:
       # =1 keeps the picker section visible even before a server answers.
       OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-http://host.docker.internal:1234}
       OPENAI_COMPATIBLE_CONFIGURED: ${OPENAI_COMPATIBLE_CONFIGURED:-1}
-      # Must match the server's real context (llama.cpp --ctx-size).
+      # Fallback only — the real window is read from /v1/models per model.
+      # Set it for servers that don't report one (LM Studio, unloaded models).
       OPENAI_COMPATIBLE_CONTEXT_WINDOW: ${OPENAI_COMPATIBLE_CONTEXT_WINDOW:-32768}
       KADY_PROJECTS_ROOT: /data/projects
       KADY_PI_AGENT_DIR: /data/config

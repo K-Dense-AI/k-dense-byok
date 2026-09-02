@@ -87,14 +87,20 @@ export const OPENAI_COMPATIBLE_CONFIGURED = Boolean(
 );
 
 /**
- * Declared context window for openai-compatible (local llama.cpp / LM Studio /
- * vLLM) models. This must match the server's real context (llama.cpp `--ctx-size`)
- * so Pi leaves room for output tokens; a window smaller than the actual prompt
- * makes every run send ~0 output tokens. Defaults to 32K if unset.
+ * Fallback context window for openai-compatible models, consulted only when the
+ * server reported none of its own — see `agent/openai-compatible-context.ts`.
  */
 export const OPENAI_COMPATIBLE_CONTEXT_WINDOW = (() => {
-  const raw = Number(process.env.OPENAI_COMPATIBLE_CONTEXT_WINDOW);
-  return Number.isFinite(raw) && raw > 0 ? raw : 32_768;
+  const raw = process.env.OPENAI_COMPATIBLE_CONTEXT_WINDOW?.trim();
+  if (!raw) return 32_768;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  // Loud: silently reverting to 32K is the exact failure this setting prevents.
+  console.warn(
+    `[config] Ignoring OPENAI_COMPATIBLE_CONTEXT_WINDOW="${raw}" — expected a ` +
+      "positive number of tokens (e.g. 131072). Falling back to 32768.",
+  );
+  return 32_768;
 })();
 
 /** Whether Modal-style remote compute is configured (kept for /config parity). */

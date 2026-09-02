@@ -188,7 +188,7 @@ describe("scientific_result tool", () => {
         columns: [{ key: "a", label: "A" }],
         rows: [],
       }),
-    ).rejects.toThrow(/summary must not have more than 2000 characters/);
+    ).rejects.toThrow(/summary must not have more than 2048 characters/);
 
     // The byte cap still guards a payload that is large in aggregate while every
     // individual field stays within its own limit.
