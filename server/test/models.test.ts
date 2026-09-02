@@ -25,12 +25,15 @@ describe("catalogueEntryFor (reasoning-effort suffix pricing)", () => {
   });
 
   it("does NOT strip -fast (a distinct catalogue model with its own pricing)", () => {
-    const fast = catalogueEntryFor("anthropic/claude-opus-4.8-fast");
-    const base = catalogueEntryFor("anthropic/claude-opus-4.8");
-    expect(fast).toBeDefined();
+    // -fast is its own (pricier) model, not a reasoning-effort suffix, so it
+    // must never collapse to the base row. The Anthropic -fast variants have
+    // been delisted from OpenRouter, so a correct lookup finds nothing; a
+    // suffix-stripping one would wrongly return `base`. Tolerate a relisting
+    // as long as the pricing stays distinct.
+    const base = catalogueEntryFor("anthropic/claude-opus-5");
     expect(base).toBeDefined();
-    // -fast is its own model (pricier); it must not collapse to the base price.
-    expect(fast!.costInput).not.toBe(base!.costInput);
+    const fast = catalogueEntryFor("anthropic/claude-opus-5-fast");
+    expect(fast === undefined || fast.costInput !== base!.costInput).toBe(true);
   });
 
   it("returns undefined for an unknown model", () => {
