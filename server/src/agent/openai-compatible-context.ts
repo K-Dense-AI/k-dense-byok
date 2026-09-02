@@ -74,26 +74,35 @@ export function openAICompatibleContextWindow(id: string): number {
   return discovered.get(id) ?? OPENAI_COMPATIBLE_CONTEXT_WINDOW;
 }
 
+/** In-flight / completed warm. Coalesces concurrent callers. */
+let warming: Promise<void> | undefined;
+
 /**
  * Warm the cache at startup so a model ref restored from a saved session is
  * sized correctly even if nobody opened the picker. Failure-tolerant: having no
- * local server is the common case, and the default covers it.
+ * local server is the common case, and the default covers it. Callers that need
+ * the window before a model is built (setupModelRuntime) must await this — the
+ * 2s timeout already bounds the wait.
  */
-export async function warmOpenAICompatibleContextWindows(): Promise<void> {
-  try {
-    const resp = await fetch(
-      `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1/models`,
-      { signal: AbortSignal.timeout(2000) },
-    );
-    if (!resp.ok) return;
-    const data = (await resp.json()) as { data?: unknown };
-    noteOpenAICompatibleModels(Array.isArray(data.data) ? data.data : []);
-  } catch {
-    // No server, or one that doesn't answer in time. Defaults apply.
-  }
+export function warmOpenAICompatibleContextWindows(): Promise<void> {
+  warming ??= (async () => {
+    try {
+      const resp = await fetch(
+        `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1/models`,
+        { signal: AbortSignal.timeout(2000) },
+      );
+      if (!resp.ok) return;
+      const data = (await resp.json()) as { data?: unknown };
+      noteOpenAICompatibleModels(Array.isArray(data.data) ? data.data : []);
+    } catch {
+      // No server, or one that doesn't answer in time. Defaults apply.
+    }
+  })();
+  return warming;
 }
 
 /** Test seam. */
 export function resetOpenAICompatibleContextWindows(): void {
   discovered.clear();
+  warming = undefined;
 }
