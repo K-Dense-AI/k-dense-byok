@@ -1,7 +1,8 @@
 # Architecture
 
 K-Dense BYOK runs two services on the backend host, launched by `start.mjs`
-through `start.sh` or `start.cmd`:
+through `kady` on macOS/Linux or `kady.cmd` on Windows. `start.sh` and
+`start.cmd` remain compatibility aliases:
 
 | Service | Default port | Responsibility |
 |---|---|---|

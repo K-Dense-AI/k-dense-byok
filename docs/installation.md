@@ -17,16 +17,17 @@ cd k-dense-byok
 On macOS/Linux:
 
 ```bash
-./start.sh
+./kady
 ```
 
 On Windows:
 
 ```powershell
-.\start.cmd
+.\kady.cmd
 ```
 
-Both launch `start.mjs`, which installs app dependencies and Python tooling,
+`start.sh` and `start.cmd` remain supported compatibility aliases. All wrappers
+launch `start.mjs`, which installs app dependencies and Python tooling,
 prepares project skills and starts the frontend and backend. It creates `.env`
 from `.env.example` when needed. Open **http://localhost:3000** if the browser
 does not open automatically. Keep the terminal running; **Ctrl+C** stops the app.
@@ -68,15 +69,24 @@ the token pair. Configure database credentials only when a task needs them.
 
 ## Updates
 
-Stop the app, run `git pull` from the repository, and start it again with the
-command above. Resolve any local Git changes before updating. The launcher
-installs the dependencies required by the checkout.
+Stop the app and run the built-in updater from the repository:
+
+```bash
+./kady update         # macOS / Linux
+.\kady.cmd update    # Windows
+```
+
+The updater fast-forwards the current branch from its configured upstream and
+exits. It refuses tracked local changes, a detached HEAD, branches without an
+upstream, and non-fast-forward updates instead of stashing, resetting, or
+merging automatically. Start Kady normally afterwards; the launcher installs
+the dependencies required by the updated checkout.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| `start.sh: Permission denied` | Run `chmod +x start.sh`, then retry. |
+| `./kady: Permission denied` | Run `chmod +x kady start.sh`, then retry. |
 | No model access | Open Providers, check the credential or local server, then choose an available model. |
 | Port in use | Read the launcher's message. Stop the named conflicting process or change `KADY_PORT` / `KADY_FRONTEND_PORT`; a changed backend address also needs `NEXT_PUBLIC_ADK_API_URL`. |
 | `origin_not_allowed` | Use the normal UI URL or configure `KADY_ALLOWED_ORIGINS`; see [Security](security.md). |
