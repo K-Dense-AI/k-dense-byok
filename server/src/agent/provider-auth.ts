@@ -651,3 +651,41 @@ export function nvidiaModelForClient(model: Model<Api>): ClientNvidiaModel {
     available: true,
   };
 }
+
+export interface ClientEdenaiModel
+  extends Omit<ClientProviderModel, "sourceId" | "billingMode"> {
+  sourceId: "edenai";
+  billingMode: "payg";
+}
+
+/**
+ * Eden AI, like NVIDIA, is an API-key provider outside SUBSCRIPTION_PROVIDERS
+ * (the key is EDENAI_API_KEY, managed by /credentials). Its billing is the
+ * opposite of NIM's, though: Eden charges real per-token USD, published in its
+ * own model catalogue, so entries carry billingMode "payg" and the usage counts
+ * against the project spend cap — matching `billingForProvider("edenai")`.
+ *
+ * Descriptions are kept short on purpose: this list is ~850 models, it is
+ * re-fetched whenever the picker opens, and the picker renders the label,
+ * provider, context window, and price rather than the description.
+ */
+export function edenaiModelForClient(model: Model<Api>): ClientEdenaiModel {
+  return {
+    id: `edenai/${model.id}`,
+    label: model.name,
+    provider: "Eden AI",
+    sourceId: "edenai",
+    sourceLabel: "Eden AI",
+    tier: tierFor(model),
+    context_length: model.contextWindow,
+    pricing: {
+      prompt: model.cost.input,
+      completion: model.cost.output,
+    },
+    modality: model.input.includes("image") ? "text+image->text" : "text->text",
+    description: `Eden AI gateway → ${model.id}`,
+    reasoning: model.reasoning,
+    billingMode: "payg",
+    available: true,
+  };
+}

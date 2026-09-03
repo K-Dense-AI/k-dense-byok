@@ -11,6 +11,7 @@ Kady uses canonical `provider/model` references in the picker, backend, cost led
 - OpenRouter: `openrouter/<vendor>/<model>`
 - Pi OAuth providers: `openai-codex/<model>`, `anthropic/<model>`, `github-copilot/<model>`, or `xai/<model>`
 - NVIDIA NIM: `nvidia/<vendor>/<model>`
+- Eden AI: `edenai/<Eden model id>` — the Eden id verbatim, however many slashes it has (e.g. `edenai/openai/gpt-4o-mini`, `edenai/fireworks_ai/accounts/fireworks/models/glm-5p3`)
 - Ollama: `ollama/<name>`
 
 This distinction matters: `openrouter/anthropic/<model>` is an OpenRouter API-key request, while `anthropic/<model>` is a direct Anthropic OAuth request. Fusion picker entries use an internal `fusion/<preset>` selector and resolve to the OpenRouter-only `openrouter/fusion` request.
@@ -44,6 +45,16 @@ NIM billing is different from OpenRouter: build.nvidia.com draws on NVIDIA-manag
 
 The picker lists Pi's built-in NIM catalogue, which won't include private or early-access endpoints. To surface those, set `NVIDIA_EXTRA_MODELS` in `.env` to a comma- or whitespace-separated list of model ids (e.g. `private/vendor/example-model`) — they appear under the NVIDIA NIM picker section and run like any other NIM model. Values are model ids exactly as sent to the API; don't add a `nvidia/` ref prefix (NIM ids can legitimately begin with a `nvidia/` vendor segment). Ids that later land in Pi's catalogue are deduped automatically, catalogue metadata winning.
 
+## Eden AI models
+
+Add an Eden AI API key (from [app.edenai.run](https://app.edenai.run/admin/iam/api-keys)) under **Settings → API keys** and an **Eden AI** section appears in the picker. Eden is a hosted gateway: one key reaches models from OpenAI, Anthropic, Google, Mistral, Qwen, Fireworks, and others through a single OpenAI-compatible endpoint. The key is stored as `EDENAI_API_KEY` in `.env`, exactly like the OpenRouter and NVIDIA keys, and child subagent processes inherit it. `EDENAI_BASE_URL` overrides the API root (default `https://api.edenai.run/v3`) for a proxied or self-hosted deployment.
+
+Unlike the checked-in OpenRouter catalogue, the Eden model list is **discovered live**: the backend's `/edenai/models` endpoint reads Eden's own `/v3/models`, caches the result (in memory, plus a snapshot under the Pi agent directory so a restart still has pricing), and serves it to the picker. The browser never sees the key. Nothing about Eden is added to `web/src/data/models.json`.
+
+The picker lists only models Eden reports as supporting function calling, because Kady attaches tool definitions to every turn — the same rule the OpenRouter catalogue is generated with. A model outside that list still resolves and runs if you name it explicitly (a persisted chat, `DEFAULT_MODEL_ID`, or a subagent file), and is priced from the same catalogue.
+
+Eden billing is **not** like NVIDIA NIM: Eden charges real per-token dollars, and its catalogue publishes the effective (post-discount) price for your account. Kady converts those per-token prices to Pi's per-1M `model.cost`, so Eden usage is recorded as project spend and **does** count toward a project spend cap. Reasoning is supported for models Eden marks as reasoning-capable — the thinking level rides the request as Eden's documented `reasoning_effort`; other models send no reasoning parameter at all.
+
 ## OpenRouter Fusion presets
 
 This fork adds an **Openrouter Fusion** section at the top of the picker: named presets where a panel of models deliberates on your prompt and an Opus 4.8 judge synthesizes one answer, with the combined panel price and (where published) the DRACO benchmark score shown on each entry. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.
@@ -55,6 +66,7 @@ This fork adds an **Openrouter Fusion** section at the top of the picker: named 
 - To default to a connected subscription model, set `DEFAULT_MODEL_PROVIDER` to `openai-codex`, `anthropic`, `github-copilot`, or `xai` and set `DEFAULT_MODEL_ID` to that provider's model id.
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
 - To default to a NIM model, set `DEFAULT_MODEL_PROVIDER=nvidia` and `DEFAULT_MODEL_ID` to the NIM model id (e.g. `nvidia/llama-3.3-nemotron-super-49b-v1.5`).
+- To default to an Eden AI model, set `DEFAULT_MODEL_PROVIDER=edenai` and `DEFAULT_MODEL_ID` to the Eden model id (e.g. `openai/gpt-4o-mini`).
 
 ## Local Ollama models
 

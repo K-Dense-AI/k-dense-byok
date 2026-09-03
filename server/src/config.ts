@@ -86,6 +86,21 @@ export const OPENAI_COMPATIBLE_CONFIGURED = Boolean(
   process.env.OPENAI_COMPATIBLE_BASE_URL?.trim(),
 );
 
+/**
+ * Eden AI (https://www.edenai.co) — a hosted gateway whose V3 API speaks
+ * OpenAI chat-completions at `<base>/chat/completions` and fronts many
+ * upstream providers under `<vendor>/<model>` ids. Overridable so a proxied or
+ * self-hosted deployment can be pointed elsewhere; the credential is
+ * EDENAI_API_KEY (read at call time, so Settings applies without a restart).
+ *
+ * Unlike OPENAI_COMPATIBLE_BASE_URL this is a *paid* gateway with real
+ * per-token pricing, which is why Eden models are priced from Eden's own
+ * catalogue and billed `payg` rather than $0.
+ */
+export const EDENAI_BASE_URL =
+  process.env.EDENAI_BASE_URL?.trim().replace(/\/+$/, "") ||
+  "https://api.edenai.run/v3";
+
 /** Whether Modal-style remote compute is configured (kept for /config parity). */
 export function modalConfigured(): boolean {
   return Boolean(process.env.MODAL_TOKEN_ID && process.env.MODAL_TOKEN_SECRET);

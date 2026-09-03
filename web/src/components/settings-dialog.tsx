@@ -77,6 +77,14 @@ const KEY_DEFS: KeyDef[] = [
     hint: "Direct access to NVIDIA NIM models (Nemotron, Llama, GPT-OSS, …). Usage draws on your NVIDIA API credits, which Kady cannot meter.",
   },
   {
+    id: "edenai",
+    bodyField: "edenaiApiKey",
+    label: "Eden AI API key (optional)",
+    placeholder: "your Eden AI key",
+    keysUrl: "https://app.edenai.run/admin/iam/api-keys",
+    hint: "One gateway to models from OpenAI, Anthropic, Google, Mistral, Qwen, and more. Billed per token by Eden AI, so usage counts toward the project spend limit.",
+  },
+  {
     id: "exa",
     bodyField: "exaApiKey",
     label: "Exa API key (optional)",
@@ -132,8 +140,11 @@ function KeyRow({
           | null;
         if (!res.ok) throw new Error(data?.detail || `Save failed (${res.status})`);
         if (data) onStatus(data as CredentialStatus);
-        // NVIDIA keys also gate a model-picker section, so both re-probe it.
-        if (def.id === "openrouter" || def.id === "nvidia") notifyProviderAuthChanged();
+        // NVIDIA and Eden AI keys also gate a model-picker section, so those
+        // re-probe it too.
+        if (def.id === "openrouter" || def.id === "nvidia" || def.id === "edenai") {
+          notifyProviderAuthChanged();
+        }
         setKeyInput("");
         setSaved(true);
       } catch (exc) {

@@ -14,7 +14,8 @@
  *
  * Managed keys: OpenRouter (model calls and cross-browser speech
  * transcription); NVIDIA (direct NVIDIA NIM model access via build.nvidia.com
- * API credits); the optional pi-web-access search providers — Exa,
+ * API credits); Eden AI (hosted gateway, per-token USD, live model discovery);
+ * the optional pi-web-access search providers — Exa,
  * Perplexity, Gemini (web search works without any of the three via the Exa MCP
  * fallback; a key unlocks the direct provider, and Gemini also unlocks
  * YouTube/video understanding); and the Modal remote-compute token pair
@@ -28,6 +29,10 @@ import fs from "node:fs";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { REPO_ROOT } from "../config.ts";
+import {
+  invalidateEdenaiCatalogue,
+  warmEdenaiCatalogue,
+} from "../agent/edenai.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 import { validateModalCredentials } from "../modal/adapter.ts";
 import { modalJobManager } from "../modal/manager.ts";
@@ -74,6 +79,26 @@ const MANAGED_KEYS: ManagedKey[] = [
       } catch {
         /* Runtime refresh failure does not undo the persisted environment change. */
       }
+    },
+  },
+  {
+    id: "edenai",
+    bodyField: "edenaiApiKey",
+    envVar: "EDENAI_API_KEY",
+    onChange: async (key) => {
+      // The discovered catalogue is priced per account, so a key change
+      // invalidates it: a different account can see different prices, and a
+      // cleared key must not leave a stale list in the picker.
+      invalidateEdenaiCatalogue();
+      try {
+        if (key) await getModelRuntime().setRuntimeApiKey("edenai", key);
+        else await getModelRuntime().removeRuntimeApiKey("edenai");
+      } catch {
+        /* Runtime refresh failure does not undo the persisted environment change. */
+      }
+      // Warm in the background so the first run after adding a key is priced
+      // even if the user never opens the model picker.
+      if (key) warmEdenaiCatalogue();
     },
   },
   { id: "exa", bodyField: "exaApiKey", envVar: "EXA_API_KEY" },

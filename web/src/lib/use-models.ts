@@ -36,6 +36,14 @@ interface NvidiaListResponse {
   models?: Model[];
 }
 
+interface EdenaiListResponse {
+  /** True when EDENAI_API_KEY is set on the backend. */
+  configured?: boolean;
+  models?: Model[];
+  /** Set when a key is configured but Eden's catalogue could not be fetched. */
+  error?: string;
+}
+
 export type ModelAvailability = "checking" | "available" | "unavailable";
 
 interface ProviderDiscovery {
@@ -63,6 +71,10 @@ let nvidiaDiscoveryCache:
   | { value: NvidiaListResponse; loadedAt: number }
   | undefined;
 let nvidiaDiscoveryInFlight: Promise<NvidiaListResponse> | undefined;
+let edenaiDiscoveryCache:
+  | { value: EdenaiListResponse; loadedAt: number }
+  | undefined;
+let edenaiDiscoveryInFlight: Promise<EdenaiListResponse> | undefined;
 
 function discoverProviders(force = false): Promise<ProviderDiscovery> {
   if (
@@ -195,6 +207,36 @@ function discoverNvidia(force = false): Promise<NvidiaListResponse> {
   return inFlight;
 }
 
+/** Eden AI models, pre-shaped by the backend from Eden's live `/v3/models`
+ *  catalogue. The backend holds the key and caches the upstream response, so
+ *  this is the same `{configured, models}` envelope NVIDIA uses, plus an
+ *  `error` for a configured key whose discovery call failed. */
+function discoverEdenai(force = false): Promise<EdenaiListResponse> {
+  if (
+    !force &&
+    edenaiDiscoveryCache &&
+    Date.now() - edenaiDiscoveryCache.loadedAt < DISCOVERY_CACHE_MS
+  ) {
+    return Promise.resolve(edenaiDiscoveryCache.value);
+  }
+  if (edenaiDiscoveryInFlight) return edenaiDiscoveryInFlight;
+  const request = apiFetch("/edenai/models").then(async (response) =>
+    response.ok
+      ? ((await response.json()) as EdenaiListResponse)
+      : { configured: false, models: [] },
+  );
+  const inFlight = request
+    .then((value) => {
+      edenaiDiscoveryCache = { value, loadedAt: Date.now() };
+      return value;
+    })
+    .finally(() => {
+      if (edenaiDiscoveryInFlight === inFlight) edenaiDiscoveryInFlight = undefined;
+    });
+  edenaiDiscoveryInFlight = inFlight;
+  return inFlight;
+}
+
 export interface UseModelsReturn {
   /** Every model available to the user: static OpenRouter catalogue + live Ollama tags + user Fusion configs. */
   models: Model[];
@@ -219,6 +261,12 @@ export interface UseModelsReturn {
   nvidiaModels: Model[];
   /** True when the backend resolved an NVIDIA API key. */
   nvidiaConfigured: boolean;
+  /** Eden AI gateway models, present once an Eden API key is configured. */
+  edenaiModels: Model[];
+  /** True when the backend resolved an Eden AI API key. */
+  edenaiConfigured: boolean;
+  /** Why Eden discovery returned nothing despite a configured key. */
+  edenaiError: string | null;
   modelAvailability: (model: Pick<Model, "id">) => ModelAvailability;
   /** Whether a current or persisted model can accept a new request. */
   isModelAvailable: (model: Pick<Model, "id">) => boolean;
@@ -247,6 +295,10 @@ export function useModels(): UseModelsReturn {
   const [nvidiaModels, setNvidiaModels] = useState<Model[]>([]);
   const [nvidiaConfigured, setNvidiaConfigured] = useState(false);
   const [nvidiaLoaded, setNvidiaLoaded] = useState(false);
+  const [edenaiModels, setEdenaiModels] = useState<Model[]>([]);
+  const [edenaiConfigured, setEdenaiConfigured] = useState(false);
+  const [edenaiError, setEdenaiError] = useState<string | null>(null);
+  const [edenaiLoaded, setEdenaiLoaded] = useState(false);
   const [openrouterConfigured, setOpenrouterConfigured] = useState<boolean | null>(
     null,
   );
@@ -295,6 +347,22 @@ export function useModels(): UseModelsReturn {
       });
   }, []);
 
+  const fetchEdenai = useCallback((force = false) => {
+    void discoverEdenai(force)
+      .then((data) => {
+        setEdenaiConfigured(Boolean(data.configured));
+        setEdenaiModels(Array.isArray(data.models) ? data.models : []);
+        setEdenaiError(data.error ?? null);
+        setEdenaiLoaded(true);
+      })
+      .catch(() => {
+        setEdenaiConfigured(false);
+        setEdenaiModels([]);
+        setEdenaiError(null);
+        setEdenaiLoaded(true);
+      });
+  }, []);
+
   const fetchProviders = useCallback((force = false) => {
     const requestId = ++providerRequestId.current;
     void discoverProviders(force)
@@ -317,8 +385,9 @@ export function useModels(): UseModelsReturn {
     fetchOllama();
     fetchOpenAICompatible();
     fetchNvidia();
+    fetchEdenai();
     fetchProviders();
-  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchEdenai, fetchProviders]);
 
   useEffect(
     () =>
@@ -326,21 +395,24 @@ export function useModels(): UseModelsReturn {
         fetchOllama(true);
         fetchOpenAICompatible(true);
         fetchNvidia(true);
+        fetchEdenai(true);
         fetchProviders();
       }),
-    [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders],
+    [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchEdenai, fetchProviders],
   );
 
   useEffect(() => {
-    // Also re-probes NVIDIA: Settings fires this event when the key changes.
+    // Also re-probes the API-key providers whose picker sections a key gates:
+    // Settings fires this event whenever one of those keys changes.
     const refreshProviders = () => {
       fetchProviders(true);
       fetchNvidia(true);
+      fetchEdenai(true);
     };
     window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
     return () =>
       window.removeEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
-  }, [fetchProviders, fetchNvidia]);
+  }, [fetchProviders, fetchNvidia, fetchEdenai]);
 
   // Re-read Fusion configs when Settings saves them (or another tab edits them).
   const [fusionRevision, setFusionRevision] = useState(0);
@@ -480,10 +552,12 @@ export function useModels(): UseModelsReturn {
       ...providerModels,
       ...openrouterModels,
       ...nvidiaModels,
+      ...edenaiModels,
       ...enrichedOllamaModels,
       ...enrichedOpenAICompatibleModels,
     ],
     [
+      edenaiModels,
       enrichedOllamaModels,
       enrichedOpenAICompatibleModels,
       fusionModels,
@@ -510,6 +584,7 @@ export function useModels(): UseModelsReturn {
         return "checking";
       }
       if (model.id.startsWith("nvidia/") && !nvidiaLoaded) return "checking";
+      if (model.id.startsWith("edenai/") && !edenaiLoaded) return "checking";
       if (
         (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) &&
         openrouterConfigured === null
@@ -534,6 +609,12 @@ export function useModels(): UseModelsReturn {
       if (model.id.startsWith("nvidia/")) {
         return nvidiaConfigured ? "available" : "unavailable";
       }
+      // A persisted Eden ref absent from the discovered list still runs (the
+      // backend resolves any `edenai/<id>`), so only a missing key makes it
+      // unavailable — the same rule as NIM.
+      if (model.id.startsWith("edenai/")) {
+        return edenaiConfigured ? "available" : "unavailable";
+      }
       if (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) {
         return openrouterConfigured === false ? "unavailable" : "available";
       }
@@ -546,6 +627,8 @@ export function useModels(): UseModelsReturn {
     },
     [
       connectedProviders,
+      edenaiConfigured,
+      edenaiLoaded,
       models,
       nvidiaConfigured,
       nvidiaLoaded,
@@ -567,8 +650,9 @@ export function useModels(): UseModelsReturn {
     fetchOllama(true);
     fetchOpenAICompatible(true);
     fetchNvidia(true);
+    fetchEdenai(true);
     fetchProviders(true);
-  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchEdenai, fetchProviders]);
 
   return {
     models,
@@ -581,6 +665,9 @@ export function useModels(): UseModelsReturn {
     providerStatuses,
     nvidiaModels,
     nvidiaConfigured,
+    edenaiModels,
+    edenaiConfigured,
+    edenaiError,
     modelAvailability,
     isModelAvailable,
     refresh,

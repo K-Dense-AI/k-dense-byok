@@ -5,6 +5,7 @@
  *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY)
  *   - Pi OAuth providers (OpenAI Codex, Anthropic, GitHub Copilot, xAI)
  *   - NVIDIA NIM (built-in Pi provider, key via NVIDIA_API_KEY)
+ *   - Eden AI (registered provider, key via EDENAI_API_KEY; see agent/edenai.ts)
  *   - Ollama (local, OpenAI-compatible at OLLAMA_BASE_URL)
  *
  * The frontend picker sends model refs like "openrouter/anthropic/claude-opus-4.8"
@@ -28,6 +29,15 @@ import {
   isSubscriptionProvider,
   type SubscriptionProviderId,
 } from "./provider-auth.ts";
+import {
+  EDENAI_PROVIDER_ID,
+  buildEdenaiModel,
+  edenaiApiKey,
+  edenaiBaseUrl,
+  isEdenaiRef,
+  stripEdenaiRef,
+  warmEdenaiCatalogue,
+} from "./edenai.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
 // OpenAI-compatible provider can point at any compatible gateway — e.g.
@@ -313,8 +323,30 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
     apiKey: "openai-compatible",
   });
 
+  // Eden AI is not one of Pi's built-in providers, so it is registered here.
+  // Deliberately WITHOUT an `apiKey`: Pi treats any literal value (an empty
+  // string included) as a configured credential, which would make checkAuth
+  // report Eden as ready and turn a missing key into an opaque 401 mid-run.
+  // Registering with no key leaves the provider unconfigured until a real one
+  // arrives — from the environment below, or live from Settings via
+  // /credentials — and lets `assertModelAuthentication` name Settings instead.
+  modelRuntime.registerProvider(EDENAI_PROVIDER_ID, {
+    name: "Eden AI",
+    baseUrl: edenaiBaseUrl(),
+    api: "openai-completions",
+  });
+
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
   if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
+
+  const edenKey = edenaiApiKey();
+  if (edenKey) {
+    await modelRuntime.setRuntimeApiKey(EDENAI_PROVIDER_ID, edenKey);
+    // Eden's catalogue is the only source of its pricing, and resolveModel is
+    // synchronous — warm it in the background so a run that starts before the
+    // picker has ever asked still ledgers real cost against the spend cap.
+    warmEdenaiCatalogue();
+  }
 }
 
 export class ModelResolutionError extends Error {
@@ -394,7 +426,9 @@ export async function assertModelAuthentication(
         ? "OpenRouter is not configured. Add an API key in Settings or choose another model provider."
         : model.provider === "nvidia"
           ? "NVIDIA is not configured. Add an API key in Settings or choose another model provider."
-          : `${model.provider} is not connected. Connect it in Settings or choose another model.`,
+          : model.provider === EDENAI_PROVIDER_ID
+            ? "Eden AI is not configured. Add an API key in Settings or choose another model provider."
+            : `${model.provider} is not connected. Connect it in Settings or choose another model.`,
     );
   }
   if (isSubscriptionProvider(model.provider) && auth.type !== "oauth") {
@@ -448,6 +482,20 @@ export function resolveModel(
       throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
     }
     return registry.find("nvidia", id) ?? buildNvidiaModel(id);
+  }
+  // Eden AI must be recognized here, ahead of the OpenRouter fallback at the
+  // bottom: "edenai/openai/gpt-4o-mini" would otherwise be read as the
+  // OpenRouter vendor id "edenai/openai/gpt-4o-mini" and sent, unpriced, to
+  // OpenRouter. Eden ids carry their own slashes, so — as with NIM and
+  // openai-compatible — only the provider prefix is removed.
+  if (isEdenaiRef(r)) {
+    const id = stripEdenaiRef(r);
+    if (!id) {
+      throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
+    }
+    // No `registry.find` first: Eden has no built-in Pi catalogue entry, and
+    // its live catalogue is the only source of pricing and capabilities.
+    return buildEdenaiModel(id);
   }
   const direct = directProviderRef(r);
   if (direct) {

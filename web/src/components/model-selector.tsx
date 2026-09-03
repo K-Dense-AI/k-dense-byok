@@ -73,6 +73,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
   NVIDIA:    "text-green-600 dark:text-green-400",
+  "Eden AI": "text-lime-600 dark:text-lime-400",
   Ollama:    "text-teal-600 dark:text-teal-400",
   "OpenAI-Compatible": "text-teal-600 dark:text-teal-400",
   "Openrouter Fusion": "text-red-600 dark:text-red-400",
@@ -121,6 +122,8 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     openaiCompatibleAvailable,
     openaiCompatibleModels,
     openaiCompatibleConfigured,
+    edenaiConfigured,
+    edenaiError,
     refresh,
   } = useModels();
 
@@ -170,6 +173,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       "xai",
       "openrouter",
       "nvidia",
+      "edenai",
       "ollama",
       "openai-compatible",
     ];
@@ -379,6 +383,29 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                   and reopen this menu.
                 </>
               )}
+            </div>
+          </div>
+        ) : null}
+
+        {/* A configured Eden key that lists nothing is a discovery failure (bad
+            key, network, gateway outage) — say so rather than leaving the
+            section out and looking like the key was never saved. */}
+        {!search &&
+        edenaiConfigured &&
+        !groups.some((group) => group.id === "edenai") ? (
+          <div>
+            {groups.length > 0 ? <div className="my-1 border-t border-border/60" /> : null}
+            <div className="flex items-center gap-1.5 px-3 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <BrainCircuitIcon className="size-3" aria-hidden />
+              <span>Eden AI</span>
+              <span className="ml-auto text-[10px] font-normal normal-case tracking-normal text-muted-foreground/70">
+                {edenaiError ? "unavailable" : "0 available"}
+              </span>
+            </div>
+            <div className="px-3 py-2 text-[11px] leading-relaxed text-muted-foreground/80">
+              {edenaiError
+                ? `Eden AI model discovery failed: ${edenaiError}`
+                : "Eden AI returned no tool-calling models. Check the key in Settings → API keys and reopen this menu."}
             </div>
           </div>
         ) : null}

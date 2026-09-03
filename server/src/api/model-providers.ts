@@ -3,12 +3,19 @@ import {
   ProviderAuthError,
   ProviderAuthManager,
   SUBSCRIPTION_PROVIDERS,
+  edenaiModelForClient,
   isSubscriptionProvider,
   modelForClient,
   nvidiaModelForClient,
   type ProviderAuthRuntime,
 } from "../agent/provider-auth.ts";
 import { buildNvidiaModel, nvidiaExtraModelIds } from "../agent/models.ts";
+import {
+  buildEdenaiModel,
+  edenaiCatalogue,
+  edenaiConfigured,
+  edenaiPickerModels,
+} from "../agent/edenai.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 
 export interface RegisterModelProviderRoutesOptions {
@@ -114,6 +121,35 @@ export async function registerModelProviderRoutes(
       };
     } catch (error) {
       return errorReply(reply, error);
+    }
+  });
+
+  // Eden AI model discovery. Also API-key-based, but its catalogue is fetched
+  // from Eden's own `/v3/models` (Pi ships no Eden entries) and cached
+  // server-side, so the browser never sees EDENAI_API_KEY and one upstream
+  // request serves every picker open.
+  //
+  // `error` is reported alongside an empty list rather than as a failed
+  // response: a configured key whose discovery call failed is a different
+  // state from "no key", and the picker shows the reason instead of silently
+  // rendering an empty section.
+  app.get("/edenai/models", async (_req, reply) => {
+    if (!edenaiConfigured()) return { configured: false, models: [] };
+    try {
+      const catalogue = await edenaiCatalogue();
+      return {
+        configured: true,
+        models: edenaiPickerModels(catalogue).map((info) =>
+          edenaiModelForClient(buildEdenaiModel(info.id, info)),
+        ),
+      };
+    } catch (error) {
+      reply.code(200);
+      return {
+        configured: true,
+        models: [],
+        error: error instanceof Error ? error.message : "Eden AI discovery failed",
+      };
     }
   });
 
