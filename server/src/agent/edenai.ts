@@ -351,14 +351,85 @@ export function buildEdenaiModel(id: string, info?: EdenaiModelInfo): Model<Api>
 }
 
 /**
+ * Eden models that answered a chat request with "does not support
+ * /chat/completions".
+ *
+ * Eden's catalogue does not say which endpoint a model implements: verified
+ * against the live `/v3/models` payload, where only 1 of ~1000 rows carries any
+ * `supports_*_api` flag, the documented filter query params are ignored, and
+ * there is no per-model detail route. A handful of upstream models (OpenAI's
+ * `-pro` and `codex` families, in practice) are Responses-API-only and reject a
+ * chat-completions request outright.
+ *
+ * Since the catalogue cannot be asked, the gateway is believed instead: the
+ * first rejection records the id here, and the picker drops it from then on. No
+ * id pattern is hardcoded — "pro" is an ordinary tier name for Gemini,
+ * DeepSeek, and others whose chat endpoint works fine. This is deliberately
+ * process-lifetime state, not persisted: a model that gains chat support is
+ * re-offered after a restart.
+ */
+const chatIncompatible = new Set<string>();
+
+/** Eden's rejection of a Responses-API-only model on /chat/completions. */
+export function isEdenaiEndpointMismatch(message: string | undefined | null): boolean {
+  return Boolean(message) && /do not support\s+\/chat\/completions/i.test(message!);
+}
+
+/**
+ * Record every model id Eden named in such a rejection. Ids are taken from the
+ * message ("Model(s) do not support /chat/completions: 'azure/gpt-5-pro'"),
+ * which is authoritative — a turn can name a model other than the chat's own.
+ * Falls back to the ref the run used when the message quotes nothing.
+ */
+export function noteEdenaiEndpointMismatch(
+  message: string,
+  fallbackRef?: string,
+): string[] {
+  const quoted = [...message.matchAll(/'([^']+)'/g)].map((match) => match[1].trim());
+  const ids = (quoted.length > 0 ? quoted : [stripEdenaiRef(fallbackRef ?? "")])
+    .map((id) => stripEdenaiRef(id))
+    .filter(Boolean);
+  for (const id of ids) chatIncompatible.add(id);
+  return ids;
+}
+
+/**
+ * Append guidance to an Eden endpoint-mismatch error, or pass the message
+ * through. The raw gateway text names the endpoint but not what to do, and the
+ * user cannot tell from the picker which models are affected.
+ */
+export function explainEdenaiError(message: string, modelRef?: string): string {
+  if (!isEdenaiEndpointMismatch(message)) return message;
+  const ids = noteEdenaiEndpointMismatch(message, modelRef);
+  const named = ids.length > 0 ? ids.map((id) => `\`edenai/${id}\``).join(", ") : "This model";
+  return (
+    `${message}\n\n` +
+    `${named} is served by Eden AI on the Responses API only, and Kady sends ` +
+    `chat completions. Eden's model catalogue does not publish which endpoint ` +
+    `a model uses, so this is only discoverable by trying it — the model has ` +
+    `now been dropped from Kady's Eden AI list and will not be offered again ` +
+    `while the server is running. Pick another Eden AI model and resend; ` +
+    `OpenAI's "-pro" and "codex" models are the usual ones affected.`
+  );
+}
+
+/** Test hook: forget the learned endpoint rejections. */
+export function resetEdenaiEndpointStateForTests(): void {
+  chatIncompatible.clear();
+}
+
+/**
  * The models offered in the picker: text-capable and tool-calling only.
  *
  * Kady attaches tool definitions to every turn, so a model without
  * `supports_function_calling` cannot run the agent loop — the same reason
  * `web/src/data/models.json` is generated from tool-calling OpenRouter models.
+ * Models the gateway has rejected as Responses-API-only are dropped too.
  * The cache deliberately keeps every row so a persisted ref to an excluded
  * model still prices correctly.
  */
 export function edenaiPickerModels(models: EdenaiModelInfo[]): EdenaiModelInfo[] {
-  return models.filter((model) => model.functionCalling);
+  return models.filter(
+    (model) => model.functionCalling && !chatIncompatible.has(model.id),
+  );
 }

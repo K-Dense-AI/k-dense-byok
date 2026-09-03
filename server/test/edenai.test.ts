@@ -10,10 +10,14 @@ import {
   edenaiCatalogue,
   edenaiConfigured,
   edenaiPickerModels,
+  explainEdenaiError,
   fetchEdenaiModels,
   invalidateEdenaiCatalogue,
+  isEdenaiEndpointMismatch,
   isEdenaiRef,
+  noteEdenaiEndpointMismatch,
   parseEdenaiModels,
+  resetEdenaiEndpointStateForTests,
   setEdenaiCatalogueForTests,
   stripEdenaiRef,
   type EdenaiModelInfo,
@@ -691,6 +695,115 @@ describe("GET /edenai/models", () => {
     expect(body.configured).toBe(true);
     expect(body.models).toEqual([]);
     expect(body.error).toMatch(/HTTP 401/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Responses-API-only models
+//
+// Observed live: a chat request to `azure/gpt-5-pro` returns
+//   400 {"message":"Model(s) do not support /chat/completions:
+//        'azure/gpt-5-pro' (supports: /responses)", ...}
+// and nothing in `/v3/models` distinguishes such a model — only 1 of ~1000
+// rows carries any supports_*_api flag, the filter query params are ignored,
+// and there is no per-model route. So the gateway's own rejection is the only
+// available signal, and it is learned rather than guessed from the id.
+// ---------------------------------------------------------------------------
+
+const ENDPOINT_ERROR =
+  `400: {"message":"Model(s) do not support /chat/completions: ` +
+  `'azure/gpt-5-pro' (supports: /responses)","type":"invalid_request_error",` +
+  `"param":null,"code":"invalid_parameter"}`;
+
+describe("Eden AI Responses-API-only models", () => {
+  beforeEach(() => {
+    resetEdenaiEndpointStateForTests();
+  });
+
+  afterEach(() => {
+    resetEdenaiEndpointStateForTests();
+  });
+
+  it("recognizes the endpoint rejection and nothing else", () => {
+    expect(isEdenaiEndpointMismatch(ENDPOINT_ERROR)).toBe(true);
+    expect(isEdenaiEndpointMismatch("400: rate limit exceeded")).toBe(false);
+    expect(isEdenaiEndpointMismatch("Provider finish_reason: content_filter")).toBe(false);
+    expect(isEdenaiEndpointMismatch(undefined)).toBe(false);
+  });
+
+  it("explains what to do and keeps the gateway's own message", () => {
+    const explained = explainEdenaiError(ENDPOINT_ERROR, "edenai/azure/gpt-5-pro");
+
+    expect(explained).toContain(ENDPOINT_ERROR);
+    expect(explained).toContain("Responses API");
+    expect(explained).toContain("edenai/azure/gpt-5-pro");
+    expect(explained).toContain("Pick another Eden AI model");
+  });
+
+  it("passes unrelated errors through untouched", () => {
+    expect(explainEdenaiError("400: rate limit exceeded", "edenai/openai/gpt-4o-mini")).toBe(
+      "400: rate limit exceeded",
+    );
+  });
+
+  it("drops the rejected model from the picker, keeping the rest", () => {
+    const catalogue = [
+      info({ id: "azure/gpt-5-pro" }),
+      info({ id: GPT_4O_MINI }),
+      // A different vendor's "pro" tier: an ordinary chat model that must NOT
+      // be excluded by any id heuristic.
+      info({ id: "google/gemini-3.1-pro" }),
+    ];
+
+    expect(edenaiPickerModels(catalogue).map((m) => m.id)).toEqual([
+      "azure/gpt-5-pro",
+      GPT_4O_MINI,
+      "google/gemini-3.1-pro",
+    ]);
+
+    explainEdenaiError(ENDPOINT_ERROR, "edenai/azure/gpt-5-pro");
+
+    expect(edenaiPickerModels(catalogue).map((m) => m.id)).toEqual([
+      GPT_4O_MINI,
+      "google/gemini-3.1-pro",
+    ]);
+  });
+
+  // The message is authoritative: a turn can name a model other than the
+  // chat's own (a subagent, or a multi-model rejection).
+  it("learns every id the message quotes, not just the run's model", () => {
+    const catalogue = [
+      info({ id: "azure/gpt-5-pro" }),
+      info({ id: "openai/gpt-5.5-pro" }),
+      info({ id: GPT_4O_MINI }),
+    ];
+    const message =
+      "Model(s) do not support /chat/completions: 'azure/gpt-5-pro', " +
+      "'openai/gpt-5.5-pro' (supports: /responses)";
+
+    expect(noteEdenaiEndpointMismatch(message)).toEqual([
+      "azure/gpt-5-pro",
+      "openai/gpt-5.5-pro",
+    ]);
+    expect(edenaiPickerModels(catalogue).map((m) => m.id)).toEqual([GPT_4O_MINI]);
+  });
+
+  it("falls back to the run's ref when the message quotes no id", () => {
+    const message = "Model(s) do not support /chat/completions (supports: /responses)";
+    expect(noteEdenaiEndpointMismatch(message, "edenai/azure/gpt-5-pro")).toEqual([
+      "azure/gpt-5-pro",
+    ]);
+  });
+
+  // An excluded model is still resolvable and correctly priced: the ledger
+  // must not lose track of a ref a user pinned in a subagent or DEFAULT_MODEL_ID.
+  it("keeps a rejected model resolvable and priced", () => {
+    setEdenaiCatalogueForTests([info({ id: "azure/gpt-5-pro", costInput: 15 })]);
+    explainEdenaiError(ENDPOINT_ERROR, "edenai/azure/gpt-5-pro");
+
+    const model = resolveModel("edenai/azure/gpt-5-pro", getModelRegistry());
+    expect(model.provider).toBe("edenai");
+    expect(model.cost.input).toBe(15);
   });
 });
 

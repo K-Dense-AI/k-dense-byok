@@ -7,6 +7,9 @@
  * first vendor tool that answers (`nvidia-smi`, `amd-smi`, `rocm-smi`, or
  * `ioreg` on Apple Silicon). External probes are throttled and fall back to the
  * last good reading, so a 2-3s UI poll stays negligible.
+ *
+ * The GPU probe additionally gives up for the rest of the run once a vendor
+ * tool proves unusable — see `sampleGpu`, which the UI polls continuously.
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";
@@ -362,7 +365,59 @@ async function probeAppleGpu(): Promise<SystemStats["gpu"]> {
   };
 }
 
+/**
+ * GPU sampling is the one probe the UI drives on a timer (every 2-3s for as
+ * long as a workspace is open), so a vendor tool that cannot run unattended
+ * must be abandoned rather than retried forever.
+ *
+ * The motivating case: AMD ships `amd-smi.exe` in System32, and on Windows it
+ * requires Administrator. Spawning it from this (unelevated) backend raises a
+ * UAC consent dialog on *every* invocation — and neither answer helps, because
+ * consent is not inherited by the next spawn. A user with an AMD GPU therefore
+ * got an elevation prompt every few seconds for as long as a chat was open.
+ *
+ * So: a probe that fails because it needs elevation is disabled immediately,
+ * one that just keeps failing is disabled after a few tries, and
+ * KADY_DISABLE_GPU_PROBE=1 turns the whole thing off up front (the escape
+ * hatch for anyone who *grants* elevation, where the call succeeds and there
+ * is no failure to detect). Disabling only costs the GPU segment of the
+ * monitor, which the UI already hides when no GPU is reported.
+ */
+let gpuProbeDisabled = false;
+let gpuProbeFailures = 0;
+const MAX_GPU_PROBE_FAILURES = 3;
+
+function gpuProbeDisabledByEnv(): boolean {
+  const raw = process.env.KADY_DISABLE_GPU_PROBE?.trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function disableGpuProbe(reason: string): void {
+  if (gpuProbeDisabled) return;
+  gpuProbeDisabled = true;
+  console.warn(
+    `[system-stats] GPU monitoring disabled for this run: ${reason}. ` +
+      "The rest of the resource monitor is unaffected; set " +
+      "KADY_DISABLE_GPU_PROBE=1 to skip the probe from startup.",
+  );
+}
+
+/**
+ * Whether a spawn failure means the tool wants elevation. Windows fails such a
+ * spawn with ERROR_ELEVATION_REQUIRED, which surfaces through libuv as EPERM /
+ * EACCES; the message is matched too because the mapping is not contractual.
+ */
+function needsElevation(error: unknown): boolean {
+  const err = error as NodeJS.ErrnoException | undefined;
+  return (
+    err?.code === "EPERM" ||
+    err?.code === "EACCES" ||
+    /elevat|administrator|denied/i.test(err?.message ?? "")
+  );
+}
+
 async function sampleGpu(): Promise<SystemStats["gpu"]> {
+  if (gpuProbeDisabled || gpuProbeDisabledByEnv()) return null;
   const now = Date.now();
   if (gpuCache && now - gpuCache.at < PROBE_INTERVAL_MS) return gpuCache.value;
 
@@ -379,10 +434,28 @@ async function sampleGpu(): Promise<SystemStats["gpu"]> {
     } else if (process.platform === "darwin") {
       value = await probeAppleGpu();
     }
-  } catch {
-    // keep whatever we last saw rather than flapping to null on a slow probe
-    if (gpuCache) return gpuCache.value;
+  } catch (error) {
+    gpuProbeFailures++;
+    if (needsElevation(error)) {
+      disableGpuProbe(
+        `the GPU tool requires elevated privileges (${
+          (error as Error)?.message ?? "permission denied"
+        })`,
+      );
+    } else if (gpuProbeFailures >= MAX_GPU_PROBE_FAILURES) {
+      disableGpuProbe(
+        `the GPU tool failed ${gpuProbeFailures} times (${
+          (error as Error)?.message ?? "unknown error"
+        })`,
+      );
+    }
+    // Stamp the cache even on failure. Without this the early return left
+    // `gpuCache.at` stale, so a failing probe re-ran on every single UI poll
+    // instead of honouring PROBE_INTERVAL_MS.
+    gpuCache = { at: now, value: gpuCache?.value ?? null };
+    return gpuCache.value;
   }
+  gpuProbeFailures = 0;
   gpuCache = { at: now, value };
   return value;
 }

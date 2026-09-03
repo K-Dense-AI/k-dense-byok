@@ -36,6 +36,7 @@ import {
   resolveModel,
 } from "../agent/models.ts";
 import { explainProviderRefusal } from "../agent/model-refusal.ts";
+import { explainEdenaiError } from "../agent/edenai.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
@@ -740,16 +741,22 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             // it, naming the enabled skills known to cause it — the classifier
             // reads the system prompt, so the user cannot find the cause by
             // rereading what they typed.
-            const withRefusalGuidance = (frame: ClientFrame): ClientFrame =>
-              frame.type === "error" && typeof frame.message === "string"
-                ? {
-                    ...frame,
-                    message: explainProviderRefusal(frame.message, {
-                      projectId,
-                      modelRef: session.model ? modelReference(session.model) : undefined,
-                    }),
-                  }
-                : frame;
+            //
+            // Eden AI adds a second case: its catalogue does not say which
+            // models are Responses-API-only, so a chat request to one comes
+            // back as a bare 400 naming the endpoint. The explainer says what
+            // to do and drops the model from Eden discovery.
+            const withProviderGuidance = (frame: ClientFrame): ClientFrame => {
+              if (frame.type !== "error" || typeof frame.message !== "string") {
+                return frame;
+              }
+              const modelRef = session.model ? modelReference(session.model) : undefined;
+              const explained = explainProviderRefusal(frame.message, {
+                projectId,
+                modelRef,
+              });
+              return { ...frame, message: explainEdenaiError(explained, modelRef) };
+            };
             unsubscribePi = session.subscribe((ev) => {
               provenance.observe(ev);
               if (ev.type === "turn_end") {
@@ -759,7 +766,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
                 if (usage) addTurnUsage(turnTally, usage);
               }
               const frame = toClientFrame(ev, paths.sandbox);
-              if (frame) handle.publish(withRefusalGuidance(frame));
+              if (frame) handle.publish(withProviderGuidance(frame));
               if (ev.type === "turn_end") publishContextUsage();
             });
 
@@ -784,7 +791,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
               const errorMessage = session.state.errorMessage;
               if (errorMessage && errorMessage !== priorError) {
                 handle.publish(
-                  withRefusalGuidance({ type: "error", message: errorMessage }),
+                  withProviderGuidance({ type: "error", message: errorMessage }),
                 );
               }
             } catch (err) {
