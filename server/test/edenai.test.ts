@@ -35,8 +35,18 @@ import {
   billingCountsTowardBudget,
   billingForModel,
   billingForProvider,
+  normalizeUsageCost,
 } from "../src/cost/billing.ts";
-import { emptySnapshot, recordRun, sessionCostSummary } from "../src/cost/ledger.ts";
+import {
+  addTurnUsage,
+  emptySnapshot,
+  isBudgetExceeded,
+  projectCostSummary,
+  recordRun,
+  sessionCostSummary,
+  snapshotDelta,
+  snapshotMax,
+} from "../src/cost/ledger.ts";
 import { createProject, resolvePaths } from "../src/projects.ts";
 import { registerModelProviderRoutes } from "../src/api/model-providers.ts";
 import {
@@ -1186,5 +1196,589 @@ describe("Eden AI over the wire (stub gateway)", () => {
     // Kady's refusal guidance keys off this string (agent/model-refusal.ts).
     expect(message.stopReason).toBe("error");
     expect(message.errorMessage).toMatch(/content_filter/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Billing end-to-end: Eden /v3/models pricing → Pi Model.cost → usage.cost →
+// ledger row → project spend cap.
+//
+// The tests above prove the *classification* (payg) and the *parse* (per-token
+// → per-1M). Neither proves that a real streamed turn's token counts end up as
+// the right number of dollars in costs.jsonl, which is the only thing the
+// spend cap actually reads. These tests run that whole chain against a stub
+// gateway, using the same functions `api/sessions.ts` uses on a real run:
+//
+//   parseEdenaiModels → setEdenaiCatalogueForTests → resolveModel
+//     → ModelRuntime.stream (pi-ai prices the turn via calculateCost)
+//     → addTurnUsage / snapshotDelta / snapshotMax   (sessions.ts, turn_end)
+//     → recordRun with billingForModel               (sessions.ts, finally)
+//     → sessionCostSummary / projectCostSummary / isBudgetExceeded
+// ---------------------------------------------------------------------------
+
+/**
+ * A deterministic priced Eden catalogue row, expressed the way Eden's
+ * `/v3/models` actually expresses it: USD *per token*.
+ */
+function pricedRow(
+  id: string,
+  perMillion: { input: number; output: number; cacheRead?: number },
+) {
+  return edenRow({
+    id,
+    model_name: id,
+    pricing: {
+      input_cost_per_token: perMillion.input / 1_000_000,
+      output_cost_per_token: perMillion.output / 1_000_000,
+      ...(perMillion.cacheRead !== undefined
+        ? { cache_read_input_token_cost: perMillion.cacheRead / 1_000_000 }
+        : {}),
+    },
+    // Always double the effective price, so any test that accidentally read
+    // `list_pricing` would come out at exactly 2x and fail loudly.
+    list_pricing: {
+      input_cost_per_token: (perMillion.input * 2) / 1_000_000,
+      output_cost_per_token: (perMillion.output * 2) / 1_000_000,
+    },
+  });
+}
+
+describe("Eden AI billing end-to-end (stub gateway to ledger and spend cap)", () => {
+  let server: http.Server;
+  let baseUrl: string;
+  let chunks: unknown[];
+  let requests: { path: string; body: any }[];
+
+  // $0.50 / 1M input, $1.50 / 1M output - the worked example being verified.
+  const IN_PER_M = 0.5;
+  const OUT_PER_M = 1.5;
+  const INPUT_TOKENS = 1_000;
+  const OUTPUT_TOKENS = 2_000;
+  // 1000/1e6 x 0.50 + 2000/1e6 x 1.50
+  const EXPECTED_USD = 0.0035;
+
+  beforeEach(async () => {
+    requests = [];
+    chunks = [];
+    server = http.createServer((req, res) => {
+      let raw = "";
+      req.on("data", (part) => {
+        raw += part;
+      });
+      req.on("end", () => {
+        requests.push({ path: req.url ?? "", body: raw ? JSON.parse(raw) : null });
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        for (const chunk of chunks) res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    await getModelRuntime().setRuntimeApiKey("edenai", "eden-billing-key");
+  });
+
+  afterEach(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await getModelRuntime().removeRuntimeApiKey("edenai");
+  });
+
+  /** Resolve `edenai/<id>` exactly as a run does, then point it at the stub. */
+  function resolveAtStub(id: string): Model<Api> {
+    const model = resolveModel(`edenai/${id}`, getModelRegistry());
+    return { ...model, baseUrl } as Model<Api>;
+  }
+
+  /** The SSE frames Eden sends for a turn that reports the given usage. */
+  function turnWithUsage(
+    id: string,
+    usage: Record<string, unknown>,
+    text = "done.",
+  ): unknown[] {
+    return [
+      {
+        id: "chatcmpl-bill-1",
+        object: "chat.completion.chunk",
+        created: 1_742_000_100,
+        model: id,
+        choices: [
+          { index: 0, delta: { role: "assistant", content: text }, finish_reason: "stop" },
+        ],
+      },
+      // Eden's final usage-only chunk, the one stream_options.include_usage buys.
+      {
+        id: "chatcmpl-bill-1",
+        object: "chat.completion.chunk",
+        created: 1_742_000_100,
+        model: id,
+        choices: [],
+        usage,
+      },
+    ];
+  }
+
+  /** Drain a stream and return its terminal assistant message. */
+  async function runTurn(model: Model<Api>) {
+    const stream = getModelRuntime().stream(model, {
+      systemPrompt: "You are Kady.",
+      messages: [{ role: "user", content: "count my tokens", timestamp: Date.now() }],
+    } satisfies Context);
+    let done: any;
+    for await (const event of stream) {
+      if (event.type === "done") done = event;
+      if (event.type === "error") throw new Error(event.error.errorMessage ?? "stream error");
+    }
+    return done.message;
+  }
+
+  /**
+   * Replay `api/sessions.ts`'s ledger step for one turn, using its real
+   * functions: the turn_end tally, the getSessionStats delta, the field-wise
+   * max of the two, and recordRun with the run's BillingContext.
+   */
+  async function ledgerTurn(args: {
+    projectId: string;
+    sessionId: string;
+    model: Model<Api>;
+    usage: Parameters<typeof addTurnUsage>[1];
+  }) {
+    const billing = await billingForModel(args.model, {
+      checkAuth: async () => ({ type: "api_key" as const, source: "EDENAI_API_KEY" }),
+    } as never);
+
+    // sessions.ts: `addTurnUsage(turnTally, usage)` on every turn_end event.
+    const turnTally = emptySnapshot();
+    addTurnUsage(turnTally, args.usage);
+
+    // sessions.ts: `snapshot(session)` before/after prompt(), which reads
+    // getSessionStats(). Pi's stats sum the same per-turn usage (see
+    // pi-coding-agent core/usage-totals.ts addUsageToTotals), so a
+    // single-turn run's cumulative stats equal this turn's usage.
+    const u = args.usage;
+    const statsAfter = {
+      costUsd: u.cost?.total ?? 0,
+      input: u.input ?? 0,
+      output: u.output ?? 0,
+      cacheRead: u.cacheRead ?? 0,
+      total: (u.input ?? 0) + (u.output ?? 0) + (u.cacheRead ?? 0) + (u.cacheWrite ?? 0),
+    };
+
+    const run = snapshotMax(snapshotDelta(emptySnapshot(), statsAfter), turnTally);
+    return {
+      billing,
+      run,
+      entry: recordRun({
+        sessionId: args.sessionId,
+        projectId: args.projectId,
+        model: modelReference(args.model),
+        before: emptySnapshot(),
+        after: run,
+        billing,
+      }),
+    };
+  }
+
+  it("prices a streamed turn from Eden per-token pricing and ledgers $0.0035", async () => {
+    // 1. Eden /v3/models -> pricing (NOT list_pricing) -> per-1M catalogue.
+    const catalogue = parseEdenaiModels({
+      data: [pricedRow(GPT_4O_MINI, { input: IN_PER_M, output: OUT_PER_M })],
+    });
+    expect(catalogue[0].costInput).toBeCloseTo(IN_PER_M, 12);
+    expect(catalogue[0].costOutput).toBeCloseTo(OUT_PER_M, 12);
+    setEdenaiCatalogueForTests(catalogue);
+
+    // 2. -> Pi Model.cost, in Pi's USD-per-1M representation.
+    const model = resolveAtStub(GPT_4O_MINI);
+    expect(model.cost).toMatchObject({ input: IN_PER_M, output: OUT_PER_M });
+
+    // 3. -> a real streamed turn, priced by pi-ai's calculateCost.
+    chunks = turnWithUsage(GPT_4O_MINI, {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+    });
+    const message = await runTurn(model);
+
+    expect(message.usage.input).toBe(INPUT_TOKENS);
+    expect(message.usage.output).toBe(OUTPUT_TOKENS);
+    expect(message.usage.cost.input).toBeCloseTo(0.0005, 12);
+    expect(message.usage.cost.output).toBeCloseTo(0.003, 12);
+    expect(message.usage.cost.total).toBeCloseTo(EXPECTED_USD, 12);
+
+    // 4. -> billing/ledger.
+    createProject({ name: "Eden e2e", projectId: "edenai-e2e", spendLimitUsd: 1 });
+    const { billing, entry } = await ledgerTurn({
+      projectId: "edenai-e2e",
+      sessionId: "e2e",
+      model,
+      usage: message.usage,
+    });
+
+    expect(billing.billingMode).toBe("payg");
+    expect(entry).not.toBeNull();
+    expect(entry!.model).toBe(`edenai/${GPT_4O_MINI}`);
+    expect(entry!.provider).toBe("edenai");
+    expect(entry!.promptTokens).toBe(INPUT_TOKENS);
+    expect(entry!.completionTokens).toBe(OUTPUT_TOKENS);
+    expect(entry!.totalTokens).toBe(INPUT_TOKENS + OUTPUT_TOKENS);
+    // The number the spend cap reads, not a helper's return value.
+    expect(entry!.costUsd).toBeCloseTo(EXPECTED_USD, 12);
+    // payg is cap-counted, so nothing is moved into listPriceUsd.
+    expect(entry!.listPriceUsd).toBeUndefined();
+
+    // 5. -> final usage cost, read back off disk.
+    const session = sessionCostSummary("e2e", "edenai-e2e");
+    expect(session.totalUsd).toBeCloseTo(EXPECTED_USD, 12);
+    expect(session.agentUsd).toBeCloseTo(EXPECTED_USD, 12);
+    expect(session.subscriptionTokens).toBe(0);
+    expect(projectCostSummary("edenai-e2e").committedUsd).toBeCloseTo(EXPECTED_USD, 12);
+  });
+
+  // Kady's Eden path is always wire-streaming (pi-ai's openai-completions
+  // adapter sets stream: true unconditionally), but `complete()` is the
+  // non-streaming *call* surface used by subagents and helper routes. It must
+  // price identically, or the same tokens would cost different amounts
+  // depending on which entry point ran them.
+  it("prices the non-streaming complete() call identically", async () => {
+    setEdenaiCatalogueForTests(
+      parseEdenaiModels({
+        data: [pricedRow(GPT_4O_MINI, { input: IN_PER_M, output: OUT_PER_M })],
+      }),
+    );
+    const model = resolveAtStub(GPT_4O_MINI);
+    chunks = turnWithUsage(GPT_4O_MINI, {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+    });
+
+    const message = await getModelRuntime().complete(model, {
+      systemPrompt: "You are Kady.",
+      messages: [{ role: "user", content: "count my tokens", timestamp: Date.now() }],
+    } satisfies Context);
+
+    expect(message.usage.input).toBe(INPUT_TOKENS);
+    expect(message.usage.output).toBe(OUTPUT_TOKENS);
+    expect(message.usage.cost.total).toBeCloseTo(EXPECTED_USD, 12);
+
+    createProject({ name: "Eden sync", projectId: "edenai-sync", spendLimitUsd: 1 });
+    const { entry } = await ledgerTurn({
+      projectId: "edenai-sync",
+      sessionId: "sync",
+      model,
+      usage: message.usage,
+    });
+    expect(entry!.costUsd).toBeCloseTo(EXPECTED_USD, 12);
+  });
+
+  // A turn whose usage chunk never arrives must not be silently ledgered as
+  // free tokens: with no usage there is nothing to record at all.
+  it("records nothing when Eden sends no usage chunk", async () => {
+    setEdenaiCatalogueForTests(
+      parseEdenaiModels({
+        data: [pricedRow(GPT_4O_MINI, { input: IN_PER_M, output: OUT_PER_M })],
+      }),
+    );
+    const model = resolveAtStub(GPT_4O_MINI);
+    chunks = [
+      {
+        id: "chatcmpl-bill-2",
+        object: "chat.completion.chunk",
+        created: 1_742_000_101,
+        model: GPT_4O_MINI,
+        choices: [{ index: 0, delta: { content: "hi" }, finish_reason: "stop" }],
+      },
+    ];
+
+    const message = await runTurn(model);
+    expect(message.usage.input).toBe(0);
+    expect(message.usage.output).toBe(0);
+
+    // include_usage is what makes the usage chunk arrive; assert Kady asks for it.
+    expect(requests[0].body.stream_options).toEqual({ include_usage: true });
+
+    createProject({ name: "Eden nousage", projectId: "edenai-nousage", spendLimitUsd: 1 });
+    const { entry } = await ledgerTurn({
+      projectId: "edenai-nousage",
+      sessionId: "nousage",
+      model,
+      usage: message.usage,
+    });
+    expect(entry).toBeNull();
+    expect(projectCostSummary("edenai-nousage").committedUsd).toBe(0);
+  });
+
+  // Eden publishes cache_read_input_token_cost alongside the plain token costs.
+  // It must be priced on its own axis: the cached tokens come *out* of the
+  // billable input count, and the input/output rates stay untouched.
+  it("keeps cache pricing on its own axis, leaving input/output pricing intact", async () => {
+    const CACHE_PER_M = 0.05;
+    const catalogue = parseEdenaiModels({
+      data: [
+        pricedRow(GPT_4O_MINI, {
+          input: IN_PER_M,
+          output: OUT_PER_M,
+          cacheRead: CACHE_PER_M,
+        }),
+      ],
+    });
+    expect(catalogue[0]).toMatchObject({
+      costInput: IN_PER_M,
+      costOutput: OUT_PER_M,
+      cacheRead: CACHE_PER_M,
+      cacheWrite: 0,
+    });
+    setEdenaiCatalogueForTests(catalogue);
+
+    const model = resolveAtStub(GPT_4O_MINI);
+    expect(model.cost).toEqual({
+      input: IN_PER_M,
+      output: OUT_PER_M,
+      cacheRead: CACHE_PER_M,
+      cacheWrite: 0,
+    });
+
+    chunks = turnWithUsage(GPT_4O_MINI, {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+      prompt_tokens_details: { cached_tokens: 400 },
+    });
+    const message = await runTurn(model);
+
+    // 1000 prompt tokens = 600 fresh + 400 cache hits.
+    expect(message.usage.input).toBe(600);
+    expect(message.usage.cacheRead).toBe(400);
+    expect(message.usage.output).toBe(OUTPUT_TOKENS);
+    expect(message.usage.cost.input).toBeCloseTo(0.0003, 12); // 600 at $0.50/1M
+    expect(message.usage.cost.cacheRead).toBeCloseTo(0.00002, 12); // 400 at $0.05/1M
+    expect(message.usage.cost.output).toBeCloseTo(0.003, 12); // unchanged
+    expect(message.usage.cost.cacheWrite).toBe(0);
+    expect(message.usage.cost.total).toBeCloseTo(0.00332, 12);
+
+    createProject({ name: "Eden cache", projectId: "edenai-cache", spendLimitUsd: 1 });
+    const { entry } = await ledgerTurn({
+      projectId: "edenai-cache",
+      sessionId: "cache",
+      model,
+      usage: message.usage,
+    });
+    expect(entry!.promptTokens).toBe(600);
+    expect(entry!.cachedTokens).toBe(400);
+    expect(entry!.completionTokens).toBe(OUTPUT_TOKENS);
+    expect(entry!.totalTokens).toBe(3_000);
+    expect(entry!.costUsd).toBeCloseTo(0.00332, 12);
+  });
+
+  // The full Eden id must survive the ref round-trip on every axis that
+  // matters: the wire request, the pricing lookup, and the ledger row.
+  it("keeps a multi-slash Eden id intact through pricing, the wire, and the ledger", async () => {
+    setEdenaiCatalogueForTests(
+      parseEdenaiModels({
+        data: [
+          // A decoy priced 100x, under the id a splitting resolver would land on.
+          pricedRow("fireworks_ai", { input: 50, output: 150 }),
+          pricedRow(DEEP_ID, { input: IN_PER_M, output: OUT_PER_M }),
+        ],
+      }),
+    );
+
+    const model = resolveAtStub(DEEP_ID);
+    expect(model.id).toBe(DEEP_ID);
+    expect(modelReference(model)).toBe(`edenai/${DEEP_ID}`);
+    // Priced from the full id, not the first segment's decoy.
+    expect(model.cost).toMatchObject({ input: IN_PER_M, output: OUT_PER_M });
+
+    chunks = turnWithUsage(DEEP_ID, {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+    });
+    const message = await runTurn(model);
+
+    // The gateway is asked for the whole id.
+    expect(requests[0].body.model).toBe(DEEP_ID);
+    expect(message.usage.cost.total).toBeCloseTo(EXPECTED_USD, 12);
+
+    createProject({ name: "Eden deep", projectId: "edenai-deep", spendLimitUsd: 1 });
+    const { entry } = await ledgerTurn({
+      projectId: "edenai-deep",
+      sessionId: "deep",
+      model,
+      usage: message.usage,
+    });
+    expect(entry!.model).toBe(`edenai/${DEEP_ID}`);
+    expect(entry!.costUsd).toBeCloseTo(EXPECTED_USD, 12);
+    expect(entry!.billingMode).toBe("payg");
+  });
+
+  // The generic PAYG cap path, exercised with Eden rows only - no Eden-specific
+  // cap logic exists and none should.
+  it("counts Eden spend against the generic PAYG cap, below it and past it", async () => {
+    setEdenaiCatalogueForTests(
+      parseEdenaiModels({
+        data: [pricedRow(GPT_4O_MINI, { input: IN_PER_M, output: OUT_PER_M })],
+      }),
+    );
+    const model = resolveAtStub(GPT_4O_MINI);
+    // Two identical turns cost $0.0070; the cap sits between one and two.
+    createProject({ name: "Eden cap", projectId: "edenai-cap", spendLimitUsd: 0.005 });
+
+    chunks = turnWithUsage(GPT_4O_MINI, {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+    });
+    const first = await runTurn(model);
+    const { billing } = await ledgerTurn({
+      projectId: "edenai-cap",
+      sessionId: "cap",
+      model,
+      usage: first.usage,
+    });
+
+    // 1. Below the cap: cap-counted, accrued, still admitted.
+    expect(billingCountsTowardBudget(billing)).toBe(true);
+    const under = isBudgetExceeded("edenai-cap");
+    expect(under.totalUsd).toBeCloseTo(EXPECTED_USD, 12);
+    expect(under.exceeded).toBe(false);
+
+    // 3. Not free: Eden's spend is kept as costUsd, unlike NVIDIA's
+    // provider-credit usage which normalizeUsageCost moves to listPriceUsd.
+    expect(normalizeUsageCost(EXPECTED_USD, billing)).toEqual({ costUsd: EXPECTED_USD });
+    expect(normalizeUsageCost(EXPECTED_USD, billingForProvider("nvidia", "api_key"))).toEqual({
+      costUsd: 0,
+      listPriceUsd: EXPECTED_USD,
+    });
+
+    // 2. A second identical turn crosses the cap, and the existing generic
+    // guard (`billingCountsTowardBudget(runBilling) && budget.exceeded` in
+    // api/sessions.ts) now refuses the next run.
+    const second = await runTurn(model);
+    await ledgerTurn({
+      projectId: "edenai-cap",
+      sessionId: "cap",
+      model,
+      usage: second.usage,
+    });
+    const over = isBudgetExceeded("edenai-cap");
+    expect(over.totalUsd).toBeCloseTo(EXPECTED_USD * 2, 12);
+    expect(over.limitUsd).toBe(0.005);
+    expect(over.exceeded).toBe(true);
+  });
+
+  // Eden pricing is discovered, not checked in, so the ledger must follow a
+  // refresh rather than a first-seen snapshot.
+  it("ledgers at the refreshed price after Eden pricing changes", async () => {
+    vi.stubEnv("EDENAI_API_KEY", "eden-billing-key");
+    invalidateEdenaiCatalogue();
+    setEdenaiCatalogueForTests(null);
+    createProject({ name: "Eden refresh", projectId: "edenai-refresh", spendLimitUsd: 1 });
+
+    // First discovery of a model Kady has never seen.
+    const firstFetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            data: [pricedRow(GPT_4O_MINI, { input: IN_PER_M, output: OUT_PER_M })],
+          }),
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", firstFetch);
+    await edenaiCatalogue();
+    expect(firstFetch).toHaveBeenCalledTimes(1);
+    expect(resolveModel(`edenai/${GPT_4O_MINI}`, getModelRegistry()).cost.input).toBeCloseTo(
+      IN_PER_M,
+      12,
+    );
+
+    // Eden doubles the price; a forced refresh must be what the ledger uses.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              data: [pricedRow(GPT_4O_MINI, { input: IN_PER_M * 2, output: OUT_PER_M * 2 })],
+            }),
+            { status: 200 },
+          ),
+      ),
+    );
+    await edenaiCatalogue(true);
+
+    // The stub gateway needs the real global fetch back to serve the turn.
+    vi.unstubAllGlobals();
+
+    const repriced = resolveAtStub(GPT_4O_MINI);
+    expect(repriced.cost).toMatchObject({ input: IN_PER_M * 2, output: OUT_PER_M * 2 });
+
+    chunks = turnWithUsage(GPT_4O_MINI, {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+    });
+    const after = await runTurn(repriced);
+    expect(after.usage.cost.total).toBeCloseTo(EXPECTED_USD * 2, 12);
+
+    const { entry } = await ledgerTurn({
+      projectId: "edenai-refresh",
+      sessionId: "refresh",
+      model: repriced,
+      usage: after.usage,
+    });
+    expect(entry!.costUsd).toBeCloseTo(EXPECTED_USD * 2, 12);
+  });
+
+  /**
+   * The one gap in the chain, asserted rather than hidden.
+   *
+   * `resolveModel` is synchronous and Eden's catalogue is the only source of
+   * its pricing, so a ref to a model that discovery has never returned - a
+   * hand-typed id, a stale persisted ref, a cold process whose warm-up failed
+   * - resolves at $0. The run still executes and its TOKENS are ledgered as
+   * payg, but its DOLLARS are $0, so it accrues nothing against the cap.
+   *
+   * `buildEdenaiModel` warns on exactly this path, and `models.ts` warms the
+   * catalogue at startup to keep it rare, but there is no mechanism that makes
+   * such a run's cost recoverable after the fact.
+   */
+  it("ledgers an undiscovered Eden model tokens at $0 - the known gap", async () => {
+    setEdenaiCatalogueForTests([]); // discovery ran and does not know this id
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const model = resolveAtStub("vendor/never-discovered");
+    expect(model.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("spend limit"));
+    warn.mockRestore();
+
+    chunks = turnWithUsage("vendor/never-discovered", {
+      prompt_tokens: INPUT_TOKENS,
+      completion_tokens: OUTPUT_TOKENS,
+      total_tokens: INPUT_TOKENS + OUTPUT_TOKENS,
+    });
+    const message = await runTurn(model);
+
+    // Tokens are real and recorded; the price is not known, so cost is $0.
+    expect(message.usage.input).toBe(INPUT_TOKENS);
+    expect(message.usage.output).toBe(OUTPUT_TOKENS);
+    expect(message.usage.cost.total).toBe(0);
+
+    createProject({ name: "Eden unknown", projectId: "edenai-unknown", spendLimitUsd: 0.001 });
+    const { entry } = await ledgerTurn({
+      projectId: "edenai-unknown",
+      sessionId: "unknown",
+      model,
+      usage: message.usage,
+    });
+
+    // The row exists (tokens are non-zero) and is classified payg, so the
+    // usage is visible - it just carries no dollars.
+    expect(entry).not.toBeNull();
+    expect(entry!.billingMode).toBe("payg");
+    expect(entry!.totalTokens).toBe(3_000);
+    expect(entry!.costUsd).toBe(0);
+    expect(isBudgetExceeded("edenai-unknown").exceeded).toBe(false);
   });
 });
