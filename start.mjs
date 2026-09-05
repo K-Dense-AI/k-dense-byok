@@ -2,8 +2,12 @@
 /**
  * Kady launcher — cross-platform port of the original start.sh, used on
  * macOS, Linux, and Windows alike. Zero dependencies (it runs before any
- * npm install). The platform wrappers (start.sh / start.cmd) only make sure
- * Node itself exists, then exec this file.
+ * npm install). The platform wrappers (kady / kady.cmd, plus the legacy
+ * start.sh / start.cmd aliases) only make sure Node itself exists, then exec
+ * this file.
+ *
+ * Commands:
+ *   update        safely fast-forward this Git checkout and exit
  *
  * Flags:
  *   --check       report dependencies/environment and exit (no installs, no services)
@@ -15,12 +19,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyEnvFile } from "./env-file.mjs";
+import { updateCheckout } from "./scripts/update-checkout.mjs";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const isWin = process.platform === "win32";
 const flags = {
   check: process.argv.includes("--check"),
   noBrowser: process.argv.includes("--no-browser"),
+  update: process.argv.slice(2)[0] === "update",
 };
 
 // Legacy conhost garbles unicode; Windows Terminal (WT_SESSION) renders it fine.
@@ -477,12 +483,32 @@ function openBrowser(url) {
 // ---- main --------------------------------------------------------------------
 
 log("============================================");
-log("  Kady — Starting up");
+log(`  Kady — ${flags.update ? "Updating" : "Starting up"}`);
 log("============================================");
 log("");
-log("Checking dependencies...");
+log(flags.update ? "Checking update prerequisites..." : "Checking dependencies...");
 
 checkNode();
+
+if (flags.update) {
+  if (!has("git")) {
+    fail(`  ${sym.err} git is required for automatic updates.`);
+  }
+  try {
+    const result = updateCheckout({ repoRoot, log });
+    log("");
+    if (result.updated) {
+      log(`  ${sym.ok} Kady updated successfully.`);
+      log(`    ${result.before.slice(0, 8)} ${sym.arrow} ${result.after.slice(0, 8)}`);
+    } else {
+      log(`  ${sym.ok} Kady is already up to date.`);
+    }
+  } catch (error) {
+    fail(`\n  ${sym.err} Update stopped safely.\n    ${error instanceof Error ? error.message.replaceAll("\n", "\n    ") : String(error)}`);
+  }
+  process.exit(0);
+}
+
 ensureUv();
 checkGit();
 checkPython();

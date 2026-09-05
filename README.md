@@ -109,7 +109,7 @@ Open a terminal (on a Mac: press `Cmd+Space`, type "Terminal", press Enter) and 
 git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
 cp .env.example .env    # optional: add an OpenRouter key or other settings
-./start.sh
+./kady
 ```
 
 On Windows (press `Win`, type "PowerShell" or "Terminal", press Enter):
@@ -118,12 +118,14 @@ On Windows (press `Win`, type "PowerShell" or "Terminal", press Enter):
 git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
 copy .env.example .env    # optional: add an OpenRouter key or other settings
-.\start.cmd
+.\kady.cmd
 ```
 
 In plain terms: the first two lines download the app and step into its folder; the third creates an optional local settings file; the last starts the app. If you use a supported subscription instead of OpenRouter, connect it in **Settings → Model providers** once Kady opens.
 
 The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000** — that address is your own computer, not a website. Press **Ctrl+C** in the terminal to stop the app. You can connect subscriptions under **Model providers** and add or change keys under **API keys** anytime — no restart needed.
+
+Later, start Kady with `./kady` (macOS/Linux) or `.\kady.cmd` (Windows). To update the checkout safely to its configured upstream, run `./kady update` or `.\kady.cmd update`; it refuses to pull over tracked local changes.
 
 That's it. Create a project, drop in your data, and ask Kady for what you want — for example: *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
 

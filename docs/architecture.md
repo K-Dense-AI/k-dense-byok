@@ -6,7 +6,7 @@ This page explains how K-Dense BYOK runs on your computer. You do not need to re
 
 ## The two services
 
-The start script (`start.sh` on macOS/Linux, `start.cmd` on Windows — both thin wrappers around the cross-platform `start.mjs` launcher) launches two local services that work together:
+The launcher (`kady` on macOS/Linux, `kady.cmd` on Windows; `start.sh` / `start.cmd` remain compatibility aliases around the same cross-platform `start.mjs`) launches two local services that work together:
 
 | Service | Port | What it does |
 |---------|------|--------------|
@@ -70,7 +70,7 @@ cost ledgers remain durable.
 
 ## First-run setup
 
-The first time you start the app (`./start.sh` or `start.cmd`), it will automatically:
+The first time you start the app (`./kady` or `kady.cmd`), it will automatically:
 
 - Install backend dependencies (`server/`) and frontend dependencies (`web/`)
 - Install [uv](https://docs.astral.sh/uv/) if missing - the Python manager Kady uses to run analyses in each sandbox
@@ -84,7 +84,8 @@ Subsequent starts are much faster.
 ```
 k-dense-byok/
 ├── start.mjs             ← The launcher that starts everything (cross-platform)
-├── start.sh / start.cmd  ← Thin macOS-Linux / Windows wrappers around it
+├── kady / kady.cmd      ← Memorable macOS-Linux / Windows entry points
+├── start.sh / start.cmd ← Compatibility wrappers around the same launcher
 ├── .env                  ← Optional API keys and overrides (gitignored)
 ├── server/               ← Backend (TypeScript, Pi SDK)
 │   └── src/
