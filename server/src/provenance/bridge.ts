@@ -17,6 +17,7 @@ import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { boundedSetAdd } from "../bounded.ts";
 import { currentRunId } from "../agent/run-ids.ts";
 import { resolvePaths } from "../projects.ts";
+import { captureAndStoreEnvironment } from "./environment.ts";
 import { inferOutputs, provenanceStepsFromSessionFile } from "./harvest.ts";
 import { scanSandbox } from "./scanner.ts";
 import { appendNewSteps, readSteps, type ProvenanceStep } from "./store.ts";
@@ -57,6 +58,9 @@ export function makeSubagentProvenanceExtension(
     );
 
     let candidates: Array<{ path: string; mtimeMs: number }> | null = null;
+    // One environment capture per completion batch. It describes the sandbox
+    // NOW, not when the child ran, so steps carry `environmentAt: "harvest"`.
+    let environmentId: string | undefined | null = null;
 
     for (const result of results) {
       if (!result.agent || !result.sessionFile) continue;
@@ -82,7 +86,18 @@ export function makeSubagentProvenanceExtension(
           ? [] // an incomplete snapshot must not drive attribution
           : [...scan.snapshot].map(([p, stat]) => ({ path: p, mtimeMs: stat.mtimeMs }));
       }
-      const enriched = inferOutputs(steps, candidates, window, claimedPaths, sandboxRoot);
+      if (environmentId === null) {
+        try {
+          environmentId = await captureAndStoreEnvironment(sandboxRoot, projectId);
+        } catch (err) {
+          onError?.(err);
+          environmentId = undefined;
+        }
+      }
+      const enriched = inferOutputs(steps, candidates, window, claimedPaths, sandboxRoot).map(
+        (step) =>
+          environmentId ? { ...step, environmentId, environmentAt: "harvest" as const } : step,
+      );
 
       const fresh: ProvenanceStep[] = [];
       for (const step of enriched) {

@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ProvenancePanel } from "./provenance-panel";
 import type {
   ArtifactProvenance,
   ArtifactRef,
+  EnvironmentSnapshot,
+  Lineage,
   ProvenanceStep,
 } from "@/lib/provenance";
 
@@ -52,7 +54,76 @@ function makeProvenance(over: Partial<ArtifactProvenance> = {}): ArtifactProvena
     readByTotal: 0,
     citedBy: [],
     staleness: "current",
+    lineage: { nodes: [], edges: [], steps: {}, truncated: false },
+    environments: {},
     ...over,
+  };
+}
+
+function makeEnv(over: Partial<EnvironmentSnapshot> = {}): EnvironmentSnapshot {
+  return {
+    schemaVersion: 1,
+    id: "e".repeat(64),
+    capturedAt: 1_700_000_000_000,
+    os: { platform: "darwin", release: "25.6.0", arch: "arm64" },
+    python: {
+      version: "3.12.4",
+      source: "venv",
+      packages: [
+        { name: "pandas", version: "2.2.2" },
+        { name: "scanpy", version: "1.10.1" },
+      ],
+    },
+    lockfiles: [{ path: "uv.lock", sha256: "f".repeat(64) }],
+    ...over,
+  };
+}
+
+/** figure_3.png <- de.py (write) + counts.csv (bash) <- user_data/raw.csv (upload). */
+function makeLineage(): Lineage {
+  const upload = makeStep({
+    id: "u1",
+    sessionId: "user-actions",
+    role: "user",
+    toolName: "upload",
+    model: undefined,
+    runId: undefined,
+    outputs: [makeRef({ path: "user_data/raw.csv" })],
+  });
+  const script = makeStep({ id: "w1", toolName: "write", outputs: [makeRef({ path: "de.py" })] });
+  const counts = makeStep({
+    id: "b1",
+    inputs: [makeRef({ path: "user_data/raw.csv", change: "read", confidence: "inferred" })],
+    outputs: [makeRef({ path: "counts.csv" })],
+  });
+  const figure = makeStep({
+    id: "b2",
+    inputs: [
+      makeRef({ path: "de.py", change: "read", confidence: "inferred" }),
+      makeRef({ path: "counts.csv", change: "read", confidence: "inferred" }),
+    ],
+  });
+  return {
+    nodes: [
+      { path: "figure_3.png", depth: 0, stepId: "b2", current: { size: 1, mtimeMs: 1 } },
+      { path: "de.py", depth: 1, stepId: "w1", current: { size: 1, mtimeMs: 1 }, changedSinceUse: false },
+      { path: "counts.csv", depth: 1, stepId: "b1", current: { size: 1, mtimeMs: 1 }, changedSinceUse: true },
+      {
+        path: "user_data/raw.csv",
+        depth: 2,
+        stepId: "u1",
+        root: "upload",
+        current: { size: 1, mtimeMs: 1 },
+        changedSinceUse: false,
+      },
+    ],
+    edges: [
+      { from: "de.py", to: "figure_3.png", stepId: "b2", confidence: "inferred" },
+      { from: "counts.csv", to: "figure_3.png", stepId: "b2", confidence: "inferred" },
+      { from: "user_data/raw.csv", to: "counts.csv", stepId: "b1", confidence: "inferred" },
+    ],
+    steps: { u1: upload, w1: script, b1: counts, b2: figure },
+    truncated: false,
   };
 }
 
@@ -299,5 +370,89 @@ describe("ProvenancePanel", () => {
     );
     expect(await screen.findByText("read")).toBeInTheDocument();
     expect(screen.getByText("+ 6 more")).toBeInTheDocument();
+  });
+
+  it("renders the upstream lineage back to the upload, flagging changed inputs", async () => {
+    renderPanel(makeProvenance({ producedBy: [makeLineage().steps.b2], lineage: makeLineage() }));
+    expect(await screen.findByText("Lineage")).toBeInTheDocument();
+    const tree = within(screen.getByTestId("provenance-lineage"));
+    expect(tree.getByText("de.py")).toBeInTheDocument();
+    expect(tree.getByText("counts.csv")).toBeInTheDocument();
+    expect(tree.getByText("user_data/raw.csv")).toBeInTheDocument();
+    expect(tree.getByText("uploaded by you")).toBeInTheDocument();
+    // counts.csv was rewritten after the figure consumed it.
+    expect(tree.getAllByText(/changed since use/i)).toHaveLength(1);
+    // An inferred input is labelled as such, not laundered into fact.
+    expect(tree.getAllByText("inferred").length).toBeGreaterThan(0);
+  });
+
+  it("does not show a lineage section when the artifact has no upstream inputs", async () => {
+    renderPanel(makeProvenance());
+    expect(await screen.findByText("bash")).toBeInTheDocument();
+    expect(screen.queryByText("Lineage")).not.toBeInTheDocument();
+  });
+
+  it("labels a user save and a remote compute step by actor", async () => {
+    renderPanel(
+      makeProvenance({
+        producedBy: [
+          makeStep({
+            id: "m1",
+            toolName: "modal_job",
+            role: "compute",
+            model: undefined,
+            compute: {
+              provider: "modal",
+              jobId: "job_abcdef123",
+              state: "succeeded",
+              instance: "gpu-a100",
+              gpu: "A100",
+              exitCode: 0,
+              missingOutputs: ["extra.csv"],
+            },
+            outputs: [makeRef({ change: "wrote" })],
+          }),
+          makeStep({
+            id: "s1",
+            sessionId: "user-actions",
+            toolName: "save",
+            role: "user",
+            model: undefined,
+            runId: undefined,
+            outputs: [makeRef({ change: "modified" })],
+          }),
+        ],
+      }),
+    );
+    expect(await screen.findByText("remote compute")).toBeInTheDocument();
+    expect(screen.getByText(/gpu-a100 · A100 · exit 0 · job job_abcd/)).toBeInTheDocument();
+    expect(screen.getByText(/never produced extra.csv/)).toBeInTheDocument();
+    expect(screen.getByText("saved by you in the editor")).toBeInTheDocument();
+  });
+
+  it("shows the environment a step ran in and expands to the package list", async () => {
+    const env = makeEnv();
+    renderPanel(
+      makeProvenance({
+        producedBy: [makeStep({ environmentId: env.id })],
+        environments: { [env.id]: env },
+      }),
+    );
+    expect(await screen.findByText(/Python 3.12.4 · 2 packages · uv.lock ffffffff/)).toBeInTheDocument();
+    await userEvent.click(screen.getByText(/Python 3.12.4/));
+    expect(screen.getByText("scanpy==1.10.1")).toBeInTheDocument();
+  });
+
+  it("marks a harvest-time environment as captured later", async () => {
+    const env = makeEnv();
+    renderPanel(
+      makeProvenance({
+        producedBy: [
+          makeStep({ role: "subagent", agentName: "analyst", environmentId: env.id, environmentAt: "harvest" }),
+        ],
+        environments: { [env.id]: env },
+      }),
+    );
+    expect(await screen.findByText("(captured later)")).toBeInTheDocument();
   });
 });

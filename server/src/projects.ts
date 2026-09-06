@@ -52,6 +52,8 @@ export interface ProjectPaths {
   runsDir: string;
   notebookDir: string;
   provenanceDir: string;
+  /** Content-addressed environment snapshots referenced by provenance steps. */
+  environmentsDir: string;
   modalDir: string;
   modalJobsDir: string;
   modalReservationsDir: string;
@@ -130,6 +132,7 @@ export function resolvePaths(projectId: string): ProjectPaths {
     runsDir: path.join(kadyDir, "runs"),
     notebookDir: path.join(kadyDir, "notebook"),
     provenanceDir: path.join(kadyDir, "provenance"),
+    environmentsDir: path.join(kadyDir, "environments"),
     modalDir,
     modalJobsDir: path.join(modalDir, "jobs"),
     modalReservationsDir: path.join(modalDir, "reservations"),

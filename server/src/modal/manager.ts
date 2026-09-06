@@ -28,6 +28,7 @@ import {
   readModalCacheMetadata,
 } from "./environment.ts";
 import { ModalJobStore, modalJobFiles } from "./store.ts";
+import { recordModalJobStep } from "../provenance/modal-steps.ts";
 import {
   collectOutputs,
   normalizeTransferPath,
@@ -1037,6 +1038,11 @@ export class DurableModalJobManager {
     this.store.transition(projectId, jobId, state, (job) => {
       if (info) job.error = info;
     });
+    // The single terminal transition, including recovery paths: record the
+    // job as a `compute` provenance step from the transfer layer's own hashes.
+    recordModalJobStep(this.store.require(projectId, jobId), (err) =>
+      console.warn("[modal] failed to record provenance step", err),
+    );
     if (!current.sandboxCreatedAt) await this.reconcile(projectId, jobId);
   }
 

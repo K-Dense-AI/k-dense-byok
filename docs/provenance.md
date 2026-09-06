@@ -4,9 +4,9 @@ Provenance answers one question about any result Kady produces: **where did this
 come from, and could I get it again?**
 
 Open any file in the sandbox and click **Provenance** in the preview header. You
-get the file's current content hash, the tool call that produced it, the inputs
-that call read, the run and model responsible, and every lab-notebook entry that
-cites it.
+get the file's current content hash, its lineage back to the data you uploaded,
+the tool call that produced it, the inputs that call read, the run, model and
+environment responsible, and every lab-notebook entry that cites it.
 
 ## What is recorded, and by whom
 
@@ -23,6 +23,111 @@ the cost ledger and the lab notebook. A row carries the tool name and arguments,
 timing, the run id, the model in effect, and the sandbox files the call read and
 wrote, each with a sha256.
 
+## Who performs a step
+
+Every row carries a `role`, and the panel names the actor in words:
+
+| Role | Recorded how |
+|---|---|
+| **lead agent** | Observed live from the run's event stream. |
+| **subagent** | Reconstructed from the child's session file on completion (below). |
+| **you** | The sandbox file API records its own effects: `upload`, editor `save`, `move`, `delete`. Written by the server as it performs the operation and hashed at that moment, so the model still cannot author them. They live in a reserved `user-actions` pseudo-session. |
+| **remote compute** | A durable Modal job, recorded at its terminal transition from the transfer layer's own staging/collection hashes (below). |
+
+User steps exist because every chain of analysis ends at a file somebody
+uploaded, and without a record of the upload the root of every lineage read "no
+recorded provenance" — indistinguishable from a file of unknown origin. They also
+explain what used to look like corruption: an editor save turned an artifact
+**Stale** with nothing in its history to say why. Now the save is the newest
+producing step, the overwritten version is its input, and the artifact is
+**Current** again.
+
+## Lineage
+
+The panel's **Lineage** section walks upstream through input edges: the figure,
+the script and table that produced it, the raw data those were derived from,
+down to the upload. Each hop is **version-aware** — it picks the producer of the
+version that was actually consumed (the newest step that wrote the input at or
+before the consuming step ran), not the newest producer overall. So a figure
+built from Tuesday's `counts.csv` points at Tuesday's step even after the table
+was regenerated on Wednesday, and the node is flagged **changed since use**:
+the bytes on disk are not what the figure was built from, so re-running the
+step would not reproduce it.
+
+Where a chain ends is stated: **uploaded** (the natural origin), **created by
+you** (an editor-made file with no recorded inputs), **no recorded origin** (the
+consumed version predates recording, arrived outside the API, or its producing
+scan degraded), or **walk stopped** (the 60-node / 12-hop budget). A user
+`move` records the source as an input, so the walk passes straight through a
+rename to the original producer.
+
+### Inputs of opaque calls
+
+`python de_analysis.py counts.csv` reads two files and the sandbox scan sees
+neither — a read leaves nothing on disk. Lineage used to break at exactly the
+step that does the science. The command line is the best available witness, so
+an opaque call now gets an **`inferred`** input edge for every token that names
+a file which existed before the call and which the call did not write. The
+script and its data both qualify; a redirect target does not (it shows up as an
+output). Quoting, `./` prefixes and `--flag=path` are handled; globs, variables
+and `..` are not resolved. This is evidence, not observation, and the edges say
+so; a harvested subagent's `bash` gets the same treatment against files that
+predate the call's timestamp.
+
+## Environment
+
+A step used to tell you *what ran* but not *in what*. The recorder now captures
+the sandbox's execution environment at the start of every run, stamps each step
+with its id, and re-captures after any step that changed it. Change is detected
+two ways: an `install`-shaped command (`uv add`, `pip install`,
+`install.packages`, …), and a cheap stat fingerprint of the lockfiles, the
+venv's `pyvenv.cfg` and its `site-packages` directories taken after every opaque
+call — which is what catches `uv run` silently creating or syncing the venv,
+since `uv.lock` and `.venv` are both invisible to the sandbox scan. A step
+carries the environment it started *from*; the one after `uv add scanpy`
+carries the new one.
+
+What a snapshot holds, and what it costs:
+
+- **Python** — version from the uv venv's `pyvenv.cfg`, packages from the
+  `*.dist-info` directory names in `site-packages`. No subprocess. Without a
+  sandbox venv, the system `python3` version is recorded and no package list.
+- **R** — version and installed packages via one `Rscript` call, only when
+  Rscript is on PATH, bounded by a timeout. Not `--vanilla`, so an renv project
+  reports its activated library.
+- **Lockfiles** — sha256 of `uv.lock`, `pyproject.toml`, `requirements*.txt`,
+  `environment.yml`, `renv.lock`, `DESCRIPTION`, `Project.toml`, `Manifest.toml`
+  at the sandbox root. The declarative environment a reader reproduces from.
+- **Git HEAD** of the sandbox, if it is a repository, read from `.git` directly.
+- **OS** platform/release/arch and the `uv` version.
+
+Snapshots are content-addressed — `id` is the sha256 of everything but the
+capture time — and stored once under `sandbox/.kady/environments/<id>.json`, so
+a hundred runs against an unchanged venv share one record. The panel shows a
+one-line summary per step ("Python 3.12.4 · 143 packages · uv.lock a1b2c3d4")
+that expands to the full list. Harvested subagent steps carry the environment
+captured *at harvest* and are marked "(captured later)", since the child may
+have changed it in between. Remote Modal steps carry no snapshot; their image
+and named environment are recorded on the step instead.
+
+## Remote compute
+
+A Modal job is the one kind of step whose file effects are measured exactly
+without a scan: `stageInputs` hashes every input as it uploads it and
+`collectOutputs` hashes every output as it installs it. When a job reaches a
+terminal state the manager records one `compute` step in the owner session's
+log, with those hashes as **observed, write-time** identities — no "hashed
+later" caveat — plus the remote command, instance, GPU, exit code, image or
+named environment, sandbox id, and any requested outputs the job never
+produced. Failed, cancelled and lost jobs are recorded too, as errors, so the
+attempt is visible. The step id is stable per job, so restart recovery cannot
+double-record.
+
+The lead's own `modal_run`/`modal_wait` call is still recorded as an opaque
+tool whose scan-diff sees the outputs land, so a remote artifact typically has
+two producing steps, as delegated artifacts do: the agent's call, and the job
+that names what actually ran where.
+
 ## Edge confidence
 
 Not every link can be established the same way, so every file edge is labelled
@@ -31,7 +136,7 @@ and the UI never flattens the distinction:
 | Confidence | Meaning |
 |---|---|
 | **observed** | The tool named the file and its bytes were hashed afterward. |
-| **inferred** | A sandbox scan attributed the change to this step, but a neighbouring step finished before the scan ran, so the file may belong to it instead. |
+| **inferred** | Attributed from evidence rather than direct observation: a sandbox scan that could not be split between neighbouring steps, or an input the command line named that existed beforehand. |
 | **declared** | The model asserted the link and nothing verified it. |
 
 How each tool class earns its level:
@@ -41,8 +146,12 @@ How each tool class earns its level:
 - `read` names its file, so the input edge is `observed`.
 - `bash`, `subagent`, and unknown tools (including MCP tools) are opaque —
   `python de_analysis.py` is how most real scientific outputs get created, and
-  only a before/after scan of the sandbox can see it. Normally `observed`;
-  downgraded to `inferred` when attribution could be off (below).
+  only a before/after scan of the sandbox can see it. Outputs are normally
+  `observed`, downgraded to `inferred` when attribution could be off (below);
+  inputs, taken from the command line, are always `inferred`.
+- User steps (`upload`, `save`, `move`, `delete`) and Modal `compute` steps
+  are `observed`: the server or the transfer layer hashed the bytes as it
+  handled them.
 - Tools known to be read-only (`grep`, `find`, `ls`, the web tools, `notebook`,
   `interview`, `scientific_result`) are recorded as steps with no file edges and
   trigger no scan.
@@ -151,9 +260,20 @@ These are real and worth knowing before you rely on a record:
 - **Nested subagents are not harvested.** A subagent that itself delegates
   produces a grandchild session the parent never learns about, so depth > 1 is
   invisible — the same limit the lab notebook has.
-- **Environment is not captured yet.** Library versions, interpreter versions,
-  and seeds are not recorded, so a step tells you *what ran* but not yet *in what
-  environment*.
+- **Lineage keeps one version per path.** If two steps in the walk consumed
+  different versions of the same input, the first-reached consumer's version is
+  the one shown.
+- **Environment capture is a snapshot, not a trace.** It records the venv and
+  lockfiles as they stood when the run (or the re-capture) began; a script that
+  installs a package mid-execution and uses it in the same command runs in an
+  environment the snapshot predates. Random seeds and hardware are not
+  recorded.
+- **Inferred inputs are only as good as the command line.** A script that opens
+  a hard-coded path, reads a config that names further files, or takes its
+  input from a glob has inputs the command never mentions. Lineage through such
+  a step stops at the script.
+- **User steps see the API, not the disk.** A file dropped into the sandbox
+  directory by a terminal or a sync client is not an upload and gets no root.
 - **`bash` can still be opaque.** Provenance records what the sandbox looked like
   before and after a command, not what the command did internally. It is an
   observation of effects, not a sandbox-level audit — see
@@ -163,11 +283,16 @@ These are real and worth knowing before you rely on a record:
 
 Rows live inside the project sandbox and travel with a project archive. They are
 plain JSONL: one object per line, `schemaVersion` on every row, rows from a newer
-schema ignored rather than half-parsed.
+schema ignored rather than half-parsed. Environment snapshots sit beside them in
+`.kady/environments/`, one JSON file per distinct environment. New optional
+fields (`environmentId`, `compute`, the `user`/`compute` roles) were added
+without a schema bump: an older build reads such a row and simply shows less.
 
 ## API
 
 `GET /sandbox/provenance?path=<sandbox-relative>` returns the artifact's current
 identity, producing steps (newest first), the steps that read it, notebook
-citations, and staleness. Project-scoped via `X-Project-Id`, because a figure
-opened in one chat tab is routinely produced by another.
+citations, staleness, the upstream `lineage` (nodes, edges, and the steps they
+reference), and `environments` — every snapshot referenced by a returned step,
+keyed by id. Project-scoped via `X-Project-Id`, because a figure opened in one
+chat tab is routinely produced by another.

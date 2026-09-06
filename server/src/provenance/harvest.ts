@@ -29,6 +29,8 @@
 import { relativizeSandboxPaths } from "../agent/events.ts";
 import { isUserVisible, isWithin } from "../sandbox-fs.ts";
 import path from "node:path";
+import { commandFromArgs } from "./environment.ts";
+import { mentionedPaths } from "./mentions.ts";
 import {
   identify,
   PROVENANCE_SCHEMA_VERSION,
@@ -239,6 +241,23 @@ export function provenanceStepsFromSessionFile(
       }
     } else if (!READ_ONLY_TOOLS.has(call.toolName)) {
       degraded = "no-scan-baseline";
+      // No before-snapshot, but the command line is still a witness: a file it
+      // names that exists now and predates the call is a probable input. The
+      // mtime guard is what stops the call's own outputs from being read as
+      // inputs; `inferred` because the file may have been rewritten since.
+      const command = commandFromArgs(args);
+      if (command) {
+        const existedBefore = (rel: string): boolean => {
+          const abs = resolveInSandbox(rel, opts.sandboxRoot);
+          if (!abs) return false;
+          const identity = identify(abs);
+          return identity !== null && (call.startedAt === 0 || identity.mtimeMs < call.startedAt);
+        };
+        for (const rel of mentionedPaths(command, existedBefore)) {
+          const ref = harvestRef(rel, opts.sandboxRoot, "read", "inferred");
+          if (ref) inputs.push(ref);
+        }
+      }
     }
 
     steps.push({

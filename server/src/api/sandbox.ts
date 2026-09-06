@@ -16,6 +16,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { buildProjectArchive } from "../project-archive.ts";
 import { artifactProvenance } from "../provenance/lookup.ts";
+import {
+  collectPrior,
+  priorIdentity,
+  recordDelete,
+  recordMove,
+  recordSave,
+  recordUpload,
+} from "../provenance/user-steps.ts";
 import { currentProjectId } from "../scope.ts";
 import { apiRelative, guessMime, isUserVisible, isWithin, safePath, SandboxError } from "../sandbox-fs.ts";
 import { sciHelperFor } from "./sci-helpers.ts";
@@ -54,6 +62,11 @@ function isTreeExcludedDir(name: string): boolean {
 function contentDisposition(kind: "inline" | "attachment", filename: string): string {
   const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
   return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
+
+/** Provenance must never fail a file operation; log and move on. */
+function provenanceWarn(req: FastifyRequest): (err: unknown) => void {
+  return (err) => req.log.warn({ err }, "failed to record user provenance step");
 }
 
 /** `report.csv` → `report (2).csv` when the destination is taken. */
@@ -301,6 +314,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         }
       }
       const saved: string[] = [];
+      const savedAbs: string[] = [];
       const renamed: { from: string; to: string }[] = [];
       for (let i = 0; i < staged.length; i++) {
         const rel = (relPaths[i] ?? "").trim();
@@ -328,8 +342,12 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           });
         }
         saved.push(apiRelative(paths.sandbox, finalDest));
+        savedAbs.push(finalDest);
       }
       touchProject(currentProjectId());
+      // The root of most lineage chains: record the upload so the file does
+      // not read as "no recorded provenance" downstream.
+      await recordUpload(currentProjectId(), paths.sandbox, savedAbs, provenanceWarn(req));
       return { uploaded: saved, renamed };
     } finally {
       fs.rmSync(stagingRoot, { recursive: true, force: true });
@@ -384,10 +402,15 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.put<{ Querystring: { path: string }; Body: Buffer }>("/sandbox/file", async (req, reply) => {
     try {
       const target = safePath(req.query.path);
+      const sandboxRoot = activePaths().sandbox;
+      const before = await priorIdentity(sandboxRoot, target);
       fs.mkdirSync(path.dirname(target), { recursive: true });
       const body = req.body instanceof Buffer ? req.body : Buffer.from(String(req.body ?? ""));
       writeFileAtomic(target, body);
       touchProject(currentProjectId());
+      // An editor save otherwise leaves the artifact "stale" with nothing in
+      // its history to explain the change.
+      await recordSave(currentProjectId(), sandboxRoot, target, before, provenanceWarn(req));
       return { saved: req.query.path, size: body.length };
     } catch (err) {
       return handle(reply, err);
@@ -401,10 +424,12 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "File not found" };
       }
+      const prior = await priorIdentity(activePaths().sandbox, target);
       fs.rmSync(target);
       const sidecar = target + ".annotations.json";
       if (fs.existsSync(sidecar)) fs.rmSync(sidecar, { force: true });
       touchProject(currentProjectId());
+      await recordDelete(currentProjectId(), prior ? [prior] : [], provenanceWarn(req));
       return { deleted: req.query.path };
     } catch (err) {
       return handle(reply, err);
@@ -423,8 +448,10 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(403);
         return { detail: "Cannot delete sandbox root" };
       }
+      const priors = await collectPrior(root, target, { hash: true });
       fs.rmSync(target, { recursive: true, force: true });
       touchProject(currentProjectId());
+      await recordDelete(currentProjectId(), priors, provenanceWarn(req));
       return { deleted: req.query.path };
     } catch (err) {
       return handle(reply, err);
@@ -452,6 +479,10 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Cannot move a directory into itself" };
       }
+      const sandboxRoot = activePaths().sandbox;
+      // Stat-only: the bytes do not change in a rename, so the input hashes
+      // are taken from the destination afterward instead of hashing twice.
+      const priors = await collectPrior(sandboxRoot, srcPath, { hash: false });
       fs.renameSync(srcPath, destPath);
       const srcSidecar = srcPath + ".annotations.json";
       if (fs.existsSync(srcSidecar)) {
@@ -465,6 +496,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         }
       }
       touchProject(currentProjectId());
+      await recordMove(currentProjectId(), sandboxRoot, srcPath, destPath, priors, provenanceWarn(req));
       return { ok: true };
     } catch (err) {
       return handle(reply, err);

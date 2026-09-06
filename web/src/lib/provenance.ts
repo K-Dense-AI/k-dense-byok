@@ -45,6 +45,28 @@ export interface ArtifactRef {
   hashSkipped?: "too-large" | "unreadable";
 }
 
+/**
+ * Who performed a step: the lead agent (observed live), a subagent
+ * (reconstructed from its session file), the user through the sandbox file API
+ * (upload / save / move / delete, recorded server-side), or a remote Modal job
+ * (identities from the transfer layer's own hashes).
+ */
+export type StepRole = "agent" | "subagent" | "user" | "compute";
+
+export interface ComputeInfo {
+  provider: "modal";
+  jobId: string;
+  state: string;
+  instance?: string;
+  gpu?: string | null;
+  environment?: string;
+  image?: { base?: string; pip?: string[]; apt?: string[] };
+  sandboxId?: string;
+  exitCode?: number;
+  missingOutputs?: string[];
+  submittedBy?: "lead" | "subagent" | "api";
+}
+
 export interface ProvenanceStep {
   schemaVersion: number;
   id: string;
@@ -56,12 +78,66 @@ export interface ProvenanceStep {
   args?: unknown;
   isError?: boolean;
   model?: string;
-  role: "agent" | "subagent";
+  role: StepRole;
   agentName?: string;
   inputs: ArtifactRef[];
   outputs: ArtifactRef[];
   degraded?: DegradeReason;
   truncatedEdges?: number;
+  /** Environment snapshot in effect when the step ran (see `environments`). */
+  environmentId?: string;
+  /** The environment was captured at harvest time, not when the step ran. */
+  environmentAt?: "harvest";
+  compute?: ComputeInfo;
+}
+
+export interface PackageVersion {
+  name: string;
+  version: string;
+}
+
+export interface EnvironmentSnapshot {
+  schemaVersion: number;
+  id: string;
+  capturedAt: number;
+  os: { platform: string; release: string; arch: string };
+  python?: {
+    version?: string;
+    source: "venv" | "system";
+    packages: PackageVersion[];
+    packagesTruncated?: number;
+  };
+  r?: { version: string; packages: PackageVersion[]; packagesTruncated?: number };
+  lockfiles: Array<{ path: string; sha256: string }>;
+  git?: { head: string };
+  tools?: { uv?: string };
+}
+
+export type LineageRoot = "upload" | "user" | "unrecorded" | "budget";
+
+export interface LineageNode {
+  path: string;
+  depth: number;
+  /** Producer of the VERSION consumed downstream; absent for an unrecorded root. */
+  stepId?: string;
+  root?: LineageRoot;
+  current: { sha256?: string; size: number; mtimeMs: number } | null;
+  /** Disk bytes differ from the version the downstream step consumed. */
+  changedSinceUse?: boolean | null;
+}
+
+export interface LineageEdge {
+  from: string;
+  to: string;
+  stepId: string;
+  confidence: EdgeConfidence;
+}
+
+export interface Lineage {
+  nodes: LineageNode[];
+  edges: LineageEdge[];
+  steps: Record<string, ProvenanceStep>;
+  truncated: boolean;
 }
 
 export interface NotebookCitation {
@@ -84,6 +160,8 @@ export interface ArtifactProvenance {
   readByTotal: number;
   citedBy: NotebookCitation[];
   staleness: Staleness;
+  lineage: Lineage;
+  environments: Record<string, EnvironmentSnapshot>;
 }
 
 export async function getArtifactProvenance(

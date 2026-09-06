@@ -91,6 +91,8 @@ function recorder(over: { runId?: string; model?: string } = {}) {
     sandboxRoot: sandbox(),
     runId: over.runId ?? "run_abc",
     getModel: () => over.model ?? "openrouter/anthropic/claude-opus-4",
+    // Environment capture has its own tests; here it would only spawn probes.
+    captureEnvironment: false,
   });
 }
 

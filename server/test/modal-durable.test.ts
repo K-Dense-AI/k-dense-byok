@@ -42,6 +42,7 @@ import type {
   ModalRemoteSandbox,
 } from "../src/modal/adapter.ts";
 import type { ModalJob } from "../src/modal/types.ts";
+import { readSteps } from "../src/provenance/store.ts";
 
 type Behavior =
   | { kind: "success"; exitCode?: number; stdout?: string; stderr?: string }
@@ -415,6 +416,38 @@ describe("Modal reservations and store", () => {
     expect(fs.readFileSync(path.join(resolvePaths("default").sandbox, "result.txt"), "utf-8")).toBe(
       "result\n",
     );
+  });
+
+  it("records a terminal job as a compute provenance step in the owner session", async () => {
+    const fake = new FakeModal();
+    const manager = new DurableModalJobManager(fake.factory, new ModalJobStore());
+    const job = manager.submit(
+      "default",
+      { command: "echo ok", filesIn: ["input.txt"], filesOut: ["result.txt"] },
+      { sessionId: "prov-session", runId: "run_prov", submittedBy: "lead" },
+    );
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+
+    const steps = readSteps("prov-session", "default");
+    expect(steps).toHaveLength(1);
+    const [step] = steps;
+    expect(step).toMatchObject({
+      id: `modal:${job.id}`,
+      role: "compute",
+      toolName: "modal_job",
+      runId: "run_prov",
+    });
+    expect(step.inputs.map((ref) => ref.path)).toEqual(["input.txt"]);
+    expect(step.outputs).toHaveLength(1);
+    expect(step.outputs[0]).toMatchObject({
+      path: "result.txt",
+      change: "wrote",
+      confidence: "observed",
+    });
+    // The hash is the one collectOutputs took as it installed the file.
+    expect(step.outputs[0].sha256).toBe(terminal.outputFiles[0].sha256);
+    expect(step.compute).toMatchObject({ provider: "modal", jobId: job.id, exitCode: 0 });
   });
 
   it("bounds the event log and keeps the newest rows", () => {

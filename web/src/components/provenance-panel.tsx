@@ -4,11 +4,13 @@
  * Lineage view for one sandbox artifact: what produced it, from which inputs,
  * in which run, by which model — plus the notebook entries that cite it.
  *
- * Two things this deliberately refuses to smooth over, because both are real
+ * Three things this deliberately refuses to smooth over, because all are real
  * scientific hazards the rest of the app cannot see:
  *   - a `stale` artifact, whose bytes changed after the step that produced it
  *   - a citation written before the artifact's latest version, so the entry
  *     describes something other than what is on disk now
+ *   - an upstream input that changed since it was consumed, so the artifact
+ *     cannot be regenerated from what is on disk now
  */
 import { cn } from "@/lib/utils";
 import {
@@ -16,6 +18,9 @@ import {
   type ArtifactProvenance,
   type ArtifactRef,
   type EdgeConfidence,
+  type EnvironmentSnapshot,
+  type Lineage,
+  type LineageNode,
   type ProvenanceStep,
 } from "@/lib/provenance";
 import {
@@ -23,13 +28,17 @@ import {
   ArrowRightIcon,
   BotIcon,
   CircleHelpIcon,
+  CpuIcon,
   FileInputIcon,
   FileOutputIcon,
+  PackageIcon,
   RefreshCcwIcon,
   ShieldCheckIcon,
+  UploadIcon,
+  UserIcon,
   WrenchIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -56,7 +65,7 @@ const CONFIDENCE_COPY: Record<EdgeConfidence, { label: string; title: string }> 
   inferred: {
     label: "inferred",
     title:
-      "A sandbox scan attributed this change to the step, but another step finished first — the file may belong to a neighbouring step.",
+      "Attributed from evidence rather than direct observation: either a sandbox scan that could not be split between neighbouring steps, or a file the command line named that existed beforehand — a probable input, not a verified one.",
   },
   declared: {
     label: "declared",
@@ -146,13 +155,130 @@ function ArtifactRow({
   );
 }
 
+/** Who did it, in words a reader can act on. */
+function actorLabel(step: ProvenanceStep): string {
+  switch (step.role) {
+    case "subagent":
+      return `subagent${step.agentName ? `: ${step.agentName}` : ""}`;
+    case "user":
+      return step.toolName === "upload"
+        ? "uploaded by you"
+        : step.toolName === "save"
+          ? "saved by you in the editor"
+          : step.toolName === "move"
+            ? "moved by you"
+            : step.toolName === "delete"
+              ? "deleted by you"
+              : "you";
+    case "compute":
+      return "remote compute";
+    default:
+      return "lead agent";
+  }
+}
+
+function ActorIcon({ step, className }: { step: ProvenanceStep; className?: string }) {
+  if (step.role === "user") {
+    return step.toolName === "upload" ? (
+      <UploadIcon className={className} />
+    ) : (
+      <UserIcon className={className} />
+    );
+  }
+  if (step.role === "compute") return <CpuIcon className={className} />;
+  return <WrenchIcon className={className} />;
+}
+
+function shortId(id: string): string {
+  return id.slice(0, 8);
+}
+
+/** One-line environment summary plus an expandable package list. */
+function EnvironmentLine({
+  env,
+  atHarvest,
+}: {
+  env: EnvironmentSnapshot;
+  atHarvest?: boolean;
+}) {
+  const parts: string[] = [];
+  if (env.python) {
+    parts.push(
+      `Python ${env.python.version ?? "?"}${env.python.source === "system" ? " (system)" : ""}` +
+        (env.python.packages.length ? ` · ${env.python.packages.length} packages` : ""),
+    );
+  }
+  if (env.r) parts.push(`${env.r.version} · ${env.r.packages.length} packages`);
+  for (const lock of env.lockfiles) parts.push(`${lock.path} ${lock.sha256.slice(0, 8)}`);
+  if (env.git) parts.push(`git ${env.git.head.slice(0, 8)}`);
+  if (parts.length === 0) parts.push(`${env.os.platform} ${env.os.arch}`);
+  const hasPackages = (env.python?.packages.length ?? 0) + (env.r?.packages.length ?? 0) > 0;
+  return (
+    <details className="mt-1.5">
+      <summary
+        className="flex cursor-pointer items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+        title={`Environment ${env.id}`}
+      >
+        <PackageIcon className="size-2.5 shrink-0" />
+        <span className="truncate">{parts.join(" · ")}</span>
+        {atHarvest && (
+          <span
+            className="shrink-0 text-muted-foreground/70"
+            title="Captured when the subagent's record was parsed, not when the step ran — the subagent may have changed the environment in between."
+          >
+            (captured later)
+          </span>
+        )}
+      </summary>
+      <div className="mt-1 rounded bg-muted/50 p-1.5 font-mono text-[10px] leading-relaxed">
+        <p>
+          {env.os.platform} {env.os.release} {env.os.arch}
+          {env.tools?.uv ? ` · uv ${env.tools.uv}` : ""}
+        </p>
+        {env.git && <p>git HEAD {env.git.head}</p>}
+        {env.lockfiles.map((lock) => (
+          <p key={lock.path} className="truncate" title={`sha256:${lock.sha256}`}>
+            {lock.path} sha256:{lock.sha256.slice(0, 16)}
+          </p>
+        ))}
+        {hasPackages && (
+          <div className="mt-1 max-h-48 overflow-auto">
+            {env.python?.packages.map((pkg) => (
+              <p key={`py-${pkg.name}`}>
+                {pkg.name}=={pkg.version}
+              </p>
+            ))}
+            {env.python?.packagesTruncated ? (
+              <p className="text-muted-foreground">
+                + {env.python.packagesTruncated} more Python packages not recorded
+              </p>
+            ) : null}
+            {env.r?.packages.map((pkg) => (
+              <p key={`r-${pkg.name}`}>
+                R: {pkg.name} {pkg.version}
+              </p>
+            ))}
+            {env.r?.packagesTruncated ? (
+              <p className="text-muted-foreground">
+                + {env.r.packagesTruncated} more R packages not recorded
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function StepCard({
   step,
   target,
+  environment,
   onOpenFile,
 }: {
   step: ProvenanceStep;
   target: string;
+  environment?: EnvironmentSnapshot;
   onOpenFile?: (path: string) => void;
 }) {
   const outputRef = step.outputs.find((o) => o.path === target);
@@ -160,7 +286,7 @@ function StepCard({
   return (
     <div className="rounded-md border bg-card/40 p-2.5">
       <div className="flex items-center gap-1.5">
-        <WrenchIcon className="size-3 shrink-0 text-muted-foreground" />
+        <ActorIcon step={step} className="size-3 shrink-0 text-muted-foreground" />
         <span className="font-mono text-xs font-medium">{step.toolName}</span>
         {step.isError && (
           <span className="rounded bg-destructive/10 px-1 py-0.5 text-[9px] font-medium uppercase tracking-wider text-destructive">
@@ -191,18 +317,41 @@ function StepCard({
             <span className="font-mono">{step.model}</span>
           </span>
         )}
-        <span title={step.role === "subagent" ? step.agentName : undefined}>
-          {step.role === "subagent" ? `subagent${step.agentName ? `: ${step.agentName}` : ""}` : "lead agent"}
-        </span>
+        <span title={step.role === "subagent" ? step.agentName : undefined}>{actorLabel(step)}</span>
+        {step.compute && (
+          <span
+            className="font-mono"
+            title={`Modal job ${step.compute.jobId}${step.compute.sandboxId ? ` · sandbox ${step.compute.sandboxId}` : ""}`}
+          >
+            {step.compute.instance ?? "modal"}
+            {step.compute.gpu ? ` · ${step.compute.gpu}` : ""}
+            {step.compute.environment ? ` · ${step.compute.environment}` : ""}
+            {step.compute.exitCode !== undefined ? ` · exit ${step.compute.exitCode}` : ""}
+            {` · job ${shortId(step.compute.jobId)}`}
+          </span>
+        )}
         {step.runId && (
           <span className="font-mono" title={`Run ${step.runId}`}>
             run {step.runId.replace(/^run_/, "").slice(0, 8)}
           </span>
         )}
-        <span className="font-mono" title={`Session ${step.sessionId}`}>
-          session {step.sessionId.slice(0, 8)}
-        </span>
+        {step.role !== "user" && (
+          <span className="font-mono" title={`Session ${step.sessionId}`}>
+            session {step.sessionId.slice(0, 8)}
+          </span>
+        )}
       </div>
+
+      {step.compute?.missingOutputs?.length ? (
+        <p className="mt-1.5 flex items-start gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+          <AlertTriangleIcon className="mt-px size-2.5 shrink-0" />
+          {step.compute.missingOutputs.length === 1
+            ? `The remote job never produced ${step.compute.missingOutputs[0]}.`
+            : `The remote job never produced ${step.compute.missingOutputs.length} requested outputs.`}
+        </p>
+      ) : null}
+
+      {environment && <EnvironmentLine env={environment} atHarvest={step.environmentAt === "harvest"} />}
 
       {step.degraded && (
         <p className="mt-1.5 flex items-start gap-1 text-[10px] text-amber-600 dark:text-amber-400">
@@ -257,6 +406,132 @@ function StepCard({
             {JSON.stringify(step.args, null, 2)}
           </pre>
         </details>
+      )}
+    </div>
+  );
+}
+
+const ROOT_COPY: Record<NonNullable<LineageNode["root"]>, { label: string; title: string }> = {
+  upload: { label: "uploaded", title: "You uploaded this file. This is where the chain starts." },
+  user: {
+    label: "created by you",
+    title: "You created this file in the editor; nothing recorded fed into it.",
+  },
+  unrecorded: {
+    label: "no recorded origin",
+    title:
+      "No recorded step produced the version that was used here. It predates provenance recording, arrived outside the sandbox API, or was written during a run whose attribution degraded.",
+  },
+  budget: {
+    label: "walk stopped",
+    title: "The upstream walk reached its depth limit here.",
+  },
+};
+
+/**
+ * Upstream tree: the artifact at the top, each input indented beneath the
+ * step that consumed it, down to uploads or the edge of the record. A DAG can
+ * reach the same input twice; it is expanded once and referenced after.
+ */
+function LineageTree({
+  lineage,
+  target,
+  onOpenFile,
+}: {
+  lineage: Lineage;
+  target: string;
+  onOpenFile?: (path: string) => void;
+}) {
+  const nodes = new Map(lineage.nodes.map((node) => [node.path, node]));
+  const inputsOf = new Map<string, Lineage["edges"]>();
+  for (const edge of lineage.edges) {
+    const list = inputsOf.get(edge.to) ?? [];
+    list.push(edge);
+    inputsOf.set(edge.to, list);
+  }
+  const expanded = new Set<string>();
+
+  const renderNode = (
+    path: string,
+    depth: number,
+    viaConfidence?: EdgeConfidence,
+  ): ReactNode => {
+    const node = nodes.get(path);
+    const step = node?.stepId ? lineage.steps[node.stepId] : undefined;
+    const repeated = expanded.has(path);
+    expanded.add(path);
+    const inputs = repeated ? [] : (inputsOf.get(path) ?? []);
+    return (
+      <li key={`${depth}:${path}`} className="min-w-0">
+        <div
+          className="flex min-w-0 items-baseline gap-1.5 py-0.5"
+          style={{ paddingLeft: `${depth * 14}px` }}
+        >
+          {depth > 0 && <span className="shrink-0 text-muted-foreground/60">└</span>}
+          <button
+            type="button"
+            disabled={!onOpenFile || node?.current === null}
+            onClick={() => onOpenFile?.(path)}
+            className={cn(
+              "truncate font-mono text-[11px]",
+              onOpenFile && node?.current !== null
+                ? "text-foreground/80 underline-offset-2 hover:underline"
+                : "text-foreground/60",
+              node?.current === null && "line-through",
+              depth === 0 && "font-medium",
+            )}
+            title={path}
+          >
+            {path}
+          </button>
+          {step && (
+            <span
+              className="shrink-0 truncate text-[10px] text-muted-foreground"
+              title={`${step.toolName} · ${actorLabel(step)} · ${formatWhen(step.timestamp)}`}
+            >
+              {step.role === "agent" || step.role === "subagent" ? `${step.toolName} · ` : ""}
+              {actorLabel(step)}
+            </span>
+          )}
+          {viaConfidence && viaConfidence !== "observed" && (
+            <ConfidenceBadge confidence={viaConfidence} />
+          )}
+          {node?.root && node.root !== "user" && node.root !== "upload" && (
+            <span
+              className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground"
+              title={ROOT_COPY[node.root].title}
+            >
+              {ROOT_COPY[node.root].label}
+            </span>
+          )}
+          {node?.changedSinceUse === true && (
+            <span
+              className="flex shrink-0 items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400"
+              title="The bytes on disk differ from the version this step consumed. Whatever was built from it may not be reproducible from the current file."
+            >
+              <AlertTriangleIcon className="size-2.5" /> changed since use
+            </span>
+          )}
+          {repeated && (
+            <span className="shrink-0 text-[10px] text-muted-foreground/70">(shown above)</span>
+          )}
+        </div>
+        {inputs.length > 0 && (
+          <ul>
+            {inputs.map((edge) => renderNode(edge.from, depth + 1, edge.confidence))}
+          </ul>
+        )}
+      </li>
+    );
+  };
+
+  return (
+    <div>
+      <ul>{renderNode(target, 0)}</ul>
+      {lineage.truncated && (
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Upstream walk stopped at its limit — the record continues beyond what is shown.
+        </p>
       )}
     </div>
   );
@@ -404,7 +679,20 @@ export function ProvenancePanel({
         </p>
       </div>
 
-      {/* Lineage */}
+      {/* Upstream lineage: only worth a section once there is more than the
+          artifact itself in it. */}
+      {data.lineage && data.lineage.edges.length > 0 && (
+        <div className="mt-3">
+          <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Lineage
+          </p>
+          <div data-testid="provenance-lineage" className="rounded-md border bg-card/40 px-2.5 py-2">
+            <LineageTree lineage={data.lineage} target={data.path} onOpenFile={onOpenFile} />
+          </div>
+        </div>
+      )}
+
+      {/* Producing steps */}
       <div className="mt-3">
         <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Produced by {hasHistory ? `(${data.producedBy.length})` : ""}
@@ -416,6 +704,9 @@ export function ProvenancePanel({
                 key={step.id}
                 step={step}
                 target={data.path}
+                environment={
+                  step.environmentId ? data.environments?.[step.environmentId] : undefined
+                }
                 onOpenFile={onOpenFile}
               />
             ))}

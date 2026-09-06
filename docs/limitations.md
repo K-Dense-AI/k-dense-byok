@@ -110,10 +110,12 @@ tracked in the center-panel Compute tab. The remaining boundaries are:
 - **The local sandbox remains canonical.** Remote Volumes cache dependencies,
   models, and reference data; they are not a second copy of the project
   workspace.
-- **Security and provenance have separate scopes.** Remote jobs do not receive
-  model credentials by default. Fine-grained egress policy, per-job secrets,
-  and provenance for remote steps remain future work — local tool calls are
-  recorded (see [Provenance](./provenance.md)), Modal job steps are not yet.
+- **Security scope is narrower than provenance scope.** Remote jobs do not
+  receive model credentials by default; fine-grained egress policy and per-job
+  secrets remain future work. Provenance does cover remote work: every terminal
+  Modal job is recorded as a `compute` step with the transfer layer's own
+  input/output hashes (see [Provenance](./provenance.md)), though the remote
+  image's installed packages are not enumerated the way the local venv's are.
 
 See [Durable Modal compute](./modal-compute.md) for lifecycle and recovery details.
 

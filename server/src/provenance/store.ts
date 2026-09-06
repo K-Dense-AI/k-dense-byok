@@ -93,6 +93,36 @@ export type DegradeReason =
    */
   | "no-scan-baseline";
 
+/**
+ * Who performed a step.
+ *
+ *   agent     the lead agent, observed live by the recorder
+ *   subagent  a child `pi` process, reconstructed from its session file
+ *   user      the human, through the sandbox file API (upload, editor save,
+ *             move, delete) — recorded server-side, so still unauthorable by
+ *             the model
+ *   compute   a durable remote Modal job; identities come from the transfer
+ *             layer's own staging/collection hashes
+ */
+export type StepRole = "agent" | "subagent" | "user" | "compute";
+
+/** Remote-compute details for a `compute` step. */
+export interface ComputeInfo {
+  provider: "modal";
+  jobId: string;
+  state: string;
+  instance?: string;
+  gpu?: string | null;
+  /** Named reusable image, when the job used one. */
+  environment?: string;
+  image?: { base?: string; pip?: string[]; apt?: string[] };
+  sandboxId?: string;
+  exitCode?: number;
+  /** Requested outputs the remote never produced. */
+  missingOutputs?: string[];
+  submittedBy?: "lead" | "subagent" | "api";
+}
+
 export interface ProvenanceStep {
   schemaVersion: typeof PROVENANCE_SCHEMA_VERSION;
   /** Pi's toolCallId — stable, and the same id the notebook and SSE frames use. */
@@ -109,14 +139,30 @@ export interface ProvenanceStep {
   isError?: boolean;
   /** Canonical provider/model ref in effect for the step. */
   model?: string;
-  role: "agent" | "subagent";
+  role: StepRole;
   /** Specialist name when role is "subagent". */
   agentName?: string;
   inputs: ArtifactRef[];
   outputs: ArtifactRef[];
   degraded?: DegradeReason;
   truncatedEdges?: number;
+  /**
+   * Id of the environment snapshot (see environment.ts) in effect when the
+   * step ran: interpreter versions, installed packages, lockfile hashes.
+   * Absent when capture failed or the step ran remotely (see `compute`).
+   */
+  environmentId?: string;
+  /** Set when the environment was captured at harvest time rather than when
+   *  the step ran — a subagent may have changed it since. */
+  environmentAt?: "harvest";
+  compute?: ComputeInfo;
 }
+
+/**
+ * Pseudo-session that holds steps performed by the user through the sandbox
+ * file API. Pi session ids are UUIDs, so this cannot collide with a chat tab.
+ */
+export const USER_SESSION_ID = "user-actions";
 
 export function provenanceSessionDir(sessionId: string, projectId?: string): string {
   if (!isValidSessionId(sessionId)) {
@@ -152,11 +198,45 @@ export function sha256File(absPath: string): string | null {
   }
 }
 
+/** Streaming sha256 for request handlers, where a multi-second synchronous
+ *  hash of a 1GB upload would stall SSE for every open tab. Null when the file
+ *  cannot be read. */
+export function sha256FileAsync(absPath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const hash = crypto.createHash("sha256");
+    const stream = fs.createReadStream(absPath, { highWaterMark: 1024 * 1024 });
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("error", () => resolve(null));
+    stream.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+
 export interface FileIdentity {
   size: number;
   mtimeMs: number;
   sha256?: string;
   hashSkipped?: "too-large" | "unreadable";
+}
+
+/** identify() without blocking the event loop. `hash: false` returns the
+ *  size/mtime only, marked `too-large` so no caller mistakes it for verified. */
+export async function identifyAsync(
+  absPath: string,
+  opts: { hash?: boolean } = {},
+): Promise<FileIdentity | null> {
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(absPath);
+  } catch {
+    return null;
+  }
+  if (!stat.isFile()) return null;
+  const base = { size: stat.size, mtimeMs: stat.mtimeMs };
+  if (opts.hash === false || stat.size > MAX_HASH_BYTES) {
+    return { ...base, hashSkipped: "too-large" };
+  }
+  const digest = await sha256FileAsync(absPath);
+  return digest === null ? { ...base, hashSkipped: "unreadable" } : { ...base, sha256: digest };
 }
 
 /** Stat + (bounded) hash one existing file. Null when it is not a regular file. */
