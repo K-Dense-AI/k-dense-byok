@@ -110,6 +110,7 @@ import { cn, formatUsd } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
   forwardRef,
+  memo,
   useCallback,
   useEffect,
   useImperativeHandle,
@@ -1150,7 +1151,7 @@ function ChatInput({
   );
 }
 
-export function AssistantMessageBody({
+export const AssistantMessageBody = memo(function AssistantMessageBody({
   message,
   isStreaming,
   isLast,
@@ -1273,7 +1274,117 @@ export function AssistantMessageBody({
       )}
     </>
   );
-}
+});
+
+/** Unchanged history rows keep their tool disclosures and skip token renders. */
+export const ChatMessageRow = memo(function ChatMessageRow({
+  message, isStreaming, isLast, sessionId, projectId,
+  onViewInNotebook, onViewCompute, onOpenFile, onCopy, copied,
+}: {
+  message: ChatMessage;
+  isStreaming: boolean;
+  isLast: boolean;
+  sessionId: string | null;
+  projectId: string;
+  onViewInNotebook?: (id: string) => void;
+  onViewCompute?: (id?: string) => void;
+  onOpenFile?: (path: string) => void;
+  onCopy: (id: string, content: string) => void;
+  copied: boolean;
+}) {
+  return (
+    <Message from={message.role} key={message.id}>
+      <MessageContent>
+        {message.role === "assistant" ? (
+          <AssistantMessageBody
+            message={message}
+            isStreaming={isStreaming}
+            isLast={isLast}
+            sessionId={sessionId}
+            projectId={projectId}
+            onViewInNotebook={onViewInNotebook}
+            onViewCompute={onViewCompute}
+            onOpenFile={onOpenFile}
+          />
+        ) : (
+          <>
+            {message.images && message.images.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {message.images.map((img, i) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    key={i}
+                    src={`data:${img.mimeType};base64,${img.data}`}
+                    alt={`Attached image ${i + 1}`}
+                    className="max-h-56 max-w-64 rounded-lg border object-contain"
+                  />
+                ))}
+              </div>
+            )}
+            <MessageResponse>{message.content}</MessageResponse>
+          </>
+        )}
+        {message.role === "assistant" && message.modelVersion && (
+          <span className="text-xs text-muted-foreground mt-1">
+            {message.modelVersion}
+          </span>
+        )}
+      </MessageContent>
+      {message.role === "assistant" && message.content && (
+        <MessageToolbar>
+          <MessageActions>
+            <MessageAction
+              tooltip="Copy"
+              onClick={() => onCopy(message.id, message.content)}
+            >
+              {copied ? (
+                <CheckIcon className="size-4" />
+              ) : (
+                <CopyIcon className="size-4" />
+              )}
+            </MessageAction>
+          </MessageActions>
+          {((typeof message.runCostUsd === "number" &&
+            message.runCostUsd > 0) ||
+            (message.runBillingMode === "subscription" &&
+              (message.runTokens ?? 0) > 0)) && (
+              <InfoTooltip
+                content={
+                  <>
+                    <b>
+                      {message.runBillingMode === "subscription"
+                        ? "Subscription usage"
+                        : message.runBillingMode === "metered_oauth"
+                          ? "Metered extra usage"
+                          : "Cost of this reply"}
+                    </b>
+                    <br />
+                    {message.runBillingMode === "subscription"
+                      ? `${message.runProvider ?? "Provider"} manages billing and quota`
+                      : formatUsd(message.runCostUsd ?? 0)}
+                    {typeof message.runTokens === "number" &&
+                    message.runTokens > 0
+                      ? ` · ${message.runTokens.toLocaleString()} tokens`
+                      : ""}
+                    {message.runBillingMode === "subscription" &&
+                    typeof message.runListPriceUsd === "number"
+                      ? ` · ${formatUsd(message.runListPriceUsd)} list-price reference (not project spend)`
+                      : ""}
+                  </>
+                }
+              >
+                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {message.runBillingMode === "subscription"
+                    ? `subscription · ${(message.runTokens ?? 0).toLocaleString()} tok`
+                    : formatUsd(message.runCostUsd ?? 0)}
+                </span>
+              </InfoTooltip>
+            )}
+        </MessageToolbar>
+      )}
+    </Message>
+  );
+});
 
 // ---------------------------------------------------------------------------
 // ChatTab — full chat surface (Conversation + ChatInput + queue) for one tab.
@@ -1286,7 +1397,7 @@ export interface ChatTabMeta {
   status: "ready" | "submitted" | "streaming" | "error";
   runState: AgentRunState;
   isStreaming: boolean;
-  messages: ChatMessage[];
+  needsInput: boolean;
   userMessageCount: number;
   notebookEntries: NotebookEntry[];
   subagentCompletions: number;
@@ -1678,13 +1789,18 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     () => messages.filter((m) => m.role === "user").length,
     [messages],
   );
+  const needsInput = isStreaming && messages.some((message) =>
+    message.activities?.some((activity) =>
+      activity.toolName === "interview" && activity.status === "running",
+    ),
+  );
   useEffect(() => {
     onMetaChange(tabId, {
       sessionId,
       status,
       runState,
       isStreaming,
-      messages,
+      needsInput,
       userMessageCount,
       notebookEntries,
       subagentCompletions,
@@ -1695,7 +1811,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     status,
     runState,
     isStreaming,
-    messages,
+    needsInput,
     userMessageCount,
     notebookEntries,
     subagentCompletions,
@@ -1942,96 +2058,19 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             />
           ) : (
             messages.map((message, i) => (
-              <Message from={message.role} key={message.id}>
-                <MessageContent>
-                  {message.role === "assistant" ? (
-                    <AssistantMessageBody
-                      message={message}
-                      isStreaming={isStreaming}
-                      isLast={i === messages.length - 1}
-                      sessionId={sessionId}
-                      projectId={projectId}
-                      onViewInNotebook={onViewInNotebook}
-                      onViewCompute={onViewCompute}
-                      onOpenFile={onOpenFile}
-                    />
-                  ) : (
-                    <>
-                      {message.images && message.images.length > 0 && (
-                        <div className="flex flex-wrap gap-2">
-                          {message.images.map((img, i) => (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              key={i}
-                              src={`data:${img.mimeType};base64,${img.data}`}
-                              alt={`Attached image ${i + 1}`}
-                              className="max-h-56 max-w-64 rounded-lg border object-contain"
-                            />
-                          ))}
-                        </div>
-                      )}
-                      <MessageResponse>{message.content}</MessageResponse>
-                    </>
-                  )}
-                  {message.role === "assistant" && message.modelVersion && (
-                    <span className="text-xs text-muted-foreground mt-1">
-                      {message.modelVersion}
-                    </span>
-                  )}
-                </MessageContent>
-                {message.role === "assistant" && message.content && (
-                  <MessageToolbar>
-                    <MessageActions>
-                      <MessageAction
-                        tooltip="Copy"
-                        onClick={() => handleCopy(message.id, message.content)}
-                      >
-                        {copiedId === message.id ? (
-                          <CheckIcon className="size-4" />
-                        ) : (
-                          <CopyIcon className="size-4" />
-                        )}
-                      </MessageAction>
-                    </MessageActions>
-                    {((typeof message.runCostUsd === "number" &&
-                      message.runCostUsd > 0) ||
-                      (message.runBillingMode === "subscription" &&
-                        (message.runTokens ?? 0) > 0)) && (
-                        <InfoTooltip
-                          content={
-                            <>
-                              <b>
-                                {message.runBillingMode === "subscription"
-                                  ? "Subscription usage"
-                                  : message.runBillingMode === "metered_oauth"
-                                    ? "Metered extra usage"
-                                    : "Cost of this reply"}
-                              </b>
-                              <br />
-                              {message.runBillingMode === "subscription"
-                                ? `${message.runProvider ?? "Provider"} manages billing and quota`
-                                : formatUsd(message.runCostUsd ?? 0)}
-                              {typeof message.runTokens === "number" &&
-                              message.runTokens > 0
-                                ? ` · ${message.runTokens.toLocaleString()} tokens`
-                                : ""}
-                              {message.runBillingMode === "subscription" &&
-                              typeof message.runListPriceUsd === "number"
-                                ? ` · ${formatUsd(message.runListPriceUsd)} list-price reference (not project spend)`
-                                : ""}
-                            </>
-                          }
-                        >
-                          <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-                            {message.runBillingMode === "subscription"
-                              ? `subscription · ${(message.runTokens ?? 0).toLocaleString()} tok`
-                              : formatUsd(message.runCostUsd ?? 0)}
-                          </span>
-                        </InfoTooltip>
-                      )}
-                  </MessageToolbar>
-                )}
-              </Message>
+              <ChatMessageRow
+                key={message.id}
+                message={message}
+                isStreaming={isStreaming && i === messages.length - 1}
+                isLast={i === messages.length - 1}
+                sessionId={sessionId}
+                projectId={projectId}
+                onViewInNotebook={onViewInNotebook}
+                onViewCompute={onViewCompute}
+                onOpenFile={onOpenFile}
+                onCopy={handleCopy}
+                copied={copiedId === message.id}
+              />
             ))
           )}
         </ConversationContent>

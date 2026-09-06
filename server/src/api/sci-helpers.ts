@@ -89,8 +89,10 @@ export function runHelperScript(
   script: string,
   args: string[],
   timeoutMs = HELPER_TIMEOUT_MS,
+  signal?: AbortSignal,
 ): Promise<HelperResult> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException("Preview cancelled", "AbortError")); return; }
     execFile(
       helperPython(),
       [script, ...args],
@@ -99,8 +101,10 @@ export function runHelperScript(
         maxBuffer: HELPER_MAX_BUFFER,
         timeout: timeoutMs,
         killSignal: "SIGKILL",
+        signal,
       },
       (error, stdout, stderr) => {
+        if (signal?.aborted) { reject(new DOMException("Preview cancelled", "AbortError")); return; }
         if (!error) {
           resolve({ status: 0, stdout, stderr, timedOut: false });
           return;

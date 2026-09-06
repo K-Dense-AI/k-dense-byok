@@ -210,7 +210,9 @@ def summarize(path: Path) -> dict:
 
 
 def _cache_key(path: Path, key: str, color: Optional[str]) -> str:
-    raw = f"{path.resolve()}|{path.stat().st_mtime_ns}|{key}|{color or ''}"
+    stat = path.stat()
+    helper_version = Path(__file__).stat().st_mtime_ns
+    raw = f"{path.resolve()}|{stat.st_ino}|{stat.st_size}|{stat.st_mtime_ns}|{stat.st_ctime_ns}|{helper_version}|{key}|{color or ''}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 

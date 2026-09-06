@@ -1,12 +1,10 @@
 "use client";
 
 import { FileTreePanel } from "@/components/sandbox-panel";
-import { FilePreviewPanel } from "@/components/file-preview-panel";
+import { FilePreviewPanel, SettingsDialog, WorkflowsPanel } from "@/components/lazy-surfaces";
 import type { Model } from "@/components/model-selector";
 import { ChatTab, type ChatTabHandle, type ChatTabMeta } from "@/components/chat-tab";
 import { ChatTabsBar, type ChatTabDescriptor } from "@/components/chat-tabs-bar";
-import { SettingsDialog } from "@/components/settings-dialog";
-import { WorkflowsPanel } from "@/components/workflows-panel";
 import { ProjectSwitcher } from "@/components/project-switcher";
 import { ProjectView } from "@/components/project-view";
 import { SessionCostPill } from "@/components/session-cost-pill";
@@ -398,10 +396,8 @@ function WorkspacePage({
       }
       setTabsMeta((prev) => {
         const existing = prev[tabId];
-        // Avoid noisy state updates that would loop back into ChatTab's
-        // onMetaChange dependency array. We compare the small primitive
-        // fields plus identity-equality on the messages array (useAgent
-        // returns a fresh array only when it actually mutates).
+        // Token deltas stay local to ChatTab. Only workspace-visible state
+        // crosses this boundary; notebook-only updates must still propagate.
         if (
           existing &&
           existing.sessionId === meta.sessionId &&
@@ -409,7 +405,9 @@ function WorkspacePage({
           existing.runState === meta.runState &&
           existing.isStreaming === meta.isStreaming &&
           existing.userMessageCount === meta.userMessageCount &&
-          existing.messages === meta.messages
+          existing.needsInput === meta.needsInput &&
+          existing.notebookEntries === meta.notebookEntries &&
+          existing.subagentCompletions === meta.subagentCompletions
         ) {
           return prev;
         }
@@ -463,11 +461,15 @@ function WorkspacePage({
   // projects keep their SSE streams mounted but catch up when reopened.
   useEffect(() => {
     if (!isActive || !anyStreaming) return;
-    const id = setInterval(() => {
-      sandboxFetchTree();
-      sandboxRefreshOpenTabs();
-    }, 1500);
-    return () => clearInterval(id);
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = async () => {
+      if (cancelled) return;
+      if (!document.hidden) await Promise.all([sandboxFetchTree(), sandboxRefreshOpenTabs()]);
+      if (!cancelled) timer = setTimeout(tick, 1500);
+    };
+    timer = setTimeout(tick, 1500);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [anyStreaming, isActive, sandboxFetchTree, sandboxRefreshOpenTabs]);
 
   const [treeWidth, setTreeWidth] = useState(
@@ -803,15 +805,7 @@ function WorkspacePage({
         Object.values(tabsMeta).map((meta) => ({
           isStreaming: meta.isStreaming,
           runState: meta.runState,
-          needsInput:
-            meta.isStreaming &&
-            meta.messages.some((message) =>
-              message.activities?.some(
-                (activity) =>
-                  activity.toolName === "interview" &&
-                  activity.status === "running",
-              ),
-            ),
+          needsInput: meta.needsInput,
         })),
         budgetBlocked,
       ),

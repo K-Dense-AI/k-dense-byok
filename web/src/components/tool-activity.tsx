@@ -17,7 +17,7 @@ import {
   WrenchIcon,
   XIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { memo, useState } from "react";
 
 import {
   Collapsible,
@@ -145,7 +145,7 @@ function fullArgs(args: unknown): string {
   return String(args);
 }
 
-function ToolCard({ item }: { item: ActivityItem }) {
+const ToolCard = memo(function ToolCard({ item }: { item: ActivityItem }) {
   const [open, setOpen] = useState(false);
   // A read of a SKILL.md is Pi's skill activation — surface the skill's name
   // instead of a generic file read (the path stays visible under Input). The
@@ -233,7 +233,7 @@ function ToolCard({ item }: { item: ActivityItem }) {
       )}
     </Collapsible>
   );
-}
+});
 
 /** Compact pointer from Modal tool activity to its durable Compute record. */
 export function ModalJobChip({

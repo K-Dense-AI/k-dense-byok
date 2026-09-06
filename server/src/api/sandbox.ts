@@ -8,7 +8,6 @@
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
@@ -19,7 +18,8 @@ import { buildProjectArchive } from "../project-archive.ts";
 import { artifactProvenance } from "../provenance/lookup.ts";
 import { currentProjectId } from "../scope.ts";
 import { apiRelative, guessMime, isUserVisible, isWithin, safePath, SandboxError } from "../sandbox-fs.ts";
-import { sciHelperFor, runSciHelper, runHelperScript } from "./sci-helpers.ts";
+import { sciHelperFor } from "./sci-helpers.ts";
+import { requestPreview } from "./sci-previews.ts";
 import { LATEX_ENGINES, compileLatex } from "../latex/compile.ts";
 import { synctexAvailable, synctexForward, synctexInverse } from "../latex/synctex.ts";
 import { AssistError, runLatexAssist, type AssistRequest } from "../latex/assist.ts";
@@ -238,6 +238,13 @@ function handle(reply: FastifyReply, err: unknown): { detail: string } {
   return { detail: (err as Error).message };
 }
 
+function sendPreviewImage(req: FastifyRequest, reply: FastifyReply, data: Buffer) {
+  const etag = `"${createHash("sha256").update(data).digest("base64url")}"`;
+  reply.header("Cache-Control", "private, no-cache").header("ETag", etag);
+  if (req.headers["if-none-match"] === etag) return reply.code(304).send();
+  return data;
+}
+
 export async function registerSandboxRoutes(app: FastifyInstance): Promise<void> {
   app.get("/sandbox/tree", async (req, reply) => {
     const root = activePaths().sandbox;
@@ -332,16 +339,43 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   app.get<{ Querystring: { path: string } }>("/sandbox/file", async (req, reply) => {
     try {
       const target = safePath(req.query.path);
-      if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
-        reply.code(404);
-        return "File not found";
+      const file = await fs.promises.open(target, "r").catch((error: NodeJS.ErrnoException) => {
+        if (["ENOENT", "ENOTDIR", "EISDIR"].includes(error.code ?? "")) return null;
+        throw error;
+      });
+      if (!file) return reply.code(404).send("File not found");
+      try {
+        const stat = await file.stat({ bigint: true });
+        if (!stat.isFile()) return reply.code(404).send("File not found");
+        if (stat.size > BigInt(MAX_PREVIEW_BYTES)) {
+          return reply.code(413).send("File too large to preview");
+        }
+        // Include inode + change time: atomic replacement and same-size edits
+        // with restored mtimes must invalidate the preview too.
+        const version = (s: typeof stat) =>
+          `W/"${s.dev}-${s.ino}-${s.size}-${s.mtimeNs}-${s.ctimeNs}"`;
+        const etag = version(stat);
+        reply.header("Cache-Control", "private, no-cache");
+        if (req.headers["if-none-match"]?.split(/\s*,\s*/).includes(etag)) {
+          return reply.header("ETag", etag).code(304).send();
+        }
+        // A file can grow after stat while an agent writes it. Bound the
+        // actual read too, rather than allocating a newly huge dataset.
+        const buffer = Buffer.allocUnsafe(MAX_PREVIEW_BYTES + 1);
+        let length = 0;
+        while (length < buffer.length) {
+          const { bytesRead } = await file.read(buffer, length, buffer.length - length, length);
+          if (!bytesRead) break;
+          length += bytesRead;
+        }
+        if (length > MAX_PREVIEW_BYTES) return reply.code(413).send("File too large to preview");
+        const content = buffer.subarray(0, length).toString("utf-8");
+        // Don't let an in-place write during this read validate mixed bytes.
+        if (version(await file.stat({ bigint: true })) === etag) reply.header("ETag", etag);
+        return reply.type("text/plain; charset=utf-8").send(content);
+      } finally {
+        await file.close();
       }
-      if (fs.statSync(target).size > MAX_PREVIEW_BYTES) {
-        reply.code(413);
-        return "File too large to preview";
-      }
-      reply.type("text/plain; charset=utf-8");
-      return fs.readFileSync(target, "utf-8");
     } catch (err) {
       return handle(reply, err);
     }
@@ -597,7 +631,8 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "Not a .h5ad file" };
       }
-      const res = await runHelperScript(ANNDATA_HELPER, ["summarize", target]);
+      const res = await requestPreview(reply, { projectId: currentProjectId(), target, script: ANNDATA_HELPER, command: "summarize" });
+      reply.header("Cache-Control", "private, no-cache");
       if (res.timedOut) {
         reply.code(504);
         return { detail: res.stderr.trim() };
@@ -627,16 +662,11 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           return { detail: "Not a .h5ad file" };
         }
         const cacheDir = path.join(activePaths().root, ".anndata_cache");
-        const outPng = path.join(os.tmpdir(), `kady-emb-${process.pid}-${Date.now()}.png`);
-        try {
-          const res = await runHelperScript(ANNDATA_HELPER, [
-            "embedding",
-            target,
-            req.query.key,
-            req.query.color || "-",
-            cacheDir,
-            outPng,
-          ]);
+        {
+          const res = await requestPreview(reply, {
+            projectId: currentProjectId(), target, script: ANNDATA_HELPER,
+            command: "embedding", params: [req.query.key, req.query.color || "-"], cacheDir,
+          });
           if (res.timedOut) {
             reply.code(504);
             return { detail: res.stderr.trim() };
@@ -653,18 +683,12 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
             reply.code(400);
             return { detail: res.stderr.trim() };
           }
-          if (res.status !== 0 || !fs.existsSync(outPng)) {
+          if (res.status !== 0 || !res.data) {
             reply.code(500);
             return { detail: res.stderr.trim() || "Failed to render embedding" };
           }
-          const data = fs.readFileSync(outPng);
           reply.type("image/png");
-          reply.header("Cache-Control", "private, max-age=300");
-          return data;
-        } finally {
-          // Every failure path can leave a partial render behind; the success
-          // path used to be the only one that cleaned up.
-          fs.rmSync(outPng, { force: true });
+          return sendPreviewImage(req, reply, res.data);
         }
       } catch (err) {
         return handle(reply, err);
@@ -684,7 +708,10 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "File not found" };
       }
-      const res = await runSciHelper(req.query.kind, "summarize", [target]);
+      const res = await requestPreview(reply, {
+        projectId: currentProjectId(), target, script: sciHelperFor(req.query.kind)!.script, command: "summarize",
+      });
+      reply.header("Cache-Control", "private, no-cache");
       if (res.timedOut) {
         reply.code(504);
         return { detail: res.stderr.trim() };
@@ -725,14 +752,11 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           reply.code(404);
           return { detail: "File not found" };
         }
-        const outPath = path.join(os.tmpdir(), `kady-sci-${process.pid}-${Date.now()}`);
-        try {
-          const res = await runSciHelper(req.query.kind, "render", [
-            target,
-            req.query.index ?? "0",
-            outPath,
-            req.query.axis ?? "-",
-          ]);
+        {
+          const res = await requestPreview(reply, {
+            projectId: currentProjectId(), target, script: sciHelperFor(req.query.kind)!.script,
+            command: "render", params: [req.query.index ?? "0", req.query.axis ?? "-"],
+          });
           if (res.timedOut) {
             reply.code(504);
             return { detail: res.stderr.trim() };
@@ -749,17 +773,14 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
             reply.code(400);
             return { detail: res.stderr.trim() };
           }
-          if (res.status !== 0 || !fs.existsSync(outPath)) {
+          if (res.status !== 0 || !res.data) {
             reply.code(500);
             return { detail: res.stderr.trim() || "Failed to render" };
           }
-          const data = fs.readFileSync(outPath);
+          const data = res.data;
           // helper writes SVG for chem 2D, PNG otherwise; sniff the first byte
           reply.type(data.slice(0, 5).toString("utf-8").startsWith("<") ? "image/svg+xml" : "image/png");
-          reply.header("Cache-Control", "private, max-age=300");
-          return data;
-        } finally {
-          fs.rmSync(outPath, { force: true });
+          return sendPreviewImage(req, reply, data);
         }
       } catch (err) {
         return handle(reply, err);

@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { distillHelperError, runSciHelper } from "../src/api/sci-helpers.ts";
+import { distillHelperError, runHelperScript, runSciHelper } from "../src/api/sci-helpers.ts";
 import { helperPython } from "../src/helpers-env.ts";
 
 const depsOk = spawnSync(helperPython(), ["-c", "import pyteomics"], { stdio: "ignore" }).status === 0;
@@ -57,6 +57,17 @@ describe("distillHelperError", () => {
 });
 
 describe("helper failures reach the caller as a usable message", () => {
+  it.runIf(depsOk)("cancels an abandoned subprocess without reporting a timeout", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "kady-helper-abort-"));
+    const script = path.join(dir, "slow.py");
+    fs.writeFileSync(script, "import time\ntime.sleep(60)\n");
+    const controller = new AbortController();
+    const pending = runHelperScript(script, [], 5000, controller.signal);
+    const expectation = expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    controller.abort();
+    try { await expectation; }
+    finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
   it.runIf(depsOk)("reports the parse error for a corrupt mzML", async () => {
     const file = path.join(
       fs.mkdtempSync(path.join(os.tmpdir(), "kady-sci-")),

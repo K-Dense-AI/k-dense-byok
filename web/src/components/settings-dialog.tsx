@@ -42,10 +42,12 @@ import {
   loadFusionConfigs,
   type StoredFusionConfig,
 } from "@/lib/fusion-presets";
-import { SkillsPanel } from "@/components/skills-panel";
-import { SubagentsPanel } from "@/components/subagents-panel";
-import { ConnectorsPanel } from "@/components/connectors-panel";
-import { ProviderAuthPanel } from "@/components/provider-auth-panel";
+import dynamic from "next/dynamic";
+const panelLoading = () => <div className="p-4 text-xs text-muted-foreground" role="status">Loading settings…</div>;
+const SkillsPanel = dynamic(() => import("./skills-panel").then((m) => m.SkillsPanel), { loading: panelLoading });
+const SubagentsPanel = dynamic(() => import("./subagents-panel").then((m) => m.SubagentsPanel), { loading: panelLoading });
+const ConnectorsPanel = dynamic(() => import("./connectors-panel").then((m) => m.ConnectorsPanel), { loading: panelLoading });
+const ProviderAuthPanel = dynamic(() => import("./provider-auth-panel").then((m) => m.ProviderAuthPanel), { loading: panelLoading });
 import { notifyProviderAuthChanged } from "@/lib/use-provider-auth";
 
 type CredentialStatus = Record<string, { set: boolean; masked: string | null }>;

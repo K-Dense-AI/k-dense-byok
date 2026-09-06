@@ -1,10 +1,22 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
-import { AssistantMessageBody } from "./chat-tab";
+import { AssistantMessageBody, ChatMessageRow } from "./chat-tab";
 import type { ChatMessage } from "@/lib/use-agent";
 
 describe("AssistantMessageBody", () => {
+  it("skips unchanged history rows without disabling their copy action", () => {
+    const content = vi.fn(() => "Completed reply");
+    const message: ChatMessage = { id: "old", role: "assistant", timestamp: 1, get content() { return content(); } };
+    const onCopy = vi.fn();
+    const props = { message, isStreaming: false, isLast: false, sessionId: "s", projectId: "default", copied: false, onCopy };
+    const { rerender } = render(<ChatMessageRow {...props} />);
+    const reads = content.mock.calls.length;
+    rerender(<ChatMessageRow {...props} />);
+    expect(content).toHaveBeenCalledTimes(reads);
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    expect(onCopy).toHaveBeenCalledWith("old", "Completed reply");
+  });
   it("renders prose around a running tool in stream order", () => {
     const message: ChatMessage = {
       id: "assistant",

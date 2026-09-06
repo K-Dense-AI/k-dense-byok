@@ -10,6 +10,7 @@ import {
   type ToolResultImage,
 } from "@/lib/scientific-results";
 
+import { createFramePublisher } from "./frame-publisher";
 import type { PromptImage } from "./image-attachments";
 import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./notebook";
 
@@ -541,6 +542,7 @@ export function useAgent(projectId?: string) {
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagePublisher] = useState(() => createFramePublisher(setMessages));
   const [contextUsage, setContextUsage] = useState<ContextUsage | null>(null);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [subagentCompletions, setSubagentCompletions] = useState(0);
@@ -605,19 +607,25 @@ export function useAgent(projectId?: string) {
       consumer.transcript = result.messages;
       consumer.transcriptState = result.state;
       if (result.steering) setPendingSteers(result.steering);
-      if (frame.type !== "done") setMessages(consumer.transcript);
+      if (frame.type === "text_delta" || frame.type === "thinking_delta") {
+        messagePublisher.schedule(consumer.transcript);
+      } else {
+        // Structural events (including interview, errors and terminal frames)
+        // must never sit behind a pending paint or lose preceding prose.
+        messagePublisher.publish(consumer.transcript);
+      }
       return true;
     },
-    [nextId],
+    [messagePublisher, nextId],
   );
 
   const finalizeRun = useCallback((consumer: RunConsumer) => {
     consumer.transcript = finishActivities(consumer.transcript, "complete");
-    setMessages(consumer.transcript);
+    messagePublisher.publish(consumer.transcript);
     setPendingSteers([]);
     setStatus("ready");
     setRunState(consumer.outcome);
-  }, []);
+  }, [messagePublisher]);
 
   const failRun = useCallback((consumer: RunConsumer, aborted: boolean) => {
     consumer.transcript = finishActivities(
@@ -628,11 +636,11 @@ export function useAgent(projectId?: string) {
         ? { ...message, content: "Something went wrong. Please try again." }
         : message,
     );
-    setMessages(consumer.transcript);
+    messagePublisher.publish(consumer.transcript);
     setPendingSteers([]);
     setStatus(aborted ? "ready" : "error");
     setRunState(aborted ? "idle" : "error");
-  }, []);
+  }, [messagePublisher]);
 
   const consumeRunResponse = useCallback(
     async (response: Response, consumer: RunConsumer) => {
@@ -963,6 +971,7 @@ export function useAgent(projectId?: string) {
   );
 
   const stop = useCallback(async (): Promise<string[]> => {
+    messagePublisher.flush();
     clientFetchRef.current?.abort();
     const id = sessionIdRef.current;
     let restored: string[] = [];
@@ -985,9 +994,10 @@ export function useAgent(projectId?: string) {
     setStatus("ready");
     setRunState("idle");
     return restored;
-  }, [scopedProjectId]);
+  }, [messagePublisher, scopedProjectId]);
 
   const reset = useCallback(() => {
+    messagePublisher.cancel();
     clientFetchRef.current?.abort();
     clientFetchRef.current = null;
     setMessages([]);
@@ -998,7 +1008,7 @@ export function useAgent(projectId?: string) {
     setStatus("ready");
     setRunState("idle");
     bindSession(null);
-  }, [bindSession]);
+  }, [bindSession, messagePublisher]);
 
   // Disconnecting this browser consumer must not abort the durable server run.
   // Explicit stop() is the only path that calls POST /abort.
@@ -1006,9 +1016,10 @@ export function useAgent(projectId?: string) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      messagePublisher.cancel();
       clientFetchRef.current?.abort();
     };
-  }, []);
+  }, [messagePublisher]);
 
   const getSessionId = useCallback(() => sessionIdRef.current, []);
 

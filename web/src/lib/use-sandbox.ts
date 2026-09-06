@@ -203,6 +203,26 @@ export function useSandbox(
   const openPathsRef = useRef<Set<string>>(new Set(initialOpenPaths.current));
   const treeRequestRef = useRef<Promise<void> | null>(null);
   const treeEtagRef = useRef<string | null>(null);
+  const fileEtags = useRef(new Map<string, string>());
+  const fileRequests = useRef(new Map<string, { controller: AbortController; promise: Promise<void> }>());
+  const fileGenerations = useRef(new Map<string, object>());
+  const savingPaths = useRef(new Set<string>());
+  const refreshRequest = useRef<Promise<void> | null>(null);
+  const scopeEpoch = useRef(0);
+  const invalidateFile = useCallback((path: string) => {
+    fileRequests.current.get(path)?.controller.abort();
+    fileRequests.current.delete(path);
+    fileEtags.current.delete(path);
+    fileGenerations.current.delete(path);
+  }, []);
+  useEffect(() => () => {
+    for (const request of fileRequests.current.values()) request.controller.abort();
+    fileRequests.current.clear();
+    fileEtags.current.clear();
+    fileGenerations.current.clear();
+    scopeEpoch.current++;
+    refreshRequest.current = null;
+  }, [scopedProjectId]);
 
   useEffect(() => { tabsRef.current = tabs; }, [tabs]);
 
@@ -236,7 +256,11 @@ export function useSandbox(
         setTree(data);
         const existingPaths = new Set(flattenFiles(data));
         const current = tabsRef.current;
-        const next = current.filter((tab) => existingPaths.has(tab.path));
+        const next = current.filter((tab) => {
+          if (existingPaths.has(tab.path)) return true;
+          invalidateFile(tab.path);
+          return false;
+        });
         if (next.length !== current.length) {
           tabsRef.current = next;
           openPathsRef.current = new Set(next.map((tab) => tab.path));
@@ -257,9 +281,10 @@ export function useSandbox(
       if (treeRequestRef.current === request) treeRequestRef.current = null;
     });
     return request;
-  }, [scopedFetch]);
+  }, [invalidateFile, scopedFetch]);
 
   const closeTab = useCallback((path: string) => {
+    invalidateFile(path);
     openPathsRef.current.delete(path);
     const current = tabsRef.current;
     const idx = current.findIndex((t) => t.path === path);
@@ -270,40 +295,66 @@ export function useSandbox(
       if (prev !== path) return prev;
       return newTabs[Math.min(idx, newTabs.length - 1)]?.path ?? null;
     });
-  }, []);
+  }, [invalidateFile]);
 
   // Fetch file body into an open tab, handling timeout/error bookkeeping.
   // Kept as its own callback so retryFile can reuse it without re-adding
   // the tab.
-  const fetchFileContent = useCallback(async (path: string) => {
+  const fetchFileContent = useCallback((path: string, refresh = false): Promise<void> => {
+    if (savingPaths.current.has(path)) return Promise.resolve();
+    const pending = fileRequests.current.get(path);
+    if (pending) return pending.promise;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20000);
-    try {
-      const res = await scopedFetch(
-        `/sandbox/file?path=${encodeURIComponent(path)}`,
-        { signal: controller.signal },
-      );
-      const content = res.ok
-        ? await res.text()
-        : `[Error: ${res.status} ${res.statusText}]`;
+    const request = { controller, promise: Promise.resolve() };
+    fileRequests.current.set(path, request);
+    const generation = fileGenerations.current.get(path) ?? {};
+    fileGenerations.current.set(path, generation);
+    const isCurrent = () => fileGenerations.current.get(path) === generation;
+    const update = (content: string) => {
       setTabs((prev) => {
-        const next = prev.map((t) => (t.path === path ? { ...t, content, loading: false } : t));
+        if (!isCurrent()) return prev;
+        let changed = false;
+        const next = prev.map((tab) => {
+          if (tab.path !== path || (tab.content === content && !tab.loading)) return tab;
+          changed = true;
+          return { ...tab, content, loading: false };
+        });
+        if (!changed) return prev;
         tabsRef.current = next;
         return next;
       });
-    } catch {
-      // Drop the path so a later click or explicit retry re-fetches cleanly.
-      openPathsRef.current.delete(path);
-      setTabs((prev) => {
-        const next = prev.map((t) =>
-          t.path === path ? { ...t, content: "[Error: Could not load file — click to retry]", loading: false } : t
-        );
-        tabsRef.current = next;
-        return next;
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+    };
+    request.promise = (async () => {
+      const timeout = setTimeout(() => controller.abort(), refresh ? 5000 : 20000);
+      try {
+        const etag = fileEtags.current.get(path);
+        const res = await scopedFetch(`/sandbox/file?path=${encodeURIComponent(path)}`, {
+          signal: controller.signal,
+          headers: etag ? { "If-None-Match": etag } : undefined,
+        });
+        if (!isCurrent() || controller.signal.aborted || res.status === 304) return;
+        const content = res.ok ? await res.text() : `[Error: ${res.status} ${res.statusText}]`;
+        if (!isCurrent() || controller.signal.aborted) return;
+        const nextEtag = res.ok ? res.headers.get("etag") : null;
+        if (nextEtag) fileEtags.current.set(path, nextEtag);
+        else fileEtags.current.delete(path);
+        update(content);
+      } catch {
+        if (!refresh && isCurrent()) {
+          fileEtags.current.delete(path);
+          openPathsRef.current.delete(path);
+          update("[Error: Could not load file — click to retry]");
+        }
+      } finally {
+        clearTimeout(timeout);
+      }
+    })();
+    void request.promise.finally(() => {
+      // Mutation generations outlive requests so deferred React updaters
+      // remain valid after completion, but never after close/save/rename.
+      if (fileRequests.current.get(path) === request) fileRequests.current.delete(path);
+    });
+    return request.promise;
   }, [scopedFetch]);
 
   useEffect(() => {
@@ -364,6 +415,7 @@ export function useSandbox(
   }, [fetchFileContent]);
 
   const retryFile = useCallback(async (path: string) => {
+    invalidateFile(path);
     openPathsRef.current.add(path);
     setTabs((prev) => {
       const next = prev.map((t) =>
@@ -373,7 +425,7 @@ export function useSandbox(
       return next;
     });
     await fetchFileContent(path);
-  }, [fetchFileContent]);
+  }, [fetchFileContent, invalidateFile]);
 
   const uploadFiles = useCallback(
     async (files: FileList | File[], paths?: string[]): Promise<string[]> => {
@@ -426,6 +478,8 @@ export function useSandbox(
   );
 
   const saveFile = useCallback(async (path: string, content: string): Promise<boolean> => {
+    savingPaths.current.add(path);
+    invalidateFile(path);
     try {
       const res = await scopedFetch(
         `/sandbox/file?path=${encodeURIComponent(path)}`,
@@ -441,8 +495,11 @@ export function useSandbox(
       return res.ok;
     } catch {
       return false;
+    } finally {
+      invalidateFile(path);
+      savingPaths.current.delete(path);
     }
-  }, [scopedFetch]);
+  }, [invalidateFile, scopedFetch]);
 
   const saveImageBlob = useCallback(async (path: string, blob: Blob): Promise<boolean> => {
     try {
@@ -537,6 +594,7 @@ export function useSandbox(
         // Remap any open tabs whose paths were under the old location
         const current = tabsRef.current;
         const updated = current.map((t) => {
+          if (t.path === src || t.path.startsWith(src + "/")) invalidateFile(t.path);
           if (t.path === src) return { ...t, path: dest };
           if (t.path.startsWith(src + "/"))
             return { ...t, path: dest + t.path.slice(src.length) };
@@ -561,7 +619,7 @@ export function useSandbox(
         return false;
       }
     },
-    [fetchTree, scopedFetch]
+    [fetchTree, invalidateFile, scopedFetch]
   );
 
   const renameItem = useCallback(
@@ -612,38 +670,28 @@ export function useSandbox(
     [scopedFetch],
   );
 
-  const refreshOpenTabs = useCallback(async () => {
-    const current = tabsRef.current;
-    for (const tab of current) {
-      const name = tab.path.split("/").pop() ?? "";
-      const cat = fileCategory(name);
+  const refreshOpenTabs = useCallback((): Promise<void> => {
+    if (refreshRequest.current) return refreshRequest.current;
+    const queue = tabsRef.current.filter((tab) => {
+      const cat = fileCategory(tab.path);
       const def = getViewerDef(cat);
-      const loadMode = def
-        ? def.loadMode
-        : cat === "image" || cat === "pdf" || cat === "anndata" ? "none" : "text";
-      if (loadMode !== "text") continue;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      try {
-        const res = await scopedFetch(
-          `/sandbox/file?path=${encodeURIComponent(tab.path)}`,
-          { signal: controller.signal },
-        );
-        const content = res.ok
-          ? await res.text()
-          : `[Error: ${res.status} ${res.statusText}]`;
-        setTabs((prev) => {
-          const next = prev.map((t) => (t.path === tab.path ? { ...t, content } : t));
-          tabsRef.current = next;
-          return next;
-        });
-      } catch {
-        // silently skip tabs that fail to refresh
-      } finally {
-        clearTimeout(timeout);
+      return (def ? def.loadMode : ["image", "pdf", "anndata"].includes(cat) ? "none" : "text") === "text";
+    });
+    // Small bounded fan-out: one slow file doesn't block all other previews.
+    const epoch = scopeEpoch.current;
+    const worker = async () => {
+      for (let tab = queue.shift(); tab; tab = queue.shift()) {
+        if (scopeEpoch.current !== epoch) return;
+        if (openPathsRef.current.has(tab.path)) await fetchFileContent(tab.path, true);
       }
-    }
-  }, [scopedFetch]);
+    };
+    const request = Promise.all(Array.from({ length: Math.min(3, queue.length) }, worker)).then(() => {});
+    refreshRequest.current = request;
+    void request.finally(() => {
+      if (refreshRequest.current === request) refreshRequest.current = null;
+    });
+    return request;
+  }, [fetchFileContent]);
 
   useEffect(() => {
     // Hidden project workspaces stay mounted so their live chat streams can
@@ -684,11 +732,14 @@ export function useSandbox(
   useEffect(() => {
     if (!isActive) return;
     const onVisible = () => {
-      if (document.visibilityState === "visible") fetchTree();
+      if (document.visibilityState === "visible") {
+        void fetchTree();
+        void refreshOpenTabs();
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [fetchTree, isActive]);
+  }, [fetchTree, isActive, refreshOpenTabs]);
 
   return {
     tree,
