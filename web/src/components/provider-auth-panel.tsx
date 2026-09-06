@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { OAuthLoginDialog } from "@/components/oauth-login-dialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   useProviderAuth,
   type ModelProviderStatus,
@@ -23,19 +24,21 @@ export function ProviderAuthPanel() {
   );
   const [disconnecting, setDisconnecting] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
   const selected = useMemo(
     () => auth.providers.find((provider) => provider.id === selectedId) ?? null,
     [auth.providers, selectedId],
   );
 
   const disconnect = async (provider: ModelProviderStatus) => {
-    if (
-      !window.confirm(
-        `Disconnect ${provider.accountLabel}? Existing chats remain on disk, but new requests through this provider will stop working.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Disconnect ${provider.accountLabel}?`,
+      description:
+        "Existing chats remain on disk, but new requests through this provider will stop working until you reconnect.",
+      confirmLabel: "Disconnect",
+      destructive: true,
+    });
+    if (!ok) return;
     setDisconnecting(provider.id);
     setActionError(null);
     try {
@@ -50,6 +53,7 @@ export function ProviderAuthPanel() {
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto">
+      {dialog}
       <div>
         <h3 className="text-sm font-medium">Model providers</h3>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckIcon,
   BrainCircuitIcon,
@@ -114,6 +114,19 @@ interface ModelPickerListProps {
 
 function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) {
   const [search, setSearch] = useState("");
+  const selectedRowRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLDivElement | null>(null);
+
+  // With 200+ models the current pick is usually far below the fold; open the
+  // list with it in view instead of at the Fusion presets every time.
+  useEffect(() => {
+    const row = selectedRowRef.current;
+    const list = listRef.current;
+    if (!row || !list) return;
+    const top = row.offsetTop - list.clientHeight / 2 + row.offsetHeight / 2;
+    list.scrollTop = Math.max(0, top);
+    // Mount-only: later re-renders (search, refresh) must not yank the scroll.
+  }, []);
   const {
     models: allModels,
     ollamaAvailable,
@@ -197,6 +210,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
     return (
       <div
         key={model.id}
+        ref={isSelected ? selectedRowRef : undefined}
         role="option"
         aria-selected={isSelected}
         aria-disabled={!available}
@@ -289,9 +303,10 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       </div>
 
       <div
+        ref={listRef}
         role="listbox"
         aria-label="Models"
-        className={cn("overflow-y-auto py-1", compact ? "max-h-72" : "max-h-80")}
+        className={cn("relative overflow-y-auto py-1", compact ? "max-h-72" : "max-h-80")}
       >
         {groups.map((group, index) => (
           <div key={group.id}>
@@ -435,7 +450,7 @@ export function ModelSelector({
       <PopoverTrigger asChild>
         <div
           className={cn(
-            "flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors text-xs select-none",
+            "flex min-w-28 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 cursor-pointer transition-colors text-xs select-none",
             open
               ? "border-border bg-muted/60"
               : "border-transparent hover:border-border hover:bg-muted/40"

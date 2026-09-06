@@ -24,10 +24,65 @@ function Tooltip({
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
+/**
+ * True when the trigger currently owns an open popover / dropdown / dialog.
+ * Radix's Popover, DropdownMenu and Dialog triggers all stamp
+ * `aria-expanded` on the element they render, and because every trigger in
+ * this app composes via `asChild`, the tooltip trigger and the overlay
+ * trigger end up on the same DOM node.
+ */
+function triggerIsExpanded(el: EventTarget | null): boolean {
+  return el instanceof Element && el.getAttribute("aria-expanded") === "true"
+}
+
+/**
+ * Radix's tooltip trigger opens on any `pointermove` and on any `focus`.
+ * Two of those paths make a tooltip pile up on top of the very UI the user
+ * just opened:
+ *
+ * 1. Hovering (or drifting back over) a trigger whose menu/popover is open
+ *    draws the hint over the open menu.
+ * 2. When a menu, popover or dialog closes, Radix returns focus to the
+ *    trigger programmatically; the resulting `focus` event opens the tooltip
+ *    even though the user only clicked.
+ *
+ * Radix's own handlers honour `event.defaultPrevented`, so we veto the
+ * hover path while the trigger is expanded and the focus path unless the
+ * focus is keyboard-driven (`:focus-visible`), which keeps the hint for
+ * people tabbing through the UI.
+ */
 function TooltipTrigger({
+  onPointerMove,
+  onFocus,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      onPointerMove={(event) => {
+        onPointerMove?.(event)
+        if (!event.defaultPrevented && triggerIsExpanded(event.currentTarget)) {
+          event.preventDefault()
+        }
+      }}
+      onFocus={(event) => {
+        onFocus?.(event)
+        if (event.defaultPrevented) return
+        const target = event.currentTarget
+        let keyboardFocus = false
+        try {
+          keyboardFocus = target.matches(":focus-visible")
+        } catch {
+          // Older engines without :focus-visible: fall back to Radix's default.
+          keyboardFocus = true
+        }
+        if (!keyboardFocus || triggerIsExpanded(target)) {
+          event.preventDefault()
+        }
+      }}
+      {...props}
+    />
+  )
 }
 
 function TooltipContent({

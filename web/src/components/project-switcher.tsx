@@ -34,6 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PROJECT_ID, type Project } from "@/lib/projects";
 import { useProjects } from "@/lib/use-projects";
@@ -87,6 +88,7 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
     remove,
   } = useProjects();
 
+  const { confirm, dialog } = useConfirm();
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [form, setForm] = useState<ProjectFormState>(EMPTY_FORM);
@@ -187,9 +189,13 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
   const handleDelete = useCallback(
     async (project: Project) => {
       if (project.id === DEFAULT_PROJECT_ID) return;
-      const confirmed = window.confirm(
-        `Delete project "${project.name}"? Its sandbox and chats will be permanently removed. This cannot be undone.`
-      );
+      const confirmed = await confirm({
+        title: `Delete "${project.name}"?`,
+        description:
+          "Its sandbox files and chats will be permanently removed. This cannot be undone.",
+        confirmLabel: "Delete project",
+        destructive: true,
+      });
       if (!confirmed) return;
       try {
         await remove(project.id);
@@ -197,7 +203,7 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
         // swallow
       }
     },
-    [remove]
+    [confirm, remove]
   );
 
   useEffect(() => {
@@ -209,6 +215,7 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
 
   return (
     <>
+      {dialog}
       <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
         <InfoTooltip
           disabled={popoverOpen}

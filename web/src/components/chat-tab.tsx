@@ -1006,7 +1006,7 @@ function ChatInput({
                   : "Image is too large (20MB max).",
             )
           }
-          className="rounded-xl border shadow-sm"
+          className="@container/composer rounded-xl border shadow-sm"
         >
           <ImageAttachmentsRow />
           <ContextChipsBar
@@ -1030,8 +1030,12 @@ function ChatInput({
             onChange={handleChange}
             onKeyDown={handleKeyDown}
           />
-          <PromptInputFooter>
-            <div className="flex min-w-0 items-center gap-1.5">
+          {/* From ~30rem up the toolbar is one row: the model/compute chips
+              truncate instead of pushing dictate + send onto a second line.
+              Below that (the chat pane can shrink to 280px) wrapping is the
+              lesser evil, so the container query hands control back. */}
+          <PromptInputFooter className="@min-[30rem]/composer:flex-nowrap">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <AddContextMenu
                 selectedDbs={selectedDbs}
                 onDbsChange={onDbsChange}

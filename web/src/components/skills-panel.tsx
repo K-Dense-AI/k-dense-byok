@@ -41,6 +41,7 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Loader2Icon,
   PencilIcon,
@@ -64,6 +65,7 @@ type Pane = "none" | "install" | "create" | "edit";
 
 export function SkillsPanel() {
   const { activeProject, activeProjectId } = useProjects();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [scope, setScope] = useState<SkillScope>("project");
   const [rows, setRows] = useState<Row[]>([]);
   const [problems, setProblems] = useState<SkillProblem[]>([]);
@@ -278,9 +280,15 @@ export function SkillsPanel() {
       const origin = row.origin ?? "catalogue";
       const consequence =
         origin === "catalogue"
-          ? `${row.name} will be archived and kept out of future catalogue syncs.`
-          : `${row.name} will be deleted.`;
-      if (!window.confirm(`${consequence}\n\nContinue?`)) return;
+          ? `"${row.name}" will be archived and kept out of future catalogue syncs.`
+          : `"${row.name}" will be deleted.`;
+      const ok = await confirm({
+        title: origin === "catalogue" ? "Archive skill?" : "Delete skill?",
+        description: consequence,
+        confirmLabel: origin === "catalogue" ? "Archive" : "Delete",
+        destructive: true,
+      });
+      if (!ok) return;
       await run(`remove:${row.name}`, async () => {
         const result = await removeSkill(row.name, scope);
         return result.disposition === "archived"
@@ -288,7 +296,7 @@ export function SkillsPanel() {
           : `Deleted ${result.name}.`;
       });
     },
-    [run, scope],
+    [confirm, run, scope],
   );
 
   const doCheckUpdate = useCallback(
@@ -307,19 +315,19 @@ export function SkillsPanel() {
     async (row: Row) => {
       const origin = row.origin ?? "catalogue";
       const where = origin === "catalogue" ? "the current upstream version" : row.source;
-      if (
-        !window.confirm(
-          `Replace the local ${row.name} skill with ${where}? Local edits to this skill will be lost.`,
-        )
-      ) {
-        return;
-      }
+      const ok = await confirm({
+        title: `Replace "${row.name}"?`,
+        description: `This replaces the local skill with ${where}. Local edits to this skill will be lost.`,
+        confirmLabel: "Replace",
+        destructive: true,
+      });
+      if (!ok) return;
       await run(`update:${row.name}`, async () => {
         await updateSkillFromUpstream(row.name, scope);
         return `Updated ${row.name}.`;
       });
     },
-    [run, scope],
+    [confirm, run, scope],
   );
 
   const filtered = useMemo(
@@ -336,6 +344,7 @@ export function SkillsPanel() {
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto">
+      {confirmDialog}
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-medium">Skills</h3>

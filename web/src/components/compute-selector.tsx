@@ -468,7 +468,7 @@ export function ComputeSelector({
           type="button"
           aria-label={`Compute target: ${resourceLabel(effective)}`}
           className={cn(
-            "flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
+            "flex min-w-20 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors",
             open || selected
               ? "border-border bg-muted/60"
               : "border-transparent hover:border-border hover:bg-muted/40",

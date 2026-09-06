@@ -40,7 +40,7 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage | null })
         role="status"
         aria-label={ariaLabel}
         className={cn(
-          "inline-flex h-7 cursor-help items-center gap-1.5 rounded-md px-2 font-mono text-[11px] tabular-nums text-muted-foreground",
+          "inline-flex h-7 shrink-0 cursor-help items-center gap-1.5 rounded-md px-2 font-mono text-[11px] tabular-nums text-muted-foreground",
           critical && "bg-destructive/10 text-destructive",
           warning && !critical && "bg-amber-500/10 text-amber-700 dark:text-amber-400",
         )}

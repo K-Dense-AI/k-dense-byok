@@ -24,6 +24,7 @@ import { SettingsDialog } from "@/components/lazy-surfaces";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Card,
   CardAction,
@@ -182,6 +183,7 @@ export function ProjectView({
     remove,
   } = useProjects();
   const { resolvedTheme, setTheme } = useTheme();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -322,9 +324,13 @@ export function ProjectView({
   const handleDelete = useCallback(
     async (project: Project) => {
       if (project.id === DEFAULT_PROJECT_ID) return;
-      const confirmed = window.confirm(
-        `Delete project "${project.name}"? Its sandbox and chats will be permanently removed. This cannot be undone.`,
-      );
+      const confirmed = await confirm({
+        title: `Delete "${project.name}"?`,
+        description:
+          "Its sandbox files and chats will be permanently removed. This cannot be undone.",
+        confirmLabel: "Delete project",
+        destructive: true,
+      });
       if (!confirmed) return;
       try {
         await remove(project.id);
@@ -334,11 +340,12 @@ export function ProjectView({
         );
       }
     },
-    [remove],
+    [confirm, remove],
   );
 
   return (
     <div className="flex min-h-dvh flex-col bg-muted/20">
+      {confirmDialog}
       <header className="flex items-center justify-between border-b bg-background/90 px-6 py-3 backdrop-blur">
         <a
           href="https://www.k-dense.ai"

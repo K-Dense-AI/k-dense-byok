@@ -23,6 +23,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   ChevronRightIcon,
   FolderIcon,
   FolderOpenIcon,
@@ -635,21 +640,7 @@ export const FileTreePanel = memo(function FileTreePanel({
           {/* @ts-expect-error -- webkitdirectory is non-standard but supported in all major browsers */}
           <input ref={dirInputRef} type="file" webkitdirectory="" className="hidden" onChange={handleFileChange} />
           {totalFiles > 0 && onOrganize && (
-            <InfoTooltip
-              content={
-                <>
-                  <b>Auto-organize files</b>
-                  <br />
-                  Ask the agent to tidy the sandbox — group related files into
-                  folders (raw data, figures, notebooks, results). Does not
-                  delete anything.
-                </>
-              }
-            >
-              <button onClick={onOrganize} aria-label="Auto-organize files" className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                <WandSparklesIcon className="size-3.5" />
-              </button>
-            </InfoTooltip>
+            <OrganizeFilesButton onOrganize={onOrganize} />
           )}
           {totalFiles > 0 && (
             <InfoTooltip
@@ -785,3 +776,74 @@ export const FileTreePanel = memo(function FileTreePanel({
     </div>
   );
 });
+
+/**
+ * The wand starts a paid agent run that moves files around, so a stray click
+ * must not launch it. The popover states what will happen (and that scripts
+ * may need their paths updated) and hands the run to the active chat only on
+ * an explicit confirm.
+ */
+function OrganizeFilesButton({ onOrganize }: { onOrganize: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <InfoTooltip
+        content={
+          <>
+            <b>Auto-organize files</b>
+            <br />
+            Ask the agent to tidy the sandbox — group related files into
+            folders (raw data, figures, notebooks, results). Does not
+            delete anything.
+          </>
+        }
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            aria-label="Auto-organize files"
+            className={cn(
+              "rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+              open && "bg-muted text-foreground",
+            )}
+          >
+            <WandSparklesIcon className="size-3.5" />
+          </button>
+        </PopoverTrigger>
+      </InfoTooltip>
+      <PopoverContent align="end" sideOffset={6} className="w-80 p-3.5">
+        <div className="flex items-start gap-2.5">
+          <WandSparklesIcon className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
+          <div className="min-w-0 space-y-1">
+            <p className="text-sm font-semibold leading-tight">Organize the sandbox with Kady?</p>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Starts a run in the active chat with its current model. Kady
+              proposes a folder layout, moves files into it (nothing is
+              deleted), and updates paths in scripts and notebooks that
+              referenced the moved files.
+            </p>
+          </div>
+        </div>
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="rounded-md px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onOrganize();
+            }}
+            className="rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Organize files
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}

@@ -37,7 +37,7 @@ export function ThinkingSelector({
   const chip = (
     <div
       className={cn(
-        "flex min-w-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors text-xs select-none",
+        "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 transition-colors text-xs select-none",
         disabled
           ? "cursor-not-allowed border-transparent opacity-50"
           : open || selected !== "off"

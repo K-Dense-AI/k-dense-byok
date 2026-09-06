@@ -54,6 +54,7 @@ import {
   type SandboxWorkspaceState,
   type WorkspaceScreen,
 } from "@/lib/workspace-persistence";
+import { seedChatStateFromTab } from "@/lib/new-tab-state";
 import {
   useCallback,
   useEffect,
@@ -63,6 +64,16 @@ import {
 } from "react";
 
 const MAX_CHAT_TABS = 10;
+
+/**
+ * Sent by the sandbox "Auto-organize files" wand. Moving a data file silently
+ * breaks every script that read it by relative path, so the prompt makes the
+ * agent plan first, never delete, and fix references it moved out from under.
+ */
+const ORGANIZE_FILES_PROMPT =
+  "Organize the files in the sandbox into a clear folder structure (for example raw data, scripts, figures, results, notebooks). " +
+  "First list the moves you intend to make, then carry them out. Do not delete anything, and leave dotfiles, config, lock files, and virtual environments in place. " +
+  "After moving, update relative paths in any scripts, notebooks, or documents that referenced the moved files, and finish with a short summary of what moved where.";
 
 interface ChatTabEntry {
   id: string;
@@ -347,9 +358,19 @@ function WorkspacePage({
   // putting impure logic inside a setState updater (which strict mode runs
   // twice for purity testing).
   const tabsRef = useRef(tabs);
+  // Same ref trick for what newTab seeds a fresh tab from; both change often
+  // and neither should re-create the callback.
+  const tabWorkspaceStatesRef = useRef(tabWorkspaceStates);
+  const activeTabIdRef = useRef(activeTabId);
   useEffect(() => {
     tabsRef.current = tabs;
   }, [tabs]);
+  useEffect(() => {
+    tabWorkspaceStatesRef.current = tabWorkspaceStates;
+  }, [tabWorkspaceStates]);
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
 
   // Per-tab agent meta, populated by each <ChatTab> via onMetaChange. We
   // read from this to drive the cost pill and tab
@@ -593,6 +614,16 @@ function WorkspacePage({
     // isActive=false and display:none.
     if (tabsRef.current.length >= MAX_CHAT_TABS) return;
     const id = makeTabId();
+    // A new chat continues the same piece of work far more often than it
+    // switches models, so carry the active tab's model, thinking level, and
+    // compute target over instead of resetting to the app defaults. Drafts,
+    // attachments, and queued prompts stay with the tab they belong to.
+    const seeded = seedChatStateFromTab(
+      tabWorkspaceStatesRef.current[activeTabIdRef.current],
+    );
+    if (seeded) {
+      setTabWorkspaceStates((prev) => ({ ...prev, [id]: seeded }));
+    }
     setTabs((prev) =>
       prev.length >= MAX_CHAT_TABS
         ? prev
@@ -711,7 +742,7 @@ function WorkspacePage({
     const handle = tabHandles.current.get(activeTabId);
     if (!handle) return;
     setView("chat");
-    void handle.sendQuick("Organize all the files in the sandbox directory");
+    void handle.sendQuick(ORGANIZE_FILES_PROMPT);
   }, [activeTabId]);
 
   // ------------------------------------------------------------------
