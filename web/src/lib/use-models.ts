@@ -27,6 +27,7 @@ interface OpenAICompatibleListResponse {
   available?: boolean;
   /** True when OPENAI_COMPATIBLE_BASE_URL was set explicitly. */
   configured?: boolean;
+  billingMode?: "local" | "external";
   models?: Model[];
 }
 
@@ -212,6 +213,8 @@ export interface UseModelsReturn {
    * run one of these servers never see it.
    */
   openaiCompatibleConfigured: boolean;
+  /** Local for self-hosted inference; external for authenticated proxy billing. */
+  openaiCompatibleBillingMode: "local" | "external";
   /** Direct Pi-provider models available through connected subscriptions. */
   providerModels: Model[];
   providerStatuses: ModelProviderStatus[];
@@ -240,6 +243,9 @@ export function useModels(): UseModelsReturn {
   const [oaiCompatModels, setOaiCompatModels] = useState<Model[]>([]);
   const [oaiCompatAvailable, setOaiCompatAvailable] = useState(false);
   const [oaiCompatConfigured, setOaiCompatConfigured] = useState(false);
+  const [oaiCompatBillingMode, setOaiCompatBillingMode] = useState<"local" | "external">(
+    "local",
+  );
   const [oaiCompatLoaded, setOaiCompatLoaded] = useState(false);
   const [providerModels, setProviderModels] = useState<Model[]>([]);
   const [providerStatuses, setProviderStatuses] = useState<ModelProviderStatus[]>([]);
@@ -271,6 +277,7 @@ export function useModels(): UseModelsReturn {
       .then((data) => {
         setOaiCompatAvailable(Boolean(data.available));
         setOaiCompatConfigured(Boolean(data.configured));
+        setOaiCompatBillingMode(data.billingMode === "external" ? "external" : "local");
         setOaiCompatModels(Array.isArray(data.models) ? data.models : []);
         setOaiCompatLoaded(true);
       })
@@ -332,15 +339,16 @@ export function useModels(): UseModelsReturn {
   );
 
   useEffect(() => {
-    // Also re-probes NVIDIA: Settings fires this event when the key changes.
+    // Settings fires this event when a model credential changes.
     const refreshProviders = () => {
       fetchProviders(true);
       fetchNvidia(true);
+      fetchOpenAICompatible(true);
     };
     window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
     return () =>
       window.removeEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
-  }, [fetchProviders, fetchNvidia]);
+  }, [fetchOpenAICompatible, fetchProviders, fetchNvidia]);
 
   // Re-read Fusion configs when Settings saves them (or another tab edits them).
   const [fusionRevision, setFusionRevision] = useState(0);
@@ -463,15 +471,25 @@ export function useModels(): UseModelsReturn {
 
   const enrichedOpenAICompatibleModels = useMemo<Model[]>(
     () =>
-      oaiCompatModels.map((model) => ({
-        ...model,
-        sourceId: "openai-compatible",
-        sourceLabel: "Local (OpenAI-compatible)",
-        billingMode: "local",
-        reasoning: false,
-        available: oaiCompatAvailable,
-      })),
-    [oaiCompatAvailable, oaiCompatModels],
+      oaiCompatModels.map((model) => {
+        const billingMode =
+          model.billingMode === "external" ? "external" : oaiCompatBillingMode;
+        return {
+          ...model,
+          sourceId:
+            billingMode === "external"
+              ? "openai-compatible-external"
+              : "openai-compatible",
+          sourceLabel:
+            billingMode === "external"
+              ? "OpenAI-compatible endpoint"
+              : "Local (OpenAI-compatible)",
+          billingMode,
+          reasoning: false,
+          available: oaiCompatAvailable,
+        };
+      }),
+    [oaiCompatAvailable, oaiCompatBillingMode, oaiCompatModels],
   );
 
   const models = useMemo(
@@ -577,6 +595,7 @@ export function useModels(): UseModelsReturn {
     openaiCompatibleModels: enrichedOpenAICompatibleModels,
     openaiCompatibleAvailable: oaiCompatAvailable,
     openaiCompatibleConfigured: oaiCompatConfigured,
+    openaiCompatibleBillingMode: oaiCompatBillingMode,
     providerModels,
     providerStatuses,
     nvidiaModels,

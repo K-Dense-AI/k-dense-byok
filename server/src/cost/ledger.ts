@@ -12,6 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { openAICompatibleBillingMode } from "../config.ts";
 import { activePaths, getProject, resolvePaths } from "../projects.ts";
 import {
   billingForProvider,
@@ -114,7 +115,10 @@ function inferredBilling(model: string, role?: CostEntry["role"]): BillingContex
   }
   if (model.startsWith("ollama/")) return billingForProvider("ollama", "local");
   if (model.startsWith("openai-compatible/")) {
-    return billingForProvider("openai-compatible", "local");
+    return billingForProvider(
+      "openai-compatible",
+      openAICompatibleBillingMode() === "external" ? "api_key" : "local",
+    );
   }
   if (model.startsWith("openrouter/") || model.startsWith("fusion/")) {
     return billingForProvider("openrouter", "api_key");

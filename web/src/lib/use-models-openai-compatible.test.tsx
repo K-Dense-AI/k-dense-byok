@@ -20,13 +20,14 @@ function json(value: unknown): Response {
 interface Discovery {
   available: boolean;
   configured: boolean;
+  billingMode: "local" | "external";
   models: { id: string; label: string }[];
 }
 
 let discovery: Discovery;
 
 beforeEach(() => {
-  discovery = { available: false, configured: false, models: [] };
+  discovery = { available: false, configured: false, billingMode: "local", models: [] };
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (input) => {
     const url = String(input);
@@ -34,6 +35,7 @@ beforeEach(() => {
       return json({
         available: discovery.available,
         configured: discovery.configured,
+        billingMode: discovery.billingMode,
         models: discovery.models.map((m) => ({
           id: `openai-compatible/${m.id}`,
           label: m.label,
@@ -42,7 +44,11 @@ beforeEach(() => {
           context_length: 0,
           pricing: { prompt: 0, completion: 0 },
           modality: "text->text",
-          description: `Local OpenAI-compatible model: ${m.id}`,
+          description:
+            discovery.billingMode === "external"
+              ? `OpenAI-compatible endpoint model: ${m.id} (externally billed)`
+              : `Local OpenAI-compatible model: ${m.id}`,
+          billingMode: discovery.billingMode,
         })),
       });
     }
@@ -64,6 +70,7 @@ describe("useModels — local OpenAI-compatible server", () => {
     discovery = {
       available: true,
       configured: true,
+      billingMode: "local",
       models: [{ id: "qwen/qwen3-8b", label: "qwen/qwen3-8b" }],
     };
     const useModels = await loadHook();
@@ -89,10 +96,33 @@ describe("useModels — local OpenAI-compatible server", () => {
     expect(result.current.openaiCompatibleAvailable).toBe(true);
   });
 
+  it("groups authenticated proxy models as externally billed endpoints", async () => {
+    discovery = {
+      available: true,
+      configured: true,
+      billingMode: "external",
+      models: [{ id: "openai/gpt-5", label: "openai/gpt-5" }],
+    };
+    const useModels = await loadHook();
+    const { result } = renderHook(() => useModels());
+
+    await waitFor(() => expect(result.current.openaiCompatibleModels).toHaveLength(1));
+
+    expect(result.current.openaiCompatibleModels[0]).toMatchObject({
+      id: "openai-compatible/openai/gpt-5",
+      sourceId: "openai-compatible-external",
+      sourceLabel: "OpenAI-compatible endpoint",
+      billingMode: "external",
+      available: true,
+    });
+    expect(result.current.openaiCompatibleBillingMode).toBe("external");
+  });
+
   it("reports availability as checking until discovery resolves", async () => {
     discovery = {
       available: true,
       configured: true,
+      billingMode: "local",
       models: [{ id: "qwen3-8b", label: "qwen3-8b" }],
     };
     const useModels = await loadHook();
@@ -111,7 +141,7 @@ describe("useModels — local OpenAI-compatible server", () => {
 
   // A tab whose selected model was unloaded, or whose server was stopped.
   it("marks a model the server no longer serves as unavailable", async () => {
-    discovery = { available: true, configured: true, models: [] };
+    discovery = { available: true, configured: true, billingMode: "local", models: [] };
     const useModels = await loadHook();
     const { result } = renderHook(() => useModels());
 
@@ -124,7 +154,7 @@ describe("useModels — local OpenAI-compatible server", () => {
 
   // Drives whether the picker shows the section at all.
   it("surfaces whether the base URL was explicitly configured", async () => {
-    discovery = { available: false, configured: true, models: [] };
+    discovery = { available: false, configured: true, billingMode: "local", models: [] };
     const useModels = await loadHook();
     const { result } = renderHook(() => useModels());
 

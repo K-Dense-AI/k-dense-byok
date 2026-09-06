@@ -303,9 +303,11 @@ function EntryRow({ entry }: { entry: CostEntry }) {
         {formatTokens(entry.totalTokens)} ·{" "}
         {entry.billingMode === "subscription"
           ? "subscription"
-          : entry.billingMode === "local"
-            ? "local"
-            : formatUsd(entry.costUsd)}
+          : entry.billingMode === "external"
+            ? "external"
+            : entry.billingMode === "local"
+              ? "local"
+              : formatUsd(entry.costUsd)}
       </span>
     </li>
   );

@@ -1,4 +1,4 @@
-# Local models (Ollama and OpenAI-compatible servers)
+# Local models and OpenAI-compatible endpoints
 
 You can run Kady entirely against local models - no OpenRouter key required for those models. This is useful if you want to keep everything on your machine or experiment without spending on API calls.
 
@@ -41,34 +41,41 @@ DEFAULT_MODEL_PROVIDER="ollama"
 DEFAULT_MODEL_ID="llama3"   # any model you've pulled
 ```
 
-## OpenAI-compatible server setup (LM Studio, vLLM, …)
+## OpenAI-compatible endpoint setup
 
-Any local server exposing the standard `GET /v1/models` and `POST /v1/chat/completions` endpoints works. Unlike the Ollama section, this one is hidden until you ask for it:
+Any endpoint exposing the standard `GET /v1/models` and `POST /v1/chat/completions` endpoints works, including local servers such as LM Studio/vLLM and authenticated proxy projects such as New API or Sub2API. Unlike Ollama, this section is hidden until you configure it.
 
-1. **Start your server and load a model.** In LM Studio that's the *Developer* tab → *Start Server*; with vLLM it's `vllm serve <model>`.
+1. **Start the server or proxy endpoint.** In LM Studio use the *Developer* tab → *Start Server*; with vLLM use `vllm serve <model>`.
 
-2. **Point Kady at it** in the repo-root `.env`:
+2. **Point Kady at it** in the repo-root `.env`. Both an endpoint root and a copied `/v1` URL are accepted:
 
    ```bash
-   OPENAI_COMPATIBLE_BASE_URL=http://localhost:1234   # LM Studio's default port
+   OPENAI_COMPATIBLE_BASE_URL=http://localhost:1234
    ```
 
-   The default is LM Studio's port, so if that's what you run, setting the variable to any value switches the section on. **vLLM defaults to port 8000, which is Kady's backend port** — move one of the two, e.g. `vllm serve <model> --port 1234`.
+   For an authenticated endpoint, also set its Bearer token:
 
-3. **Pick the model in the app.** Loaded models appear under **Local (OpenAI-compatible)**. The list comes from your server's `/v1/models` (via the backend's `/openai-compatible/models` route), so loading a different model and re-opening the dropdown is enough — no app restart.
+   ```bash
+   OPENAI_COMPATIBLE_BASE_URL=https://proxy.example.com/v1
+   OPENAI_COMPATIBLE_API_KEY=your-proxy-key
+   ```
+
+   The API key can also be saved or cleared live in **Settings → API keys**. **vLLM defaults to port 8000, which is Kady's backend port**, so move one of the two, e.g. `vllm serve <model> --port 1234`.
+
+3. **Pick the model in the app.** Local models appear under **Local (OpenAI-compatible)**. Authenticated proxy models appear under **OpenAI-compatible endpoint** and are labelled externally billed. The list comes from `/v1/models`, so changing the served catalogue and re-opening the dropdown is enough.
 
 To make one the default for every new chat:
 
 ```bash
 DEFAULT_MODEL_PROVIDER="openai-compatible"
-DEFAULT_MODEL_ID="qwen/qwen3-8b"   # exactly as your server reports it
+DEFAULT_MODEL_ID="qwen/qwen3-8b"   # exactly as your endpoint reports it
 ```
 
 Notes:
 
-- **One server at a time.** There is a single base URL, as with Ollama. If you run both LM Studio and Ollama, both sections appear — but not two OpenAI-compatible servers.
-- **Local servers only.** These models are treated as free and are never counted against a project spend cap. Pointing the base URL at a paid hosted gateway would leave that spend untracked and uncapped. For hosted gateways that mirror OpenRouter's model ids, use `OPENROUTER_BASE_URL` instead — those keep catalogue pricing and stay inside the cap.
-- **Only the model id is read** from `/v1/models`. Servers disagree on every other field, so context length and pricing use the same defaults as Ollama (32K, $0), and thinking levels are disabled.
+- **One endpoint at a time.** There is a single OpenAI-compatible base URL. Ollama can still be used alongside it.
+- **Billing is explicit.** No-key endpoints default to `local`/$0. Setting `OPENAI_COMPATIBLE_API_KEY` defaults the endpoint to `external`, because generic proxies do not provide trustworthy per-model pricing. If your local server itself requires authentication, set `OPENAI_COMPATIBLE_BILLING_MODE=local`. Generic proxy spend cannot be enforced by Kady's project cap.
+- **Only the model id is read** from `/v1/models`. Servers disagree on other metadata, so Kady uses conservative defaults and disables thinking levels for this generic path.
 
 ## Caveats
 
