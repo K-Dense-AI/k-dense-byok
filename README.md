@@ -129,6 +129,7 @@ That's it. Create a project, drop in your data, and ask Kady for what you want �
 
 ➡️ **Step-by-step details, optional API keys, and troubleshooting:** [Installation guide](./docs/installation.md)
 ➡️ **Your first session and everyday features:** [Basic usage](./docs/basic-usage.md)
+➡️ **Prefer a container? Run Kady with Docker** — one command, isolated agent sandbox, local models reached by base URL (Ollama/llama.cpp/LM Studio), LaTeX optional: [Docker guide](./docs/docker.md)
 ➡️ **Prefer to watch first?** [Tutorial videos](#tutorial-videos)
 
 ## Tutorial videos
@@ -154,6 +155,7 @@ All guides live in the [`docs/`](./docs) folder:
 |-------|----------------|
 | [Codebase summary](./docs/codebase-summary.md) | One-page overview of what K-Dense BYOK is, what it can do, and why it matters |
 | [Installation](./docs/installation.md) | Full setup walkthrough, subscriptions, optional API keys, updating, troubleshooting |
+| [Docker](./docs/docker.md) | Run Kady in a container — one command, isolated agent sandbox, local models by base URL, LaTeX optional |
 | [Basic usage](./docs/basic-usage.md) | First session, chat tabs, files, workflows, databases, costs, tips |
 | [File previews](./docs/file-previews.md) | Every scientific format Kady can render — structures, spectra, imaging, arrays, and more |
 | [Living Lab Notebook](./docs/lab-notebook.md) | Real-time record of Kady's work — structured entries, export, and PDF |

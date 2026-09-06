@@ -25,6 +25,10 @@ import {
   REPO_ROOT,
 } from "../config.ts";
 import {
+  openAICompatibleContextWindow,
+  warmOpenAICompatibleContextWindows,
+} from "./openai-compatible-context.ts";
+import {
   isSubscriptionProvider,
   type SubscriptionProviderId,
 } from "./provider-auth.ts";
@@ -240,9 +244,12 @@ function buildOllamaModel(name: string): Model<Api> {
  * path to buildOllamaModel rather than a shared base — the two only look alike
  * because both endpoints happen to be OpenAI-shaped.
  *
- * `/v1/models` carries no pricing or context length anywhere near reliably, so
- * this uses the same $0 / 32K defaults Ollama does. $0 is honest here only
- * because the provider is local-only; see `billingForProvider`.
+ * `/v1/models` carries no pricing, so this uses the same $0 default Ollama
+ * does. $0 is honest here only because the provider is local-only; see
+ * `billingForProvider`.
+ *
+ * The context window is read back from the server's own listing — see
+ * `openai-compatible-context.ts`.
  */
 export function buildOpenAICompatibleModel(name: string): Model<Api> {
   return {
@@ -254,7 +261,7 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 32_768,
+    contextWindow: openAICompatibleContextWindow(name),
     maxTokens: 8192,
   };
 }
@@ -312,6 +319,12 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
     api: "openai-completions",
     apiKey: "openai-compatible",
   });
+
+  // Awaited: a restored session can resolve its model immediately after this
+  // returns, and a fire-and-forget warm races that (fallback 32K → empty
+  // replies). The fetch itself times out at 2s, so a missing server does not
+  // stall boot.
+  await warmOpenAICompatibleContextWindows();
 
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
   if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
