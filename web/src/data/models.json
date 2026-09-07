@@ -81,7 +81,8 @@
     },
     "modality": "text+image+file->text",
     "description": "GPT-6 Astra is OpenAI's flagship model for demanding end-to-end work. It is suited for advanced analysis, software engineering, deep research, scientific work, and document creation, with particular strengths in long-horizon...",
-    "isFusion": false
+    "isFusion": false,
+    "default": true
   },
   {
     "id": "openrouter/openai/gpt-6-astra-pro",
@@ -207,8 +208,7 @@
     },
     "modality": "text+image+file->text",
     "description": "Claude Opus 5 is Anthropic\u2019s flagship model for demanding reasoning, coding, and long-horizon agentic work. It is particularly strong at end-to-end software tasks, code review and bug finding, visual analysis...",
-    "isFusion": false,
-    "default": true
+    "isFusion": false
   },
   {
     "id": "openrouter/~anthropic/claude-opus-latest",
