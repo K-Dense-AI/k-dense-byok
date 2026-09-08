@@ -66,7 +66,8 @@ export interface ModalJobOwner {
 export interface ModalTransferFile {
   path: string;
   size: number;
-  sha256: string;
+  /** Absent until the bytes were actually hashed (inputs at execute time). */
+  sha256?: string;
 }
 
 export interface ModalJobErrorInfo {

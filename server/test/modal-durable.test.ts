@@ -39,6 +39,7 @@ import {
 } from "../src/modal/catalog.ts";
 import {
   ModalTransferError,
+  hashInputPlan,
   normalizeTransferPath,
   planInputs,
 } from "../src/modal/transfer.ts";
@@ -84,14 +85,17 @@ describe("Modal catalogue and transfer safety", () => {
     expect(() => planInputs(root, ["escape.txt"])).toThrow(/symlink outside/i);
   });
 
-  it("recursively plans directories with checksums", () => {
+  it("plans directories without reading bytes, then hashes them by streaming", async () => {
     const root = resolvePaths("default").sandbox;
     fs.mkdirSync(path.join(root, "data", "nested"), { recursive: true });
     fs.writeFileSync(path.join(root, "data", "a.txt"), "a");
     fs.writeFileSync(path.join(root, "data", "nested", "b.txt"), "bb");
     const plan = planInputs(root, ["data"]);
     expect(plan.manifest.map((file) => file.path)).toEqual(["data/a.txt", "data/nested/b.txt"]);
-    expect(plan.manifest.every((file) => file.sha256.length === 64)).toBe(true);
+    expect(plan.manifest.every((file) => file.sha256 === undefined)).toBe(true);
+    await hashInputPlan(plan);
+    expect(plan.manifest.every((file) => file.sha256?.length === 64)).toBe(true);
+    expect(plan.manifest[0].sha256).toBe("ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb");
   });
 
   it("supports named reusable environments and opting out of the project cache", async () => {
@@ -600,6 +604,147 @@ describe("Durable Modal manager recovery cleanup", () => {
     const job = store.require("default", record.id);
     expect(job.stdoutBytes).toBe("hello world\n".length);
     expect(store.readLog("default", record.id, "stdout", 0).data).toBe("hello world\n");
+  });
+});
+
+describe("Durable Modal transfer hardening", () => {
+  const root = () => resolvePaths("default").sandbox;
+
+  it("never installs application state from the sandbox, even when a glob matches it", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesOut: ["**"] }, { sessionId: "s-reserved", submittedBy: "api" });
+    // The remote command wrote into reserved roots before the success hook ran.
+    const sandboxReady = async () => {
+      const deadline = Date.now() + 3000;
+      while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+      return [...fake.sandboxes.values()][0]!;
+    };
+    const sandbox = await sandboxReady();
+    sandbox.filesystem.files.set("/workspace/.pi/mcp.json", Buffer.from('{"mcpServers":{"evil":{"command":"x"}}}'));
+    sandbox.filesystem.files.set("/workspace/.kady/modal/jobs/x/job.json", Buffer.from("{}"));
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+    expect(terminal.outputFiles.map((f) => f.path)).toEqual(["result.txt"]);
+    expect(fs.existsSync(path.join(root(), ".pi", "mcp.json"))).toBe(false);
+    expect(fs.existsSync(path.join(root(), ".kady", "modal", "jobs", "x", "job.json"))).toBe(false);
+    expect(fs.readFileSync(path.join(root(), "result.txt"), "utf-8")).toBe("result\n");
+  });
+
+  it("collects a literal output without walking unrelated remote trees", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesOut: ["result.txt", "out/*.csv"] }, { sessionId: "s-scoped", submittedBy: "api" });
+    const deadline = Date.now() + 3000;
+    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    const sandbox = [...fake.sandboxes.values()][0]!;
+    // A venv with more entries than the discovery budget, plus the wanted files.
+    for (let i = 0; i < 25_000; i++) sandbox.filesystem.files.set(`/workspace/venv/lib/f${i}.py`, Buffer.from("x"));
+    sandbox.filesystem.files.set("/workspace/out/a.csv", Buffer.from("1,2\n"));
+    sandbox.filesystem.files.set("/workspace/out/b.txt", Buffer.from("no"));
+    const terminal = await manager.wait("default", job.id, 5000);
+    expect(terminal.state).toBe("succeeded");
+    expect(terminal.outputFiles.map((f) => f.path)).toEqual(["out/a.csv", "result.txt"]);
+    expect(terminal.missingOutputs).toEqual([]);
+    expect(terminal.outputFiles.every((f) => f.sha256?.length === 64)).toBe(true);
+  }, 15_000);
+
+  it("rejects a download whose bytes differ from the sandbox's own checksum", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesOut: ["result.txt"] }, { sessionId: "s-flip", submittedBy: "api" });
+    const deadline = Date.now() + 3000;
+    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    [...fake.sandboxes.values()][0]!.filesystem.tamperDownloads = "flip";
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.error?.code).toBe("CHECKSUM_MISMATCH");
+    expect(fs.existsSync(path.join(root(), "result.txt"))).toBe(false);
+  });
+
+  it("reports a truncated download as such", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesOut: ["result.txt"] }, { sessionId: "s-trunc", submittedBy: "api" });
+    const deadline = Date.now() + 3000;
+    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    [...fake.sandboxes.values()][0]!.filesystem.tamperDownloads = "truncate";
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.error?.code).toBe("TRANSFER_TRUNCATED");
+  });
+
+  it("verifies uploaded inputs remotely for ordinary jobs, not only approved ones", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesIn: ["input.txt"] }, { sessionId: "s-upload", submittedBy: "api" });
+    const deadline = Date.now() + 3000;
+    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    [...fake.sandboxes.values()][0]!.filesystem.tamperUploads = true;
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.error?.code).toBe("INPUT_CHANGED");
+    expect(terminal.inputFiles[0]?.sha256).toHaveLength(64);
+  });
+
+  it("degrades to size checks with a visible event when the image has no python3", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesIn: ["input.txt"], filesOut: ["result.txt"] }, { sessionId: "s-nopython", submittedBy: "api" });
+    const deadline = Date.now() + 3000;
+    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    const sandbox = [...fake.sandboxes.values()][0]!;
+    sandbox.pythonMissing = true;
+    // The wrapper itself is python; let it through so the job can finish.
+    const originalExec = sandbox.exec.bind(sandbox);
+    sandbox.exec = async (command, params) => {
+      if (command[0] === "python3" && String(command[1]).endsWith("wrapper.py")) {
+        sandbox.pythonMissing = false;
+        try { return await originalExec(command, params); } finally { sandbox.pythonMissing = true; }
+      }
+      return originalExec(command, params);
+    };
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+    const skipped = manager.store.events("default", job.id).filter((event) => event.type === "verify_skipped");
+    expect(skipped.map((event) => event.state)).toEqual(["preparing", "collecting"]);
+    expect(fs.existsSync(path.join(root(), "result.txt"))).toBe(true);
+  });
+
+  it("installs nothing when an output's target is an existing directory, and leaves no temp files", async () => {
+    fs.mkdirSync(path.join(root(), "result.txt"), { recursive: true }); // a directory named like the output
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesOut: ["result.txt", "other.txt"] }, { sessionId: "s-isdir", submittedBy: "api" });
+    const deadline = Date.now() + 3000;
+    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    [...fake.sandboxes.values()][0]!.filesystem.files.set("/workspace/other.txt", Buffer.from("other\n"));
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.error?.code).toBe("OUTPUT_TARGET_IS_DIRECTORY");
+    expect(fs.existsSync(path.join(root(), "other.txt"))).toBe(false);
+    expect(fs.readdirSync(root()).filter((name) => name.includes(".modal-"))).toEqual([]);
+  });
+
+  it("records no input digest for a job that never ran", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "hang" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work", filesIn: ["input.txt"] }, { sessionId: "s-neverran", submittedBy: "api" });
+    expect(job.inputFiles[0]?.sha256).toBeUndefined();
+    await manager.cancel("default", job.id);
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("cancelled");
+    const [step] = readSteps("s-neverran", "default");
+    expect(step.inputs[0]).toMatchObject({ path: "input.txt", confidence: terminal.runningAt ? "observed" : "inferred" });
+    if (!terminal.runningAt) expect(step.inputs[0].sha256).toBeUndefined();
   });
 });
 

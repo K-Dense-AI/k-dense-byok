@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import type { ModalAdapter, ModalRemoteFilesystem, ModalRemoteSandbox, ModalRemoteProcess } from "../../src/modal/adapter.ts";
+import { ModalJobError } from "../../src/modal/types.ts";
 
 class Filesystem implements ModalRemoteFilesystem {
   files = new Map<string, Buffer>();
@@ -11,7 +12,8 @@ class Filesystem implements ModalRemoteFilesystem {
   async writeText(data: string, remote: string) { this.files.set(remote, Buffer.from(data)); }
   async readText(remote: string) { if (!this.files.has(remote)) throw new Error("missing"); return this.files.get(remote)!.toString("utf8"); }
   async readBytes(remote: string) { if (!this.files.has(remote)) throw new Error("missing"); return new Uint8Array(this.files.get(remote)!); }
-  async stat(remote: string): Promise<any> { const data = this.files.get(remote); if (!data) throw new Error("missing"); return { type: "file", path: remote, size: data.length }; }
+  // Mirrors the SDK adapter, which classifies SandboxFilesystemNotFoundError as REMOTE_NOT_FOUND.
+  async stat(remote: string): Promise<any> { const data = this.files.get(remote); if (!data) throw new ModalJobError("REMOTE_NOT_FOUND", `not found: ${remote}`, 404); return { type: "file", path: remote, size: data.length }; }
   async listFiles(dir: string): Promise<any[]> {
     const prefix = dir.replace(/\/$/, "") + "/"; const children = new Map<string, string>();
     for (const file of this.files.keys()) if (file.startsWith(prefix)) { const rest = file.slice(prefix.length); if (rest) children.set(rest.split("/")[0], rest.includes("/") ? "directory" : "file"); }
@@ -44,8 +46,15 @@ class FakeSandbox implements ModalRemoteSandbox {
     }
     if (command.includes("-c")) {
       if (!command.includes("-I")) throw new Error("Checksum verification must isolate Python from uploaded module names");
+      const listPath = command[4]!;
+      if (listPath.endsWith("outputs.json")) {
+        const paths = JSON.parse(await this.filesystem.readText(listPath)) as string[];
+        const lines = paths.map((p) => `${crypto.createHash("sha256").update(this.filesystem.files.get(`/workspace/${p}`)!).digest("hex")} ${p}`);
+        await this.filesystem.writeText(lines.join("\n") + (lines.length ? "\n" : ""), command[5]!);
+        return { wait: async () => 0 };
+      }
       this.fake.verifications++;
-      const manifest = JSON.parse(command.at(-1)!);
+      const manifest = JSON.parse(await this.filesystem.readText(listPath));
       const valid = !this.fake.tamperUpload && manifest.every((f: any) => crypto.createHash("sha256").update(this.filesystem.files.get(`/workspace/${f.path}`)!).digest("hex") === f.sha256);
       return { wait: async () => valid ? 0 : 1 };
     }

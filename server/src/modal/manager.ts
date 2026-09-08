@@ -38,8 +38,10 @@ import { recordModalJobStep } from "../provenance/modal-steps.ts";
 import {
   collectOutputs,
   normalizeTransferPath,
+  hashInputPlan,
   planInputs,
   stageInputs,
+  verifyStagedInputs,
 } from "./transfer.ts";
 import {
   isTerminalModalState,
@@ -979,13 +981,20 @@ export class DurableModalJobManager {
       sandboxRoot: resolvePaths(projectId).sandbox,
       stagingDir: path.join(files.staging, "outputs"),
       patterns: job.request.filesOut ?? [],
-      ...(job.approval ? { maxFiles: 1, maxBytes: 64 * 1024 } : {}),
+      ...(job.approval ? { maxFiles: 1, maxBytes: 64 * 1024, requireHashes: true } : {}),
       checked: this.checked(projectId, jobId, sandbox),
     });
     this.store.update(projectId, jobId, (current) => {
       current.outputFiles = output.files;
       current.missingOutputs = output.missing;
     });
+    if (!output.verified) {
+      this.store.appendEvent(projectId, jobId, {
+        type: "verify_skipped",
+        state: "collecting",
+        message: "Image has no python3; outputs were size-checked but not hashed in the sandbox",
+      });
+    }
     if (exitCode === 0) {
       await this.finish(projectId, jobId, "succeeded");
     } else {
@@ -1020,21 +1029,30 @@ export class DurableModalJobManager {
       sandbox = await this.createSandbox(projectId, jobId, runtime, adapter);
       const checked = this.checked(projectId, jobId, sandbox);
       const job = this.store.require(projectId, jobId);
+      // Plan (cheap, sync) then hash by streaming: the 2 GiB worst case must
+      // not block the event loop for every other chat tab.
       const inputPlan = pinnedInputs ?? planInputs(resolvePaths(projectId).sandbox, job.request.filesIn ?? []);
+      if (!pinnedInputs) await checked(hashInputPlan(inputPlan));
       this.store.update(projectId, jobId, (current) => {
         current.inputFiles = inputPlan.manifest;
       });
-      await stageInputs(sandbox, inputPlan, checked);
-      if (job.approval) {
-        // Hash the bytes actually uploaded, not merely the local snapshot that
-        // preceded a potentially racing upload. Mismatch fails before science.
-        const verify = `import hashlib,json,sys\nfiles=json.loads(sys.argv[1])\nfor f in files:\n h=hashlib.sha256()\n with open('/workspace/'+f['path'],'rb') as r:\n  for chunk in iter(lambda:r.read(1048576),b''): h.update(chunk)\n if h.hexdigest()!=f['sha256']: raise RuntimeError('Approved input checksum mismatch: '+f['path'])\n`;
-        const check = await checked(sandbox.exec(["python3", "-I", "-c", verify, JSON.stringify(job.approval.inputs)], { stdout: "ignore", stderr: "ignore" }));
-        if (await checked(check.wait()) !== 0) throw new ModalJobError("INPUT_CHANGED", "Uploaded inputs do not match the approved snapshot", 409);
-      }
       await checked(
         sandbox.filesystem.makeDirectory(REMOTE_CONTROL_DIR, { createParents: true }),
       );
+      await stageInputs(sandbox, inputPlan, checked);
+      // Hash the bytes actually uploaded, not merely the local files that
+      // preceded a potentially racing upload — for every job, not only
+      // approved ones. Approved work may not skip it.
+      const verification = await verifyStagedInputs(sandbox, inputPlan.manifest, checked, {
+        required: Boolean(job.approval),
+      });
+      if (verification === "skipped") {
+        this.store.appendEvent(projectId, jobId, {
+          type: "verify_skipped",
+          state: "preparing",
+          message: "Image has no python3; uploaded inputs were size-checked but not re-hashed remotely",
+        });
+      }
       await checked(sandbox.filesystem.writeText(job.request.command + "\n", REMOTE_COMMAND));
       await checked(sandbox.filesystem.writeText(wrapperSource(), REMOTE_WRAPPER));
       this.store.transition(projectId, jobId, "running");

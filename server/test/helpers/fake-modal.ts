@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type {
@@ -21,18 +22,30 @@ export type Behavior =
 
 export class FakeFilesystem implements ModalRemoteFilesystem {
   files = new Map<string, Buffer>();
+  /** Corrupt uploads (a racing local write) so the remote verifier must catch it. */
+  tamperUploads = false;
+  /** Corrupt downloads: "flip" keeps the size, "truncate" shortens the file. */
+  tamperDownloads: "flip" | "truncate" | null = null;
 
   async makeDirectory(): Promise<void> {}
 
   async copyFromLocal(localPath: string, remotePath: string): Promise<void> {
-    this.files.set(remotePath, fs.readFileSync(localPath));
+    const bytes = fs.readFileSync(localPath);
+    this.files.set(remotePath, this.tamperUploads ? Buffer.concat([bytes, Buffer.from("!")]) : bytes);
   }
 
   async copyToLocal(remotePath: string, localPath: string): Promise<void> {
     const value = this.files.get(remotePath);
     if (!value) throw new Error(`missing remote file ${remotePath}`);
     fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, value);
+    let out = value;
+    if (this.tamperDownloads === "flip" && value.length) {
+      out = Buffer.from(value);
+      out[0] = out[0] ^ 0xff;
+    } else if (this.tamperDownloads === "truncate") {
+      out = value.subarray(0, Math.max(0, value.length - 1));
+    }
+    fs.writeFileSync(localPath, out);
   }
 
   async listFiles(remotePath: string): Promise<any[]> {
@@ -102,6 +115,9 @@ export class FakeSandbox implements ModalRemoteSandbox {
 
   execParams: Array<{ command: string[]; params?: Record<string, unknown> }> = [];
 
+  /** Emulate a sandbox image without python3: every python3 exec fails to start. */
+  pythonMissing = false;
+
   async exec(command: string[], params?: Record<string, unknown>): Promise<ModalRemoteProcess> {
     this.execParams.push({ command, params });
     if (command[0] === "mv") {
@@ -112,6 +128,28 @@ export class FakeSandbox implements ModalRemoteSandbox {
       this.filesystem.files.set(destination, value);
       this.filesystem.files.delete(source);
       return { wait: async () => 0 };
+    }
+    if (command[0] === "python3" && this.pythonMissing) {
+      throw new Error("executable file not found in $PATH: python3");
+    }
+    // The transfer layer's inline verifier / hasher scripts (python3 -I -c ...).
+    if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c") {
+      const listPath = command[4];
+      const digest = (rel: string) => {
+        const bytes = this.filesystem.files.get(`/workspace/${rel}`);
+        return bytes ? crypto.createHash("sha256").update(bytes).digest("hex") : null;
+      };
+      if (listPath?.endsWith("inputs.json")) {
+        const manifest = JSON.parse(this.filesystem.files.get(listPath)!.toString("utf-8")) as { path: string; sha256: string }[];
+        const ok = manifest.every((file) => digest(file.path) === file.sha256);
+        return { wait: async () => (ok ? 0 : 1) };
+      }
+      if (listPath?.endsWith("outputs.json")) {
+        const paths = JSON.parse(this.filesystem.files.get(listPath)!.toString("utf-8")) as string[];
+        const lines = paths.map((rel) => `${digest(rel) ?? "0".repeat(64)} ${rel}`);
+        this.filesystem.files.set(command[5], Buffer.from(lines.join("\n") + (lines.length ? "\n" : "")));
+        return { wait: async () => 0 };
+      }
     }
     this.filesystem.files.set(
       "/workspace/.kady-job/status.json",

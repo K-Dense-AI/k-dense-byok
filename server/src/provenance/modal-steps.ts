@@ -48,19 +48,23 @@ function mtimeNow(sandboxRoot: string, rel: string, fallback: number): number {
 export function modalJobStep(job: ModalJob, sandboxRoot: string): ProvenanceStep {
   const startedAt = job.runningAt ?? job.preparingAt ?? job.queuedAt ?? job.createdAt;
   const finishedAt = job.finishedAt ?? job.updatedAt ?? Date.now();
+  // Inputs are hashed and uploaded only once the job actually starts; a job
+  // cancelled while queued never read them, so its edges are inferred and
+  // carry no digest.
+  const ran = job.runningAt !== undefined;
   const inputs: ArtifactRef[] = job.inputFiles.map((file) => ({
     path: file.path,
-    sha256: file.sha256,
+    ...(file.sha256 ? { sha256: file.sha256 } : {}),
     size: file.size,
     mtimeMs: mtimeNow(sandboxRoot, file.path, startedAt),
     change: "read",
-    confidence: "observed",
+    confidence: ran && file.sha256 ? "observed" : "inferred",
   }));
   // Installed atomically by collectOutputs; whether the path existed before
   // is not known here, so `wrote` rather than a created/modified guess.
   const outputs: ArtifactRef[] = job.outputFiles.map((file) => ({
     path: file.path,
-    sha256: file.sha256,
+    ...(file.sha256 ? { sha256: file.sha256 } : {}),
     size: file.size,
     mtimeMs: mtimeNow(sandboxRoot, file.path, finishedAt),
     change: "wrote",

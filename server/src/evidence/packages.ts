@@ -163,7 +163,7 @@ export async function prepareEvidencePackage(projectId: string, raw: unknown): P
             try { assertApprovedJob(job, true); } catch { issue("compute-record-unverified", "Job definition does not match its admission record", attempt.jobId); continue; }
             for (const f of job.outputFiles) {
               const request = addAsset(f.path, f.sha256, "output", job.finishedAt ?? job.updatedAt, name);
-              if (request) addRetained(request.row.path, f.sha256, { absolute: path.join(modalJobFiles(projectId, job.id).staging, "outputs", f.path), origin: "modal-output" });
+              if (request && f.sha256) addRetained(request.row.path, f.sha256, { absolute: path.join(modalJobFiles(projectId, job.id).staging, "outputs", f.path), origin: "modal-output" });
             }
           }
         } catch (e) { issue("workflow-unavailable", (e as Error).message, rw); if (metadataBudget.remaining <= 0) break; }
@@ -190,7 +190,7 @@ export async function prepareEvidencePackage(projectId: string, raw: unknown): P
         if (output.identityAt === "harvest" || output.confidence !== "observed") issue("provenance-qualified", `Output attribution ${output.confidence}; identity measured ${output.identityAt ?? "at write"}`, stepKey(producer));
         if (producer.compute?.jobId) {
           const job = modalJobManager.store.read(projectId, producer.compute.jobId);
-          if (job && isTerminalModalState(job.state)) for (const f of job.outputFiles) if (safeRefPath(f.path) === a.row.path && f.sha256 === a.row.expectedSha256) addRetained(a.row.path, f.sha256, { absolute: path.join(modalJobFiles(projectId, job.id).staging, "outputs", f.path), origin: "modal-output" });
+          if (job && isTerminalModalState(job.state)) for (const f of job.outputFiles) if (f.sha256 && safeRefPath(f.path) === a.row.path && f.sha256 === a.row.expectedSha256) addRetained(a.row.path, f.sha256, { absolute: path.join(modalJobFiles(projectId, job.id).staging, "outputs", f.path), origin: "modal-output" });
         }
         if (a.depth >= 8) { if (producer.inputs.length) issue("lineage-depth-limit", "Upstream input walk stopped at eight hops", a.row.id); continue; }
         for (const input of producer.inputs) {
