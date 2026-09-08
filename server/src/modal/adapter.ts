@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import {
   ModalClient,
+  NotFoundError,
   type App,
   type ContainerProcess,
   type FileInfo,
@@ -9,6 +10,7 @@ import {
   type Volume,
 } from "modal";
 import { gpuString, type ModalInstanceSpec } from "./catalog.ts";
+import { safeEnvironmentName } from "./environment.ts";
 import { ModalJobError, type ModalImageRequest } from "./types.ts";
 
 export interface ModalRemoteProcess {
@@ -49,6 +51,8 @@ export interface ModalEnvironment {
   cacheName: string | null;
   snapshotName?: string;
   imageId?: string;
+  /** A previously published named environment was reused instead of rebuilt. */
+  reusedSnapshot?: boolean;
   opaque: unknown;
 }
 
@@ -163,7 +167,11 @@ interface SdkEnvironmentOpaque {
 export class SdkModalAdapter implements ModalAdapter {
   private client: ModalClient;
 
-  constructor(tokenId?: string, tokenSecret?: string) {
+  constructor(tokenId?: string, tokenSecret?: string, client?: ModalClient) {
+    if (client) {
+      this.client = client;
+      return;
+    }
     const pair = tokenId && tokenSecret ? { tokenId, tokenSecret } : credentials();
     this.client = new ModalClient(pair);
   }
@@ -202,12 +210,9 @@ export class SdkModalAdapter implements ModalAdapter {
     if (pip.length) commands.push(`RUN pip install --no-cache-dir ${pip.join(" ")}`);
     if (commands.length) image = image.dockerfileCommands(commands);
     let snapshotName: string | undefined;
+    let reusedSnapshot = false;
     if (environment) {
-      const safeEnvironment = environment
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-")
-        .replace(/^-+|-+$/g, "")
-        .slice(0, 24);
+      const safeEnvironment = safeEnvironmentName(environment);
       if (!safeEnvironment) {
         throw new ModalJobError("INVALID_ENVIRONMENT", "environment must contain a letter or digit");
       }
@@ -217,14 +222,25 @@ export class SdkModalAdapter implements ModalAdapter {
         .digest("hex")
         .slice(0, 16);
       snapshotName = `kady-${projectId}-${safeEnvironment}:${specHash}`.slice(0, 127);
-      image = await image.build(app);
-      await image.publish(snapshotName);
+      // The name embeds the spec hash, so a hit is exactly this environment.
+      // Reuse it; only build and publish when nothing was published before.
+      const published = await this.client.images.fromName(snapshotName).catch((error) => {
+        if (error instanceof NotFoundError || /not found/i.test(String((error as Error)?.message))) return null;
+        throw error;
+      });
+      if (published) {
+        image = published;
+        reusedSnapshot = true;
+      } else {
+        image = await image.build(app);
+        await image.publish(snapshotName);
+      }
     }
     return {
       appId: app.appId,
       appName,
       cacheName: volume ? cacheName : null,
-      ...(snapshotName ? { snapshotName, imageId: image.imageId } : {}),
+      ...(snapshotName ? { snapshotName, imageId: image.imageId, reusedSnapshot } : {}),
       opaque: { app, image, volume } satisfies SdkEnvironmentOpaque,
     };
   }

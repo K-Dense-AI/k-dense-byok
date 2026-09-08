@@ -212,7 +212,13 @@ function persistEnv(name: string, value: string | null): void {
     lines.push(`${name}=${rendered}`);
   }
   fs.mkdirSync(path.dirname(credentialEnvPath), { recursive: true });
-  fs.writeFileSync(credentialEnvPath, lines.join("\n") + "\n", "utf-8");
+  fs.writeFileSync(credentialEnvPath, lines.join("\n") + "\n", { encoding: "utf-8", mode: 0o600 });
+  // `mode` only applies when the file is created; tighten an existing one too.
+  try {
+    fs.chmodSync(credentialEnvPath, 0o600);
+  } catch {
+    // Windows ACLs do not map to POSIX modes; nothing to tighten there.
+  }
 }
 
 function status() {

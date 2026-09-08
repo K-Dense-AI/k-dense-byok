@@ -257,6 +257,12 @@ export class DurableModalJobManager {
     return `${projectId}:${jobId}`;
   }
 
+  /** Test-only: drive the process-wide manager with a fake adapter. */
+  setAdapterFactoryForTests(factory: ModalAdapterFactory): void {
+    this.adapterFactory = factory;
+    this.requireCredentials = false;
+  }
+
   submit(projectId: string, raw: ModalJobRequest, owner: ModalJobOwner): ModalJob {
     if (this.deletingProjects.has(projectId)) {
       throw new ModalJobError(
@@ -351,7 +357,11 @@ export class DurableModalJobManager {
         jobs.push(this.submit(projectId, { ...request, groupId }, owner));
       }
     } catch (error) {
-      for (const job of jobs) void this.cancel(projectId, job.id);
+      for (const job of jobs) {
+        void this.cancel(projectId, job.id).catch((cancelError) =>
+          console.warn("[modal] batch rollback cancel failed", job.id, cancelError),
+        );
+      }
       throw error;
     }
     return { groupId, jobs };
@@ -432,7 +442,15 @@ export class DurableModalJobManager {
     projectId: string,
     filter: { state?: string; groupId?: string; sessionId?: string } = {},
   ): ModalJob[] {
-    return this.store.list(projectId).filter(
+    return this.filterJobs(this.store.list(projectId), filter);
+  }
+
+  /** Apply the `list()` filter to an already-loaded job array. */
+  filterJobs(
+    jobs: ModalJob[],
+    filter: { state?: string; groupId?: string; sessionId?: string } = {},
+  ): ModalJob[] {
+    return jobs.filter(
       (job) =>
         (!filter.state || job.state === filter.state) &&
         (!filter.groupId || job.request.groupId === filter.groupId) &&
@@ -441,8 +459,13 @@ export class DurableModalJobManager {
   }
 
   groups(projectId: string) {
+    return this.groupsFrom(this.store.list(projectId));
+  }
+
+  /** Group summaries from an already-loaded job array (one disk read per poll). */
+  groupsFrom(all: ModalJob[]) {
     const grouped = new Map<string, ModalJob[]>();
-    for (const job of this.store.list(projectId)) {
+    for (const job of all) {
       if (!job.request.groupId) continue;
       const jobs = grouped.get(job.request.groupId) ?? [];
       jobs.push(job);
@@ -482,13 +505,18 @@ export class DurableModalJobManager {
     return { groupId, jobs };
   }
 
+  /**
+   * Wait until the job is terminal and reconciled. `timeoutMs` undefined waits
+   * indefinitely; `0` performs a single read and returns the current state.
+   */
   async wait(
     projectId: string,
     jobId: string,
-    timeoutMs = 0,
+    timeoutMs?: number,
     signal?: AbortSignal,
   ): Promise<ModalJob> {
-    const deadline = timeoutMs > 0 ? Date.now() + timeoutMs : Number.POSITIVE_INFINITY;
+    const deadline =
+      timeoutMs === undefined ? Number.POSITIVE_INFINITY : Date.now() + Math.max(0, timeoutMs);
     while (true) {
       const job = this.store.require(projectId, jobId);
       if (
@@ -519,8 +547,13 @@ export class DurableModalJobManager {
       });
     }
     let runtime = this.active.get(this.key(projectId, jobId));
-    if (!runtime && job.approval && job.sandboxId) {
-      this.schedule(projectId, jobId, true); // reattach solely to honor cancellation
+    if (!runtime && job.sandboxId) {
+      // No live worker owns this job (for example recovery was deferred
+      // because Modal credentials were missing at boot). Reattach solely to
+      // honour the cancellation: the recovery worker terminates the remote
+      // sandbox and reconciles the hold, instead of this record being marked
+      // cancelled while the sandbox keeps running and the reservation stays.
+      this.schedule(projectId, jobId, true);
       runtime = this.active.get(this.key(projectId, jobId));
     }
     if (runtime?.sandbox) {
@@ -534,6 +567,8 @@ export class DurableModalJobManager {
         ? new ModalJobError("LAUNCH_UNCERTAIN", "Interrupted launch cancelled; remote creation is unknown. Full approved estimate counted against the project budget conservatively.", 502)
         : new ModalCancellationError();
       await this.finish(projectId, jobId, "cancelled", error);
+      // No worker exists to run the usual post-finish reconcile.
+      await this.reconcile(projectId, jobId);
     }
     if (runtime) {
       // Only the worker can finalize a live job. Give it a bounded window so
@@ -647,19 +682,35 @@ export class DurableModalJobManager {
       .catch(async (error) => {
         const job = this.store.read(projectId, jobId);
         if (job && !isTerminalModalState(job.state)) {
-          await this.finish(
-            projectId,
-            jobId,
-            job.cancelRequested ? "cancelled" : recovering ? "lost" : "failed",
-            job.cancelRequested ? new ModalCancellationError() : error,
-          );
+          try {
+            await this.finish(
+              projectId,
+              jobId,
+              job.cancelRequested ? "cancelled" : recovering ? "lost" : "failed",
+              job.cancelRequested ? new ModalCancellationError() : error,
+            );
+          } catch (finishError) {
+            console.error("[modal] failed to finalize job", jobId, finishError);
+          }
+        }
+        // Mirrors executeJob's finally. A worker that died before its own
+        // reconcile — or a recovery worker whose adapter could not even be
+        // built because credentials are missing — must not leave the budget
+        // hold in place until the next restart.
+        try {
+          await this.reconcile(projectId, jobId);
+        } catch (reconcileError) {
+          console.error("[modal] failed to reconcile job", jobId, reconcileError);
         }
       })
       .finally(() => {
         runtime.adapter?.close();
         this.active.delete(key);
         this.previousRemoteLogs.delete(key);
-      });
+      })
+      // Terminal handler: nothing above may surface as an unhandled rejection,
+      // which would take the whole backend (every chat tab) down with it.
+      .catch((error) => console.error("[modal] worker crashed", jobId, error));
     runtime.promise = promise;
     this.active.set(key, runtime);
   }

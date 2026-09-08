@@ -1,11 +1,12 @@
 import fs from "node:fs";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/index.ts";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import {
   setCredentialEnvPathForTests,
   setModalCredentialValidatorForTests,
 } from "../src/api/credentials.ts";
+import { modalJobManager } from "../src/modal/manager.ts";
 
 const originalId = process.env.MODAL_TOKEN_ID;
 const originalSecret = process.env.MODAL_TOKEN_SECRET;
@@ -52,6 +53,43 @@ describe("Modal HTTP API and credentials", () => {
         canonicalFilesystem: "local-project-sandbox",
         cacheOnly: true,
       });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("reads every job record once per list poll", async () => {
+    const app = await buildApp();
+    const list = vi.spyOn(modalJobManager.store, "list");
+    try {
+      const response = await app.inject({ method: "GET", url: "/modal/jobs" });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ jobs: [], groups: [] });
+      expect(list).toHaveBeenCalledTimes(1);
+    } finally {
+      list.mockRestore();
+      await app.close();
+    }
+  });
+
+  it("writes the credential .env file owner-only", async () => {
+    setModalCredentialValidatorForTests(async () => {});
+    const app = await buildApp();
+    try {
+      const response = await app.inject({
+        method: "PUT",
+        url: "/credentials",
+        payload: {
+          modalTokenId: "token-id-valid-length",
+          modalTokenSecret: "token-secret-valid-length",
+        },
+      });
+      expect(response.statusCode).toBe(200);
+      const envFile = `${PROJECTS_ROOT}/test.env`;
+      expect(fs.readFileSync(envFile, "utf-8")).toContain("MODAL_TOKEN_ID=");
+      if (process.platform !== "win32") {
+        expect(fs.statSync(envFile).mode & 0o777).toBe(0o600);
+      }
     } finally {
       await app.close();
     }

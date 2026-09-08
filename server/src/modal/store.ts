@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { atomicJson } from "../atomic-json.ts";
 import { resolvePaths } from "../projects.ts";
 import {
   isTerminalModalState,
@@ -42,20 +43,6 @@ export function modalJobFiles(projectId: string, jobId: string): ModalJobFiles {
     stderr: path.join(dir, "stderr.log"),
     staging: path.join(dir, "staging"),
   };
-}
-
-function atomicJson(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  const data = JSON.stringify(value, null, 2) + "\n";
-  const fd = fs.openSync(tmp, "w", 0o600);
-  try {
-    fs.writeFileSync(fd, data, "utf-8");
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  fs.renameSync(tmp, file);
 }
 
 export class ModalJobStore {

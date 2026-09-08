@@ -12,6 +12,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { atomicJson } from "../atomic-json.ts";
 import { activePaths, getProject, resolvePaths } from "../projects.ts";
 import {
   billingForProvider,
@@ -289,10 +290,9 @@ function reservationPath(projectId: string, reservationId: string): string {
 }
 
 function writeAtomicJson(file: string, value: unknown): void {
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
-  fs.renameSync(tmp, file);
+  // A reservation that surfaces empty after a power loss would silently drop a
+  // budget hold, so the data is fsynced before the rename.
+  atomicJson(file, value);
 }
 
 export function listComputeReservations(projectId: string): ComputeReservation[] {
@@ -428,6 +428,17 @@ export function reattributeModalJobCost(
   ) {
     return false;
   }
+  // Insert first, then remove: a crash between the two writes leaves the row
+  // duplicated across both ledgers (repaired by the target dedupe check on the
+  // next call) rather than lost, which would undercount project spend.
+  const targetFile = costsPath(toSessionId, projectId);
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.appendFileSync(
+    targetFile,
+    JSON.stringify({ ...entry, sessionId: toSessionId }) + "\n",
+    "utf-8",
+  );
+
   const sourceFile = costsPath(fromSessionId, projectId);
   const kept = source.filter((row) => row.entryId !== entry.entryId);
   fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
@@ -438,14 +449,6 @@ export function reattributeModalJobCost(
     { encoding: "utf-8", mode: 0o600 },
   );
   fs.renameSync(tmp, sourceFile);
-
-  const targetFile = costsPath(toSessionId, projectId);
-  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
-  fs.appendFileSync(
-    targetFile,
-    JSON.stringify({ ...entry, sessionId: toSessionId }) + "\n",
-    "utf-8",
-  );
   return true;
 }
 

@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { atomicJson } from "../atomic-json.ts";
 import { resolvePaths } from "../projects.ts";
 import type { ModalAdapter, ModalEnvironment } from "./adapter.ts";
 import type { ModalImageRequest } from "./types.ts";
@@ -26,18 +27,27 @@ function cacheMetadataPath(projectId: string): string {
   return path.join(resolvePaths(projectId).modalCacheDir, "cache.json");
 }
 
+/**
+ * The one rule for a user-facing environment name: lowercase, hyphenated,
+ * at most 24 characters. Shared by the metadata filename and the published
+ * Modal image name so the two cannot diverge.
+ */
+export function safeEnvironmentName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 24);
+}
+
 function environmentMetadataPath(projectId: string, name: string): string {
-  const safe = name.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  const safe = safeEnvironmentName(name);
   if (!safe) throw new Error("Invalid Modal environment name");
   return path.join(resolvePaths(projectId).modalEnvironmentsDir, `${safe}.json`);
 }
 
 function writeCacheMetadata(value: ModalCacheMetadata): void {
-  const file = cacheMetadataPath(value.projectId);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
-  fs.renameSync(tmp, file);
+  atomicJson(cacheMetadataPath(value.projectId), value);
 }
 
 export function readModalCacheMetadata(projectId: string): ModalCacheMetadata | null {
@@ -85,14 +95,7 @@ export async function prepareModalEnvironment(
       ...(prepared.imageId ? { imageId: prepared.imageId } : {}),
       updatedAt: Date.now(),
     };
-    const file = environmentMetadataPath(projectId, environment);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(metadata, null, 2) + "\n", {
-      encoding: "utf-8",
-      mode: 0o600,
-    });
-    fs.renameSync(tmp, file);
+    atomicJson(environmentMetadataPath(projectId, environment), metadata);
   }
   return prepared;
 }

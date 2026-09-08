@@ -288,7 +288,10 @@ export function makeModalTools(
     execute: async (_id, params, signal) => {
       let jobId: string | undefined;
       const onAbort = () => {
-        if (jobId) void modalJobManager.cancel(projectId, jobId);
+        if (!jobId) return;
+        void modalJobManager.cancel(projectId, jobId).catch((error) =>
+          console.warn("[modal] abort cancel failed", jobId, error),
+        );
       };
       signal?.addEventListener("abort", onAbort, { once: true });
       try {

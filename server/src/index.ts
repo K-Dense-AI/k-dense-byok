@@ -166,6 +166,12 @@ const isMain = (() => {
   }
 })();
 if (isMain) {
+  // A rejected promise nobody awaited must not take every chat tab down with
+  // it (Node's default is to exit). Specific sites still handle their own
+  // failures; this is the backstop, and it logs rather than exits.
+  process.on("unhandledRejection", (reason) => {
+    console.error("[server] unhandled promise rejection", reason);
+  });
   // Before anything makes an outbound request: Node's fetch ignores
   // HTTP_PROXY/HTTPS_PROXY on its own, so a proxied network would otherwise
   // only be used by the child `pi` processes that run subagents.

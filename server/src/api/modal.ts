@@ -108,15 +108,18 @@ export async function registerModalRoutes(app: FastifyInstance): Promise<void> {
   }>("/modal/jobs", async (req) => {
     const projectId = currentProjectId();
     const limit = Math.min(Math.max(Number(req.query.limit ?? 100), 1), 500);
+    // The Compute tab polls this every 1.5 s while a job is active; read every
+    // record once and derive both views from the same array.
+    const all = modalJobManager.store.list(projectId);
     return {
       jobs: modalJobManager
-        .list(projectId, {
+        .filterJobs(all, {
           state: req.query.status ?? req.query.state,
           groupId: req.query.groupId,
           sessionId: req.query.sessionId,
         })
         .slice(0, Number.isFinite(limit) ? limit : 100),
-      groups: modalJobManager.groups(projectId),
+      groups: modalJobManager.groupsFrom(all),
     };
   });
 

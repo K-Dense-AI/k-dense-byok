@@ -6,18 +6,24 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { createProject, ensureProjectExists, resolvePaths } from "../src/projects.ts";
 import {
   listComputeReservations,
   projectCostSummary,
+  reattributeModalJobCost,
+  recordModalJobCost,
   reserveComputeBudget,
   sessionCostSummary,
 } from "../src/cost/ledger.ts";
 import {
   DurableModalJobManager,
+  modalJobManager,
 } from "../src/modal/manager.ts";
+import { makeModalTools } from "../src/agent/modal-tool.ts";
+import { ModalJobError } from "../src/modal/types.ts";
 import {
   EVENT_TRIM_INTERVAL,
   MAX_EVENT_ROWS,
@@ -34,254 +40,14 @@ import {
   normalizeTransferPath,
   planInputs,
 } from "../src/modal/transfer.ts";
-import type {
-  ModalAdapter,
-  ModalEnvironment,
-  ModalRemoteFilesystem,
-  ModalRemoteProcess,
-  ModalRemoteSandbox,
-} from "../src/modal/adapter.ts";
-import type { ModalJob } from "../src/modal/types.ts";
+import { type Behavior, FakeModal, FakeSandbox, persistedRunningJob } from "./helpers/fake-modal.ts";
 import { readSteps } from "../src/provenance/store.ts";
-
-type Behavior =
-  | { kind: "success"; exitCode?: number; stdout?: string; stderr?: string }
-  | { kind: "failure"; message: string }
-  | { kind: "hang" };
-
-class FakeFilesystem implements ModalRemoteFilesystem {
-  files = new Map<string, Buffer>();
-
-  async makeDirectory(): Promise<void> {}
-
-  async copyFromLocal(localPath: string, remotePath: string): Promise<void> {
-    this.files.set(remotePath, fs.readFileSync(localPath));
-  }
-
-  async copyToLocal(remotePath: string, localPath: string): Promise<void> {
-    const value = this.files.get(remotePath);
-    if (!value) throw new Error(`missing remote file ${remotePath}`);
-    fs.mkdirSync(path.dirname(localPath), { recursive: true });
-    fs.writeFileSync(localPath, value);
-  }
-
-  async listFiles(remotePath: string): Promise<any[]> {
-    const prefix = `${remotePath.replace(/\/+$/, "")}/`;
-    const found = new Map<string, "file" | "directory">();
-    for (const key of this.files.keys()) {
-      if (!key.startsWith(prefix)) continue;
-      const rest = key.slice(prefix.length);
-      if (!rest) continue;
-      const first = rest.split("/")[0];
-      found.set(first, rest.includes("/") ? "directory" : "file");
-    }
-    return [...found.entries()].map(([name, type]) => {
-      const filePath = `${prefix}${name}`;
-      return {
-        name,
-        path: filePath,
-        type,
-        size: type === "file" ? this.files.get(filePath)?.length ?? 0 : 0,
-        mode: 0,
-        permissions: "",
-        owner: "",
-        group: "",
-        modifiedTime: 0,
-        symlinkTarget: null,
-      };
-    });
-  }
-
-  async stat(remotePath: string): Promise<any> {
-    const value = this.files.get(remotePath);
-    if (!value) throw new Error("not found");
-    return { path: remotePath, name: path.posix.basename(remotePath), type: "file", size: value.length };
-  }
-
-  async readText(remotePath: string): Promise<string> {
-    const value = this.files.get(remotePath);
-    if (!value) throw new Error(`not found: ${remotePath}`);
-    return value.toString("utf-8");
-  }
-
-  async writeText(data: string, remotePath: string): Promise<void> {
-    this.files.set(remotePath, Buffer.from(data));
-  }
-}
-
-class FakeSandbox implements ModalRemoteSandbox {
-  readonly id: string;
-  readonly filesystem = new FakeFilesystem();
-  terminated = false;
-  behavior: Behavior;
-  private rejectWait?: (error: Error) => void;
-
-  constructor(id: string, behavior: Behavior) {
-    this.id = id;
-    this.behavior = behavior;
-  }
-
-  async exec(command: string[]): Promise<ModalRemoteProcess> {
-    if (command[0] === "mv") {
-      const source = command[2];
-      const destination = command[3];
-      const value = this.filesystem.files.get(source);
-      if (!value) throw new Error(`missing staged input ${source}`);
-      this.filesystem.files.set(destination, value);
-      this.filesystem.files.delete(source);
-      return { wait: async () => 0 };
-    }
-    this.filesystem.files.set(
-      "/workspace/.kady-job/status.json",
-      Buffer.from(JSON.stringify({ state: "running", startedAt: Date.now() / 1000 })),
-    );
-    return {
-      wait: () =>
-        new Promise<number>((resolve, reject) => {
-          this.rejectWait = reject;
-          if (this.behavior.kind === "hang") return;
-          setTimeout(() => {
-            if (this.terminated) {
-              reject(new Error("terminated"));
-              return;
-            }
-            if (this.behavior.kind === "failure") {
-              reject(new Error(this.behavior.message));
-              return;
-            }
-            const exitCode = this.behavior.exitCode ?? 0;
-            this.filesystem.files.set(
-              "/workspace/.kady-job/stdout.log",
-              Buffer.from(this.behavior.stdout ?? "ok\n"),
-            );
-            this.filesystem.files.set(
-              "/workspace/.kady-job/stderr.log",
-              Buffer.from(this.behavior.stderr ?? ""),
-            );
-            this.filesystem.files.set("/workspace/result.txt", Buffer.from("result\n"));
-            this.filesystem.files.set(
-              "/workspace/.kady-job/status.json",
-              Buffer.from(JSON.stringify({ state: "finished", exitCode })),
-            );
-            resolve(0);
-          }, 5);
-        }),
-    };
-  }
-
-  async terminate(): Promise<void> {
-    this.terminated = true;
-    this.rejectWait?.(new Error("terminated"));
-  }
-
-  async poll(): Promise<number | null> {
-    return this.terminated ? 1 : null;
-  }
-
-  detach(): void {}
-}
-
-class FakeModal {
-  behaviors: Behavior[] = [];
-  createErrors: Error[] = [];
-  sandboxes = new Map<string, FakeSandbox>();
-  prepared: Array<{ environment?: string; cache?: "project" | "none" }> = [];
-  nextId = 1;
-
-  factory = (): ModalAdapter => {
-    const parent = this;
-    return {
-      async validate() {},
-      async prepareEnvironment(
-        _projectId,
-        _image,
-        _defaultImage,
-        environment,
-        cache,
-      ): Promise<ModalEnvironment> {
-        parent.prepared.push({ environment, cache });
-        return {
-          appId: "app",
-          appName: "kady",
-          cacheName: cache === "none" ? null : "cache",
-          ...(environment
-            ? { snapshotName: `published:${environment}`, imageId: "im-test" }
-            : {}),
-          opaque: {},
-        };
-      },
-      async createSandbox() {
-        const createError = parent.createErrors.shift();
-        if (createError) throw createError;
-        const sandbox = new FakeSandbox(
-          `sb-${parent.nextId++}`,
-          parent.behaviors.shift() ?? { kind: "success" },
-        );
-        parent.sandboxes.set(sandbox.id, sandbox);
-        return sandbox;
-      },
-      async fromId(id: string) {
-        const sandbox = parent.sandboxes.get(id);
-        if (!sandbox) throw new Error("sandbox not found");
-        return sandbox;
-      },
-      async clearCache() {},
-      close() {},
-    };
-  };
-}
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
   const paths = ensureProjectExists("default");
   fs.writeFileSync(path.join(paths.sandbox, "input.txt"), "input\n");
-}
-
-function persistedRunningJob(args: {
-  id: string;
-  sandboxId: string;
-  sessionId: string;
-  filesOut?: string[];
-}): ModalJob {
-  const now = Date.now();
-  return {
-    version: 1,
-    id: args.id,
-    projectId: "default",
-    state: "running",
-    request: {
-      command: "work",
-      instance: "cpu",
-      gpuCount: 1,
-      timeoutSec: 600,
-      ...(args.filesOut ? { filesOut: args.filesOut } : {}),
-    },
-    owner: { sessionId: args.sessionId, submittedBy: "api" },
-    createdAt: now - 100,
-    updatedAt: now,
-    queuedAt: now - 100,
-    preparingAt: now - 90,
-    runningAt: now - 80,
-    cancelRequested: false,
-    reservationUsd: 0.01,
-    effectiveInstance: "cpu",
-    effectiveGpu: null,
-    pricePerHour: 0.05,
-    sandboxId: args.sandboxId,
-    sandboxName: `kady-${args.id}`,
-    sandboxTags: { kady: "true", project: "default", job: args.id },
-    sandboxCreatedAt: now - 75,
-    inputFiles: [],
-    outputFiles: [],
-    missingOutputs: [],
-    stdoutBytes: 0,
-    stderrBytes: 0,
-    stdoutBaseCursor: 0,
-    stderrBaseCursor: 0,
-    eventSeq: 0,
-    accounting: { reconciled: false },
-  };
 }
 
 beforeEach(reset);
@@ -689,5 +455,140 @@ describe("Durable Modal manager accounting", () => {
       jobId: job.id,
       role: "compute",
     });
+  });
+});
+
+describe("Durable Modal manager safety nets", () => {
+  it("finalizes and reconciles a job whose worker crashed while finishing", async () => {
+    // The first attempt to record the terminal state throws (disk full, a
+    // Windows rename blocked by an indexer, ...). The worker chain must catch
+    // it, finalize on the retry, reconcile the hold, and never surface an
+    // unhandled rejection.
+    class FlakyStore extends ModalJobStore {
+      remainingFailures = 1;
+      override transition(projectId: string, jobId: string, state: any, extra?: any) {
+        if (state === "failed" && this.remainingFailures > 0) {
+          this.remainingFailures--;
+          throw new Error("ENOSPC: no space left on device");
+        }
+        return super.transition(projectId, jobId, state, extra);
+      }
+    }
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "failure", message: "remote exploded" });
+    const manager = new DurableModalJobManager(fake.factory, new FlakyStore());
+    const job = manager.submit("default", { command: "work" }, { sessionId: "s-crash", submittedBy: "api" });
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.accounting.reconciled).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+    expect(errors.mock.calls.some((call) => String(call[0]).includes("[modal] worker crashed"))).toBe(false);
+    errors.mockRestore();
+  });
+
+  it("keeps the process alive when finalization keeps failing, and recovery finishes the job later", async () => {
+    class BrokenStore extends ModalJobStore {
+      remainingFailures = 2;
+      override transition(projectId: string, jobId: string, state: any, extra?: any) {
+        if (state === "failed" && this.remainingFailures > 0) {
+          this.remainingFailures--;
+          throw new Error("ENOSPC: no space left on device");
+        }
+        return super.transition(projectId, jobId, state, extra);
+      }
+    }
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "failure", message: "remote exploded" });
+    const store = new BrokenStore();
+    const manager = new DurableModalJobManager(fake.factory, store);
+    const job = manager.submit("default", { command: "work" }, { sessionId: "s-broken", submittedBy: "api" });
+    // Both finalization attempts fail; the worker chain must swallow that
+    // (logged), leave the job non-terminal, and not reject unhandled.
+    const stuck = await manager.wait("default", job.id, 1500);
+    expect(["preparing", "running"]).toContain(stuck.state);
+    expect(errors.mock.calls.some((call) => String(call[0]).includes("[modal] failed to finalize job"))).toBe(true);
+    expect(errors.mock.calls.some((call) => String(call[0]).includes("[modal] worker crashed"))).toBe(false);
+    // Restart-style recovery reattaches: the fake sandbox was already
+    // terminated, so the job is marked lost and its hold reconciled.
+    await manager.recoverProject("default");
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("lost");
+    expect(terminal.accounting.reconciled).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+    errors.mockRestore();
+  });
+
+  it("cancelling a job with no live worker terminates its sandbox and reconciles the hold", async () => {
+    // Recovery was deferred (no credentials at boot), so the running job has a
+    // sandbox id but no worker. Cancel must still reach the remote sandbox.
+    const store = new ModalJobStore();
+    const fake = new FakeModal();
+    const sandbox = new FakeSandbox("sb-orphan", { kind: "hang" });
+    fake.sandboxes.set(sandbox.id, sandbox);
+    store.create(persistedRunningJob({ id: "mj_deferred_cancel", sandboxId: sandbox.id, sessionId: "s-deferred" }));
+    reserveComputeBudget({ projectId: "default", reservationId: "mj_deferred_cancel", sessionId: "s-deferred", amountUsd: 0.01 });
+    const manager = new DurableModalJobManager(fake.factory, store);
+    const cancelled = await manager.cancel("default", "mj_deferred_cancel");
+    expect(cancelled.state).toBe("cancelled");
+    expect(cancelled.accounting.reconciled).toBe(true);
+    expect(sandbox.terminated).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+  });
+
+  it("cancelling while Modal is unconfigured still reconciles the hold", async () => {
+    const store = new ModalJobStore();
+    store.create(persistedRunningJob({ id: "mj_unconfigured", sandboxId: "sb-gone", sessionId: "s-unconf" }));
+    reserveComputeBudget({ projectId: "default", reservationId: "mj_unconfigured", sessionId: "s-unconf", amountUsd: 0.01 });
+    const manager = new DurableModalJobManager(() => {
+      throw new ModalJobError("NOT_CONFIGURED", "Modal is not configured", 503);
+    }, store);
+    const cancelled = await manager.cancel("default", "mj_unconfigured");
+    expect(cancelled.state).toBe("cancelled");
+    expect(cancelled.accounting.reconciled).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+  });
+
+  it("wait with a zero timeout returns the current state at once", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "hang" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit("default", { command: "work" }, { sessionId: "s-wait0", submittedBy: "api" });
+    const started = Date.now();
+    const current = await manager.wait("default", job.id, 0);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(["queued", "preparing", "running"]).toContain(current.state);
+    await manager.cancel("default", job.id);
+  });
+
+  it("modal_wait with timeout_sec 0 returns immediately instead of blocking", async () => {
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "hang" });
+    modalJobManager.setAdapterFactoryForTests(fake.factory);
+    const tools = makeModalTools("default", () => "s-tool-wait");
+    const submit = tools.find((tool) => tool.name === "modal_submit")!;
+    const wait = tools.find((tool) => tool.name === "modal_wait")!;
+    const submitted = await submit.execute("call-1", { command: "work" } as any, undefined as any, undefined as any);
+    const jobId = (submitted.details as { job_id: string }).job_id;
+    const started = Date.now();
+    const waited = await wait.execute("call-2", { job_id: jobId, timeout_sec: 0 } as any, undefined as any, undefined as any);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(["queued", "preparing", "running"]).toContain((waited.details as { state: string }).state);
+    await modalJobManager.cancel("default", jobId);
+  });
+
+  it("re-attribution writes the parent ledger row before removing the child's", () => {
+    recordModalJobCost({ projectId: "default", sessionId: "child", jobId: "mj_reattr", costUsd: 0.5, model: "modal:cpu", terminalState: "succeeded" });
+    const appendSpy = vi.spyOn(fs, "appendFileSync");
+    const renameSpy = vi.spyOn(fs, "renameSync");
+    expect(reattributeModalJobCost("default", "mj_reattr", "child", "parent")).toBe(true);
+    const appendOrder = appendSpy.mock.invocationCallOrder[0];
+    const renameOrder = renameSpy.mock.invocationCallOrder[0];
+    appendSpy.mockRestore();
+    renameSpy.mockRestore();
+    expect(appendOrder).toBeLessThan(renameOrder);
+    expect(sessionCostSummary("parent", "default").entries).toHaveLength(1);
+    expect(sessionCostSummary("child", "default").entries).toHaveLength(0);
   });
 });
