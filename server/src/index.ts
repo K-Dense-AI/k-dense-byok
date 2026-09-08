@@ -21,6 +21,9 @@ import { registerSessionRoutes } from "./api/sessions.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
 import { registerSkillRoutes } from "./api/skills.ts";
 import { registerPromptRoutes } from "./api/prompts.ts";
+import { registerAutomationRoutes } from "./api/automation.ts";
+import { setScheduleActivityListener } from "./agent/subagent-bridge.ts";
+import { bootSchedulerSessions, configureScheduler, onScheduleActivity, startSchedulerTick } from "./agent/scheduler.ts";
 import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
@@ -141,6 +144,7 @@ export async function buildApp() {
   await registerSandboxRoutes(app);
   await registerSkillRoutes(app);
   await registerPromptRoutes(app);
+  await registerAutomationRoutes(app);
   await registerSystemRoutes(app);
   await registerMcpRoutes(app);
   await registerCredentialRoutes(app);
@@ -186,6 +190,15 @@ if (isMain) {
   const proxy = configureHttpProxy();
   syncHelperVenv(); // best-effort; previews degrade gracefully if it fails
   const app = await buildApp();
+  // Durable pi-subagents schedules fire from a resident session per project;
+  // open those hosts now and keep the budget hold reconciled (not in
+  // buildApp: tests must not open Pi sessions).
+  configureScheduler({ log: app.log });
+  setScheduleActivityListener((projectId) => onScheduleActivity(projectId));
+  void bootSchedulerSessions().then((started) => {
+    if (started.length) app.log.info({ projects: started }, "scheduler sessions opened");
+  });
+  startSchedulerTick();
   if (proxy.enabled) {
     app.log.info(
       { httpProxy: proxy.httpProxy, httpsProxy: proxy.httpsProxy, noProxy: proxy.noProxy },

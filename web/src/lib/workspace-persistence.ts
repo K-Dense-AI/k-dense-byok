@@ -84,6 +84,7 @@ export interface ProjectWorkspaceState {
   view: WorkspaceView;
   showNotebook: boolean;
   showCompute: boolean;
+  showAutomation: boolean;
   computeScope: ModalComputeScope;
   sandboxOpen: boolean;
   chatOpen: boolean;
@@ -342,6 +343,7 @@ function sanitizeStoredProject(value: unknown): StoredProjectState | null {
     view: value.view === "workflows" ? "workflows" : "chat",
     showNotebook,
     showCompute: !showNotebook && value.showCompute === true,
+    showAutomation: !showNotebook && value.showCompute !== true && value.showAutomation === true,
     computeScope: value.computeScope === "session" ? "session" : "project",
     sandboxOpen: value.sandboxOpen !== false,
     chatOpen: value.chatOpen !== false,

@@ -86,6 +86,8 @@ const ASYNC_COMPLETE_EVENT = "subagent:async-complete";
 /** Subset of the async completion payload (the runner's result-file JSON). */
 interface AsyncCompletePayload {
   id?: string | null;
+  /** Present when pi-subagents fired the run from a durable schedule. */
+  scheduleOrigin?: { id?: string; name?: string } | null;
   results?: Array<{
     agent?: string;
     model?: string;
@@ -505,6 +507,18 @@ function recordModelAttempts(args: {
   return recorded;
 }
 
+/**
+ * Notified when the lead creates/resumes/runs a schedule through the tool, so
+ * the scheduler (agent/scheduler.ts, registered from index.ts to avoid an
+ * import cycle through session-registry) can keep a resident session alive.
+ */
+let scheduleActivityListener: ((projectId: string, action: string) => void) | null = null;
+export function setScheduleActivityListener(
+  listener: ((projectId: string, action: string) => void) | null,
+): void {
+  scheduleActivityListener = listener;
+}
+
 // Async completions already ledgered, keyed by run id + child session file.
 // Module-level because every live session registers its own listener and
 // pi-subagents may deliver the same completion to more than one of them.
@@ -528,6 +542,47 @@ export function makeSubagentLedgerExtension(
       if (event.toolName !== "subagent") return;
       const action =
         typeof event.input.action === "string" ? event.input.action : undefined;
+      // Schedules defer model work past this hook (a fire produces no tool
+      // call), so gate their creation and manual firing like a launch now.
+      if (action === "schedule.create") {
+        const budget = isBudgetExceeded(projectId);
+        const parentModel = getParentModel();
+        pinInheritedChildModels(projectId, event.input, parentModel);
+        const unsupported = unsupportedDirectProviders(projectId, event.input, isProviderUsingOAuth);
+        if (unsupported.length > 0) {
+          return {
+            block: true,
+            reason:
+              `Schedule blocked: ${unsupported.join(", ")} direct models require a connected ` +
+              `subscription login in Settings; ambient API keys are not supported for this route.`,
+          };
+        }
+        if (budget.exceeded && requestedBillings(projectId, event.input, parentModel, isProviderUsingOAuth).some(billingCountsTowardBudget)) {
+          return {
+            block: true,
+            reason:
+              `Schedule blocked: the project has reached its spend limit ` +
+              `($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}). ` +
+              `Raise the limit before scheduling recurring work.`,
+          };
+        }
+        scheduleActivityListener?.(projectId, action);
+        return;
+      }
+      if (action === "schedule.run" || action === "schedule.run-due" || action === "schedule.resume") {
+        // The schedule's model is not in the payload: fail closed at the cap.
+        const budget = isBudgetExceeded(projectId);
+        if (budget.exceeded && action !== "schedule.resume") {
+          return {
+            block: true,
+            reason:
+              `Scheduled run blocked: the project has reached its spend limit ` +
+              `($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}).`,
+          };
+        }
+        scheduleActivityListener?.(projectId, action);
+        return;
+      }
       if (action && action !== "resume") return;
       const budget = isBudgetExceeded(projectId);
       if (action === "resume") {
@@ -665,12 +720,22 @@ export function makeSubagentLedgerExtension(
             parentModel,
             isProviderUsingOAuth,
           );
+          const scheduleId =
+            payload.scheduleOrigin && typeof payload.scheduleOrigin.id === "string"
+              ? payload.scheduleOrigin.id
+              : undefined;
           recordSubagentRun(
             projectId,
             getSessionId(),
             result.model ?? usage.model ?? "unknown",
             usage,
             billing,
+            scheduleId
+              ? {
+                  schedule: scheduleId,
+                  ...(typeof payload.scheduleOrigin?.name === "string" ? { name: payload.scheduleOrigin.name } : {}),
+                }
+              : undefined,
           );
         }
       }

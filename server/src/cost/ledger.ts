@@ -107,6 +107,13 @@ export interface CostEntry {
   /** Modal costs are estimates (elapsed wall time × catalogue rate). */
   estimated?: boolean;
   terminalState?: string;
+  /** Why this work ran when no user prompt started it (pi-subagents schedules). */
+  origin?: CostOrigin;
+}
+
+export interface CostOrigin {
+  schedule: string;
+  name?: string;
 }
 
 function inferredBilling(model: string, role?: CostEntry["role"]): BillingContext {
@@ -148,6 +155,7 @@ export function recordRun(args: {
   estimated?: boolean;
   terminalState?: string;
   billing?: BillingContext;
+  origin?: CostOrigin;
 }): CostEntry | null {
   const delta = snapshotDelta(args.before, args.after);
   const billing = args.billing ?? inferredBilling(args.model, args.role);
@@ -178,6 +186,7 @@ export function recordRun(args: {
     ...(args.jobId ? { jobId: args.jobId } : {}),
     ...(args.estimated !== undefined ? { estimated: args.estimated } : {}),
     ...(args.terminalState ? { terminalState: args.terminalState } : {}),
+    ...(args.origin ? { origin: args.origin } : {}),
   };
   const file = costsPath(args.sessionId, args.projectId);
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -196,6 +205,7 @@ export function recordSubagentRun(
   model: string,
   stats: { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } },
   billing?: BillingContext,
+  origin?: CostOrigin,
 ): CostEntry | null {
   if (!sessionId) return null;
   return recordRun({
@@ -203,6 +213,7 @@ export function recordSubagentRun(
     projectId,
     model,
     role: "subagent",
+    origin,
     before: { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 },
     after: {
       costUsd: stats.cost,
@@ -625,6 +636,25 @@ export function projectCostSummary(projectId: string): ProjectCostSummary {
       state,
     },
   };
+}
+
+/** Ledgered USD per pi-subagents schedule id across every session of a project. */
+export function scheduleSpend(projectId: string): Record<string, number> {
+  const paths = resolvePaths(projectId);
+  const out: Record<string, number> = {};
+  try {
+    for (const dirent of fs.readdirSync(paths.runsDir, { withFileTypes: true })) {
+      if (!dirent.isDirectory()) continue;
+      for (const entry of sessionCostSummary(dirent.name, projectId).entries) {
+        const id = entry.origin?.schedule;
+        if (!id) continue;
+        out[id] = (out[id] ?? 0) + finite(entry.costUsd);
+      }
+    }
+  } catch {
+    /* no runs yet */
+  }
+  return out;
 }
 
 /** True when the project has a cap and cumulative spend has reached it. */

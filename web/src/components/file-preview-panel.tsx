@@ -6,6 +6,7 @@ import { PdfViewer } from "@/components/pdf-viewer/pdf-viewer";
 import { KadyFileIcon } from "@/components/file-icon";
 import { LabNotebookView } from "@/components/lab-notebook-view";
 import { ModalJobsPanel } from "@/components/modal-jobs-panel";
+import { AutomationPanel } from "@/components/automation-panel";
 import { ProvenancePanel } from "@/components/provenance-panel";
 import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { NotebookEntry } from "@/lib/notebook";
@@ -43,6 +44,7 @@ import {
   AlertCircleIcon,
   ServerCogIcon,
   GitBranchIcon,
+  AlarmClockIcon,
 } from "lucide-react";
 import {
   Suspense,
@@ -125,6 +127,8 @@ function TabBar({
   onSelectNotebook,
   showCompute,
   onSelectCompute,
+  showAutomation = false,
+  onSelectAutomation,
 }: {
   tabs: Tab[];
   activeTabPath: string | null;
@@ -135,6 +139,8 @@ function TabBar({
   onSelectNotebook: () => void;
   showCompute: boolean;
   onSelectCompute: () => void;
+  showAutomation?: boolean;
+  onSelectAutomation?: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -199,9 +205,29 @@ function TabBar({
         <span className="whitespace-nowrap font-medium">Compute</span>
       </button>
 
+      {/* Pinned Automation tab — schedules + missions, never closable */}
+      {onSelectAutomation && (
+        <button
+          type="button"
+          data-active={showAutomation}
+          onClick={onSelectAutomation}
+          title="Schedules and missions"
+          className={cn(
+            "group relative flex shrink-0 select-none",
+            "items-center gap-1.5 border-r px-3 py-1.5 text-xs transition-colors",
+            showAutomation
+              ? "bg-background text-foreground after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-primary"
+              : "text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          )}
+        >
+          <AlarmClockIcon className="size-3.5 shrink-0 text-emerald-500" />
+          <span className="whitespace-nowrap font-medium">Automation</span>
+        </button>
+      )}
+
       {uniqueTabs.map((tab) => {
         const name = tab.path.split("/").pop() ?? tab.path;
-        const isActive = !showNotebook && !showCompute && tab.path === activeTabPath;
+        const isActive = !showNotebook && !showCompute && !showAutomation && tab.path === activeTabPath;
         const mode = tabModes[tab.path] ?? "view";
         const isEditing = mode === "edit" || mode === "annotate";
 
@@ -1652,6 +1678,8 @@ export interface FilePreviewPanelProps {
   onSelectNotebook: () => void;
   showCompute: boolean;
   onSelectCompute: () => void;
+  showAutomation?: boolean;
+  onSelectAutomation?: () => void;
   computeSessionId: string | null;
   computeScope: ModalComputeScope;
   onComputeScopeChange: (scope: ModalComputeScope) => void;
@@ -1687,6 +1715,8 @@ export function FilePreviewPanel({
   onSelectNotebook,
   showCompute,
   onSelectCompute,
+  showAutomation = false,
+  onSelectAutomation,
   computeSessionId,
   computeScope,
   onComputeScopeChange,
@@ -1793,6 +1823,8 @@ export function FilePreviewPanel({
         onSelectNotebook={onSelectNotebook}
         showCompute={showCompute}
         onSelectCompute={onSelectCompute}
+        showAutomation={showAutomation}
+        onSelectAutomation={onSelectAutomation}
       />
 
       {showNotebook ? (
@@ -1807,6 +1839,8 @@ export function FilePreviewPanel({
           focusEntry={notebookFocus}
           onJumpToChat={onNotebookJumpToChat}
         />
+      ) : showAutomation ? (
+        <AutomationPanel projectId={projectId} />
       ) : showCompute ? (
         <ModalJobsPanel
           projectId={projectId}

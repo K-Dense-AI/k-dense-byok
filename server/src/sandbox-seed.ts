@@ -117,7 +117,22 @@ at most). A \`progress_update\` needs no reply.
 ## Files`,
 );
 
-export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3];
+const AGENTS_MD_V4 = AGENTS_MD_V3.replace(
+  /## Files/,
+  `## Recurring and scheduled work
+
+The \`subagent\` tool can create durable schedules (\`schedule.create\` with
+\`every: "6h"\` or \`at: "+30m"\`) and missions that survive restarts. Before
+scheduling anything, confirm the interval, the specialist, and the expected
+cost per run with the user via \`interview\`; scheduled runs are billed like
+any other delegation and pause automatically when the project spend limit is
+reached. Prefer a one-shot \`at\` schedule over an interval unless the user
+explicitly wants recurrence.
+
+## Files`,
+);
+
+export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4];
 export const AGENTS_MD = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 1];
 
 /** Newline-insensitive comparison so a CRLF checkout still counts as unedited. */

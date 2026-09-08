@@ -322,6 +322,9 @@ function WorkspacePage({
   const [showNotebook, setShowNotebook] = useState(
     () => initialState?.showNotebook ?? false,
   );
+  const [showAutomation, setShowAutomation] = useState(
+    () => initialState?.showAutomation ?? false,
+  );
   const [showCompute, setShowCompute] = useState(
     () => initialState?.showCompute ?? false,
   );
@@ -546,6 +549,7 @@ function WorkspacePage({
       view,
       showNotebook,
       showCompute,
+      showAutomation,
       computeScope,
       sandboxOpen,
       chatOpen,
@@ -560,6 +564,7 @@ function WorkspacePage({
       computeScope,
       sandboxOpen,
       sandboxWorkspace,
+      showAutomation,
       showCompute,
       showNotebook,
       tabWorkspaceStates,
@@ -737,6 +742,7 @@ function WorkspacePage({
     sandboxSelectFile(path);
     setShowNotebook(false);
     setShowCompute(false);
+    setShowAutomation(false);
   }, [sandboxSelectFile]);
   const handleOrganizeFiles = useCallback(() => {
     const handle = tabHandles.current.get(activeTabId);
@@ -751,12 +757,14 @@ function WorkspacePage({
   const [notebookFocus, setNotebookFocus] = useState<{ id: string; token: number } | null>(null);
   const handleViewInNotebook = useCallback((entryId: string) => {
     setShowCompute(false);
+    setShowAutomation(false);
     setShowNotebook(true);
     setNotebookFocus({ id: entryId, token: Date.now() });
   }, []);
   const [computeFocus, setComputeFocus] = useState<{ id: string; token: number } | null>(null);
   const handleViewCompute = useCallback((jobId?: string) => {
     setShowNotebook(false);
+    setShowAutomation(false);
     setShowCompute(true);
     if (jobId) setComputeFocus({ id: jobId, token: Date.now() });
   }, []);
@@ -1081,12 +1089,20 @@ function WorkspacePage({
               showNotebook={showNotebook}
               onSelectNotebook={() => {
                 setShowCompute(false);
+                setShowAutomation(false);
                 setShowNotebook(true);
               }}
               showCompute={showCompute}
               onSelectCompute={() => {
                 setShowNotebook(false);
+                setShowAutomation(false);
                 setShowCompute(true);
+              }}
+              showAutomation={showAutomation}
+              onSelectAutomation={() => {
+                setShowNotebook(false);
+                setShowCompute(false);
+                setShowAutomation(true);
               }}
               computeSessionId={activeSessionId}
               computeScope={computeScope}

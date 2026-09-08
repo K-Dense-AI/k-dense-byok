@@ -130,6 +130,19 @@ export function pinSession(projectId: string, sessionId: string): void {
   pinned.add(keyFor(projectId, sessionId));
 }
 
+// Kady-owned resident sessions (the per-project scheduler host). Pinned for
+// good and not counted against MAX_LIVE_PER_PROJECT, so they never cost a
+// user a tab slot and are never evicted.
+const systemSessions = new Set<string>();
+export function markSystemSession(projectId: string, sessionId: string): void {
+  const key = keyFor(projectId, sessionId);
+  systemSessions.add(key);
+  pinned.add(key);
+}
+export function isSystemSession(projectId: string, sessionId: string): boolean {
+  return systemSessions.has(keyFor(projectId, sessionId));
+}
+
 export function unpinSession(projectId: string, sessionId: string): void {
   pinned.delete(keyFor(projectId, sessionId));
 }
@@ -137,7 +150,7 @@ export function unpinSession(projectId: string, sessionId: string): void {
 /** Dispose the least-recently-used idle sessions for a project over the cap. */
 function evictOverCap(projectId: string): void {
   const prefix = `${projectId}:`;
-  const keys = [...live.keys()].filter((k) => k.startsWith(prefix));
+  const keys = [...live.keys()].filter((k) => k.startsWith(prefix) && !systemSessions.has(k));
   let remaining = keys.length;
   for (const k of keys) {
     if (remaining <= MAX_LIVE_PER_PROJECT) break;
@@ -164,6 +177,7 @@ function release(projectId: string, key: string, session: AgentSession): void {
   session.dispose();
   live.delete(key);
   pinned.delete(key);
+  systemSessions.delete(key);
   clearSessionCompute(projectId, key.slice(projectId.length + 1));
 }
 

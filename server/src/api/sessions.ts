@@ -39,6 +39,7 @@ import { parseRunImages } from "../agent/prompt-images.ts";
 import { expandLeadingCommand } from "../agent/prompt-expansion.ts";
 import { expandableTemplates } from "../agent/prompts.ts";
 import { globalSkillRoot, listProjectSkills, projectSkillRoot } from "../agent/skills.ts";
+import { schedulerSessionId } from "../agent/scheduler-state.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { withNotebookArtifactHealth } from "../agent/notebook-artifacts.ts";
 import { withNotebookPlanHistory } from "../agent/notebook-research.ts";
@@ -162,8 +163,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
   });
 
   app.get("/sessions", async () => {
-    const infos = await listSessions(activePaths());
-    return infos.map((i) => ({
+    const paths = activePaths();
+    const infos = await listSessions(paths);
+    // Kady-owned resident sessions (the scheduler host) are not chats.
+    const hidden = schedulerSessionId(paths);
+    return infos.filter((i) => i.id !== hidden).map((i) => ({
       id: i.id,
       name: i.name ?? null,
       created: i.created,

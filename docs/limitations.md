@@ -102,6 +102,12 @@ Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple o
 - **External-CLI specialists bypass Kady's accounting.** pi-subagents ships `claude-code`, `codex-exec`, `cursor-agent` and their `-writer` variants, which shell out to a locally installed and authenticated Claude Code, Codex, or Cursor CLI. They run outside Kady's model runtime, cost ledger, and spend cap, so they are disabled by default; enable them in Settings → Specialists only if you understand that their usage is billed by that CLI's own account.
 - **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
 
+## Schedules
+
+- **Timers live in the server.** A schedule fires only while the Kady server is running; a due slot missed during downtime runs once at the next boot when `catchUp` is `latest`. Runs are skipped, not queued, when the previous one is still going.
+- **The cap acts after the fact.** A schedule fire cannot be gated when it runs. Kady checks the cap when a schedule is created or run by hand, pauses active schedules once a project is over its limit, and resumes them when it clears — but the run that crossed the line is ledgered, not prevented.
+- **Panel actions run through the resident session.** Pause, resume, run-now and delete call pi-subagents' own management actions with no model involved; if the resident session cannot be opened (for example no model is configured), those buttons fail with an error while the chat path still works.
+
 ## Modal compute
 
 Modal jobs are durable, restart-recoverable, available to sub-agents, and

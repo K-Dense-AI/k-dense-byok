@@ -48,6 +48,7 @@ const projectState: ProjectWorkspaceState = {
   view: "chat",
   showNotebook: true,
   showCompute: false,
+  showAutomation: false,
   computeScope: "session",
   sandboxOpen: false,
   chatOpen: true,
@@ -77,6 +78,7 @@ describe("workspace persistence schema", () => {
       activeTabId: "tab-1",
       showNotebook: true,
       showCompute: false,
+      showAutomation: false,
       computeScope: "session",
       sandboxOpen: false,
       sandbox: {
@@ -139,6 +141,7 @@ describe("workspace persistence schema", () => {
           view: "invalid",
           showNotebook: false,
           showCompute: true,
+          showAutomation: false,
           computeScope: "invalid",
           treeWidth: -100,
           chatWidth: 10000,
@@ -156,6 +159,7 @@ describe("workspace persistence schema", () => {
       view: "chat",
       showNotebook: false,
       showCompute: true,
+      showAutomation: false,
       computeScope: "project",
       treeWidth: 150,
       chatWidth: 720,
@@ -190,6 +194,7 @@ describe("workspace persistence schema", () => {
     });
     expect(legacy.projects["project-a"]).toMatchObject({
       showCompute: false,
+      showAutomation: false,
       computeScope: "project",
       tabs: [
         {
@@ -210,6 +215,7 @@ describe("workspace persistence schema", () => {
           activeTabId: "tab-1",
           showNotebook: true,
           showCompute: true,
+          showAutomation: false,
           computeScope: "session",
           sandbox: { openPaths: [], activePath: null },
         },
@@ -218,6 +224,7 @@ describe("workspace persistence schema", () => {
     expect(conflicting.projects["project-a"]).toMatchObject({
       showNotebook: true,
       showCompute: false,
+      showAutomation: false,
       computeScope: "session",
     });
   });
