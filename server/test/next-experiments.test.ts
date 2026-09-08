@@ -20,6 +20,7 @@ import { searchNotebookMemory } from "../src/agent/notebook-memory.ts";
 import { deriveEvidenceThreads, notebookEntryKey } from "../../web/src/lib/notebook-evidence-core.ts";
 import { sessionCostSummary, emptySnapshot, recordRun } from "../src/cost/ledger.ts";
 import { experimentPlan, experimentSource as source } from "../../web/src/test/next-experiments-fixture.ts";
+import { ONE_SHOT_REASONING } from "../src/agent/one-shot-reasoning.ts";
 const project = "project-a";
 const model = "openrouter/openai/gpt-4o";
 function message(text: string, override: Partial<AssistantMessage> = {}): AssistantMessage { return { role: "assistant", content: [{ type: "text", text }], api: "openai-completions", provider: "openrouter", model: "openai/gpt-4o", usage: { input: 100, output: 20, cacheRead: 0, cacheWrite: 0, totalTokens: 120, cost: { input: 0.001, output: 0.002, cacheRead: 0, cacheWrite: 0, total: 0.003 } }, stopReason: "stop", timestamp: 0, ...override } as AssistantMessage; }
@@ -58,6 +59,7 @@ describe("source-linked next investigations", () => {
   it("ledgered generation saves a note, excludes itself from source context, and safely repeats the same response", async () => {
     setup(); const body = await input(); const complete = vi.fn(good);
     const result = await generateNextExperiments(project, source, body, complete);
+    expect(complete).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.objectContaining({ reasoning: ONE_SHOT_REASONING }));
     expect(result.binding).toMatchObject({ origin: "model-generated", contextDigest: body.expectedContextDigest, contextChangedDuringGeneration: false, generation: { costUsd: 0.003 } });
     const rows = readNotebookEntries(source.sessionId, project); expect(rows).toHaveLength(2);
     expect(rows[1]).toMatchObject({ type: "note", proposalOnly: true, evidence: [{ entryId: source.entryId, relation: "context" }] });

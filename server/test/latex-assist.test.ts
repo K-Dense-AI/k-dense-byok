@@ -11,6 +11,7 @@ import {
   extractReplacement,
   runLatexAssist,
 } from "../src/latex/assist.ts";
+import { ONE_SHOT_REASONING } from "../src/agent/one-shot-reasoning.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -92,6 +93,7 @@ describe("runLatexAssist", () => {
         p.id,
         async (_model, _context, options) => {
           expect(options?.apiKey).toBeUndefined();
+          expect(options?.reasoning).toBe(ONE_SHOT_REASONING);
           return fakeMessage("```latex\n\\textbf{hello}\n```");
         },
       ),

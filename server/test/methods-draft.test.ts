@@ -13,6 +13,7 @@ import {
   buildMethodsDraftContext,
   runMethodsDraft,
 } from "../src/agent/methods-draft.ts";
+import { ONE_SHOT_REASONING } from "../src/agent/one-shot-reasoning.ts";
 
 function reset(): void {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
@@ -123,6 +124,9 @@ describe("runMethodsDraft", () => {
     const res = await withActiveProject(p.id, () =>
       runMethodsDraft("sess-1", p.id, {}, async (_model, _context, options) => {
         expect(options?.apiKey).toBeUndefined();
+        // Reasoning-mandatory models (GPT-6 Astra) reject the implicit "none" that
+        // a bare complete() sends; one-shots must always name a level.
+        expect(options?.reasoning).toBe(ONE_SHOT_REASONING);
         return fakeMessage("## Methods\nWe ran PCA.");
       }),
     );

@@ -1,6 +1,7 @@
 /** One user-approved planning call; no analysis tools, automatic retries or execution. */
-import type { Api, AssistantMessage, Context, Model, StreamOptions } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { getModelRegistry, getModelRuntime } from "./session-registry.ts";
+import { ONE_SHOT_REASONING } from "./one-shot-reasoning.ts";
 import { assertModelAuthentication, modelReference, resolveModel } from "./models.ts";
 import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
 import { billingCountsTowardBudget, billingForModel } from "../cost/billing.ts";
@@ -21,8 +22,9 @@ export class NextExperimentError extends Error {
   status: number; code: string; costUsd?: number;
   constructor(status: number, code: string, message: string, costUsd?: number) { super(message); this.status = status; this.code = code; this.costUsd = costUsd; }
 }
-type Complete = (model: Model<Api>, context: Context, options?: StreamOptions) => Promise<AssistantMessage>;
-const defaultComplete: Complete = (model, context, options) => getModelRuntime().complete(model, context, options);
+type Complete = (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => Promise<AssistantMessage>;
+// `completeSimple`, not `complete`: see one-shot-reasoning.ts.
+const defaultComplete: Complete = (model, context, options) => getModelRuntime().completeSimple(model, context, options);
 function restoreProposalEntry(projectId: string, sessionId: string, entry: NotebookEntry) {
   if (appendNewNotebookEntries(sessionId, [entry], projectId).length) return;
   const existing = readNotebookEntries(sessionId, projectId).filter((e) => e.id === entry.id);
@@ -122,7 +124,7 @@ export async function generateNextExperiments(projectId: string, source: { sessi
       throw new NextExperimentError(message.includes("receipt limit") ? 429 : 503, "REQUEST_NOT_DISPATCHED", `No planning call was dispatched: ${message}`);
     }
     let message: AssistantMessage;
-    try { message = await complete(model, generationContext, { maxTokens: 6000 }); }
+    try { message = await complete(model, generationContext, { maxTokens: 6000, reasoning: ONE_SHOT_REASONING }); }
     catch (e) { throw new NextExperimentError(502, "MODEL_FAILED", `${(e as Error).message}. No complete usage response was returned; provider billing may be unknown. This request will not be automatically repeated.`); }
     // Account for every returned response, including refusals/invalid JSON; do
     // not turn failed validation into free, unledgered model usage.

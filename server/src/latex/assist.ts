@@ -9,9 +9,10 @@ import type {
   AssistantMessage,
   Context,
   Model,
-  StreamOptions,
+  SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { getModelRegistry, getModelRuntime } from "../agent/session-registry.ts";
+import { ONE_SHOT_REASONING } from "../agent/one-shot-reasoning.ts";
 import {
   assertModelAuthentication,
   modelReference,
@@ -115,11 +116,12 @@ function validate(req: AssistRequest): void {
 type CompleteFn = (
   model: Model<Api>,
   context: Context,
-  options?: StreamOptions,
+  options?: SimpleStreamOptions,
 ) => Promise<AssistantMessage>;
 
+// `completeSimple`, not `complete`: see one-shot-reasoning.ts.
 const completeWithRuntime: CompleteFn = (model, context, options) =>
-  getModelRuntime().complete(model, context, options);
+  getModelRuntime().completeSimple(model, context, options);
 
 export async function runLatexAssist(
   req: AssistRequest,
@@ -154,6 +156,7 @@ export async function runLatexAssist(
   try {
     msg = await completeFn(model, buildAssistContext(req), {
       maxTokens: MAX_OUTPUT_TOKENS,
+      reasoning: ONE_SHOT_REASONING,
     });
   } catch (err) {
     throw new AssistError(502, err instanceof Error ? err.message : "model call failed");

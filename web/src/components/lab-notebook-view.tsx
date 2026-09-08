@@ -398,7 +398,7 @@ export function LabNotebookView({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <LabNotebookHeader
         packageControl={<EvidencePackageDialog projectId={scopedProjectId} candidates={displayEntries.filter((e) => !e.provisional && ["hypothesis", "method", "observation", "decision"].includes(e.type) && (e.sessionId ?? sessionId)).map((e) => ({ sessionId: e.sessionId ?? sessionId!, entryId: e.id, title: e.title, type: e.type }))} />}
         memory={<NotebookMemoryDialog projectId={scopedProjectId} activeSessionId={sessionId} onOpenFile={onOpenFile} onJump={(source) => {
