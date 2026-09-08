@@ -17,7 +17,11 @@ It uses the existing durable Modal manager, not a separate compute service.
    a model call, Python execution, dependency installation or remote submission.
    The server copies and hashes the exact input bytes into a private snapshot,
    displays the script, all specifications and input identities, and quotes the
-   sum of every job's full-timeout estimated sandbox cost.
+   sum of every job's estimated sandbox cost over its full lifetime (the command
+   timeout plus the transfer headroom described in
+   [Durable Modal compute](./modal-compute.md#budgets-and-reservations)). A
+   quote prepared before that rule existed no longer matches; approving it fails
+   with `PRICE_CHANGED` and the workflow must be prepared again.
 4. **Review and approve.** Separate confirmations cover the exact script and
    specifications, uploading/executing those files on Modal, and the estimated
    commitment. The entered maximum must cover the entire quote. If a dataset was

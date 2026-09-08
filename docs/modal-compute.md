@@ -34,7 +34,8 @@ The lead agent and sub-agents share the same project job service:
   cancels this blocking job.
 - `modal_submit` starts a durable background job and returns its job id.
 - `modal_status` reads a job's current state and recent logs.
-- `modal_wait` waits for a bounded period for a job to finish.
+- `modal_wait` waits for a bounded period for a job to finish; `timeout_sec: 0`
+  is a single read of the current state.
 - `modal_cancel` cancels a job explicitly.
 - `modal_results` collects or reports a completed job's outputs.
 - `modal_submit_batch` submits a bounded group of independent jobs.
@@ -76,6 +77,24 @@ resumes monitoring or collection. A remote sandbox that can no longer be found
 is marked `lost`, its budget reservation is reconciled, and the failure remains
 visible in job history.
 
+Recovery also cleans up what a crash can leave behind:
+
+- a job interrupted between Modal creating its sandbox and K-Dense saving the
+  id is found again through the job-id tag, and that sandbox is terminated
+  before the job is re-run (it never received the command wrapper, so it
+  cannot be resumed);
+- a terminal job whose sandbox termination was never confirmed has it
+  terminated on the next start, and a fallback sandbox whose termination
+  failed is retried until it succeeds;
+- cancelling a job while Modal credentials are missing marks it cancelled and
+  releases its hold immediately; the sandbox itself is terminated as soon as
+  credentials are configured again.
+
+Logs are synchronised by logical byte offset: the wrapper publishes how many
+bytes it has trimmed from each bounded log, so K-Dense appends exactly the
+unseen bytes without scanning for overlaps, and a `log_gap` event records any
+bytes that rolled out of the remote window before they could be retained.
+
 ## Files and outputs
 
 Inputs are validated before a remote sandbox is created:
@@ -84,12 +103,29 @@ Inputs are validated before a remote sandbox is created:
 - missing inputs fail immediately;
 - directories are enumerated recursively;
 - escaping symlinks and excessive transfer sizes are rejected;
-- transferred files receive integrity checksums.
+- `.kady`, `.pi` and the job control directory are reserved and never
+  transferred in either direction.
 
-Remote outputs are downloaded into a local temporary directory and validated
-before being installed atomically at their requested sandbox paths. Output
-patterns are bounded, and job details distinguish missing files from transfer,
-permission, size, and other I/O errors.
+Input bytes are hashed when the job starts (streamed, so a large input set does
+not stall the app), uploaded, and then re-hashed inside the sandbox; a mismatch
+fails the job with `INPUT_CHANGED` before the command runs. Outputs are hashed
+inside the sandbox before download and re-hashed after it (`CHECKSUM_MISMATCH`
+on a difference, `TRANSFER_TRUNCATED` on a short download). An image without
+`python3` cannot run these remote checks; ordinary jobs then fall back to size
+checks and record a `verify_skipped` event, while approved robustness jobs fail
+instead.
+
+Output discovery only looks where a pattern can match: a literal path is
+checked directly and a glob walks its literal prefix directory, so a virtual
+environment created in the workspace does not exhaust the discovery budget.
+Remote outputs are downloaded into a local temporary directory, verified, copied
+next to their targets and then renamed into place, so a failed download leaves
+the previous files untouched; a target that is an existing directory aborts the
+install before anything lands. The verified copy under the job's `staging/`
+directory is retained as the record of what the compute produced (evidence
+packages and robustness workflows read it). Output patterns are bounded, and job
+details distinguish missing files from transfer, permission, size, and other
+I/O errors.
 
 The local project remains canonical. Modal Volumes are used only for optional
 per-project dependency, model, and reference-data caches. Named environment
@@ -117,14 +153,17 @@ back to the complete retained job record.
 Before creating Modal resources, K-Dense reserves the job's worst-case estimate:
 
 ```
-estimated hourly rate × requested timeout
+estimated hourly rate × (requested timeout + transfer headroom)
 ```
 
-Admission is blocked when settled project spend plus open reservations plus the
-new reservation would exceed the hard project cap. On every terminal path—
-success, non-zero exit, failure, cancellation, timeout, or recovery loss—the
-reservation is settled to estimated elapsed spend and unused headroom is
-released.
+The transfer headroom is 10 % of the timeout, at least one minute and at most
+fifteen; it is the extra sandbox lifetime kept for staging inputs and collecting
+outputs, so a command that uses its whole timeout still gets its outputs back.
+The command itself is limited to exactly the requested timeout. Admission is
+blocked when settled project spend plus open reservations plus the new
+reservation would exceed the hard project cap. On every terminal path—success,
+non-zero exit, failure, cancellation, timeout, or recovery loss—the reservation
+is settled to estimated elapsed spend and unused headroom is released.
 
 The cost UI distinguishes:
 
@@ -143,6 +182,11 @@ Historical compute rows remain valid and require no migration.
   improvements.
 - Transfer checksums protect integrity but are not a complete scientific
   provenance system.
+- Provider errors are classified (`AUTH_FAILED`, `IMAGE_BUILD_FAILED`,
+  `TIMEOUT`, ...) with an honest retry flag; only resource availability moves a
+  job to the next instance in its fallback chain.
+- Finished jobs keep their records, bounded logs and the verified output copy
+  indefinitely; there is no automatic retention policy yet.
 
 ## Developer verification
 
