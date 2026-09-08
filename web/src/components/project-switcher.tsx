@@ -41,8 +41,11 @@ import {
   DEFAULT_PROJECT_ID,
   getProjectCompaction,
   getProjectGuardPolicy,
+  getProjectInstructionsStatus,
   putProjectCompaction,
   putProjectGuardPolicy,
+  restoreProjectInstructions,
+  type InstructionsStatus,
   type CompactionSettings,
   type GuardPolicy,
   type Project,
@@ -64,6 +67,8 @@ interface ProjectFormState {
   compaction: CompactionFormState | null;
   /** Raw-data guard policy (edit mode only; null until loaded). */
   guard: GuardFormState | null;
+  /** Sandbox AGENTS.md status (edit mode only; null until loaded). */
+  instructions: InstructionsStatus | null;
 }
 
 interface GuardFormState {
@@ -91,6 +96,7 @@ const EMPTY_FORM: ProjectFormState = {
   spendLimit: "",
   compaction: null,
   guard: null,
+  instructions: null,
 };
 
 /** Display a project ID in Title Case when we haven't loaded the project
@@ -155,9 +161,15 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
           : String(project.spendLimitUsd),
       compaction: null,
       guard: null,
+      instructions: null,
     });
     setFormError(null);
     setPopoverOpen(false);
+    void getProjectInstructionsStatus(project.id)
+      .then((status) => {
+        setForm((f) => (f.open && f.mode === "edit" && f.id === project.id ? { ...f, instructions: status } : f));
+      })
+      .catch(() => {});
     void getProjectGuardPolicy(project.id)
       .then((policy) => {
         setForm((f) =>
@@ -510,6 +522,28 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
                 the total reaches this cap; a warning shows at 80%.
               </p>
             </div>
+            {form.mode === "edit" && form.instructions && form.instructions !== "current" && (
+              <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-3" data-testid="instructions-outdated">
+                <p className="text-[11px] text-muted-foreground">
+                  {form.instructions === "missing"
+                    ? "This project has no AGENTS.md (the agent's sandbox instructions)."
+                    : "This project's AGENTS.md was edited, so newer guidance (raw-data guard, specialist questions) was not applied automatically."}
+                </p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 shrink-0 text-[11px]"
+                  onClick={() =>
+                    void restoreProjectInstructions(form.id!)
+                      .then((status) => setForm((f) => ({ ...f, instructions: status })))
+                      .catch((exc) => setFormError(exc instanceof Error ? exc.message : "Restore failed"))
+                  }
+                >
+                  Restore default instructions
+                </Button>
+              </div>
+            )}
             {form.mode === "edit" && form.guard && (
               <fieldset className="rounded-md border p-3" data-testid="guard-settings">
                 <legend className="px-1 text-xs font-medium text-muted-foreground">

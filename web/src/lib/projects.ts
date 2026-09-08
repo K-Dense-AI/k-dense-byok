@@ -339,3 +339,21 @@ export async function putProjectGuardPolicy(
   }
   return (await res.json()) as GuardPolicy;
 }
+
+// ---------------------------------------------------------------------------
+// Sandbox AGENTS.md (the agent's project instructions)
+// ---------------------------------------------------------------------------
+
+export type InstructionsStatus = "current" | "outdated" | "edited" | "missing";
+
+export async function getProjectInstructionsStatus(id: string): Promise<InstructionsStatus> {
+  const res = await apiFetch(`/projects/${encodeURIComponent(id)}/instructions`, {}, id);
+  if (!res.ok) throw new Error(`getProjectInstructionsStatus ${res.status}`);
+  return ((await res.json()) as { status: InstructionsStatus }).status;
+}
+
+export async function restoreProjectInstructions(id: string): Promise<InstructionsStatus> {
+  const res = await apiFetch(`/projects/${encodeURIComponent(id)}/instructions/restore`, { method: "POST" }, id);
+  if (!res.ok) throw new Error(`restoreProjectInstructions ${res.status}`);
+  return ((await res.json()) as { status: InstructionsStatus }).status;
+}

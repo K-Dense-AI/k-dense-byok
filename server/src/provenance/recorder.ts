@@ -68,7 +68,7 @@ import {
 /** Tools that cannot change the sandbox. Everything absent from this set is
  *  treated as potentially mutating and gets a scan — an unknown MCP tool is far
  *  likelier to write a file than to be worth skipping. */
-const READ_ONLY_TOOLS = new Set([
+export const READ_ONLY_TOOLS = new Set([
   "read",
   "grep",
   "find",
@@ -77,6 +77,9 @@ const READ_ONLY_TOOLS = new Set([
   "fetch_content",
   "get_search_content",
   "source_check",
+  // pi-subagents supervisor channel: replying to a child touches no files.
+  "subagent_supervisor",
+  "contact_supervisor",
   "interview",
   "notebook",
   "scientific_result",

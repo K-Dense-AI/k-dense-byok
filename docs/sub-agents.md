@@ -64,6 +64,22 @@ Open **Settings (gear icon) → Specialists**. From there you can:
 | **Replace base system prompt** | Off (recommended): your instructions are *added* to the standard agent behavior. On: your instructions completely replace it |
 | **System prompt** | The agent's full instructions - who it is, what standards it applies, and how it should report results |
 
+## When a specialist needs you
+
+Background specialists cannot show you a form themselves. When one hits a
+decision it cannot make (pi-subagents' `contact_supervisor`), the request
+arrives in the chat as a **Subagent needs a decision** card and Kady relays the
+question with its interview form, then passes your answer back. Answer
+promptly: the specialist is blocked while it waits, up to ten minutes. If the
+chat tab was closed, the server still adopts the request as a run; reopen the
+tab to see and answer it. Progress updates from specialists appear as cards
+too and need no answer.
+
+## Watchdog
+
+An optional reviewer model can watch each turn for scientific mistakes and
+push findings into the chat. See [watchdog](./watchdog.md).
+
 ## Where agents live
 
 Each agent is a plain markdown file in your project at `sandbox/.pi/agents/<name>.md`. The Settings panel is just a friendly editor for these files - you can also view and edit them directly in the file browser. Edits apply to new chat tabs.

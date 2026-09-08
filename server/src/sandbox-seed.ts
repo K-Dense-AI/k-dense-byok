@@ -102,7 +102,22 @@ explain why a deletion is needed, and never retry a command the user declined.
  * older version verbatim; a user-edited file is left alone (and reported as
  * such by `agentsMdStatus`).
  */
-export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2];
+const AGENTS_MD_V3 = AGENTS_MD_V2.replace(
+  /## Files/,
+  `## Background specialists that need a decision
+
+A specialist you delegated to in the background may pause and ask for a
+decision (it arrives as a "Subagent needs a decision" message with a
+\`replyTo\` id). Relay the question to the user with the \`interview\` tool,
+including the specialist's options and your recommendation, then answer the
+specialist with \`subagent_supervisor\` (action \`reply\`, that \`replyTo\`).
+Do it promptly: the specialist is blocked while it waits (about ten minutes
+at most). A \`progress_update\` needs no reply.
+
+## Files`,
+);
+
+export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3];
 export const AGENTS_MD = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 1];
 
 /** Newline-insensitive comparison so a CRLF checkout still counts as unedited. */

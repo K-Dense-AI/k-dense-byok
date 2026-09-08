@@ -76,3 +76,42 @@ export async function setAgentEnabled(name: string, enabled: boolean): Promise<v
     throw new Error(data?.detail || `setAgentEnabled ${res.status}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// pi-subagents watchdog (Settings → Specialists → Watchdog)
+// ---------------------------------------------------------------------------
+
+export type WatchdogSeverity = "concern" | "blocker";
+
+export interface WatchdogSettings {
+  enabled: boolean;
+  /** `provider/model`; empty = inherit the chat's model. */
+  model: string;
+  thinking: string;
+  cadenceEveryNTools: number | null;
+  severityThreshold: WatchdogSeverity;
+  children: boolean;
+  watchdogMd: boolean;
+  stalemateRepeats: number;
+  /** Always false today: pi-subagents does not report the watchdog model's usage. */
+  metered: boolean;
+}
+
+export async function getWatchdogSettings(): Promise<WatchdogSettings> {
+  const res = await apiFetch("/watchdog");
+  if (!res.ok) throw new Error(`getWatchdogSettings ${res.status}`);
+  return (await res.json()) as WatchdogSettings;
+}
+
+export async function saveWatchdogSettings(
+  patch: Partial<Omit<WatchdogSettings, "metered">>,
+): Promise<WatchdogSettings> {
+  const res = await apiFetch("/watchdog", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  const data = (await res.json().catch(() => null)) as (WatchdogSettings & { detail?: string }) | null;
+  if (!res.ok || !data) throw new Error(data?.detail || `saveWatchdogSettings ${res.status}`);
+  return data;
+}

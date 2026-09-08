@@ -23,17 +23,21 @@ import {
   PencilIcon,
   PlusIcon,
   RotateCcwIcon,
+  ShieldAlertIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useProjects } from "@/lib/use-projects";
 import {
   deleteAgent,
   getAgents,
+  getWatchdogSettings,
   restoreDefaultAgents,
   saveAgent,
+  saveWatchdogSettings,
   setAgentEnabled,
   THINKING_LEVELS,
   type AgentFile,
+  type WatchdogSettings,
 } from "@/lib/agents";
 
 interface AgentFormState {
@@ -78,6 +82,157 @@ function formFromAgent(agent: AgentFile, asCopy: boolean): AgentFormState {
     extra: agent.extra,
     systemPrompt: agent.systemPrompt,
   };
+}
+
+/**
+ * Settings card for pi-subagents' opt-in watchdog: a second model that
+ * reviews each turn's edits and steers findings into the chat.
+ */
+export function WatchdogCard({ projectId }: { projectId: string }) {
+  const [settings, setSettings] = useState<WatchdogSettings | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSettings(null);
+    getWatchdogSettings()
+      .then((s) => {
+        if (!cancelled) setSettings(s);
+      })
+      .catch((exc) => {
+        if (!cancelled) setError(exc instanceof Error ? exc.message : "Failed to load watchdog settings");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const update = useCallback(
+    async (patch: Partial<Omit<WatchdogSettings, "metered">>) => {
+      if (!settings) return;
+      const previous = settings;
+      setSettings({ ...settings, ...patch });
+      setSaving(true);
+      setError(null);
+      try {
+        setSettings(await saveWatchdogSettings(patch));
+      } catch (exc) {
+        setSettings(previous);
+        setError(exc instanceof Error ? exc.message : "Save failed");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [settings],
+  );
+
+  const [modelDraft, setModelDraft] = useState<string | null>(null);
+
+  return (
+    <section className="rounded-lg border p-3" aria-label="Watchdog" data-testid="watchdog-card">
+      <div className="flex items-center gap-2">
+        <ShieldAlertIcon className="size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-medium">Watchdog</div>
+          <p className="text-[11px] text-muted-foreground">
+            A second model reviews what the agent just did and steers findings into the chat: raw data
+            touched, silent row drops, unlogged parameter changes, claims without evidence. Applies to new chat tabs.
+          </p>
+        </div>
+        <Switch
+          aria-label="Enable watchdog"
+          checked={settings?.enabled ?? false}
+          disabled={!settings || saving}
+          onCheckedChange={(enabled) => void update({ enabled })}
+        />
+      </div>
+      <p className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-800 dark:text-amber-300">
+        Watchdog model calls are not metered by pi-subagents: they are not ledgered and do not count toward
+        the project spend cap. Prefer a subscription or local model.
+      </p>
+      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      {settings?.enabled && (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-[11px] text-muted-foreground">
+            Model (empty = the chat&apos;s model)
+            <Input
+              value={modelDraft ?? settings.model}
+              placeholder="provider/model, e.g. openrouter/openai/gpt-5.5"
+              className="mt-1 h-8 font-mono text-xs"
+              aria-label="Watchdog model"
+              onChange={(e) => setModelDraft(e.target.value)}
+              onBlur={() => {
+                if (modelDraft !== null && modelDraft.trim() !== settings.model) void update({ model: modelDraft.trim() });
+                setModelDraft(null);
+              }}
+            />
+          </label>
+          <label className="text-[11px] text-muted-foreground">
+            Thinking
+            <select
+              className="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs"
+              aria-label="Watchdog thinking level"
+              value={settings.thinking}
+              onChange={(e) => void update({ thinking: e.target.value })}
+            >
+              <option value="">inherit</option>
+              {THINKING_LEVELS.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-[11px] text-muted-foreground">
+            Also review mid-turn every N tool calls (empty = only at turn end)
+            <Input
+              type="number"
+              min={5}
+              max={500}
+              className="mt-1 h-8 text-xs"
+              aria-label="Watchdog cadence"
+              value={settings.cadenceEveryNTools ?? ""}
+              onChange={(e) => {
+                const raw = e.target.value.trim();
+                void update({ cadenceEveryNTools: raw === "" ? null : Number(raw) });
+              }}
+            />
+          </label>
+          <label className="text-[11px] text-muted-foreground">
+            Report
+            <select
+              className="mt-1 h-8 w-full rounded-md border bg-background px-2 text-xs"
+              aria-label="Watchdog severity threshold"
+              value={settings.severityThreshold}
+              onChange={(e) => void update({ severityThreshold: e.target.value as WatchdogSettings["severityThreshold"] })}
+            >
+              <option value="concern">concerns and blockers</option>
+              <option value="blocker">blockers only</option>
+            </select>
+          </label>
+          <label className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground sm:col-span-2">
+            Also review background specialists&apos; own turns
+            <Switch
+              aria-label="Watch specialists"
+              checked={settings.children}
+              disabled={saving}
+              onCheckedChange={(children) => void update({ children })}
+            />
+          </label>
+          <label className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground sm:col-span-2">
+            Read the project&apos;s <code>.pi/WATCHDOG.md</code> standing instructions
+            <Switch
+              aria-label="Use WATCHDOG.md"
+              checked={settings.watchdogMd}
+              disabled={saving}
+              onCheckedChange={(watchdogMd) => void update({ watchdogMd })}
+            />
+          </label>
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function SubagentsPanel() {
@@ -207,6 +362,7 @@ export function SubagentsPanel() {
 
   return (
     <div className="flex h-full flex-col gap-4 overflow-y-auto">
+      <WatchdogCard projectId={activeProjectId} />
       <div>
         <h3 className="text-sm font-medium">Sub-agents</h3>
         <p className="text-xs text-muted-foreground mt-1">

@@ -24,6 +24,15 @@ import {
   writeProjectAgent,
   type AgentFilePatch,
 } from "../agent/agent-files.ts";
+import {
+  readWatchdogSettings,
+  seedWatchdogGuidance,
+  validateWatchdogPatch,
+  writeWatchdogSettings,
+  type WatchdogPatch,
+} from "../agent/watchdog-settings.ts";
+import { resolveModel } from "../agent/models.ts";
+import { getModelRegistry } from "../agent/session-registry.ts";
 
 function patchFromBody(body: Record<string, unknown>): AgentFilePatch | string {
   const description = String(body.description ?? "").trim();
@@ -109,6 +118,46 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       return { detail: r.detail };
     }
     return { ok: true };
+  });
+
+  // pi-subagents watchdog (Settings → Specialists → Watchdog). Stored in
+  // sandbox/.pi/settings.json under subagents.watchdog; applies to new tabs.
+  app.get("/watchdog", async () => {
+    const paths = activePaths();
+    seedWatchdogGuidance(paths);
+    return { ...readWatchdogSettings(paths), metered: false };
+  });
+
+  app.put<{ Body: WatchdogPatch }>("/watchdog", async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const error = validateWatchdogPatch(body);
+    if (error) {
+      reply.code(400);
+      return { detail: error };
+    }
+    if (typeof body.model === "string" && body.model.trim()) {
+      try {
+        resolveModel(body.model.trim(), getModelRegistry());
+      } catch (err) {
+        reply.code(400);
+        return { detail: `Unknown watchdog model: ${(err as Error).message}` };
+      }
+    }
+    const patch: WatchdogPatch = {};
+    for (const key of ["enabled", "children", "watchdogMd"] as const) {
+      if (typeof body[key] === "boolean") patch[key] = body[key] as boolean;
+    }
+    if (typeof body.model === "string") patch.model = body.model.trim();
+    if (typeof body.thinking === "string") patch.thinking = body.thinking;
+    if ("cadenceEveryNTools" in body) patch.cadenceEveryNTools = body.cadenceEveryNTools as number | null;
+    if (body.severityThreshold === "concern" || body.severityThreshold === "blocker") patch.severityThreshold = body.severityThreshold;
+    if (typeof body.stalemateRepeats === "number") patch.stalemateRepeats = body.stalemateRepeats;
+    const written = writeWatchdogSettings(activePaths(), patch);
+    if (!written) {
+      reply.code(409);
+      return { detail: "sandbox/.pi/settings.json is not valid JSON; fix it before changing watchdog settings" };
+    }
+    return { ...written, metered: false };
   });
 
   app.post<{ Params: { name: string } }>("/agents/:name/disable", async (req, reply) => {

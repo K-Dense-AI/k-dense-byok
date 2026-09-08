@@ -40,7 +40,7 @@ import {
 
 /** Mirrors the recorder's classification; kept separate because the child's
  *  tool set can differ from the lead's (no interview, no in-process notebook). */
-const READ_ONLY_TOOLS = new Set([
+export const READ_ONLY_TOOLS = new Set([
   "read",
   "grep",
   "find",
@@ -49,6 +49,9 @@ const READ_ONLY_TOOLS = new Set([
   "fetch_content",
   "get_search_content",
   "source_check",
+  // pi-subagents supervisor channel: replying to a child touches no files.
+  "subagent_supervisor",
+  "contact_supervisor",
   "notebook",
   "scientific_result",
   "notebook_search",

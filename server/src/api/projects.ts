@@ -29,7 +29,7 @@ import {
   disposeProjectSessions,
   listSessions,
 } from "../agent/session-registry.ts";
-import { syncSandboxVenv } from "../sandbox-seed.ts";
+import { agentsMdStatus, restoreAgentsMd, syncSandboxVenv } from "../sandbox-seed.ts";
 import { listProjectActivities } from "../project-activity.ts";
 import { modalJobManager } from "../modal/manager.ts";
 import {
@@ -154,6 +154,25 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
     }
     const body = req.body as { protectedPaths?: string[]; destructiveConfirm?: boolean };
     return writeGuardPolicy(resolvePaths(req.params.projectId).sandbox, body);
+  });
+
+  // Sandbox AGENTS.md: is it the shipped text, an older version, or user-edited?
+  app.get<{ Params: { projectId: string } }>("/projects/:projectId/instructions", async (req, reply) => {
+    if (!getProject(req.params.projectId)) {
+      reply.code(404);
+      return { detail: "Project not found" };
+    }
+    return { status: agentsMdStatus(resolvePaths(req.params.projectId)) };
+  });
+
+  app.post<{ Params: { projectId: string } }>("/projects/:projectId/instructions/restore", async (req, reply) => {
+    if (!getProject(req.params.projectId)) {
+      reply.code(404);
+      return { detail: "Project not found" };
+    }
+    const paths = resolvePaths(req.params.projectId);
+    restoreAgentsMd(paths);
+    return { status: agentsMdStatus(paths) };
   });
 
   app.get<{ Params: { projectId: string } }>("/projects/:projectId/costs", async (req) => {

@@ -40,6 +40,7 @@ import { makeScientificCompactionExtension } from "./compaction-bridge.ts";
 import { makeDataGuardExtension } from "./data-guard.ts";
 import { seedGuardPackage } from "./guard-bridge.ts";
 import { seedPromptTemplates } from "./prompts.ts";
+import { seedWatchdogGuidance } from "./watchdog-settings.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
 import {
   seedNotebookPackage,
@@ -200,6 +201,8 @@ async function build(
   seedGuardPackage(paths);
   // Scientific prompt templates (`/qc <file>` …) live in sandbox/.pi/prompts.
   seedPromptTemplates(paths);
+  // Standing instructions for the (opt-in) pi-subagents watchdog reviewer.
+  seedWatchdogGuidance(paths);
   // Every child tool above arrives as an ambient package, which pi-subagents
   // ≥0.65 loads only into *background* children — so force background
   // launches; and keep the external-CLI builtins (Claude Code/Codex/Cursor)
@@ -278,6 +281,10 @@ async function build(
       "bg_wait",
       "subagent_wait",
       "interview",
+      // pi-subagents' parent side of the supervisor channel: reply to a
+      // background specialist that called `contact_supervisor` (the request
+      // arrives as a custom message and starts a system run; see AGENTS.md).
+      "subagent_supervisor",
       "notebook",
       "notebook_search",
       "scientific_result",
