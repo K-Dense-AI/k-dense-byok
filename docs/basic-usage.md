@@ -118,3 +118,10 @@ Disabling a skill, specialist, or connector is non-destructive; it takes effect 
 - **Work iteratively.** Ask for a first pass, look at the output, then refine — just like working with a colleague.
 - **Use projects to stay organized.** One project per paper or study keeps files and chat history together.
 - **Check the rough edges.** This is a beta — see [Known limitations](./limitations.md) for what to watch out for.
+
+### Settings dialog size
+
+The Settings dialog opens at about 1040×720 (smaller on small screens) and
+can be resized by dragging its bottom-right corner; arrow keys on the handle
+nudge it, double-click resets the default. The size is remembered per
+browser.

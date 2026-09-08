@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -47,6 +47,15 @@ import {
 import dynamic from "next/dynamic";
 
 import { notifyCapabilitiesChanged } from "@/lib/capability-events";
+import {
+  DEFAULT_SETTINGS_DIALOG_SIZE,
+  SETTINGS_DIALOG_SIZE_KEY,
+  clampDialogSize,
+  readStoredDialogSize,
+  resizeFromCorner,
+  writeStoredDialogSize,
+  type DialogSize,
+} from "@/lib/dialog-size";
 const panelLoading = () => <div className="p-4 text-xs text-muted-foreground" role="status">Loading settings…</div>;
 const SkillsPanel = dynamic(() => import("./skills-panel").then((m) => m.SkillsPanel), { loading: panelLoading });
 const PromptsPanel = dynamic(() => import("./prompts-panel").then((m) => m.PromptsPanel), { loading: panelLoading });
@@ -838,6 +847,100 @@ function AppearancePanel() {
   );
 }
 
+/**
+ * Persisted size for the Settings dialog plus a drag handle for its corner.
+ * The dialog is centered by Radix, so the handle grows the box on both sides.
+ */
+function useResizableDialog(open: boolean): {
+  size: DialogSize | null;
+  handleProps: {
+    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
+    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
+    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void;
+    onDoubleClick: () => void;
+    onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
+  };
+} {
+  const [size, setSize] = useState<DialogSize | null>(null);
+  // Latest committed size for event handlers: persisting from inside a state
+  // updater runs at flush time and can overwrite a reset that happened later.
+  const sizeRef = useRef<DialogSize | null>(null);
+  useEffect(() => {
+    sizeRef.current = size;
+  }, [size]);
+  const drag = useRef<{ pointerId: number; startX: number; startY: number; start: DialogSize } | null>(null);
+  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
+
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    let stored: DialogSize | null = null;
+    try {
+      stored = readStoredDialogSize(window.localStorage, SETTINGS_DIALOG_SIZE_KEY);
+    } catch {
+      stored = null;
+    }
+    setSize(clampDialogSize(stored ?? DEFAULT_SETTINGS_DIALOG_SIZE, viewport()));
+    const onResize = () => setSize((current) => (current ? clampDialogSize(current, viewport()) : current));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [open]);
+
+  const persist = (next: DialogSize) => {
+    try {
+      writeStoredDialogSize(window.localStorage, SETTINGS_DIALOG_SIZE_KEY, next);
+    } catch {
+      /* not remembered */
+    }
+  };
+
+  return {
+    size,
+    handleProps: {
+      onPointerDown: (event) => {
+        if (!size) return;
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        drag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, start: size };
+      },
+      onPointerMove: (event) => {
+        const state = drag.current;
+        if (!state || state.pointerId !== event.pointerId) return;
+        setSize(resizeFromCorner(state.start, event.clientX - state.startX, event.clientY - state.startY, viewport()));
+      },
+      onPointerUp: (event) => {
+        const state = drag.current;
+        if (!state || state.pointerId !== event.pointerId) return;
+        drag.current = null;
+        event.currentTarget.releasePointerCapture(event.pointerId);
+        if (sizeRef.current) persist(sizeRef.current);
+      },
+      onDoubleClick: () => {
+        drag.current = null;
+        const next = clampDialogSize(DEFAULT_SETTINGS_DIALOG_SIZE, viewport());
+        sizeRef.current = next;
+        setSize(next);
+        persist(next);
+      },
+      onKeyDown: (event) => {
+        if (!size) return;
+        const step = event.shiftKey ? 64 : 16;
+        const delta: Record<string, [number, number]> = {
+          ArrowRight: [step, 0],
+          ArrowLeft: [-step, 0],
+          ArrowDown: [0, step],
+          ArrowUp: [0, -step],
+        };
+        const move = delta[event.key];
+        if (!move) return;
+        event.preventDefault();
+        const next = clampDialogSize({ width: size.width + move[0], height: size.height + move[1] }, viewport());
+        setSize(next);
+        persist(next);
+      },
+    },
+  };
+}
+
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -854,12 +957,15 @@ export function SettingsDialog({
     },
     [onOpenChange],
   );
+  const { size, handleProps } = useResizableDialog(open);
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
-          "sm:max-w-2xl h-[min(560px,80dvh)] flex flex-col gap-0 p-0 overflow-hidden"
+          "flex flex-col gap-0 p-0 overflow-hidden sm:max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)]"
         )}
+        style={size ? { width: size.width, height: size.height } : undefined}
+        data-testid="settings-dialog"
       >
         <DialogHeader className="px-6 pt-6 pb-4 border-b">
           <DialogTitle>Settings</DialogTitle>
@@ -960,6 +1066,20 @@ export function SettingsDialog({
             <FusionPanel />
           </TabsContent>
         </Tabs>
+              <div
+          {...handleProps}
+          role="separator"
+          aria-label="Resize settings"
+          aria-orientation="horizontal"
+          tabIndex={0}
+          title="Drag to resize · double-click to reset"
+          className="absolute bottom-0 right-0 size-5 cursor-nwse-resize touch-none select-none rounded-br-lg text-muted-foreground/60 outline-none hover:text-foreground focus-visible:text-foreground"
+          data-testid="settings-resize-handle"
+        >
+          <svg viewBox="0 0 16 16" className="size-full p-1" aria-hidden="true">
+            <path d="M14 2 2 14M14 8l-6 6M14 13l-1 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          </svg>
+        </div>
       </DialogContent>
     </Dialog>
   );
