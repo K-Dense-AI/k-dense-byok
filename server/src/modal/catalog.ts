@@ -1,4 +1,4 @@
-import { ModalJobError, type ModalJobRequest } from "./types.ts";
+import { ModalJobError, type ModalImageRequest, type ModalJobRequest } from "./types.ts";
 
 export interface ModalInstanceSpec {
   id: string;
@@ -131,4 +131,52 @@ export function publicInstanceCatalog() {
     },
     legacy: spec.legacy ?? false,
   }));
+}
+
+const PACKAGE_TOKEN_RE = /^[A-Za-z0-9_.+@/:<>=!~,[\]-]+$/;
+const IMAGE_RE = /^[A-Za-z0-9._:@/+-]+$/;
+
+function checkedTokens(values: unknown, field: "pip" | "apt"): string[] {
+  if (values === undefined || values === null) return [];
+  if (!Array.isArray(values) || values.length > 200) {
+    throw new ModalJobError("INVALID_IMAGE", `image.${field} must be an array of at most 200 package tokens`);
+  }
+  return values.map((raw) => {
+    const value = typeof raw === "string" ? raw.trim() : "";
+    if (!value || value.length > 240 || !PACKAGE_TOKEN_RE.test(value)) {
+      throw new ModalJobError(
+        "INVALID_IMAGE",
+        `Unsafe or invalid ${field} package token: ${JSON.stringify(raw)}`,
+      );
+    }
+    return value;
+  });
+}
+
+export function checkedImageBase(value: unknown): string {
+  const base = typeof value === "string" ? value.trim() : "";
+  if (!base || base.length > 500 || !IMAGE_RE.test(base)) {
+    throw new ModalJobError("INVALID_IMAGE", "Invalid registry image name");
+  }
+  return base;
+}
+
+/**
+ * Validate and normalize a job's image request. Runs at submission, before any
+ * budget reservation or remote call, so a malformed image is a synchronous 400
+ * rather than a "retryable" failed job discovered inside the sandbox loop.
+ */
+export function validateImageRequest(raw: unknown): ModalImageRequest | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new ModalJobError("INVALID_IMAGE", "image must be an object with optional base, pip and apt fields");
+  }
+  const value = raw as Record<string, unknown>;
+  const image: ModalImageRequest = {};
+  if (value.base !== undefined && value.base !== null) image.base = checkedImageBase(value.base);
+  const pip = checkedTokens(value.pip, "pip");
+  const apt = checkedTokens(value.apt, "apt");
+  if (pip.length) image.pip = pip;
+  if (apt.length) image.apt = apt;
+  return Object.keys(image).length ? image : undefined;
 }

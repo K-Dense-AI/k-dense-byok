@@ -7,6 +7,8 @@ import {
   setModalCredentialValidatorForTests,
 } from "../src/api/credentials.ts";
 import { modalJobManager } from "../src/modal/manager.ts";
+import { listComputeReservations } from "../src/cost/ledger.ts";
+import { FakeModal } from "./helpers/fake-modal.ts";
 
 const originalId = process.env.MODAL_TOKEN_ID;
 const originalSecret = process.env.MODAL_TOKEN_SECRET;
@@ -20,6 +22,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  modalJobManager.setAdapterFactoryForTests(null);
   setModalCredentialValidatorForTests(null);
   setCredentialEnvPathForTests(null);
   if (originalId === undefined) delete process.env.MODAL_TOKEN_ID;
@@ -90,6 +93,32 @@ describe("Modal HTTP API and credentials", () => {
       if (process.platform !== "win32") {
         expect(fs.statSync(envFile).mode & 0o777).toBe(0o600);
       }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("rejects a malformed image at submission, before any budget reservation", async () => {
+    modalJobManager.setAdapterFactoryForTests(new FakeModal().factory);
+    const app = await buildApp();
+    try {
+      for (const image of [
+        { pip: "numpy; rm -rf /" },
+        { pip: ["numpy; rm -rf /"] },
+        { base: 42 },
+        "python:3.12",
+      ]) {
+        const response = await app.inject({
+          method: "POST",
+          url: "/modal/jobs",
+          payload: { command: "echo ready", image },
+        });
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toMatchObject({ error: "INVALID_IMAGE" });
+      }
+      expect(listComputeReservations("default")).toEqual([]);
+      const jobs = await app.inject({ method: "GET", url: "/modal/jobs" });
+      expect(jobs.json().jobs).toEqual([]);
     } finally {
       await app.close();
     }

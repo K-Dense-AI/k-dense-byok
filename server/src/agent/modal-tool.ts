@@ -138,7 +138,7 @@ export const ModalRunParams = Type.Object({
     Type.Integer({
       minimum: 1,
       maximum: MAX_MODAL_TIMEOUT_SEC,
-      description: `Hard sandbox lifetime (default ${DEFAULT_MODAL_TIMEOUT_SEC}s).`,
+      description: `Command timeout in seconds (default ${DEFAULT_MODAL_TIMEOUT_SEC}). The sandbox lives slightly longer for input/output transfer.`,
     }),
   ),
   label: Type.Optional(Type.String({ maxLength: 200 })),

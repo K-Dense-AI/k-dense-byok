@@ -19,6 +19,7 @@ import {
   resolveInstance,
   validateInstanceChain,
   worstCaseReservationUsd,
+  validateImageRequest,
 } from "./catalog.ts";
 import {
   sdkModalAdapterFactory,
@@ -63,6 +64,16 @@ const REMOTE_WRAPPER = `${REMOTE_CONTROL_DIR}/wrapper.py`;
 const REMOTE_LOG_CAP = 8 * 1024 * 1024;
 /** How long cancel() waits for the worker to reach a terminal, reconciled state. */
 const CANCEL_SETTLE_MS = 10_000;
+/** Error codes for which trying another instance in the fallback chain cannot help. */
+const NON_FALLBACK_ERROR_CODES = new Set([
+  "AUTH_FAILED",
+  "IMAGE_BUILD_FAILED",
+  "INVALID_REQUEST",
+  "INVALID_IMAGE",
+  "INVALID_ENVIRONMENT",
+  "NOT_CONFIGURED",
+  "PRICE_CHANGED",
+]);
 
 interface ActiveRuntime {
   promise: Promise<void>;
@@ -127,6 +138,7 @@ export function normalizeModalJobRequest(raw: ModalJobRequest): ModalJob["reques
   if (cache !== "project" && cache !== "none") {
     throw new ModalJobError("INVALID_CACHE", 'cache must be "project" or "none"');
   }
+  const image = validateImageRequest(raw.image);
   const request: ModalJob["request"] = {
     command,
     instance,
@@ -135,7 +147,7 @@ export function normalizeModalJobRequest(raw: ModalJobRequest): ModalJob["reques
     ...(gpuFallback.length ? { gpuFallback } : {}),
     ...(filesIn.length ? { filesIn } : {}),
     ...(filesOut.length ? { filesOut } : {}),
-    ...(raw.image ? { image: raw.image } : {}),
+    ...(image ? { image } : {}),
     ...(environment ? { environment } : {}),
     cache,
     ...(groupId ? { groupId } : {}),
@@ -257,10 +269,10 @@ export class DurableModalJobManager {
     return `${projectId}:${jobId}`;
   }
 
-  /** Test-only: drive the process-wide manager with a fake adapter. */
-  setAdapterFactoryForTests(factory: ModalAdapterFactory): void {
-    this.adapterFactory = factory;
-    this.requireCredentials = false;
+  /** Test-only: drive the process-wide manager with a fake adapter (`null` restores the SDK). */
+  setAdapterFactoryForTests(factory: ModalAdapterFactory | null): void {
+    this.adapterFactory = factory ?? sdkModalAdapterFactory;
+    this.requireCredentials = factory === null;
   }
 
   submit(projectId: string, raw: ModalJobRequest, owner: ModalJobOwner): ModalJob {
@@ -821,6 +833,11 @@ export class DurableModalJobManager {
             current.sandboxTerminatedAt = undefined;
           });
         }
+        // Only resource availability justifies trying the next instance. A
+        // rejected credential or a broken image fails identically everywhere,
+        // and cycling the chain would misreport it as "instance unavailable"
+        // (and, for an image, rebuild it once per fallback).
+        if (NON_FALLBACK_ERROR_CODES.has(errorInfo(error).code)) throw error;
         lastError = error;
         this.store.appendEvent(projectId, jobId, {
           type: "instance_fallback",

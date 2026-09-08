@@ -311,6 +311,28 @@ describe("Durable Modal manager accounting", () => {
     ).toBe(true);
   });
 
+  it("does not try other instances when the credentials themselves are rejected", async () => {
+    const fake = new FakeModal();
+    fake.createErrors.push(new ModalJobError("AUTH_FAILED", "UNAUTHENTICATED: token revoked", 401, false));
+    // A second error is queued so a wrongly-continued chain would consume it.
+    fake.createErrors.push(new Error("H200 capacity unavailable"));
+    const manager = new DurableModalJobManager(fake.factory);
+    const job = manager.submit(
+      "default",
+      { command: "work", instance: "h100", gpuFallback: ["h200"] },
+      { sessionId: "auth-session", submittedBy: "api" },
+    );
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.error).toMatchObject({ code: "AUTH_FAILED", retryable: false });
+    expect(fake.createErrors).toHaveLength(1);
+    expect(
+      manager.store.events("default", job.id).some((event) => event.type === "instance_fallback"),
+    ).toBe(false);
+    expect(terminal.accounting.reconciled).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+  });
+
   it("closes the create/abort window and accounts cancellation after sandbox creation", async () => {
     const fake = new FakeModal();
     fake.behaviors.push({ kind: "hang" });
@@ -576,6 +598,7 @@ describe("Durable Modal manager safety nets", () => {
     expect(Date.now() - started).toBeLessThan(500);
     expect(["queued", "preparing", "running"]).toContain((waited.details as { state: string }).state);
     await modalJobManager.cancel("default", jobId);
+    modalJobManager.setAdapterFactoryForTests(null);
   });
 
   it("re-attribution writes the parent ledger row before removing the child's", () => {

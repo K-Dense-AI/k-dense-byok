@@ -11,10 +11,9 @@ import { modalJobManager } from "../modal/manager.ts";
 import { ModalJobError, type ModalJobOwner, type ModalJobRequest } from "../modal/types.ts";
 
 function requestFromBody(body: Record<string, unknown>): ModalJobRequest {
-  const image =
-    body.image && typeof body.image === "object" && !Array.isArray(body.image)
-      ? (body.image as ModalJobRequest["image"])
-      : undefined;
+  // Passed through unchanged: `normalizeModalJobRequest` validates the shape
+  // and rejects a malformed image with 400 instead of silently dropping it.
+  const image = body.image as ModalJobRequest["image"];
   return {
     command: String(body.command ?? ""),
     instance: body.instance === undefined ? undefined : String(body.instance),
