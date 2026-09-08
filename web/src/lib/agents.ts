@@ -22,12 +22,53 @@ export interface AgentFile {
   systemPromptMode?: "append" | "replace";
   inheritProjectContext?: boolean;
   inheritSkills?: boolean;
+  /** pi-subagents per-agent persistent memory (`MEMORY.md` injected each run). */
+  memory?: AgentMemory;
   /** Frontmatter keys the UI doesn't model; preserved on save. */
   extra?: Record<string, string>;
   systemPrompt: string;
 }
 
+export interface AgentMemory {
+  scope: "project" | "user";
+  path: string;
+}
+
 export type AgentPatch = Omit<AgentFile, "name" | "source">;
+
+export interface AgentMemoryFile {
+  memory: AgentMemory;
+  exists: boolean;
+  content: string;
+  limits: { lines: number; bytes: number };
+}
+
+export async function getAgentMemory(name: string): Promise<AgentMemoryFile> {
+  const res = await apiFetch(`/agents/${encodeURIComponent(name)}/memory`);
+  const data = (await res.json().catch(() => null)) as (AgentMemoryFile & { detail?: string }) | null;
+  if (!res.ok || !data) throw new Error(data?.detail || `getAgentMemory ${res.status}`);
+  return data;
+}
+
+export async function saveAgentMemory(name: string, content: string): Promise<void> {
+  const res = await apiFetch(`/agents/${encodeURIComponent(name)}/memory`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `saveAgentMemory ${res.status}`);
+  }
+}
+
+export async function clearAgentMemory(name: string): Promise<void> {
+  const res = await apiFetch(`/agents/${encodeURIComponent(name)}/memory`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(data?.detail || `clearAgentMemory ${res.status}`);
+  }
+}
 
 export async function getAgents(): Promise<AgentFile[]> {
   const res = await apiFetch("/agents");

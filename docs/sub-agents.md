@@ -62,7 +62,21 @@ Open **Settings (gear icon) → Specialists**. From there you can:
 | **Inherit project context** | Whether the agent sees your project's `AGENTS.md` instructions |
 | **Inherit skills** | Whether the agent can use the project's scientific skills |
 | **Replace base system prompt** | Off (recommended): your instructions are *added* to the standard agent behavior. On: your instructions completely replace it |
+| **Persistent memory** | Off by default. On: the agent keeps a role-specific `MEMORY.md` (this project, or shared across projects) that is shown to it at the start of every run and that it may append dated notes to — dataset gotchas, verified commands, decisions. You can read and edit the file from the panel. Memory is *instructions the agent wrote for itself*, not evidence: check the notebook and provenance for what actually happened |
 | **System prompt** | The agent's full instructions - who it is, what standards it applies, and how it should report results |
+
+## Persistent memory
+
+Turn on **Persistent memory** for a specialist you use repeatedly (say the
+data validator or the reproducibility auditor). pi-subagents then injects the
+first 200 lines of its `MEMORY.md` into every run and tells the agent to append
+concise dated entries when it learns something reusable. Project scope keeps
+the file in `sandbox/.pi/agent-memory/<agent>/`; user scope shares it across
+projects. The **Memory** button on the agent row shows and edits the file.
+
+Memory is written by the model and read by the model; treat it like any other
+instruction text (it is a prompt-injection surface if an agent copies file
+content into it) and clear it when it goes stale. It never counts as evidence.
 
 ## When a specialist needs you
 

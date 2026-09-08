@@ -19,6 +19,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ProjectPaths } from "../projects.ts";
+import { KADY_PI_AGENT_DIR } from "../config.ts";
 import { SUBAGENT_TYPES } from "./subagents.ts";
 import { readPiSettings, writePiSettings, type ToggleResult } from "./capability-state.ts";
 
@@ -57,13 +58,53 @@ export interface AgentFile {
   systemPromptMode?: "append" | "replace";
   inheritProjectContext?: boolean;
   inheritSkills?: boolean;
+  /**
+   * pi-subagents per-agent persistent memory: `<project>/.pi/agent-memory/<path>/MEMORY.md`
+   * (scope project) or `~/.kady/pi-agent/agent-memory/<path>/MEMORY.md` (scope user),
+   * injected into the child's system prompt and appendable by agents with write tools.
+   */
+  memory?: AgentMemory;
   /** Frontmatter keys we don't model, preserved verbatim on round-trip. */
   extra?: Record<string, string>;
   systemPrompt: string;
 }
 
+export interface AgentMemory {
+  scope: "project" | "user";
+  /** Directory name under agent-memory/; usually the agent name. */
+  path: string;
+}
+
 /** Editable fields accepted from the API (everything but name/source). */
 export type AgentFilePatch = Omit<AgentFile, "name" | "source">;
+
+export const MEMORY_PATH_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/**
+ * pi-subagents accepts `memory` as a block or inline; our flat parser sees the
+ * inline form (`memory: { scope: project, path: x }`) as one value, which is
+ * therefore the only form Kady writes.
+ */
+export function parseAgentMemory(value: string | undefined): AgentMemory | undefined {
+  if (!value) return undefined;
+  const scope = /scope\s*:\s*["']?(project|user)["']?/.exec(value)?.[1];
+  const memoryPath = /path\s*:\s*["']?([^,}"'\s]+)["']?/.exec(value)?.[1];
+  if ((scope !== "project" && scope !== "user") || !memoryPath || !MEMORY_PATH_RE.test(memoryPath)) return undefined;
+  return { scope, path: memoryPath };
+}
+
+export function serializeAgentMemory(memory: AgentMemory): string {
+  return `{ scope: ${memory.scope}, path: ${memory.path} }`;
+}
+
+/** Absolute MEMORY.md path for an agent's memory scope. */
+export function agentMemoryFile(paths: ProjectPaths, memory: AgentMemory): string {
+  const root =
+    memory.scope === "user"
+      ? path.join(KADY_PI_AGENT_DIR, "agent-memory")
+      : path.join(paths.sandbox, ".pi", "agent-memory");
+  return path.join(root, memory.path, "MEMORY.md");
+}
 
 function agentsDir(paths: ProjectPaths): string {
   return path.join(paths.sandbox, ".pi", "agents");
@@ -163,6 +204,7 @@ const KNOWN_KEYS = new Set([
   "systemPromptMode",
   "inheritProjectContext",
   "inheritSkills",
+  "memory",
 ]);
 
 function unquote(value: string): string {
@@ -215,6 +257,7 @@ export function parseAgentMarkdown(
     systemPromptMode: mode === "append" || mode === "replace" ? mode : undefined,
     inheritProjectContext: bool(fm.inheritProjectContext),
     inheritSkills: bool(fm.inheritSkills),
+    memory: parseAgentMemory(fm.memory),
     extra: Object.keys(extra).length > 0 ? extra : undefined,
     systemPrompt: body.trim(),
   };
@@ -235,6 +278,7 @@ export function serializeAgentMarkdown(agent: Omit<AgentFile, "source">): string
     lines.push(`inheritProjectContext: ${agent.inheritProjectContext}`);
   }
   if (agent.inheritSkills !== undefined) lines.push(`inheritSkills: ${agent.inheritSkills}`);
+  if (agent.memory) lines.push(`memory: ${serializeAgentMemory(agent.memory)}`);
   for (const [k, v] of Object.entries(agent.extra ?? {})) lines.push(`${k}: ${v}`);
   lines.push("---", "", agent.systemPrompt.trim(), "");
   return lines.join("\n");
@@ -438,8 +482,17 @@ export function restoreDefaultAgents(paths: ProjectPaths): string[] {
   fs.mkdirSync(dir, { recursive: true });
   for (const type of SUBAGENT_TYPES) {
     const disabledCopy = path.join(agentsDisabledDir(paths), `${type.name}.md`);
+    const enabledCopy = path.join(dir, `${type.name}.md`);
+    // Persistent memory is the user's choice, not part of the shipped prompt:
+    // carry it over when the roster text is rewritten.
+    const existing =
+      readAgentFile(enabledCopy, "project") ??
+      (fs.existsSync(disabledCopy) ? readAgentFile(disabledCopy, "project") : null);
     if (fs.existsSync(disabledCopy)) fs.rmSync(disabledCopy);
-    fs.writeFileSync(path.join(dir, `${type.name}.md`), rosterMarkdown(type), "utf-8");
+    const markdown = existing?.memory
+      ? serializeAgentMarkdown({ ...parseAgentMarkdown(rosterMarkdown(type), type.name, "project"), memory: existing.memory })
+      : rosterMarkdown(type);
+    fs.writeFileSync(enabledCopy, markdown, "utf-8");
   }
   fs.writeFileSync(seedMarkerPath(paths), new Date().toISOString() + "\n", "utf-8");
   return SUBAGENT_TYPES.map((t) => t.name);

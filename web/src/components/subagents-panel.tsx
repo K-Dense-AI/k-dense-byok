@@ -19,6 +19,7 @@ import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import {
   BotIcon,
+  BrainIcon,
   LockIcon,
   PencilIcon,
   PlusIcon,
@@ -28,15 +29,19 @@ import {
 } from "lucide-react";
 import { useProjects } from "@/lib/use-projects";
 import {
+  clearAgentMemory,
   deleteAgent,
+  getAgentMemory,
   getAgents,
   getWatchdogSettings,
   restoreDefaultAgents,
   saveAgent,
+  saveAgentMemory,
   saveWatchdogSettings,
   setAgentEnabled,
   THINKING_LEVELS,
   type AgentFile,
+  type AgentMemoryFile,
   type WatchdogSettings,
 } from "@/lib/agents";
 
@@ -51,6 +56,8 @@ interface AgentFormState {
   systemPromptMode: "append" | "replace";
   inheritProjectContext: boolean;
   inheritSkills: boolean;
+  memoryEnabled: boolean;
+  memoryScope: "project" | "user";
   extra?: Record<string, string>;
   systemPrompt: string;
 }
@@ -65,6 +72,8 @@ const EMPTY_FORM: AgentFormState = {
   systemPromptMode: "append",
   inheritProjectContext: true,
   inheritSkills: true,
+  memoryEnabled: false,
+  memoryScope: "project",
   systemPrompt: "",
 };
 
@@ -79,6 +88,8 @@ function formFromAgent(agent: AgentFile, asCopy: boolean): AgentFormState {
     systemPromptMode: agent.systemPromptMode ?? "append",
     inheritProjectContext: agent.inheritProjectContext ?? true,
     inheritSkills: agent.inheritSkills ?? true,
+    memoryEnabled: Boolean(agent.memory),
+    memoryScope: agent.memory?.scope ?? "project",
     extra: agent.extra,
     systemPrompt: agent.systemPrompt,
   };
@@ -310,6 +321,7 @@ export function SubagentsPanel() {
         systemPromptMode: form.systemPromptMode,
         inheritProjectContext: form.inheritProjectContext,
         inheritSkills: form.inheritSkills,
+        memory: form.memoryEnabled ? { scope: form.memoryScope, path: name } : undefined,
         extra: form.extra,
         systemPrompt: form.systemPrompt,
       });
@@ -356,6 +368,48 @@ export function SubagentsPanel() {
       setSaving(false);
     }
   }, [refresh]);
+
+  const [memoryOpen, setMemoryOpen] = useState<{ name: string; file: AgentMemoryFile | null; draft: string } | null>(null);
+  const openMemory = useCallback(async (agent: AgentFile) => {
+    if (memoryOpen?.name === agent.name) {
+      setMemoryOpen(null);
+      return;
+    }
+    setMemoryOpen({ name: agent.name, file: null, draft: "" });
+    try {
+      const file = await getAgentMemory(agent.name);
+      setMemoryOpen({ name: agent.name, file, draft: file.content });
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Failed to load memory");
+      setMemoryOpen(null);
+    }
+  }, [memoryOpen]);
+  const saveMemory = useCallback(async () => {
+    if (!memoryOpen) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await saveAgentMemory(memoryOpen.name, memoryOpen.draft);
+      setMemoryOpen({ ...memoryOpen, file: memoryOpen.file ? { ...memoryOpen.file, exists: true, content: memoryOpen.draft } : null });
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, [memoryOpen]);
+  const clearMemory = useCallback(async () => {
+    if (!memoryOpen) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await clearAgentMemory(memoryOpen.name);
+      setMemoryOpen({ ...memoryOpen, draft: "", file: memoryOpen.file ? { ...memoryOpen.file, exists: false, content: "" } : null });
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Clear failed");
+    } finally {
+      setSaving(false);
+    }
+  }, [memoryOpen]);
 
   const project = agents.filter((a) => a.source === "project");
   const builtins = agents.filter((a) => a.source === "builtin");
@@ -482,6 +536,35 @@ export function SubagentsPanel() {
             </label>
           </div>
 
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-md border p-2.5">
+            <label className="flex items-center gap-2 text-xs">
+              <Switch
+                aria-label="Persistent memory"
+                checked={form.memoryEnabled}
+                onCheckedChange={(v) => setForm({ ...form, memoryEnabled: v })}
+              />
+              Persistent memory
+            </label>
+            {form.memoryEnabled && (
+              <label className="flex items-center gap-2 text-xs">
+                Scope
+                <select
+                  className="h-7 rounded-md border bg-background px-2 text-xs"
+                  aria-label="Memory scope"
+                  value={form.memoryScope}
+                  onChange={(e) => setForm({ ...form, memoryScope: e.target.value as "project" | "user" })}
+                >
+                  <option value="project">this project</option>
+                  <option value="user">all projects</option>
+                </select>
+              </label>
+            )}
+            <p className="w-full text-[11px] text-muted-foreground">
+              A role-specific MEMORY.md the agent reads at the start of every run and may append dated
+              notes to. Self-written by the model — instructions, not evidence.
+            </p>
+          </div>
+
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-medium">System prompt</label>
             <Textarea
@@ -528,6 +611,18 @@ export function SubagentsPanel() {
                     {agent.model}
                   </Badge>
                 )}
+                {agent.memory && (
+                  <Button
+                    variant={memoryOpen?.name === agent.name ? "secondary" : "ghost"}
+                    size="sm"
+                    className="h-7 gap-1 text-[11px]"
+                    aria-label={`Memory of ${agent.name}`}
+                    onClick={() => void openMemory(agent)}
+                  >
+                    <BrainIcon className="size-3.5" />
+                    Memory
+                  </Button>
+                )}
                 <Switch
                   aria-label={`Toggle ${agent.name}`}
                   checked={agent.enabled !== false}
@@ -561,6 +656,50 @@ export function SubagentsPanel() {
               </div>
             )}
           </div>
+
+          {memoryOpen && (
+            <div className="flex flex-col gap-2 rounded-lg border p-3" data-testid="agent-memory-pane">
+              <div className="flex items-center gap-2 text-xs font-medium">
+                <BrainIcon className="size-3.5 text-muted-foreground" />
+                Memory of {memoryOpen.name}
+                {memoryOpen.file && (
+                  <span className="font-normal text-muted-foreground">
+                    · {memoryOpen.file.memory.scope === "user" ? "all projects" : "this project"} · first{" "}
+                    {memoryOpen.file.limits.lines} lines are injected
+                  </span>
+                )}
+              </div>
+              {!memoryOpen.file ? (
+                <p className="text-[11px] text-muted-foreground">Loading…</p>
+              ) : (
+                <>
+                  {!memoryOpen.file.exists && !memoryOpen.draft && (
+                    <p className="text-[11px] text-muted-foreground">
+                      Nothing written yet. The agent creates this file on its first run; you can also seed it here.
+                    </p>
+                  )}
+                  <Textarea
+                    value={memoryOpen.draft}
+                    spellCheck={false}
+                    className="min-h-40 font-mono text-[11px]"
+                    aria-label={`MEMORY.md for ${memoryOpen.name}`}
+                    onChange={(e) => setMemoryOpen({ ...memoryOpen, draft: e.target.value })}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" className="h-7 text-xs" disabled={saving} onClick={() => void saveMemory()}>
+                      Save memory
+                    </Button>
+                    <Button size="sm" variant="ghost" className="h-7 text-xs text-destructive" disabled={saving} onClick={() => void clearMemory()}>
+                      Clear
+                    </Button>
+                    <Button size="sm" variant="ghost" className="ml-auto h-7 text-xs" onClick={() => setMemoryOpen(null)}>
+                      Close
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <Button
