@@ -39,6 +39,7 @@ import {
   installStagedSkills,
   previewSkillSource,
   removeSkill,
+  setSkillModelInvocation,
   SkillOperationFailure,
   updateSkillFromSource,
   writeSkillSource,
@@ -63,7 +64,7 @@ function replyWithFailure(reply: { code: (n: number) => unknown }, err: unknown)
 
 export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
   const toInfo = (
-    skill: { name: string; description: string },
+    skill: { name: string; description: string; disableModelInvocation?: boolean },
     root: SkillRoot,
     origins: Record<string, string>,
   ) => {
@@ -72,6 +73,9 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
       id: skill.name,
       name: skill.name,
       description: skill.description,
+      // Pi's `disable-model-invocation`: hidden from the model's skills index,
+      // runnable only through `/skill:<name>` in the composer.
+      disableModelInvocation: skill.disableModelInvocation === true,
       origin: origins[skill.name] ?? "catalogue",
       ...(provenance?.source ? { source: provenance.source } : {}),
       ...(provenance?.ref ? { ref: provenance.ref } : {}),
@@ -189,6 +193,23 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
       return replyWithFailure(reply, err);
     }
   });
+
+  // `enabled: false` → user-invoked only (adds `disable-model-invocation: true`).
+  app.post<{ Params: { name: string }; Querystring: ScopeQuery; Body: { enabled?: unknown } }>(
+    "/skills/:name/model-invocation",
+    async (req, reply) => {
+      if (typeof req.body?.enabled !== "boolean") {
+        reply.code(400);
+        return { detail: "enabled must be a boolean" };
+      }
+      const root = skillRootForScope(activePaths(), req.query.scope);
+      try {
+        return setSkillModelInvocation(root, req.params.name, req.body.enabled);
+      } catch (err) {
+        return replyWithFailure(reply, err);
+      }
+    },
+  );
 
   app.post<{ Params: { name: string }; Querystring: ScopeQuery }>(
     "/skills/:name/enable",

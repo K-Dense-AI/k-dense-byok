@@ -8,6 +8,8 @@ export interface Skill {
   id: string;
   name: string;
   description: string;
+  /** User-invoked only: absent from the model's skills index, runs via `/skill:<name>`. */
+  disableModelInvocation?: boolean;
   // Optional: the backend's /skills response only includes id/name/description.
   author?: string;
   license?: string;

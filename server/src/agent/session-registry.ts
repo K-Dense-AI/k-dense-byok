@@ -39,6 +39,7 @@ import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { makeScientificCompactionExtension } from "./compaction-bridge.ts";
 import { makeDataGuardExtension } from "./data-guard.ts";
 import { seedGuardPackage } from "./guard-bridge.ts";
+import { seedPromptTemplates } from "./prompts.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
 import {
   seedNotebookPackage,
@@ -197,6 +198,8 @@ async function build(
   seedBuiltinAgentPdfAnnotationTools(paths);
   // Raw-data guard for background specialists (the lead runs data-guard.ts).
   seedGuardPackage(paths);
+  // Scientific prompt templates (`/qc <file>` …) live in sandbox/.pi/prompts.
+  seedPromptTemplates(paths);
   // Every child tool above arrives as an ambient package, which pi-subagents
   // ≥0.65 loads only into *background* children — so force background
   // launches; and keep the external-CLI builtins (Claude Code/Codex/Cursor)

@@ -389,6 +389,41 @@ export function writeSkillSource(
   }
 }
 
+/**
+ * Toggle Pi's `disable-model-invocation` frontmatter flag. `modelInvocable:
+ * false` marks the skill user-invoked only: Pi drops it from the model-facing
+ * skills index and it runs only through `/skill:<name>` in the composer. The
+ * edit is line-level inside the frontmatter block so every other key (and the
+ * body) is preserved byte-for-byte. Returns the resulting flag value.
+ */
+export function setSkillModelInvocation(
+  ref: SkillScopeRef,
+  name: string,
+  modelInvocable: boolean,
+): { disableModelInvocation: boolean } {
+  const root = asSkillRoot(ref);
+  const dir = findSkillDir(root, name);
+  if (!dir) fail(404, `No such skill: "${name}"`);
+  const file = path.join(dir, "SKILL.md");
+  const content = fs.readFileSync(file, "utf-8");
+  const match = content.match(/^(---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/);
+  if (!match) fail(400, "SKILL.md has no frontmatter block to edit");
+  const [whole, open, block, close] = match;
+  const eol = block.includes("\r\n") ? "\r\n" : "\n";
+  const lines = block.split(/\r?\n/).filter((line) => !/^disable-model-invocation\s*:/.test(line));
+  if (!modelInvocable) lines.push("disable-model-invocation: true");
+  const next = `${open}${lines.join(eol)}${close}${content.slice(whole.length)}`;
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, next, "utf-8");
+    fs.renameSync(tmp, file);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+  return { disableModelInvocation: !modelInvocable };
+}
+
 // --- removal --------------------------------------------------------------
 
 export interface RemoveResult {

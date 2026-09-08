@@ -5,6 +5,7 @@
  */
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
+import path from "node:path";
 
 const fakeSessions = new Map<string, FakeSession>();
 
@@ -610,5 +611,44 @@ describe("POST /sessions/:id/follow-up", () => {
     fakeSessions.set("s1", s);
     const res = await app.inject({ method: "POST", url: "/sessions/s1/abort", headers: { "x-project-id": "default" } });
     expect(res.json()).toEqual({ ok: true, restored: ["steer me", "then this"] });
+  });
+});
+
+describe("slash-command expansion on the way into Pi", () => {
+  it("expands /template on /run and disables Pi's own expansion; unknown commands pass through", async () => {
+    const paths = resolvePaths("default");
+    fs.mkdirSync(path.join(paths.sandbox, ".pi", "prompts"), { recursive: true });
+    fs.writeFileSync(path.join(paths.sandbox, ".pi", "prompts", "qc.md"), "---\ndescription: QC\n---\nRun QC on $1.\n");
+    const s = new FakeSession();
+    s.isStreaming = false;
+    fakeSessions.set("s1", s);
+    let res = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/run",
+      headers: { "x-project-id": "default", "content-type": "application/json" },
+      payload: { message: "/qc user_data/a.csv\n/ref.md" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(s.promptCalls[0]).toEqual({
+      text: '<prompt-template name="qc">\nRun QC on user_data/a.csv.\n</prompt-template>\n\n/ref.md',
+      options: { expandPromptTemplates: false },
+    });
+    expect(runBroker.state("default", "s1").run?.prompt).toContain('<prompt-template name="qc">');
+
+    s.isStreaming = false;
+    res = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/run",
+      headers: { "x-project-id": "default", "content-type": "application/json" },
+      payload: { message: "/nothing-here please" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(s.promptCalls[1]).toEqual({ text: "/nothing-here please", options: { expandPromptTemplates: false } });
+
+    // Steering expands too.
+    s.isStreaming = true;
+    res = await steer("s1", { message: "/qc b.csv" });
+    expect(res.statusCode).toBe(200);
+    expect(s.steered.at(-1)).toBe('<prompt-template name="qc">\nRun QC on b.csv.\n</prompt-template>');
   });
 });

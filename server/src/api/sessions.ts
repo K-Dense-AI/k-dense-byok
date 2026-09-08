@@ -36,6 +36,9 @@ import {
   resolveModel,
 } from "../agent/models.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
+import { expandLeadingCommand } from "../agent/prompt-expansion.ts";
+import { expandableTemplates } from "../agent/prompts.ts";
+import { globalSkillRoot, listProjectSkills, projectSkillRoot } from "../agent/skills.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { withNotebookArtifactHealth } from "../agent/notebook-artifacts.ts";
 import { withNotebookPlanHistory } from "../agent/notebook-research.ts";
@@ -96,6 +99,23 @@ interface RunBody {
   computeOptions?: SessionComputeOptions;
   /** Inline image attachments (base64 + mime type); ride the user message as image blocks. */
   images?: unknown;
+}
+
+/**
+ * Expand a leading `/skill:name args` or `/template args` from disk (project
+ * entries win), so a just-installed skill or just-edited template works
+ * without a session reload. Returns the text unchanged when it is not a command.
+ */
+function expandChatCommand(paths: ReturnType<typeof activePaths>, text: string): string {
+  if (!text.startsWith("/")) return text;
+  const skills = new Map<string, { name: string; filePath: string; baseDir: string }>();
+  for (const root of [globalSkillRoot(), projectSkillRoot(paths)]) {
+    for (const skill of listProjectSkills(root)) skills.set(skill.name, skill);
+  }
+  return expandLeadingCommand(text, {
+    skills: [...skills.values()],
+    templates: expandableTemplates(paths),
+  }).text;
 }
 
 /** Attach one HTTP response to a broker-owned run. Closing the response only
@@ -499,7 +519,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           reason: "budget",
         };
       }
-      await session.steer(message);
+      await session.steer(expandChatCommand(activePaths(), message));
       // The run can end between the guard and the queue write; a steer left
       // behind would silently deliver into the NEXT run, so pull it back out.
       if (!session.isStreaming) {
@@ -619,7 +639,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         };
       }
       await session.followUp(
-        message,
+        expandChatCommand(activePaths(), message),
         parsedImages.images.length > 0 ? parsedImages.images : undefined,
       );
       if (!session.isStreaming) {
@@ -665,7 +685,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(400);
         return { detail: "message is required" };
       }
-      const prompt = body.message;
+      // Kady expands slash commands itself (see expandChatCommand) and tells Pi
+      // not to, so composer-appended context never becomes `$ARGUMENTS`.
+      const prompt = expandChatCommand(paths, body.message);
       const parsedImages = parseRunImages(body.images);
       if ("error" in parsedImages) {
         reply.code(400);
@@ -818,10 +840,10 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           budgetPolicy: "refuse",
           log: req.log,
           run: () =>
-            session.prompt(
-              prompt,
-              parsedImages.images.length > 0 ? { images: parsedImages.images } : undefined,
-            ),
+            session.prompt(prompt, {
+              expandPromptTemplates: false,
+              ...(parsedImages.images.length > 0 ? { images: parsedImages.images } : {}),
+            }),
         });
 
         // POST /run remains an SSE endpoint, now subscribed to the same replay

@@ -33,6 +33,7 @@ import {
   ExternalLinkIcon,
   CloudIcon,
   ChevronRightIcon,
+  SlashIcon,
 } from "lucide-react";
 import { apiFetch } from "@/lib/projects";
 import { notifyModalCredentialsChanged } from "@/lib/modal-jobs";
@@ -46,6 +47,7 @@ import {
 import dynamic from "next/dynamic";
 const panelLoading = () => <div className="p-4 text-xs text-muted-foreground" role="status">Loading settings…</div>;
 const SkillsPanel = dynamic(() => import("./skills-panel").then((m) => m.SkillsPanel), { loading: panelLoading });
+const PromptsPanel = dynamic(() => import("./prompts-panel").then((m) => m.PromptsPanel), { loading: panelLoading });
 const SubagentsPanel = dynamic(() => import("./subagents-panel").then((m) => m.SubagentsPanel), { loading: panelLoading });
 const ConnectorsPanel = dynamic(() => import("./connectors-panel").then((m) => m.ConnectorsPanel), { loading: panelLoading });
 const ProviderAuthPanel = dynamic(() => import("./provider-auth-panel").then((m) => m.ProviderAuthPanel), { loading: panelLoading });
@@ -886,6 +888,13 @@ export function SettingsDialog({
               Skills
             </TabsTrigger>
             <TabsTrigger
+              value="prompts"
+              className="justify-start gap-2 px-3 text-xs w-full"
+            >
+              <SlashIcon className="size-3.5" />
+              Prompt templates
+            </TabsTrigger>
+            <TabsTrigger
               value="specialists"
               className="justify-start gap-2 px-3 text-xs w-full"
             >
@@ -923,6 +932,9 @@ export function SettingsDialog({
           </TabsContent>
           <TabsContent value="skills" className="flex-1 min-h-0 p-5 overflow-y-auto">
             <SkillsPanel />
+          </TabsContent>
+          <TabsContent value="prompts" className="flex-1 min-h-0 p-5 overflow-y-auto">
+            <PromptsPanel />
           </TabsContent>
           <TabsContent value="specialists" className="flex-1 min-h-0 p-5 overflow-y-auto">
             <SubagentsPanel />

@@ -25,6 +25,7 @@ import {
   removeSkill,
   saveSkillSource,
   setSkillEnabled,
+  setSkillModelInvocation,
   syncSkills,
   updateSkillFromUpstream,
   type PreviewedSkill,
@@ -49,6 +50,7 @@ import {
   RefreshCwIcon,
   Trash2Icon,
   DownloadIcon,
+  SlashIcon,
 } from "lucide-react";
 
 interface Row extends SkillInfo {
@@ -780,6 +782,11 @@ export function SkillsPanel() {
                           : "Also installed for all projects"}
                       </Badge>
                     )}
+                    {r.disableModelInvocation && (
+                      <Badge variant="outline" className="h-5 text-[10px]" title="Hidden from the model's skills index; runs only via /skill:name">
+                        User-invoked only
+                      </Badge>
+                    )}
                   </div>
                   <div className="truncate text-[11px] text-muted-foreground">
                     {r.description}
@@ -849,6 +856,33 @@ export function SkillsPanel() {
                   ) : (
                     <Trash2Icon className="size-3.5" />
                   )}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={r.disableModelInvocation ? "secondary" : "ghost"}
+                  className="h-7 w-7 p-0"
+                  aria-label={
+                    r.disableModelInvocation
+                      ? `Let the model invoke ${r.name}`
+                      : `Make ${r.name} user-invoked only`
+                  }
+                  title={
+                    r.disableModelInvocation
+                      ? "User-invoked only (/skill:name). Click to let the model activate it."
+                      : "Click to hide from the model; run it yourself with /skill:name."
+                  }
+                  disabled={rowBusy}
+                  onClick={() =>
+                    void run(`invoke:${r.name}`, async () => {
+                      const next = await setSkillModelInvocation(r.name, Boolean(r.disableModelInvocation), scope);
+                      return next.disableModelInvocation
+                        ? `${r.name} now runs only when you type /skill:${r.name}.`
+                        : `${r.name} can be activated by the model again.`;
+                    })
+                  }
+                >
+                  <SlashIcon className="size-3.5" />
                 </Button>
                 <Switch
                   aria-label={`Toggle ${r.name}`}

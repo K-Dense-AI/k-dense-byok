@@ -54,6 +54,9 @@ import {
 import { InterviewCard } from "@/components/interview-form";
 import { SystemCard } from "@/components/system-card";
 import { PermissionCard } from "@/components/permission-card";
+import { CommandBlockChip } from "@/components/command-block-chip";
+import { parseCommandBlock, slashMenuItems, type SlashMenuItem } from "@/lib/command-blocks";
+import { usePromptTemplates } from "@/lib/use-prompts";
 import { KadyFileIcon } from "@/components/file-icon";
 import { ScientificResultCard } from "@/components/scientific-result-card";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
@@ -758,19 +761,25 @@ function ChatInput({
     };
   }, [composerRestoreRef]);
 
+  // User-invoked-only skills never activate on their own, so they are not
+  // offered as pinned context; the slash menu is their entry point.
+  const modelInvocableSkills = useMemo(
+    () => allSkills.filter((s) => !s.disableModelInvocation),
+    [allSkills],
+  );
   const handleFilesUpload = useCallback(async (files: FileList | File[], paths?: string[]) => {
     const uploaded = await onUploadFiles(files, paths);
     for (const p of uploaded) onAddFile(p);
     // Surface skills that match the uploaded data formats (e.g. .h5ad → anndata)
     // by auto-attaching them; they appear as removable chips, so it's a
     // suggestion the user can undo, not a hidden side-effect.
-    const suggested = suggestSkillsForFiles(uploaded, allSkills);
+    const suggested = suggestSkillsForFiles(uploaded, modelInvocableSkills);
     if (suggested.length > 0) {
       const existing = new Set(selectedSkills.map((s) => s.id));
       const additions = suggested.filter((s) => !existing.has(s.id));
       if (additions.length > 0) onSkillsChange([...selectedSkills, ...additions]);
     }
-  }, [onUploadFiles, onAddFile, allSkills, selectedSkills, onSkillsChange]);
+  }, [onUploadFiles, onAddFile, modelInvocableSkills, selectedSkills, onSkillsChange]);
 
   // Attachment problems (wrong type, too many, too big) and image-only
   // submissions surface here, next to the steer error banner.
@@ -827,6 +836,34 @@ function ChatInput({
   const [mentionAtIdx, setMentionAtIdx] = useState(0);
   const [mentionSelIdx, setMentionSelIdx] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  // `/` at the very start of the composer opens the slash menu: prompt
+  // templates plus user-invoked-only skills (`/skill:<name>`).
+  const [slashQuery, setSlashQuery] = useState<string | null>(null);
+  const [slashSelIdx, setSlashSelIdx] = useState(0);
+  const slashListRef = useRef<HTMLDivElement>(null);
+  const { templates: promptTemplates } = usePromptTemplates();
+  const slashItems = useMemo<SlashMenuItem[]>(() => {
+    if (slashQuery === null) return [];
+    return slashMenuItems(
+      slashQuery,
+      promptTemplates,
+      allSkills.filter((s) => s.disableModelInvocation),
+    );
+  }, [slashQuery, promptTemplates, allSkills]);
+  const safeSlashSelIdx = slashItems.length === 0 ? 0 : Math.min(slashSelIdx, slashItems.length - 1);
+  useEffect(() => {
+    slashListRef.current?.children[safeSlashSelIdx]?.scrollIntoView({ block: "nearest" });
+  }, [safeSlashSelIdx]);
+  const applySlash = useCallback(
+    (item: SlashMenuItem) => {
+      const current = controller.textInput.value;
+      const rest = current.replace(/^\/[^\s]*/, "");
+      controller.textInput.setInput(`${item.command} ${rest.trimStart()}`);
+      setSlashQuery(null);
+      setSlashSelIdx(0);
+    },
+    [controller],
+  );
   // Alt is read from keydown, not the form submit event, which carries no
   // modifiers by the time the library's Enter handler calls requestSubmit().
   const queueIntentRef = useRef(false);
@@ -873,6 +910,14 @@ function ChatInput({
     const val = e.target.value;
     const cursor = e.target.selectionStart ?? val.length;
     const before = val.slice(0, cursor);
+    // Slash menu: only while the caret is still inside the leading command token.
+    const slash = before.match(/^\/([^\s/]*)$/);
+    if (slash) {
+      setSlashQuery(slash[1]);
+      setSlashSelIdx(0);
+    } else {
+      setSlashQuery(null);
+    }
     const m = before.match(/@([^\s@]*)$/);
     if (m && m.index !== undefined) {
       setMentionQuery(m[1]);
@@ -884,6 +929,29 @@ function ChatInput({
   }, []);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    const slashOpen = slashQuery !== null && slashItems.length > 0;
+    if (slashOpen) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashSelIdx((i) => Math.min(i + 1, slashItems.length - 1));
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashSelIdx((i) => Math.max(i - 1, 0));
+        return;
+      }
+      if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+        e.preventDefault();
+        applySlash(slashItems[safeSlashSelIdx]);
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashQuery(null);
+        return;
+      }
+    }
     const isOpen = mentionQuery !== null && filteredFiles.length > 0;
     // An Enter consumed by the mention overlay must not record queue intent —
     // the next submit may be a button click that can't overwrite the flag.
@@ -904,7 +972,7 @@ function ChatInput({
       e.preventDefault();
       closeMention();
     }
-  }, [mentionQuery, filteredFiles, safeMentionSelIdx, applyMention, closeMention]);
+  }, [mentionQuery, filteredFiles, safeMentionSelIdx, applyMention, closeMention, slashQuery, slashItems, safeSlashSelIdx, applySlash]);
 
   const handleTranscription = useCallback((text: string) => {
     appendToComposer(controller.textInput, text, " ");
@@ -932,12 +1000,51 @@ function ChatInput({
   }, []);
 
   const isMentionOpen = mentionQuery !== null && filteredFiles.length > 0;
+  const isSlashOpen = slashQuery !== null && slashItems.length > 0;
   const submitStatus = isStreaming ? "streaming" : agentStatus === "error" ? "error" : "ready";
 
   return (
     <PromptDropZone onFileDrop={onAddFile} onFilesUpload={handleFilesUpload}>
       <div className="relative">
-        {isMentionOpen && (
+        {isSlashOpen && (
+          <div
+            className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border bg-background shadow-lg"
+            onMouseDown={(e) => e.preventDefault()}
+            data-testid="slash-menu"
+          >
+            <div className="flex items-center gap-2 border-b px-3 py-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Commands</span>
+              {slashQuery && <span className="font-mono text-[11px] text-primary">/{slashQuery}</span>}
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                {slashItems.length} match{slashItems.length !== 1 ? "es" : ""}
+              </span>
+              <kbd className="rounded border bg-muted px-1 py-0.5 text-[9px] font-mono text-muted-foreground">↑↓</kbd>
+              <kbd className="rounded border bg-muted px-1 py-0.5 text-[9px] font-mono text-muted-foreground">↵</kbd>
+            </div>
+            <div ref={slashListRef} className="max-h-52 overflow-y-auto py-1">
+              {slashItems.map((item, i) => (
+                <div
+                  key={item.command}
+                  onClick={() => applySlash(item)}
+                  className={cn(
+                    "flex cursor-pointer items-center gap-2.5 px-3 py-2 text-xs transition-colors",
+                    i === safeSlashSelIdx ? "bg-muted" : "hover:bg-muted/50",
+                  )}
+                >
+                  <span className="min-w-0 truncate font-mono text-foreground">{item.label}</span>
+                  {item.argumentHint && (
+                    <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{item.argumentHint}</span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate text-muted-foreground">{item.description}</span>
+                  <span className="shrink-0 rounded bg-muted px-1 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+                    {item.kind}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {isMentionOpen && !isSlashOpen && (
           <div
             className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-xl border bg-background shadow-lg"
             onMouseDown={(e) => e.preventDefault()}
@@ -1074,7 +1181,7 @@ function ChatInput({
               <AddContextMenu
                 selectedDbs={selectedDbs}
                 onDbsChange={onDbsChange}
-                allSkills={allSkills}
+                allSkills={modelInvocableSkills}
                 selectedSkills={selectedSkills}
                 onSkillsChange={onSkillsChange}
                 onUploadFiles={handleFilesUpload}
@@ -1371,7 +1478,10 @@ export const ChatMessageRow = memo(function ChatMessageRow({
                 ))}
               </div>
             )}
-            <MessageResponse>{message.content}</MessageResponse>
+            {(() => {
+              const block = parseCommandBlock(message.content);
+              return block ? <CommandBlockChip block={block} /> : <MessageResponse>{message.content}</MessageResponse>;
+            })()}
           </>
         )}
         {message.role === "assistant" && message.modelVersion && (

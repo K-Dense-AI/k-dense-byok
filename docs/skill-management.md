@@ -81,6 +81,15 @@ catalogue's version back.
 The `description` is what the model matches against when deciding whether to
 activate a skill, so it earns more care than the body.
 
+## User-invoked skills
+
+Toggle **User-invoked only** on a skill (Settings → Skills) to set Pi's
+`disable-model-invocation: true` in its frontmatter. Such a skill is left out of
+the skills index the model sees, so it never activates on its own; you run it
+by typing `/skill:<name> arguments` in the chat (the `/` menu lists them). The
+toggle edits only that one frontmatter line. See
+[prompt templates](./prompt-templates.md) for the slash menu.
+
 ## Removing
 
 - **Installed** and **Local** skills are deleted.

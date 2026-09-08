@@ -20,6 +20,7 @@ import { registerProjectRoutes } from "./api/projects.ts";
 import { registerSessionRoutes } from "./api/sessions.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
 import { registerSkillRoutes } from "./api/skills.ts";
+import { registerPromptRoutes } from "./api/prompts.ts";
 import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
@@ -139,6 +140,7 @@ export async function buildApp() {
   await registerNotebookRobustnessRoutes(app);
   await registerSandboxRoutes(app);
   await registerSkillRoutes(app);
+  await registerPromptRoutes(app);
   await registerSystemRoutes(app);
   await registerMcpRoutes(app);
   await registerCredentialRoutes(app);

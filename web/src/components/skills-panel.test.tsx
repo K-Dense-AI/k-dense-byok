@@ -368,3 +368,19 @@ describe("SkillsPanel", () => {
     expect(await screen.findByText(/web-design is up to date/i)).toBeInTheDocument();
   });
 });
+
+describe("SkillsPanel user-invoked only", () => {
+  it("badges the flag and toggles it through the API", async () => {
+    stubProjects();
+    vi.spyOn(caps, "getAllSkills").mockResolvedValue(
+      listing({ enabled: [skill("lab-protocol", "Wet lab", { disableModelInvocation: true }), skill("qc", "QC")], sync: syncStatus() }),
+    );
+    const toggle = vi.spyOn(caps, "setSkillModelInvocation").mockResolvedValue({ disableModelInvocation: false });
+    render(<SkillsPanel />);
+    expect(await screen.findByText("User-invoked only")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Let the model invoke lab-protocol" }));
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith("lab-protocol", true, "project"));
+    await userEvent.click(screen.getByRole("button", { name: "Make qc user-invoked only" }));
+    await waitFor(() => expect(toggle).toHaveBeenCalledWith("qc", false, "project"));
+  });
+});

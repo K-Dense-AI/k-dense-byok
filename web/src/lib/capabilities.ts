@@ -20,6 +20,8 @@ export interface SkillInfo {
   id: string;
   name: string;
   description: string;
+  /** Pi's `disable-model-invocation`: hidden from the model's skills index, runs only via `/skill:<name>`. */
+  disableModelInvocation?: boolean;
   origin?: SkillOrigin;
   /** Recorded source for a skill installed from somewhere other than the catalogue. */
   source?: string;
@@ -264,4 +266,95 @@ export async function installSkills(input: {
   });
   if (!res.ok) throw await failure(res, "installSkills");
   return (await res.json()) as { installed: string[]; conflicts: string[] };
+}
+
+/** `modelInvocable: false` marks the skill user-invoked only (`/skill:<name>`). */
+export async function setSkillModelInvocation(
+  name: string,
+  modelInvocable: boolean,
+  scope?: SkillScope,
+): Promise<{ disableModelInvocation: boolean }> {
+  const res = await apiFetch(
+    `/skills/${encodeURIComponent(name)}/model-invocation${scopeQuery(scope)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: modelInvocable }),
+    },
+  );
+  if (!res.ok) throw await failure(res, "setSkillModelInvocation");
+  return (await res.json()) as { disableModelInvocation: boolean };
+}
+
+// ---------------------------------------------------------------------------
+// Prompt templates (`/name args` in the composer)
+// ---------------------------------------------------------------------------
+
+export type PromptScope = "project" | "global";
+
+export interface PromptTemplateInfo {
+  name: string;
+  description: string;
+  argumentHint?: string;
+  scope: PromptScope;
+  shadowed?: boolean;
+  seeded?: boolean;
+}
+
+export interface PromptTemplateSource {
+  name: string;
+  scope: PromptScope;
+  content: string;
+}
+
+function promptScopeQuery(scope: PromptScope | undefined, separator = "?"): string {
+  return scope ? `${separator}scope=${scope}` : "";
+}
+
+/** Merged (project wins) when scope is omitted — what the composer offers. */
+export async function listPromptTemplates(scope?: PromptScope): Promise<PromptTemplateInfo[]> {
+  const res = await apiFetch(`/prompts${promptScopeQuery(scope)}`);
+  if (!res.ok) throw await failure(res, "listPromptTemplates");
+  const data = (await res.json()) as PromptTemplateInfo[];
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getPromptTemplateSource(name: string, scope: PromptScope): Promise<PromptTemplateSource> {
+  const res = await apiFetch(`/prompts/${encodeURIComponent(name)}/source${promptScopeQuery(scope)}`);
+  if (!res.ok) throw await failure(res, "getPromptTemplateSource");
+  return (await res.json()) as PromptTemplateSource;
+}
+
+export async function savePromptTemplateSource(name: string, scope: PromptScope, content: string): Promise<void> {
+  const res = await apiFetch(`/prompts/${encodeURIComponent(name)}/source${promptScopeQuery(scope)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!res.ok) throw await failure(res, "savePromptTemplateSource");
+}
+
+export async function createPromptTemplate(
+  scope: PromptScope,
+  input: { name: string; description?: string; argumentHint?: string; content?: string },
+): Promise<PromptTemplateSource> {
+  const res = await apiFetch(`/prompts${promptScopeQuery(scope)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw await failure(res, "createPromptTemplate");
+  return (await res.json()) as PromptTemplateSource;
+}
+
+export async function deletePromptTemplate(name: string, scope: PromptScope): Promise<void> {
+  const res = await apiFetch(`/prompts/${encodeURIComponent(name)}${promptScopeQuery(scope)}`, { method: "DELETE" });
+  if (!res.ok) throw await failure(res, "deletePromptTemplate");
+}
+
+export async function restoreDefaultPromptTemplates(): Promise<number> {
+  const res = await apiFetch("/prompts/restore-defaults", { method: "POST" });
+  if (!res.ok) throw await failure(res, "restoreDefaultPromptTemplates");
+  const data = (await res.json()) as { restored?: number };
+  return data.restored ?? 0;
 }
