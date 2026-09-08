@@ -32,6 +32,7 @@ export interface ModalRemoteFilesystem {
   listFiles(remotePath: string): Promise<readonly FileInfo[]>;
   stat(remotePath: string): Promise<FileInfo>;
   readText(remotePath: string): Promise<string>;
+  readBytes(remotePath: string): Promise<Uint8Array>;
   writeText(data: string, remotePath: string): Promise<void>;
 }
 
@@ -166,6 +167,7 @@ function classifiedFilesystem(fs: Sandbox["filesystem"]): ModalRemoteFilesystem 
     listFiles: (remotePath) => classified(fs.listFiles(remotePath)),
     stat: (remotePath) => classified(fs.stat(remotePath)),
     readText: (remotePath) => classified(fs.readText(remotePath)),
+    readBytes: (remotePath) => classified(fs.readBytes(remotePath)),
     writeText: (data, remotePath) => classified(fs.writeText(data, remotePath)),
   };
 }

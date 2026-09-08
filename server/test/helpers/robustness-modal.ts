@@ -10,6 +10,7 @@ class Filesystem implements ModalRemoteFilesystem {
   async copyToLocal(remote: string, local: string) { fs.mkdirSync(path.dirname(local), { recursive: true }); fs.writeFileSync(local, this.files.get(remote)!); }
   async writeText(data: string, remote: string) { this.files.set(remote, Buffer.from(data)); }
   async readText(remote: string) { if (!this.files.has(remote)) throw new Error("missing"); return this.files.get(remote)!.toString("utf8"); }
+  async readBytes(remote: string) { if (!this.files.has(remote)) throw new Error("missing"); return new Uint8Array(this.files.get(remote)!); }
   async stat(remote: string): Promise<any> { const data = this.files.get(remote); if (!data) throw new Error("missing"); return { type: "file", path: remote, size: data.length }; }
   async listFiles(dir: string): Promise<any[]> {
     const prefix = dir.replace(/\/$/, "") + "/"; const children = new Map<string, string>();

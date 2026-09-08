@@ -603,6 +603,89 @@ describe("Durable Modal manager recovery cleanup", () => {
   });
 });
 
+describe("Durable Modal log sync", () => {
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  async function until(check: () => boolean, ms = 3000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!check()) {
+      if (Date.now() > deadline) throw new Error("condition not met in time");
+      await sleep(25);
+    }
+  }
+  function remoteLog(sandbox: FakeSandbox, content: string | Buffer, dropped: number, metaSize?: number) {
+    const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content);
+    sandbox.filesystem.files.set("/workspace/.kady-job/stdout.log", bytes);
+    sandbox.filesystem.files.set(
+      "/workspace/.kady-job/stdout.log.meta",
+      Buffer.from(JSON.stringify({ dropped, size: metaSize ?? bytes.length })),
+    );
+  }
+  async function runningSandbox(manager: DurableModalJobManager, fake: FakeModal, sessionId: string) {
+    fake.behaviors.push({ kind: "hang" });
+    const job = manager.submit("default", { command: "work" }, { sessionId, submittedBy: "api" });
+    await until(() => manager.store.require("default", job.id).state === "running");
+    return { job, sandbox: [...fake.sandboxes.values()][0]! };
+  }
+
+  it("appends only unseen bytes across remote log rolls", async () => {
+    const fake = new FakeModal();
+    const manager = new DurableModalJobManager(fake.factory);
+    const { job, sandbox } = await runningSandbox(manager, fake, "s-logroll");
+    // Logical stream "0123456789" through a 4-byte remote window.
+    remoteLog(sandbox, "0123", 0);
+    await sleep(800);
+    remoteLog(sandbox, "4567", 4);
+    await sleep(800);
+    remoteLog(sandbox, "6789", 6);
+    await sleep(800);
+    await manager.cancel("default", job.id);
+    await manager.wait("default", job.id, 3000);
+    expect(manager.store.readLog("default", job.id, "stdout", 0).data).toBe("0123456789");
+    expect(manager.store.events("default", job.id).some((event) => event.type === "log_gap")).toBe(false);
+  }, 15_000);
+
+  it("records a gap when bytes rolled out of the remote window before they were seen", async () => {
+    const fake = new FakeModal();
+    const manager = new DurableModalJobManager(fake.factory);
+    const { job, sandbox } = await runningSandbox(manager, fake, "s-loggap");
+    remoteLog(sandbox, "6789", 6);
+    await sleep(800);
+    await manager.cancel("default", job.id);
+    await manager.wait("default", job.id, 3000);
+    expect(manager.store.readLog("default", job.id, "stdout", 0).data).toBe("6789");
+    const gap = manager.store.events("default", job.id).find((event) => event.type === "log_gap");
+    expect(gap?.data).toMatchObject({ stream: "stdout", bytes: 6 });
+  }, 15_000);
+
+  it("keeps multibyte characters intact when a tick lands mid-character", async () => {
+    const fake = new FakeModal();
+    const manager = new DurableModalJobManager(fake.factory);
+    const { job, sandbox } = await runningSandbox(manager, fake, "s-logutf8");
+    const full = Buffer.from("héllo wörld\n", "utf-8");
+    remoteLog(sandbox, full.subarray(0, 2), 0); // "h" plus the first byte of "é"
+    await sleep(800);
+    remoteLog(sandbox, full, 0);
+    await sleep(800);
+    await manager.cancel("default", job.id);
+    await manager.wait("default", job.id, 3000);
+    expect(manager.store.readLog("default", job.id, "stdout", 0).data).toBe("héllo wörld\n");
+  }, 15_000);
+
+  it("skips a tick whose sidecar disagrees with the file size instead of appending torn bytes", async () => {
+    const fake = new FakeModal();
+    const manager = new DurableModalJobManager(fake.factory);
+    const { job, sandbox } = await runningSandbox(manager, fake, "s-logmeta");
+    remoteLog(sandbox, "0123", 0, 2); // wrapper mid-write: sidecar lags the file
+    await sleep(800);
+    expect(manager.store.readLog("default", job.id, "stdout", 0).data).toBe("");
+    remoteLog(sandbox, "0123", 0);
+    await sleep(800);
+    await manager.cancel("default", job.id);
+    await manager.wait("default", job.id, 3000);
+    expect(manager.store.readLog("default", job.id, "stdout", 0).data).toBe("0123");
+  }, 15_000);
+});
+
 describe("Durable Modal manager safety nets", () => {
   it("finalizes and reconciles a job whose worker crashed while finishing", async () => {
     // The first attempt to record the terminal state throws (disk full, a

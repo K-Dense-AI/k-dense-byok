@@ -74,6 +74,12 @@ export class FakeFilesystem implements ModalRemoteFilesystem {
     return value.toString("utf-8");
   }
 
+  async readBytes(remotePath: string): Promise<Uint8Array> {
+    const value = this.files.get(remotePath);
+    if (!value) throw new Error(`not found: ${remotePath}`);
+    return new Uint8Array(value);
+  }
+
   async writeText(data: string, remotePath: string): Promise<void> {
     this.files.set(remotePath, Buffer.from(data));
   }

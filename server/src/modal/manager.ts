@@ -80,6 +80,13 @@ interface ActiveRuntime {
   promise: Promise<void>;
   adapter?: ModalAdapter;
   sandbox?: ModalRemoteSandbox;
+  /** Last remote log state seen per stream, to skip reads when nothing changed. */
+  logMeta?: Partial<Record<"stdout" | "stderr", { size: number; dropped: number }>>;
+}
+
+interface RemoteLogMeta {
+  dropped?: number;
+  size?: number;
 }
 
 interface RemoteStatus {
@@ -192,7 +199,19 @@ def status(value):
         os.fsync(f.fileno())
     os.replace(tmp, STATUS)
 
-def append_bounded(file, data):
+DROPPED = {"stdout.log": 0, "stderr.log": 0}
+
+def write_meta(name, size):
+    # Logical offset of the retained bytes: the reader appends
+    # file[localTotal - dropped:] and never has to search for an overlap.
+    meta = os.path.join(ROOT, name + ".meta")
+    tmp = meta + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"dropped": DROPPED[name], "size": size}, f)
+    os.replace(tmp, meta)
+
+def append_bounded(name, data):
+    file = os.path.join(ROOT, name)
     with open(file, "ab") as f:
         f.write(data)
     size = os.path.getsize(file)
@@ -204,10 +223,14 @@ def append_bounded(file, data):
         with open(tmp, "wb") as f:
             f.write(kept)
         os.replace(tmp, file)
+        DROPPED[name] += size - len(kept)
+        size = len(kept)
+    write_meta(name, size)
 
 os.makedirs(ROOT, exist_ok=True)
 for name in ("stdout.log", "stderr.log"):
     open(os.path.join(ROOT, name), "ab").close()
+    write_meta(name, os.path.getsize(os.path.join(ROOT, name)))
 started = time.time()
 status({"state": "running", "startedAt": started})
 p = subprocess.Popen(["sh", ${JSON.stringify(REMOTE_COMMAND)}], cwd="/workspace",
@@ -219,7 +242,7 @@ while sel.get_map():
     for key, _ in sel.select(timeout=0.5):
         data = os.read(key.fileobj.fileno(), 65536)
         if data:
-            append_bounded(os.path.join(ROOT, key.data), data)
+            append_bounded(key.data, data)
         else:
             sel.unregister(key.fileobj)
 code = p.wait()
@@ -248,7 +271,6 @@ export class DurableModalJobManager {
   private adapterFactory: ModalAdapterFactory;
   private requireCredentials: boolean;
   private active = new Map<string, ActiveRuntime>();
-  private previousRemoteLogs = new Map<string, { stdout: string; stderr: string }>();
   private deletingProjects = new Set<string>();
   private terminalListeners = new Set<(job: ModalJob) => void>();
 
@@ -719,7 +741,6 @@ export class DurableModalJobManager {
       .finally(() => {
         runtime.adapter?.close();
         this.active.delete(key);
-        this.previousRemoteLogs.delete(key);
       })
       // Terminal handler: nothing above may surface as an unhandled rejection,
       // which would take the whole backend (every chat tab) down with it.
@@ -863,80 +884,67 @@ export class DurableModalJobManager {
     );
   }
 
+  /**
+   * Append the remote log bytes not yet retained locally. The wrapper keeps a
+   * bounded file plus a `.meta` sidecar with the logical offset of its first
+   * retained byte, so the delta is plain arithmetic on byte counts — no
+   * suffix/prefix overlap search, and no read at all when nothing changed.
+   * Recovery after a restart takes the same path: `stdoutBytes` is the logical
+   * count already retained, whatever process retained it.
+   */
   private async syncRemoteLogs(
     projectId: string,
     jobId: string,
     sandbox: ModalRemoteSandbox,
-    recovered = false,
+    runtime: ActiveRuntime,
   ): Promise<void> {
-    const key = this.key(projectId, jobId);
-    const previous = this.previousRemoteLogs.get(key) ?? { stdout: "", stderr: "" };
+    runtime.logMeta ??= {};
     for (const stream of ["stdout", "stderr"] as const) {
       const remotePath = stream === "stdout" ? REMOTE_STDOUT : REMOTE_STDERR;
-      let current: string;
+      const checked = this.checked(projectId, jobId, sandbox);
+      let size: number;
       try {
-        current = await this.checked(projectId, jobId, sandbox)(
-          sandbox.filesystem.readText(remotePath),
-        );
+        size = (await checked(sandbox.filesystem.stat(remotePath))).size;
+      } catch (error) {
+        if (error instanceof ModalCancellationError) throw error;
+        continue; // not created yet
+      }
+      let meta: RemoteLogMeta = {};
+      try {
+        meta = JSON.parse(await checked(sandbox.filesystem.readText(`${remotePath}.meta`))) as RemoteLogMeta;
+      } catch (error) {
+        if (error instanceof ModalCancellationError) throw error;
+        // No sidecar yet (wrapper still starting): treat as nothing dropped.
+      }
+      if (typeof meta.size === "number" && meta.size !== size) continue; // wrapper mid-write; next tick
+      const dropped = typeof meta.dropped === "number" && meta.dropped >= 0 ? meta.dropped : 0;
+      const last = runtime.logMeta[stream];
+      if (last && last.size === size && last.dropped === dropped) continue; // unchanged
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(await checked(sandbox.filesystem.readBytes(remotePath)));
       } catch (error) {
         if (error instanceof ModalCancellationError) throw error;
         continue;
       }
-      const old = previous[stream];
-      let delta = "";
-      if (!old) {
-        const job = this.store.require(projectId, jobId);
-        const localBytes = stream === "stdout" ? job.stdoutBytes : job.stderrBytes;
-        const localBase =
-          stream === "stdout" ? job.stdoutBaseCursor : job.stderrBaseCursor;
-        if (localBytes === 0) {
-          delta = current;
-        } else if (recovered) {
-          const currentBuffer = Buffer.from(current);
-          if (localBase === 0 && localBytes <= currentBuffer.length) {
-            delta = currentBuffer.subarray(localBytes).toString("utf-8");
-          } else {
-            // Both local and remote logs are bounded. Compare retained tails
-            // after a restart so content captured before the crash is not
-            // appended a second time.
-            const tailStart = Math.max(localBase, localBytes - 1024 * 1024);
-            const localTail = this.store.readLog(
-              projectId,
-              jobId,
-              stream,
-              tailStart,
-              1024 * 1024,
-            ).data;
-            const max = Math.min(localTail.length, current.length);
-            let overlap = 0;
-            for (let size = max; size > 0; size--) {
-              if (localTail.slice(-size) === current.slice(0, size)) {
-                overlap = size;
-                break;
-              }
-            }
-            delta = current.slice(overlap);
-          }
-        }
-      } else if (current.startsWith(old)) {
-        delta = current.slice(old.length);
-      } else {
-        // The remote bounded file rolled. Find the longest overlap between the
-        // old suffix and new prefix, then append only unseen bytes.
-        const max = Math.min(old.length, current.length);
-        let overlap = 0;
-        for (let size = max; size > 0; size--) {
-          if (old.slice(-size) === current.slice(0, size)) {
-            overlap = size;
-            break;
-          }
-        }
-        delta = current.slice(overlap);
+      if (bytes.length !== size) continue; // changed underneath us; next tick
+      runtime.logMeta[stream] = { size, dropped };
+      const job = this.store.require(projectId, jobId);
+      const localTotal = stream === "stdout" ? job.stdoutBytes : job.stderrBytes;
+      const remoteTotal = dropped + bytes.length;
+      if (localTotal < dropped) {
+        // Bytes rolled out of the remote window before we ever saw them.
+        this.store.appendEvent(projectId, jobId, {
+          type: "log_gap",
+          state: job.state,
+          message: `${dropped - localTotal} ${stream} bytes were dropped remotely before they could be retained`,
+          data: { stream, bytes: dropped - localTotal },
+        });
       }
-      if (delta) this.store.appendLog(projectId, jobId, stream, delta);
-      previous[stream] = current;
+      if (remoteTotal > localTotal) {
+        this.store.appendLog(projectId, jobId, stream, bytes.subarray(Math.max(0, localTotal - dropped)));
+      }
     }
-    this.previousRemoteLogs.set(key, previous);
   }
 
   private async readRemoteStatus(
@@ -1057,7 +1065,7 @@ export class DurableModalJobManager {
         30_000;
       while (!settled) {
         await checked(sleep(500));
-        await this.syncRemoteLogs(projectId, jobId, sandbox);
+        await this.syncRemoteLogs(projectId, jobId, sandbox, runtime);
         // Modal enforces the lifetime remotely; this local backstop covers an
         // SDK wait() that never settles (network partition, client bug) so the
         // job cannot sit in `running` with its hold forever.
@@ -1066,7 +1074,7 @@ export class DurableModalJobManager {
         }
       }
       await checked(waiter);
-      await this.syncRemoteLogs(projectId, jobId, sandbox);
+      await this.syncRemoteLogs(projectId, jobId, sandbox, runtime);
       if (wrapperError) throw wrapperError;
       if (wrapperExit !== 0) {
         throw new ModalJobError(
@@ -1173,7 +1181,7 @@ export class DurableModalJobManager {
     try {
       while (true) {
         this.assertNotCancelled(projectId, jobId);
-        await this.syncRemoteLogs(projectId, jobId, sandbox, true);
+        await this.syncRemoteLogs(projectId, jobId, sandbox, runtime);
         const status = await this.readRemoteStatus(projectId, jobId, sandbox);
         if (status?.state === "finished" && Number.isInteger(status.exitCode)) {
           await this.collectAndFinish(projectId, jobId, sandbox, status.exitCode!);
