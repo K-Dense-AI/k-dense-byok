@@ -142,6 +142,12 @@ export interface AgentFrame {
   kind?: string;
   message?: string;
   args?: unknown;
+  /** Data-guard permission frames. */
+  requestId?: string;
+  command?: string;
+  reason?: string;
+  allowed?: boolean;
+  outcome?: string;
   result?: string;
   scientificResult?: unknown;
   images?: unknown;
@@ -242,6 +248,46 @@ export function applyFrameToMessage(
         ].slice(-MAX_ACTIVITY_ITEMS),
         segments: [...segments, { type: "activity", activityId: id }],
       };
+    }
+    case "permission_request": {
+      // The data guard paused a destructive command; render a decision card
+      // in the activity stream (like an interview) until it is resolved.
+      if (typeof frame.requestId !== "string") return message;
+      const activities = message.activities ?? [];
+      if (activities.some((a) => a.id === frame.requestId)) return message;
+      const item: ActivityItem = {
+        id: frame.requestId,
+        label: "Permission needed",
+        status: "running",
+        timestamp: now,
+        toolName: "permission",
+        args: {
+          toolCallId: frame.toolCallId,
+          toolName: frame.toolName,
+          command: frame.command,
+          reason: frame.reason,
+        },
+      };
+      return {
+        ...message,
+        activities: [...activities, item].slice(-MAX_ACTIVITY_ITEMS),
+        segments: [...existingSegments(message), { type: "activity", activityId: item.id }],
+      };
+    }
+    case "permission_resolved": {
+      if (typeof frame.requestId !== "string") return message;
+      const activities = message.activities ?? [];
+      const idx = activities.findIndex((a) => a.id === frame.requestId);
+      if (idx === -1) return message;
+      const next = [...activities];
+      const current = next[idx];
+      next[idx] = {
+        ...current,
+        status: frame.allowed ? "complete" : "error",
+        args: { ...(current.args as Record<string, unknown> | undefined), outcome: frame.outcome },
+        result: String(frame.outcome ?? (frame.allowed ? "allowed" : "denied")),
+      };
+      return { ...message, activities: next };
     }
     case "tool_end": {
       const id = String(frame.toolCallId ?? frame.toolName ?? now);
@@ -833,10 +879,41 @@ export function useAgent(projectId?: string) {
     [applyRunFrame, scopedProjectId],
   );
 
-  /** Reconnect to a live run: pending interview, then the sequenced stream. */
+  const restorePendingPermission = useCallback(
+    async (id: string, consumer: RunConsumer, signal: AbortSignal) => {
+      try {
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/permissions`,
+          { signal },
+          scopedProjectId,
+        );
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          pending?: { requestId?: unknown; payload?: Record<string, unknown> } | null;
+        };
+        const pending = data.pending;
+        if (!pending || typeof pending.requestId !== "string") return;
+        const present = consumer.transcript.some((message) =>
+          message.activities?.some((activity) => activity.id === pending.requestId),
+        );
+        if (present) return;
+        applyRunFrame(consumer, {
+          type: "permission_request",
+          requestId: pending.requestId,
+          ...(pending.payload ?? {}),
+        } as AgentFrame);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+      }
+    },
+    [applyRunFrame, scopedProjectId],
+  );
+
+  /** Reconnect to a live run: pending interview/permission, then the sequenced stream. */
   const attachToRun = useCallback(
     async (id: string, consumer: RunConsumer, controller: AbortController) => {
       await restorePendingInterview(id, consumer, controller.signal);
+      await restorePendingPermission(id, consumer, controller.signal);
       const eventsResponse = await apiFetch(
         `/sessions/${encodeURIComponent(id)}/run/events?after=${encodeURIComponent(
           String(Math.max(0, consumer.lastSeq)),
@@ -850,7 +927,7 @@ export function useAgent(projectId?: string) {
       }
       await consumeRunResponse(eventsResponse, consumer);
     },
-    [consumeRunResponse, restorePendingInterview, scopedProjectId],
+    [consumeRunResponse, restorePendingInterview, restorePendingPermission, scopedProjectId],
   );
 
   /**

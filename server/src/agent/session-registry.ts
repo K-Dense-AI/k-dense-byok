@@ -37,6 +37,8 @@ import {
 } from "./subagent-bridge.ts";
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { makeScientificCompactionExtension } from "./compaction-bridge.ts";
+import { makeDataGuardExtension } from "./data-guard.ts";
+import { seedGuardPackage } from "./guard-bridge.ts";
 import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
 import {
   seedNotebookPackage,
@@ -193,6 +195,8 @@ async function build(
   // child agents so both can create expert markup visible in the viewer.
   seedPdfAnnotationPackage(paths);
   seedBuiltinAgentPdfAnnotationTools(paths);
+  // Raw-data guard for background specialists (the lead runs data-guard.ts).
+  seedGuardPackage(paths);
   // Every child tool above arrives as an ambient package, which pi-subagents
   // ≥0.65 loads only into *background* children — so force background
   // launches; and keep the external-CLI builtins (Claude Code/Codex/Cursor)
@@ -234,6 +238,10 @@ async function build(
       // Child Modal jobs are submitted through the localhost bridge under the
       // child run id; reattribute them to this parent session on completion.
       makeSubagentModalExtension(projectId, () => holder.session?.sessionId ?? ""),
+      // Raw-data guard: blocks mutations of protected paths and asks the user
+      // before destructive shell commands. Registered after the subagent
+      // bridge so budget gates run first.
+      makeDataGuardExtension(projectId, () => holder.session?.sessionId ?? "", paths.sandbox),
     ],
   });
   await resourceLoader.reload();

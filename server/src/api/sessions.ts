@@ -25,6 +25,11 @@ import {
   type SessionComputeOptions,
 } from "../agent/modal-tool.ts";
 import {
+  cancelPermissionsForSession,
+  pendingPermissionFor,
+  resolvePermission,
+} from "../agent/permissions.ts";
+import {
   assertModelAuthentication,
   ModelAuthenticationError,
   modelReference,
@@ -382,6 +387,28 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
+  // Data-guard permission decisions (destructive shell commands).
+  app.post<{ Params: { id: string; requestId: string }; Body: { allow?: unknown } }>(
+    "/sessions/:id/permissions/:requestId",
+    async (req, reply) => {
+      const allow = req.body?.allow;
+      if (typeof allow !== "boolean") {
+        reply.code(400);
+        return { detail: "allow must be a boolean" };
+      }
+      const ok = resolvePermission(currentProjectId(), req.params.id, req.params.requestId, allow);
+      if (!ok) {
+        reply.code(404);
+        return { detail: "No pending permission request for this id" };
+      }
+      return { ok: true };
+    },
+  );
+
+  app.get<{ Params: { id: string } }>("/sessions/:id/permissions", async (req) => {
+    return { pending: pendingPermissionFor(currentProjectId(), req.params.id) };
+  });
+
   // Pending interview for a session (lets a reconnecting UI re-render the form).
   app.get<{ Params: { id: string } }>("/sessions/:id/interview", async (req) => {
     return { pending: pendingInterviewFor(currentProjectId(), req.params.id) };
@@ -424,6 +451,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     // Release any interview blocking the turn before aborting: a form still
     // waiting on user input would otherwise keep the run alive.
     cancelInterviewsForSession(projectId, req.params.id);
+    cancelPermissionsForSession(projectId, req.params.id);
     const session = await getSession(projectId, activePaths(), req.params.id);
     if (!session) return { ok: true, restored: [] };
     // Clear BEFORE abort so a pending steer can't be delivered into the

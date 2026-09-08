@@ -53,6 +53,7 @@ import {
 } from "@/components/tool-activity";
 import { InterviewCard } from "@/components/interview-form";
 import { SystemCard } from "@/components/system-card";
+import { PermissionCard } from "@/components/permission-card";
 import { KadyFileIcon } from "@/components/file-icon";
 import { ScientificResultCard } from "@/components/scientific-result-card";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
@@ -1244,6 +1245,11 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
           projectId={projectId}
         />,
       );
+    } else if (a.toolName === "permission") {
+      flushChunk();
+      orderedBlocks.push(
+        <PermissionCard key={a.id} item={a} sessionId={sessionId} projectId={projectId} />,
+      );
     } else if (a.toolName === "notebook") {
       flushChunk();
       orderedBlocks.push(
@@ -1838,7 +1844,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   );
   const needsInput = isStreaming && messages.some((message) =>
     message.activities?.some((activity) =>
-      activity.toolName === "interview" && activity.status === "running",
+      (activity.toolName === "interview" || activity.toolName === "permission") &&
+      activity.status === "running",
     ),
   );
   useEffect(() => {

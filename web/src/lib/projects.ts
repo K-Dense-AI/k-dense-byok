@@ -303,3 +303,39 @@ export async function putProjectCompaction(
   }
   return (await res.json()) as CompactionSettingsResponse;
 }
+
+// ---------------------------------------------------------------------------
+// Raw-data guard policy (stored in sandbox/.kady/policy.json)
+// ---------------------------------------------------------------------------
+
+export interface GuardPolicy {
+  version: 1;
+  protectedPaths: string[];
+  destructiveConfirm: boolean;
+}
+
+export async function getProjectGuardPolicy(id: string): Promise<GuardPolicy> {
+  const res = await apiFetch(`/projects/${encodeURIComponent(id)}/guard-policy`, {}, id);
+  if (!res.ok) throw new Error(`getProjectGuardPolicy ${res.status}`);
+  return (await res.json()) as GuardPolicy;
+}
+
+export async function putProjectGuardPolicy(
+  id: string,
+  patch: Partial<Pick<GuardPolicy, "protectedPaths" | "destructiveConfirm">>,
+): Promise<GuardPolicy> {
+  const res = await apiFetch(
+    `/projects/${encodeURIComponent(id)}/guard-policy`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    id,
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail || `putProjectGuardPolicy ${res.status}`);
+  }
+  return (await res.json()) as GuardPolicy;
+}

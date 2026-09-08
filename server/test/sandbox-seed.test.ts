@@ -55,3 +55,29 @@ describe("seedSandboxFiles", () => {
     expect(fs.readFileSync(agentsMd("seed-d"), "utf-8")).toBe("# my own instructions\n");
   });
 });
+
+describe("AGENTS.md versioned re-seed", () => {
+  it("upgrades a file that still equals an older shipped version and reports status", async () => {
+    const { AGENTS_MD, AGENTS_MD_HISTORY, agentsMdStatus, restoreAgentsMd } = await import("../src/sandbox-seed.ts");
+    const paths = ensureProjectExists("seed-v");
+    expect(agentsMdStatus(paths)).toBe("current");
+    expect(fs.readFileSync(agentsMd("seed-v"), "utf-8")).toContain("read-only raw data");
+
+    // Roll the sandbox back to the first shipped version: the next seed pass upgrades it.
+    fs.writeFileSync(agentsMd("seed-v"), AGENTS_MD_HISTORY[0]);
+    expect(agentsMdStatus(paths)).toBe("outdated");
+    seedSandboxFiles(paths);
+    expect(fs.readFileSync(agentsMd("seed-v"), "utf-8")).toBe(AGENTS_MD);
+
+    // A user edit is never overwritten, but is reported; restore is explicit.
+    fs.writeFileSync(agentsMd("seed-v"), AGENTS_MD + "\n## My lab rules\n- always use seed 42\n");
+    seedSandboxFiles(paths);
+    expect(agentsMdStatus(paths)).toBe("edited");
+    expect(fs.readFileSync(agentsMd("seed-v"), "utf-8")).toContain("My lab rules");
+    restoreAgentsMd(paths);
+    expect(agentsMdStatus(paths)).toBe("current");
+
+    fs.rmSync(agentsMd("seed-v"));
+    expect(agentsMdStatus(paths)).toBe("missing");
+  });
+});

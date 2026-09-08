@@ -38,6 +38,11 @@ import {
   validateCompactionPatch,
   writeCompactionSettings,
 } from "../agent/compaction-settings.ts";
+import {
+  readGuardPolicy,
+  validateGuardPolicyPatch,
+  writeGuardPolicy,
+} from "../agent/guard-policy.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
   app.get("/projects", async () => listProjects());
@@ -126,6 +131,29 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       return { detail: "sandbox/.pi/settings.json is not valid JSON; fix it before changing compaction settings" };
     }
     return { ...written, bounds: COMPACTION_BOUNDS };
+  });
+
+  // Raw-data guard policy (sandbox/.kady/policy.json; read by lead and children).
+  app.get<{ Params: { projectId: string } }>("/projects/:projectId/guard-policy", async (req, reply) => {
+    if (!getProject(req.params.projectId)) {
+      reply.code(404);
+      return { detail: "Project not found" };
+    }
+    return readGuardPolicy(resolvePaths(req.params.projectId).sandbox);
+  });
+
+  app.put<{ Params: { projectId: string } }>("/projects/:projectId/guard-policy", async (req, reply) => {
+    if (!getProject(req.params.projectId)) {
+      reply.code(404);
+      return { detail: "Project not found" };
+    }
+    const error = validateGuardPolicyPatch(req.body);
+    if (error) {
+      reply.code(400);
+      return { detail: error };
+    }
+    const body = req.body as { protectedPaths?: string[]; destructiveConfirm?: boolean };
+    return writeGuardPolicy(resolvePaths(req.params.projectId).sandbox, body);
   });
 
   app.get<{ Params: { projectId: string } }>("/projects/:projectId/costs", async (req) => {

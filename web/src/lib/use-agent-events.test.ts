@@ -349,3 +349,37 @@ describe("buildRunConsumer / pruneEmptyTrailingAssistant", () => {
     expect(pruneEmptyTrailingAssistant([...history, { ...empty, reasoning: "hmm" }])).toHaveLength(2);
   });
 });
+
+describe("data-guard permission frames", () => {
+  it("adds a pending permission card and resolves it in place", () => {
+    let message = baseMessage();
+    message = applyFrameToMessage(
+      message,
+      {
+        type: "permission_request",
+        requestId: "perm_1",
+        toolCallId: "tc1",
+        toolName: "bash",
+        command: "rm -rf results",
+        reason: "Destructive shell command: rm -rf results",
+      },
+      5,
+    );
+    expect(message.activities).toHaveLength(1);
+    expect(message.activities![0]).toMatchObject({
+      id: "perm_1",
+      toolName: "permission",
+      status: "running",
+      args: { command: "rm -rf results", toolCallId: "tc1" },
+    });
+    expect(message.segments).toEqual([{ type: "activity", activityId: "perm_1" }]);
+    // Duplicate requests (replay) are ignored.
+    expect(applyFrameToMessage(message, { type: "permission_request", requestId: "perm_1" }, 6)).toBe(message);
+
+    const denied = applyFrameToMessage(message, { type: "permission_resolved", requestId: "perm_1", allowed: false, outcome: "denied" }, 7);
+    expect(denied.activities![0]).toMatchObject({ status: "error", result: "denied", args: { outcome: "denied" } });
+    const allowed = applyFrameToMessage(message, { type: "permission_resolved", requestId: "perm_1", allowed: true, outcome: "allowed" }, 7);
+    expect(allowed.activities![0]).toMatchObject({ status: "complete", result: "allowed" });
+    expect(applyFrameToMessage(message, { type: "permission_resolved", requestId: "other" }, 8)).toBe(message);
+  });
+});

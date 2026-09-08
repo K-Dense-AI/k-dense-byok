@@ -1,0 +1,14 @@
+{
+  "name": "kady-guard",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "K-Dense: raw-data guard for child pi processes — blocks mutations of protected paths and destructive shell commands in background specialists.",
+  "keywords": ["pi-package"],
+  "pi": {
+    "extensions": ["./index.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}

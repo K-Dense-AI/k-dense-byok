@@ -60,6 +60,8 @@ Kady's agent intentionally has a powerful local shell so it can install scientif
 
 Kady instructs newly created project agents never to inspect or transmit credentials, but instructions are not a substitute for isolation against malicious prompt injection. Do not ask Kady to process adversarial files with secrets accessible to the same account. Use an OS sandbox, container, VM, or separate user account when working with untrusted content or when a stronger credential boundary is required.
 
+- **The raw-data guard is heuristic.** It blocks recognizable mutations of protected paths and pauses recognizable destructive shell commands ([details](./data-guard.md)), for Kady and for background specialists. It does not parse shell semantics or inspect what a script does internally, so it reduces ordinary agent mistakes rather than enforcing a boundary. Keep backups of irreplaceable raw data.
+
 ### Installed skills are instructions, not data
 
 A skill is a procedure the agent follows using that same shell, so installing one from a third-party source widens this boundary to whoever wrote it. Kady requires an explicit acknowledgement before an install and shows the parsed skills first, but it does not audit their contents: review a source you do not already trust, and prefer pinning a branch or tag. Installed skills are deliberately never auto-updated — a new version is flagged and waits for you, because silently pulling changed instructions into a running project is worse than a stale skill. See [Skill management](./skill-management.md).

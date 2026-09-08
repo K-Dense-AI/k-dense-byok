@@ -40,8 +40,11 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   DEFAULT_PROJECT_ID,
   getProjectCompaction,
+  getProjectGuardPolicy,
   putProjectCompaction,
+  putProjectGuardPolicy,
   type CompactionSettings,
+  type GuardPolicy,
   type Project,
 } from "@/lib/projects";
 import { useProjects } from "@/lib/use-projects";
@@ -59,6 +62,15 @@ interface ProjectFormState {
   spendLimit: string;
   /** Context-compaction knobs (edit mode only; null until loaded). */
   compaction: CompactionFormState | null;
+  /** Raw-data guard policy (edit mode only; null until loaded). */
+  guard: GuardFormState | null;
+}
+
+interface GuardFormState {
+  /** One glob per line. */
+  protectedPaths: string;
+  destructiveConfirm: boolean;
+  initial: GuardPolicy;
 }
 
 interface CompactionFormState {
@@ -78,6 +90,7 @@ const EMPTY_FORM: ProjectFormState = {
   tags: "",
   spendLimit: "",
   compaction: null,
+  guard: null,
 };
 
 /** Display a project ID in Title Case when we haven't loaded the project
@@ -141,9 +154,28 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
           ? ""
           : String(project.spendLimitUsd),
       compaction: null,
+      guard: null,
     });
     setFormError(null);
     setPopoverOpen(false);
+    void getProjectGuardPolicy(project.id)
+      .then((policy) => {
+        setForm((f) =>
+          f.open && f.mode === "edit" && f.id === project.id
+            ? {
+                ...f,
+                guard: {
+                  protectedPaths: policy.protectedPaths.join("\n"),
+                  destructiveConfirm: policy.destructiveConfirm,
+                  initial: policy,
+                },
+              }
+            : f,
+        );
+      })
+      .catch(() => {
+        /* section stays hidden */
+      });
     // Loaded separately: it lives in the sandbox's Pi settings, not project.json.
     void getProjectCompaction(project.id)
       .then((settings) => {
@@ -221,6 +253,22 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
               enabled: compaction.enabled,
               reserveTokens,
               keepRecentTokens,
+            });
+          }
+        }
+        const guard = form.guard;
+        if (guard) {
+          const protectedPaths = guard.protectedPaths
+            .split("\n")
+            .map((line) => line.trim())
+            .filter(Boolean);
+          const changed =
+            guard.destructiveConfirm !== guard.initial.destructiveConfirm ||
+            protectedPaths.join("\n") !== guard.initial.protectedPaths.join("\n");
+          if (changed) {
+            await putProjectGuardPolicy(form.id, {
+              protectedPaths,
+              destructiveConfirm: guard.destructiveConfirm,
             });
           }
         }
@@ -462,6 +510,44 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
                 the total reaches this cap; a warning shows at 80%.
               </p>
             </div>
+            {form.mode === "edit" && form.guard && (
+              <fieldset className="rounded-md border p-3" data-testid="guard-settings">
+                <legend className="px-1 text-xs font-medium text-muted-foreground">
+                  Raw-data guard
+                </legend>
+                <label className="text-[11px] text-muted-foreground">
+                  Protected paths (one glob per line; the agent can read but never modify them)
+                  <Textarea
+                    rows={3}
+                    value={form.guard.protectedPaths}
+                    onChange={(e) =>
+                      setForm((f) =>
+                        f.guard ? { ...f, guard: { ...f.guard, protectedPaths: e.target.value } } : f,
+                      )
+                    }
+                    placeholder={"user_data/**\nraw/*.csv"}
+                    aria-label="Protected paths"
+                    className="mt-1 font-mono text-xs"
+                  />
+                </label>
+                <div className="mt-2 flex items-center justify-between gap-3">
+                  <span className="text-xs">Ask before destructive shell commands elsewhere</span>
+                  <Switch
+                    checked={form.guard.destructiveConfirm}
+                    onCheckedChange={(destructiveConfirm) =>
+                      setForm((f) =>
+                        f.guard ? { ...f, guard: { ...f.guard, destructiveConfirm } } : f,
+                      )
+                    }
+                    aria-label="Confirm destructive commands"
+                  />
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Applies to Kady and to background specialists, in live chats too. A
+                  heuristic guard, not a security boundary: see the docs.
+                </p>
+              </fieldset>
+            )}
             {form.mode === "edit" && form.compaction && (
               <fieldset className="rounded-md border p-3" data-testid="compaction-settings">
                 <legend className="px-1 text-xs font-medium text-muted-foreground">
