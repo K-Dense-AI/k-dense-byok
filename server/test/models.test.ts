@@ -95,3 +95,28 @@ describe("provider-aware model resolution", () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe("custom model servers in ref resolution", () => {
+  it("resolves <custom-id>/<model> through the registry and errors on unknown ids", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const { KADY_PI_AGENT_DIR } = await import("../src/config.ts");
+    const { writeCustomProviders } = await import("../src/agent/custom-models.ts");
+    writeCustomProviders(
+      [{ id: "hpc-vllm", baseUrl: "http://gpu:8000/v1", api: "openai-completions", models: [{ id: "llama-3.3-70b" }] }],
+      KADY_PI_AGENT_DIR,
+    );
+    try {
+      const found = { id: "llama-3.3-70b", provider: "hpc-vllm", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } };
+      const registry = { find: (provider: string, id: string) => (provider === "hpc-vllm" && id === "llama-3.3-70b" ? found : null) } as never;
+      expect(resolveModel("hpc-vllm/llama-3.3-70b", registry)).toBe(found);
+      expect(() => resolveModel("hpc-vllm/not-listed", registry)).toThrow(ModelResolutionError);
+      expect(() => resolveModel("hpc-vllm/not-listed", registry)).toThrow(/Unknown hpc-vllm model/);
+      // Unknown prefixes that are not custom providers keep the legacy OpenRouter fallback.
+      expect(modelReference(resolveModel("meta-llama/llama-3.3-70b", registry))).toBe("openrouter/meta-llama/llama-3.3-70b");
+    } finally {
+      fs.rmSync(path.join(KADY_PI_AGENT_DIR, "models.json"), { force: true });
+      fs.rmSync(path.join(KADY_PI_AGENT_DIR, "kady-custom-models.json"), { force: true });
+    }
+  });
+});

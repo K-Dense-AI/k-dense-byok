@@ -30,6 +30,7 @@ import {
   REPO_ROOT,
 } from "../config.ts";
 import { isSubscriptionProvider, subscriptionProvider } from "./provider-auth.ts";
+import { customProviderName, isCustomProvider } from "./custom-models.ts";
 import { directProvider, isDirectProvider } from "./provider-catalog.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
@@ -382,7 +383,10 @@ function directProviderRef(
   if (slash <= 0) return null;
   const providerId = ref.slice(0, slash);
   if (providerId === "openrouter") return null;
-  if (!isDirectProvider(providerId) && !isSubscriptionProvider(providerId)) return null;
+  // Custom servers from models.json are first-class Pi providers too.
+  if (!isDirectProvider(providerId) && !isSubscriptionProvider(providerId) && !isCustomProvider(providerId)) {
+    return null;
+  }
   return { providerId, modelId: ref.slice(slash + 1) };
 }
 
@@ -410,7 +414,11 @@ function providerDisplayName(providerId: string): string {
   return (
     directProvider(providerId)?.name ??
     subscriptionProvider(providerId)?.name ??
-    (providerId === "openrouter" ? "OpenRouter" : providerId)
+    (providerId === "openrouter"
+      ? "OpenRouter"
+      : isCustomProvider(providerId)
+        ? customProviderName(providerId)
+        : providerId)
   );
 }
 

@@ -624,7 +624,7 @@ export class ProviderAuthError extends Error {
   }
 }
 
-function tierFor(model: Model<Api>): "budget" | "mid" | "high" | "flagship" {
+export function tierFor(model: Model<Api>): "budget" | "mid" | "high" | "flagship" {
   if (model.cost.output >= 20) return "flagship";
   if (model.cost.output >= 10) return "high";
   if (model.cost.output >= 3) return "mid";

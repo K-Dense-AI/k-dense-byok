@@ -84,6 +84,13 @@ NIM billing is different from OpenRouter: build.nvidia.com draws on NVIDIA-manag
 
 The picker lists Pi's built-in NIM catalogue, which won't include private or early-access endpoints. To surface those, set `NVIDIA_EXTRA_MODELS` in `.env` to a comma- or whitespace-separated list of model ids (e.g. `private/vendor/example-model`) — they appear under the NVIDIA NIM picker section and run like any other NIM model. Values are model ids exactly as sent to the API; don't add a `nvidia/` ref prefix (NIM ids can legitimately begin with a `nvidia/` vendor segment). Ids that later land in Pi's catalogue are deduped automatically, catalogue metadata winning.
 
+## Custom model servers
+
+Any OpenAI- or Anthropic-compatible endpoint can be added as its own provider
+with pricing and context metadata, from Settings → Model providers → Custom
+model servers. References are `<provider id>/<model id>`; billing is
+pay-as-you-go at the declared cost. See [custom model servers](./custom-model-servers.md).
+
 ## OpenRouter Fusion presets
 
 The picker also has an **Openrouter Fusion** section at the top: named presets where a panel of models deliberates on your prompt and an Opus 4.8 judge synthesizes one answer, with the combined panel price and (where published) the DRACO benchmark score shown on each entry. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.

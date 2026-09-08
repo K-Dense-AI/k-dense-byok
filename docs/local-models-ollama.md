@@ -78,3 +78,10 @@ Local models are fully supported, but skill-heavy work leans on model quality (s
 - **Skills that rely on multi-tool choreography** (running scripts, chaining file edits, producing structured output) are the most fragile.
 
 If a task loops or ignores its skill, try a **larger local model** (or temporarily switch back to an OpenRouter-hosted model) before assuming the workflow is broken.
+
+## Want pricing and metadata for a hosted or shared server?
+
+Ollama and the OpenAI-compatible section are billed at $0 and are meant for
+local servers. For an institutional vLLM gateway or any endpoint whose usage
+should count toward the spend cap, add it as a
+[custom model server](./custom-model-servers.md) instead.

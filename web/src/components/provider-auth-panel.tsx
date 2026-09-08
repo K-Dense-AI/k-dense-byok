@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { CustomModelsCard } from "@/components/custom-models-card";
 import { OAuthLoginDialog } from "@/components/oauth-login-dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
@@ -176,6 +177,8 @@ export function ProviderAuthPanel() {
         for Anthropic&apos;s documented metered extra usage, Kady records tokens
         but does not treat provider-managed subscription usage as project spend.
       </p>
+
+      <CustomModelsCard />
 
       <OAuthLoginDialog
         provider={selected}

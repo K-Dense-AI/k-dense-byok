@@ -15,12 +15,22 @@ import {
   type DirectProviderDefinition,
 } from "../agent/provider-catalog.ts";
 import { buildNvidiaModel, nvidiaExtraModelIds } from "../agent/models.ts";
+import {
+  customModelForClient,
+  listCustomProviders,
+  validateCustomProviders,
+  writeCustomProviders,
+} from "../agent/custom-models.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 import { credentialFieldFor } from "./credentials.ts";
 
 export interface RegisterModelProviderRoutesOptions {
   manager?: ProviderAuthManager;
   runtime?: ProviderAuthRuntime;
+  /** Re-read models.json after a custom-provider write (default: the process runtime). */
+  refreshModels?: () => Promise<unknown>;
+  /** Agent dir holding models.json (tests point this at a temp dir). */
+  customModelsDir?: string;
 }
 
 function errorReply(
@@ -264,10 +274,54 @@ export async function registerModelProviderRoutes(
           // One provider's listing failure must not hide every other section.
         }
       }
+      // Custom servers from models.json: Pi lists them like any provider once
+      // their (possibly placeholder) key resolves; priced as declared.
+      for (const provider of listCustomProviders(options.customModelsDir)) {
+        const auth = await safeCheckAuth(runtime, provider.id);
+        providers.push({ id: provider.id, configured: auth !== undefined });
+        if (!auth) continue;
+        try {
+          const available = await runtime.getAvailable(provider.id);
+          models.push(...available.map((model) => customModelForClient(model, provider)));
+        } catch {
+          /* same isolation as above */
+        }
+      }
       return { providers, models };
     } catch (error) {
       return errorReply(reply, error);
     }
+  });
+
+  // Custom model servers (Pi models.json). Kady manages only the providers it
+  // wrote; hand-written ones are listed read-only.
+  app.get("/custom-models", async () => ({ providers: listCustomProviders(options.customModelsDir) }));
+
+  app.put<{ Body: { providers?: unknown } }>("/custom-models", async (req, reply) => {
+    const validated = validateCustomProviders(req.body?.providers ?? []);
+    if (typeof validated === "string") {
+      reply.code(400);
+      return { detail: validated };
+    }
+    const written = writeCustomProviders(validated, options.customModelsDir);
+    if (!written) {
+      reply.code(409);
+      return {
+        detail:
+          "models.json could not be updated: it is not valid JSON, or a provider id belongs to a hand-written entry",
+      };
+    }
+    try {
+      await (options.refreshModels ?? (() => getModelRuntime().refresh()))();
+    } catch (error) {
+      reply.code(502);
+      return { detail: `Saved, but Pi could not reload models.json: ${(error as Error).message}` };
+    }
+    const configured: Record<string, boolean> = {};
+    for (const provider of written) {
+      configured[provider.id] = (await safeCheckAuth(runtime, provider.id)) !== undefined;
+    }
+    return { providers: written, configured };
   });
 
   // NVIDIA NIM model discovery — kept as an alias of the generic route for
