@@ -20,6 +20,8 @@ export const MODAL_CATALOG_METADATA = {
   source: "K-Dense curated Modal resource estimates",
   estimated: true,
   unit: "USD/hour",
+  /** Worst-case quotes cover timeout + this headroom; see transferHeadroomSec. */
+  transferHeadroom: { minSec: 60, fraction: 0.1, maxSec: 900 },
 } as const;
 
 /**
@@ -101,12 +103,32 @@ export function hourlyEstimate(spec: ModalInstanceSpec, gpuCount: number): numbe
   return spec.pricePerHour * (spec.kind === "gpu" ? gpuCount : 1);
 }
 
+/**
+ * Extra sandbox lifetime beyond the command timeout, reserved for staging
+ * inputs and collecting outputs so a command that legitimately uses its whole
+ * timeout does not lose its outputs to the sandbox dying mid-download.
+ * 10 % of the timeout, never less than a minute, never more than 15 minutes.
+ */
+export function transferHeadroomSec(timeoutSec: number): number {
+  return Math.min(Math.max(60, Math.ceil(timeoutSec * 0.1)), 900);
+}
+
+/** Maximum lifetime requested from Modal for a job's sandbox. */
+export function sandboxLifetimeSec(timeoutSec: number): number {
+  return timeoutSec + transferHeadroomSec(timeoutSec);
+}
+
+/**
+ * Strict worst case: the most expensive instance in the chain for the whole
+ * sandbox lifetime (command timeout plus transfer headroom), since Modal bills
+ * the sandbox for as long as it exists.
+ */
 export function worstCaseReservationUsd(request: ModalJobRequest): number {
   const count = request.gpuCount ?? 1;
   const timeout = request.timeoutSec ?? 600;
   return (
     Math.max(...validateInstanceChain(request).map((spec) => hourlyEstimate(spec, count))) *
-    (timeout / 3600)
+    (sandboxLifetimeSec(timeout) / 3600)
   );
 }
 

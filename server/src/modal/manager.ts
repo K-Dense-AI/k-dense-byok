@@ -19,6 +19,7 @@ import {
   resolveInstance,
   validateInstanceChain,
   worstCaseReservationUsd,
+  sandboxLifetimeSec,
   validateImageRequest,
 } from "./catalog.ts";
 import {
@@ -784,10 +785,12 @@ export class DurableModalJobManager {
         // before the cancellation check, so a concurrent abort can always find
         // and terminate the newly-created remote sandbox.
         createAttempted = true;
+        // The sandbox outlives the command by a bounded transfer headroom so
+        // staging and collection never eat into the command's own timeout.
         const sandbox = await adapter.createSandbox(environment, {
           instance: spec,
           gpuCount: job.request.gpuCount,
-          timeoutMs: job.request.timeoutSec * 1000,
+          timeoutMs: sandboxLifetimeSec(job.request.timeoutSec) * 1000,
           name: job.sandboxName,
           tags: job.sandboxTags,
         });
@@ -1043,9 +1046,19 @@ export class DurableModalJobManager {
           wrapperError = error;
           settled = true;
         });
+      const lifetimeDeadline =
+        (this.store.require(projectId, jobId).sandboxCreatedAt ?? Date.now()) +
+        sandboxLifetimeSec(job.request.timeoutSec) * 1000 +
+        30_000;
       while (!settled) {
         await checked(sleep(500));
         await this.syncRemoteLogs(projectId, jobId, sandbox);
+        // Modal enforces the lifetime remotely; this local backstop covers an
+        // SDK wait() that never settles (network partition, client bug) so the
+        // job cannot sit in `running` with its hold forever.
+        if (Date.now() > lifetimeDeadline) {
+          throw new ModalJobError("TIMEOUT", "Modal sandbox exceeded its lifetime without reporting completion", 504, true);
+        }
       }
       await checked(waiter);
       await this.syncRemoteLogs(projectId, jobId, sandbox);
@@ -1159,7 +1172,8 @@ export class DurableModalJobManager {
           );
         }
         const job = this.store.require(projectId, jobId);
-        const deadline = (job.sandboxCreatedAt ?? job.createdAt) + job.request.timeoutSec * 1000;
+        const deadline =
+          (job.sandboxCreatedAt ?? job.createdAt) + sandboxLifetimeSec(job.request.timeoutSec) * 1000;
         if (Date.now() > deadline + 5000) {
           throw new ModalJobError("TIMEOUT", "Recovered Modal sandbox exceeded its timeout", 504);
         }
@@ -1232,11 +1246,11 @@ export class DurableModalJobManager {
     let entryId: string | undefined;
     if (job.sandboxCreatedAt && job.pricePerHour !== undefined && !job.approvalCleanupUncertain) {
       const endedAt = job.sandboxTerminatedAt ?? job.finishedAt ?? Date.now();
-      // Modal enforces timeoutSec as the sandbox's maximum lifetime. Cap local
-      // observation lag (for example, a slow terminate RPC) so actual
-      // reconciliation cannot exceed the strict worst-case reservation.
+      // Modal enforces the sandbox lifetime (timeout + transfer headroom) as
+      // its maximum age. Cap local observation lag (for example, a slow
+      // terminate RPC) so reconciliation cannot exceed the worst-case hold.
       const elapsedMs = Math.min(
-        job.request.timeoutSec * 1000,
+        sandboxLifetimeSec(job.request.timeoutSec) * 1000,
         Math.max(1, endedAt - job.sandboxCreatedAt),
       );
       costUsd = (elapsedMs / 3_600_000) * job.pricePerHour;

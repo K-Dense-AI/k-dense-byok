@@ -32,6 +32,8 @@ import {
 import {
   MODAL_INSTANCES,
   gpuString,
+  sandboxLifetimeSec,
+  transferHeadroomSec,
   validateInstanceChain,
   worstCaseReservationUsd,
 } from "../src/modal/catalog.ts";
@@ -309,6 +311,29 @@ describe("Durable Modal manager accounting", () => {
     expect(
       manager.store.events("default", job.id).some((event) => event.type === "instance_fallback"),
     ).toBe(true);
+  });
+
+  it("gives the sandbox transfer headroom beyond the command timeout and reserves for it", async () => {
+    expect(transferHeadroomSec(60)).toBe(60);
+    expect(transferHeadroomSec(1000)).toBe(100);
+    expect(transferHeadroomSec(24 * 3600)).toBe(900);
+    expect(sandboxLifetimeSec(1000)).toBe(1100);
+    const fake = new FakeModal();
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory);
+    const request = { command: "work", instance: "cpu", timeoutSec: 1000 };
+    const job = manager.submit("default", request, { sessionId: "s-headroom", submittedBy: "api" });
+    expect(job.reservationUsd).toBeCloseTo(worstCaseReservationUsd(request), 12);
+    expect(job.reservationUsd).toBeCloseTo(MODAL_INSTANCES.find((s) => s.id === "cpu")!.pricePerHour * (1100 / 3600), 12);
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+    // Sandbox lifetime carries the headroom; the wrapped command does not.
+    expect(fake.createParams.at(-1)?.timeoutMs).toBe(1100 * 1000);
+    const sandbox = fake.sandboxes.get(terminal.sandboxId!)!;
+    const wrapper = sandbox.execParams.find((call) => call.command[0] === "python3" && String(call.command[1]).endsWith("wrapper.py"));
+    expect(wrapper?.params?.timeoutMs).toBe(1000 * 1000);
+    // Settled spend can never exceed the lifetime-based hold.
+    expect(terminal.accounting.estimatedCostUsd!).toBeLessThanOrEqual(job.reservationUsd + 1e-12);
   });
 
   it("does not try other instances when the credentials themselves are rejected", async () => {

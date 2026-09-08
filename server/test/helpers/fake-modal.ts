@@ -91,7 +91,10 @@ export class FakeSandbox implements ModalRemoteSandbox {
     this.behavior = behavior;
   }
 
-  async exec(command: string[]): Promise<ModalRemoteProcess> {
+  execParams: Array<{ command: string[]; params?: Record<string, unknown> }> = [];
+
+  async exec(command: string[], params?: Record<string, unknown>): Promise<ModalRemoteProcess> {
+    this.execParams.push({ command, params });
     if (command[0] === "mv") {
       const source = command[2];
       const destination = command[3];
@@ -156,6 +159,7 @@ export class FakeModal {
   createErrors: Error[] = [];
   sandboxes = new Map<string, FakeSandbox>();
   prepared: Array<{ environment?: string; cache?: "project" | "none" }> = [];
+  createParams: Array<{ timeoutMs: number; name: string; tags: Record<string, string> }> = [];
   nextId = 1;
 
   factory = (): ModalAdapter => {
@@ -180,7 +184,8 @@ export class FakeModal {
           opaque: {},
         };
       },
-      async createSandbox() {
+      async createSandbox(_environment, params) {
+        parent.createParams.push({ timeoutMs: params.timeoutMs, name: params.name, tags: params.tags });
         const createError = parent.createErrors.shift();
         if (createError) throw createError;
         const sandbox = new FakeSandbox(
