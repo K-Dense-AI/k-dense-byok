@@ -824,16 +824,21 @@ export class DurableModalJobManager {
         // cleared so a later successful attempt reconciles against its own
         // creation window rather than this abandoned one.
         if (created) {
+          let terminated = false;
           try {
             await created.terminate();
+            terminated = true;
           } catch {
-            // best effort; the next attempt still needs to proceed
+            // best effort; the next attempt still needs to proceed, and the id
+            // is kept so recovery can retry the termination later
           }
           if (runtime.sandbox === created) runtime.sandbox = undefined;
+          const orphanId = created.id;
           this.store.update(projectId, jobId, (current) => {
             current.sandboxId = undefined;
             current.sandboxCreatedAt = undefined;
             current.sandboxTerminatedAt = undefined;
+            if (!terminated) current.orphanedSandboxIds = [...(current.orphanedSandboxIds ?? []), orphanId];
           });
         }
         // Only resource availability justifies trying the next instance. A
@@ -1096,6 +1101,9 @@ export class DurableModalJobManager {
       // truth for whether one exists.
       const created = sandbox ?? runtime.sandbox;
       if (created) await this.terminateAndRecord(projectId, jobId, created);
+      if (this.store.read(projectId, jobId)?.orphanedSandboxIds?.length) {
+        await this.terminateOrphans(projectId, jobId, runtime, false);
+      }
       // Unconditional: finish() defers reconciliation to here whenever a
       // sandbox was created, so skipping it strands the budget reservation
       // for the life of the process. It no-ops when already reconciled.
@@ -1108,6 +1116,7 @@ export class DurableModalJobManager {
     jobId: string,
     runtime: ActiveRuntime,
   ): Promise<void> {
+    this.store.resyncLogCounters(projectId, jobId);
     const existing = this.store.require(projectId, jobId);
     if (isTerminalModalState(existing.state)) {
       await this.reconcile(projectId, jobId);
@@ -1118,6 +1127,13 @@ export class DurableModalJobManager {
       return;
     }
     if (!existing.sandboxId) {
+      if (existing.state === "preparing") {
+        // The crash may have landed between Modal creating the sandbox and us
+        // persisting its id. The sandbox carries our job id as a tag, so look
+        // for it and terminate it: it never received the wrapper, so it cannot
+        // be reattached, only stopped before it bills until its timeout.
+        await this.terminateOrphans(projectId, jobId, runtime, true);
+      }
       await this.executeJob(projectId, jobId, runtime);
       return;
     }
@@ -1197,6 +1213,68 @@ export class DurableModalJobManager {
     } finally {
       await this.terminateAndRecord(projectId, jobId, sandbox);
       await this.reconcile(projectId, jobId);
+    }
+  }
+
+  /**
+   * Best-effort termination of sandboxes this job created but could not
+   * confirm terminated: ids recorded in `orphanedSandboxIds`, and (when
+   * `searchByTag`) any live sandbox tagged with this job id that was never
+   * persisted because the process died right after creation.
+   */
+  private async terminateOrphans(
+    projectId: string,
+    jobId: string,
+    runtime: ActiveRuntime | undefined,
+    searchByTag: boolean,
+  ): Promise<void> {
+    const job = this.store.read(projectId, jobId);
+    if (!job) return;
+    let adapter = runtime?.adapter;
+    let ownAdapter = false;
+    try {
+      if (!adapter) {
+        adapter = this.adapterFactory();
+        ownAdapter = true;
+      }
+      const remaining: string[] = [];
+      for (const id of job.orphanedSandboxIds ?? []) {
+        try {
+          await (await adapter.fromId(id)).terminate();
+        } catch (error) {
+          if (errorInfo(error).code === "REMOTE_NOT_FOUND") continue; // already gone
+          remaining.push(id);
+        }
+      }
+      if (searchByTag && !job.sandboxId) {
+        try {
+          const found = await adapter.findByTags({ kady: "true", project: projectId, job: jobId });
+          if (found) {
+            try {
+              await found.terminate();
+              this.store.appendEvent(projectId, jobId, {
+                type: "orphan_terminated",
+                state: job.state,
+                message: `Terminated sandbox ${found.id} created before the previous shutdown`,
+                data: { sandboxId: found.id },
+              });
+            } catch {
+              remaining.push(found.id);
+            }
+          }
+        } catch (error) {
+          console.warn("[modal] orphan lookup failed", jobId, error);
+        }
+      }
+      if ((job.orphanedSandboxIds?.length ?? 0) !== remaining.length || remaining.length) {
+        this.store.update(projectId, jobId, (current) => {
+          current.orphanedSandboxIds = remaining.length ? remaining : undefined;
+        });
+      }
+    } catch (error) {
+      console.warn("[modal] orphan cleanup skipped", jobId, error);
+    } finally {
+      if (ownAdapter) adapter?.close();
     }
   }
 
@@ -1308,11 +1386,23 @@ export class DurableModalJobManager {
         catch (e) { await this.finish(projectId, job.id, "failed", e); continue; }
       }
       if (isTerminalModalState(job.state)) {
-        if (job.approval && job.sandboxId && !job.sandboxTerminatedAt && !job.accounting.reconciled) {
+        // A crash between finish() and terminateAndRecord() — or a cancel that
+        // ran while credentials were missing — leaves a terminal record whose
+        // sandbox may still be alive and billing. Any job, not only approved.
+        if (job.sandboxId && !job.sandboxTerminatedAt && !(this.requireCredentials && !modalConfigured())) {
           const adapter = this.adapterFactory();
           try { await this.terminateAndRecord(projectId, job.id, await adapter.fromId(job.sandboxId)); }
-          catch { this.store.update(projectId, job.id, (j) => { j.approvalCleanupUncertain = true; }); }
+          catch (error) {
+            if (errorInfo(error).code === "REMOTE_NOT_FOUND") {
+              this.store.update(projectId, job.id, (j) => { j.sandboxTerminatedAt ??= Date.now(); });
+            } else if (job.approval) {
+              this.store.update(projectId, job.id, (j) => { j.approvalCleanupUncertain = true; });
+            }
+          }
           finally { adapter.close(); }
+        }
+        if (job.orphanedSandboxIds?.length && !(this.requireCredentials && !modalConfigured())) {
+          await this.terminateOrphans(projectId, job.id, undefined, false);
         }
         if (!job.accounting.reconciled) await this.reconcile(projectId, job.id);
       } else if (this.requireCredentials && !modalConfigured()) {

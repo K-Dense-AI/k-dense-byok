@@ -7,7 +7,7 @@ import type {
   ModalRemoteProcess,
   ModalRemoteSandbox,
 } from "../../src/modal/adapter.ts";
-import type { ModalJob } from "../../src/modal/types.ts";
+import { ModalJobError, type ModalJob } from "../../src/modal/types.ts";
 
 /**
  * In-memory Modal double shared by the manager, tool, package and API tests.
@@ -83,6 +83,9 @@ export class FakeSandbox implements ModalRemoteSandbox {
   readonly id: string;
   readonly filesystem = new FakeFilesystem();
   terminated = false;
+  tags: Record<string, string> = {};
+  /** Number of terminate() calls that should fail before one succeeds. */
+  terminateFailures = 0;
   behavior: Behavior;
   private rejectWait?: (error: Error) => void;
 
@@ -143,6 +146,10 @@ export class FakeSandbox implements ModalRemoteSandbox {
   }
 
   async terminate(): Promise<void> {
+    if (this.terminateFailures > 0) {
+      this.terminateFailures--;
+      throw new Error("terminate RPC timed out");
+    }
     this.terminated = true;
     this.rejectWait?.(new Error("terminated"));
   }
@@ -160,6 +167,8 @@ export class FakeModal {
   sandboxes = new Map<string, FakeSandbox>();
   prepared: Array<{ environment?: string; cache?: "project" | "none" }> = [];
   createParams: Array<{ timeoutMs: number; name: string; tags: Record<string, string> }> = [];
+  /** Per created sandbox (in order): how many terminate() calls fail first. */
+  terminateFailures: number[] = [];
   nextId = 1;
 
   factory = (): ModalAdapter => {
@@ -192,13 +201,22 @@ export class FakeModal {
           `sb-${parent.nextId++}`,
           parent.behaviors.shift() ?? { kind: "success" },
         );
+        sandbox.tags = { ...params.tags };
+        sandbox.terminateFailures = parent.terminateFailures.shift() ?? 0;
         parent.sandboxes.set(sandbox.id, sandbox);
         return sandbox;
       },
       async fromId(id: string) {
         const sandbox = parent.sandboxes.get(id);
-        if (!sandbox) throw new Error("sandbox not found");
+        if (!sandbox) throw new ModalJobError("REMOTE_NOT_FOUND", "sandbox not found", 404);
         return sandbox;
+      },
+      async findByTags(tags: Record<string, string>) {
+        for (const sandbox of parent.sandboxes.values()) {
+          if (sandbox.terminated) continue;
+          if (Object.entries(tags).every(([key, value]) => sandbox.tags[key] === value)) return sandbox;
+        }
+        return null;
       },
       async clearCache() {},
       close() {},

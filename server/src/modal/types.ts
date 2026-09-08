@@ -117,6 +117,8 @@ export interface ModalJob {
   sandboxTags: Record<string, string>;
   sandboxCreatedAt?: number;
   sandboxTerminatedAt?: number;
+  /** Sandboxes created for this job whose termination was not confirmed; recovery retries. */
+  orphanedSandboxIds?: string[];
   exitCode?: number;
   error?: ModalJobErrorInfo;
   inputFiles: ModalTransferFile[];

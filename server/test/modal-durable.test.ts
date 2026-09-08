@@ -505,6 +505,104 @@ describe("Durable Modal manager accounting", () => {
   });
 });
 
+describe("Durable Modal manager recovery cleanup", () => {
+  it("terminates a sandbox created just before a crash instead of leaving it to bill until timeout", async () => {
+    // Crash landed between Modal creating the sandbox and us persisting its id:
+    // the record is `preparing` with no sandbox id, but a live sandbox tagged
+    // with the job id exists remotely.
+    const store = new ModalJobStore();
+    const fake = new FakeModal();
+    const record = persistedRunningJob({ id: "mj_orphan_create", sandboxId: "unused", sessionId: "s-orphan" });
+    record.state = "preparing";
+    record.runningAt = undefined;
+    record.sandboxId = undefined;
+    record.sandboxCreatedAt = undefined;
+    record.effectiveInstance = undefined;
+    record.pricePerHour = undefined;
+    store.create(record);
+    reserveComputeBudget({ projectId: "default", reservationId: record.id, sessionId: "s-orphan", amountUsd: 0.01 });
+    const orphan = new FakeSandbox("sb-orphaned", { kind: "hang" });
+    orphan.tags = { kady: "true", project: "default", job: record.id };
+    fake.sandboxes.set(orphan.id, orphan);
+    fake.behaviors.push({ kind: "success" });
+    const manager = new DurableModalJobManager(fake.factory, store);
+    await manager.recoverProject("default");
+    const terminal = await manager.wait("default", record.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+    expect(orphan.terminated).toBe(true);
+    expect(terminal.sandboxId).not.toBe(orphan.id);
+    expect(fake.sandboxes.size).toBe(2);
+    expect(store.events("default", record.id).some((event) => event.type === "orphan_terminated")).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+  });
+
+  it("records a fallback sandbox whose termination failed and cleans it up on recovery", async () => {
+    class EventFailingStore extends ModalJobStore {
+      failNext = true;
+      override appendEvent(projectId: string, jobId: string, event: any) {
+        if (event.type === "sandbox_created" && this.failNext) {
+          this.failNext = false;
+          throw new Error("EIO while appending event");
+        }
+        return super.appendEvent(projectId, jobId, event);
+      }
+    }
+    const fake = new FakeModal();
+    // First sandbox: created, then the local event append fails, then its
+    // termination fails twice (once in the fallback path, once in finally).
+    fake.terminateFailures.push(2, 0);
+    fake.behaviors.push({ kind: "success" }, { kind: "success" });
+    const store = new EventFailingStore();
+    const manager = new DurableModalJobManager(fake.factory, store);
+    const job = manager.submit(
+      "default",
+      { command: "work", instance: "h100", gpuFallback: ["h200"] },
+      { sessionId: "s-orphan-fallback", submittedBy: "api" },
+    );
+    const terminal = await manager.wait("default", job.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+    expect(terminal.effectiveInstance).toBe("h200");
+    const first = fake.sandboxes.get("sb-1")!;
+    expect(first.terminated).toBe(false);
+    expect(terminal.orphanedSandboxIds).toEqual(["sb-1"]);
+    // Restart-style recovery retries the termination and clears the record.
+    await manager.recoverProject("default");
+    expect(first.terminated).toBe(true);
+    expect(store.require("default", job.id).orphanedSandboxIds).toBeUndefined();
+  });
+
+  it("terminates the surviving sandbox of any terminal job on recovery, not only approved ones", async () => {
+    const store = new ModalJobStore();
+    const fake = new FakeModal();
+    const sandbox = new FakeSandbox("sb-survivor", { kind: "hang" });
+    fake.sandboxes.set(sandbox.id, sandbox);
+    const record = persistedRunningJob({ id: "mj_terminal_live", sandboxId: sandbox.id, sessionId: "s-survivor" });
+    record.state = "failed";
+    record.finishedAt = Date.now();
+    record.accounting = { reconciled: true, estimatedCostUsd: 0 };
+    store.create(record);
+    const manager = new DurableModalJobManager(fake.factory, store);
+    await manager.recoverProject("default");
+    expect(sandbox.terminated).toBe(true);
+    expect(store.require("default", record.id).sandboxTerminatedAt).toBeTypeOf("number");
+  });
+
+  it("resyncs logical log counters with the retained bytes after a torn append", () => {
+    const store = new ModalJobStore();
+    const record = persistedRunningJob({ id: "mj_log_resync", sandboxId: "sb-x", sessionId: "s-log" });
+    store.create(record);
+    store.appendLog("default", record.id, "stdout", "hello world\n");
+    // Simulate a crash after the bytes hit disk but before the counter write.
+    store.update("default", record.id, (job) => {
+      job.stdoutBytes = 3;
+    });
+    store.resyncLogCounters("default", record.id);
+    const job = store.require("default", record.id);
+    expect(job.stdoutBytes).toBe("hello world\n".length);
+    expect(store.readLog("default", record.id, "stdout", 0).data).toBe("hello world\n");
+  });
+});
+
 describe("Durable Modal manager safety nets", () => {
   it("finalizes and reconciles a job whose worker crashed while finishing", async () => {
     // The first attempt to record the terminal state throws (disk full, a

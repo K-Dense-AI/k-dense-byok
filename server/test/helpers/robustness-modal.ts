@@ -27,6 +27,7 @@ export class RobustnessFakeModal {
     prepareEnvironment: async () => { this.prepared++; return { appId: "test", appName: "test", cacheName: null, opaque: {} }; },
     createSandbox: async () => { this.created++; if (this.createError) throw new Error("ambiguous creation"); const s = new FakeSandbox(`fake-${this.created}`, this); this.sandboxes.set(s.id, s); return s; },
     fromId: async (id) => { const s = this.sandboxes.get(id); if (!s) throw new Error("not found"); return s; },
+    findByTags: async () => null,
   });
 }
 class FakeSandbox implements ModalRemoteSandbox {

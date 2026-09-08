@@ -86,6 +86,8 @@ export interface ModalAdapter {
     params: ModalCreateSandboxParams,
   ): Promise<ModalRemoteSandbox>;
   fromId(sandboxId: string): Promise<ModalRemoteSandbox>;
+  /** First live sandbox carrying every given tag, or null. */
+  findByTags(tags: Record<string, string>): Promise<ModalRemoteSandbox | null>;
   clearCache(cacheName: string): Promise<void>;
   close(): void;
 }
@@ -328,6 +330,12 @@ export class SdkModalAdapter implements ModalAdapter {
 
   async fromId(sandboxId: string): Promise<ModalRemoteSandbox> {
     return new SdkRemoteSandbox(await classified(this.client.sandboxes.fromId(sandboxId)));
+  }
+
+  async findByTags(tags: Record<string, string>): Promise<ModalRemoteSandbox | null> {
+    const iterator = this.client.sandboxes.list({ tags });
+    const first = await classified(iterator.next());
+    return first.done || !first.value ? null : new SdkRemoteSandbox(first.value);
   }
 
   async clearCache(cacheName: string): Promise<void> {

@@ -240,6 +240,33 @@ export class ModalJobStore {
     this.write(job);
   }
 
+  /**
+   * After a crash between a log append and the counter write, the logical
+   * byte count lags the file. Recovery calls this so later cursor reads line
+   * up with the bytes actually retained.
+   */
+  resyncLogCounters(projectId: string, jobId: string): void {
+    const files = modalJobFiles(projectId, jobId);
+    const job = this.require(projectId, jobId);
+    let changed = false;
+    for (const stream of ["stdout", "stderr"] as const) {
+      let size = 0;
+      try {
+        size = fs.statSync(stream === "stdout" ? files.stdout : files.stderr).size;
+      } catch {
+        continue;
+      }
+      const bytesKey = stream === "stdout" ? "stdoutBytes" : "stderrBytes";
+      const baseKey = stream === "stdout" ? "stdoutBaseCursor" : "stderrBaseCursor";
+      const expected = job[baseKey] + size;
+      if (job[bytesKey] !== expected) {
+        job[bytesKey] = expected;
+        changed = true;
+      }
+    }
+    if (changed) this.write(job);
+  }
+
   replaceLog(
     projectId: string,
     jobId: string,
