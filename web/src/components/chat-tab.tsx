@@ -653,6 +653,7 @@ function ChatInput({
   selectedModel,
   onModelChange,
   contextUsage,
+  onCompact,
   selectedComputeTarget,
   onComputeTargetChange,
   thinkingLevel,
@@ -700,6 +701,8 @@ function ChatInput({
   selectedModel: Model;
   onModelChange: (model: Model) => void;
   contextUsage: ContextUsage | null;
+  /** "Compact now" for the context gauge; undefined hides the action. */
+  onCompact?: () => void;
   selectedComputeTarget: ModalInstance | null;
   onComputeTargetChange: (instance: ModalInstance | null) => void;
   thinkingLevel: ThinkingLevel;
@@ -1092,7 +1095,11 @@ function ChatInput({
                 error={modalCatalogError}
                 onRefresh={onRefreshModalCatalog}
               />
-              <ContextUsageIndicator usage={contextUsage} />
+              <ContextUsageIndicator
+                usage={contextUsage}
+                onCompact={onCompact}
+                compactDisabled={isStreaming}
+              />
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <InfoTooltip
@@ -1539,6 +1546,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     stop,
     steer,
     followUp,
+    compact,
     pendingSteers,
     pendingFollowUps,
     getSessionId,
@@ -1905,6 +1913,23 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
    * the composer keeps the user's text *and* file chips instead of clearing
    * them into the void.
    */
+  const handleCompact = useCallback(async () => {
+    const result = await compact();
+    if (result.ok) {
+      const after = result.estimatedTokensAfter;
+      toast.success(
+        `Context compacted: ${result.tokensBefore.toLocaleString()} tokens` +
+          (after !== null ? ` → about ${after.toLocaleString()}` : "") +
+          (result.costUsd > 0 ? ` · ${formatUsd(result.costUsd)}` : ""),
+      );
+      return;
+    }
+    if (result.reason === "streaming") toast.error("Wait for the current run to finish before compacting.");
+    else if (result.reason === "budget") toast.error(result.detail ?? "Project spend limit reached.");
+    else if (result.reason === "no_session") toast.error("Nothing to compact yet.");
+    else toast.error(result.detail ?? "Compaction failed.");
+  }, [compact]);
+
   const handleSend = useCallback(
     async (text: string, intent: SendIntent, images: PromptImage[] = []): Promise<boolean> => {
       if (!selectedModelAvailable) {
@@ -2150,6 +2175,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             selectedModel={selectedModel}
             onModelChange={setSelectedModel}
             contextUsage={contextUsage}
+            onCompact={handleCompact}
             selectedComputeTarget={selectedComputeTarget}
             onComputeTargetChange={setSelectedComputeTarget}
             thinkingLevel={thinkingLevel}

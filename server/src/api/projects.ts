@@ -32,6 +32,12 @@ import {
 import { syncSandboxVenv } from "../sandbox-seed.ts";
 import { listProjectActivities } from "../project-activity.ts";
 import { modalJobManager } from "../modal/manager.ts";
+import {
+  COMPACTION_BOUNDS,
+  readCompactionSettings,
+  validateCompactionPatch,
+  writeCompactionSettings,
+} from "../agent/compaction-settings.ts";
 
 export async function registerProjectRoutes(app: FastifyInstance): Promise<void> {
   app.get("/projects", async () => listProjects());
@@ -88,6 +94,38 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       reply.code(404);
       return { detail: (err as Error).message };
     }
+  });
+
+  // Per-project context-compaction knobs (stored in sandbox/.pi/settings.json).
+  app.get<{ Params: { projectId: string } }>("/projects/:projectId/compaction", async (req, reply) => {
+    if (!getProject(req.params.projectId)) {
+      reply.code(404);
+      return { detail: "Project not found" };
+    }
+    return { ...readCompactionSettings(resolvePaths(req.params.projectId)), bounds: COMPACTION_BOUNDS };
+  });
+
+  app.put<{ Params: { projectId: string } }>("/projects/:projectId/compaction", async (req, reply) => {
+    if (!getProject(req.params.projectId)) {
+      reply.code(404);
+      return { detail: "Project not found" };
+    }
+    const error = validateCompactionPatch(req.body);
+    if (error) {
+      reply.code(400);
+      return { detail: error };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const written = writeCompactionSettings(resolvePaths(req.params.projectId), {
+      ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
+      ...(typeof body.reserveTokens === "number" ? { reserveTokens: body.reserveTokens } : {}),
+      ...(typeof body.keepRecentTokens === "number" ? { keepRecentTokens: body.keepRecentTokens } : {}),
+    });
+    if (!written) {
+      reply.code(409);
+      return { detail: "sandbox/.pi/settings.json is not valid JSON; fix it before changing compaction settings" };
+    }
+    return { ...written, bounds: COMPACTION_BOUNDS };
   });
 
   app.get<{ Params: { projectId: string } }>("/projects/:projectId/costs", async (req) => {

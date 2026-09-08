@@ -260,3 +260,46 @@ export async function initProjectSandbox(
     throw new Error(detail || `initProjectSandbox ${res.status}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Per-project context-compaction settings (stored in sandbox/.pi/settings.json)
+// ---------------------------------------------------------------------------
+
+export interface CompactionSettings {
+  enabled: boolean;
+  reserveTokens: number;
+  keepRecentTokens: number;
+}
+
+export interface CompactionSettingsResponse extends CompactionSettings {
+  bounds: {
+    reserveTokens: { min: number; max: number };
+    keepRecentTokens: { min: number; max: number };
+  };
+}
+
+export async function getProjectCompaction(id: string): Promise<CompactionSettingsResponse> {
+  const res = await apiFetch(`/projects/${encodeURIComponent(id)}/compaction`, {}, id);
+  if (!res.ok) throw new Error(`getProjectCompaction ${res.status}`);
+  return (await res.json()) as CompactionSettingsResponse;
+}
+
+export async function putProjectCompaction(
+  id: string,
+  patch: Partial<CompactionSettings>,
+): Promise<CompactionSettingsResponse> {
+  const res = await apiFetch(
+    `/projects/${encodeURIComponent(id)}/compaction`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    id,
+  );
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { detail?: string };
+    throw new Error(body.detail || `putProjectCompaction ${res.status}`);
+  }
+  return (await res.json()) as CompactionSettingsResponse;
+}

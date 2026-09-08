@@ -831,3 +831,71 @@ describe("useAgent system-initiated runs", () => {
     expect(calls.filter((c) => c === "/sessions/idle/run/state").length).toBe(2);
   });
 });
+
+describe("useAgent compact()", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("posts to /compact, resets the gauge and reloads the transcript from history", async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string, init?: RequestInit) => {
+      calls.push({ path, method: init?.method, body: typeof init?.body === "string" ? init.body : undefined });
+      if (path === "/sessions/s/run/state") return new Response(JSON.stringify({ status: "none" }));
+      if (path === "/sessions/s/history" && calls.filter((c) => c.path === path).length === 1) {
+        return new Response(JSON.stringify({ messages: [{ role: "user", content: "long chat" }], contextUsage: { tokens: 150_000, contextWindow: 200_000, percent: 75 } }));
+      }
+      if (path === "/sessions/s/compact") {
+        return new Response(
+          JSON.stringify({ ok: true, tokensBefore: 150_000, estimatedTokensAfter: 12_000, costUsd: 0.02, contextUsage: { tokens: null, contextWindow: 200_000, percent: null } }),
+        );
+      }
+      if (path === "/sessions/s/history") {
+        return new Response(
+          JSON.stringify({
+            messages: [
+              { role: "user", content: "long chat" },
+              { role: "system", customType: "compaction", content: "Context compacted", details: { tokensBefore: 150_000 } },
+            ],
+          }),
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+    const { result } = renderHook(() => useAgent("p"));
+    await act(async () => {
+      expect(await result.current.loadSession("s")).toBe("restored");
+    });
+    expect(result.current.contextUsage).toEqual({ tokens: 150_000, contextWindow: 200_000, percent: 75 });
+
+    let outcome!: Awaited<ReturnType<typeof result.current.compact>>;
+    await act(async () => {
+      outcome = await result.current.compact("keep thresholds");
+    });
+    expect(outcome).toEqual({ ok: true, tokensBefore: 150_000, estimatedTokensAfter: 12_000, costUsd: 0.02 });
+    const post = calls.find((c) => c.path === "/sessions/s/compact");
+    expect(post).toMatchObject({ method: "POST", body: JSON.stringify({ instructions: "keep thresholds" }) });
+    expect(result.current.contextUsage).toEqual({ tokens: null, contextWindow: 200_000, percent: null });
+    expect(result.current.messages.map((m) => m.role)).toEqual(["user", "system"]);
+    expect(result.current.messages[1]).toMatchObject({ customType: "compaction" });
+  });
+
+  it("maps 409/402 to streaming/budget reasons", async () => {
+    let status = 409;
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      if (path === "/sessions/s/run/state") return new Response(JSON.stringify({ status: "none" }));
+      if (path === "/sessions/s/history") return new Response(JSON.stringify({ messages: [] }));
+      if (path === "/sessions/s/compact") return new Response(JSON.stringify({ detail: "nope" }), { status });
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+    const { result } = renderHook(() => useAgent("p"));
+    await act(async () => {
+      await result.current.loadSession("s");
+    });
+    await act(async () => {
+      expect(await result.current.compact()).toEqual({ ok: false, reason: "streaming", detail: "nope" });
+    });
+    status = 402;
+    await act(async () => {
+      expect(await result.current.compact()).toEqual({ ok: false, reason: "budget", detail: "nope" });
+    });
+  });
+});

@@ -1,12 +1,22 @@
 "use client";
 
-import { GaugeIcon } from "lucide-react";
+import { GaugeIcon, ScissorsIcon } from "lucide-react";
 
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { cn, formatCompactTokens } from "@/lib/utils";
 import type { ContextUsage } from "@/lib/use-agent";
 
-export function ContextUsageIndicator({ usage }: { usage: ContextUsage | null }) {
+export function ContextUsageIndicator({
+  usage,
+  onCompact,
+  compactDisabled = false,
+}: {
+  usage: ContextUsage | null;
+  /** When provided, a "Compact now" action sits next to the gauge. */
+  onCompact?: () => void;
+  /** True while a run streams (Pi's compact() would abort it). */
+  compactDisabled?: boolean;
+}) {
   if (!usage) return null;
 
   const known = usage.tokens !== null && usage.percent !== null;
@@ -20,7 +30,7 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage | null })
     ? `Model context ${percent.toFixed(1)} percent, ${tokens.toLocaleString()} of ${usage.contextWindow.toLocaleString()} tokens`
     : `Model context usage awaiting provider measurement, ${usage.contextWindow.toLocaleString()} token window`;
 
-  return (
+  const gauge = (
     <InfoTooltip
       content={
         <>
@@ -58,5 +68,33 @@ export function ContextUsageIndicator({ usage }: { usage: ContextUsage | null })
         </span>
       </span>
     </InfoTooltip>
+  );
+
+  if (!onCompact) return gauge;
+  return (
+    <span className="inline-flex items-center gap-0.5">
+      {gauge}
+      <InfoTooltip
+        content={
+          <>
+            <b>Compact now</b>
+            <br />
+            Summarize older messages to free context. Kady keeps a state block
+            (plan, notebook entries, result ids, environment) ahead of the summary.
+            {compactDisabled ? " Available once the current run finishes." : ""}
+          </>
+        }
+      >
+        <button
+          type="button"
+          onClick={onCompact}
+          disabled={compactDisabled}
+          aria-label="Compact context now"
+          className="inline-flex h-7 items-center rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <ScissorsIcon className="size-3.5" aria-hidden />
+        </button>
+      </InfoTooltip>
+    </span>
   );
 }

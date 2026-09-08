@@ -32,11 +32,18 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { DEFAULT_PROJECT_ID, type Project } from "@/lib/projects";
+import {
+  DEFAULT_PROJECT_ID,
+  getProjectCompaction,
+  putProjectCompaction,
+  type CompactionSettings,
+  type Project,
+} from "@/lib/projects";
 import { useProjects } from "@/lib/use-projects";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +57,16 @@ interface ProjectFormState {
   // Empty string = no limit (unlimited). Stored as a string so the input
   // behaves naturally while the user is typing "0." / "1." etc.
   spendLimit: string;
+  /** Context-compaction knobs (edit mode only; null until loaded). */
+  compaction: CompactionFormState | null;
+}
+
+interface CompactionFormState {
+  enabled: boolean;
+  reserveTokens: string;
+  keepRecentTokens: string;
+  /** Snapshot as loaded, to skip the PUT when nothing changed. */
+  initial: CompactionSettings;
 }
 
 const EMPTY_FORM: ProjectFormState = {
@@ -60,6 +77,7 @@ const EMPTY_FORM: ProjectFormState = {
   description: "",
   tags: "",
   spendLimit: "",
+  compaction: null,
 };
 
 /** Display a project ID in Title Case when we haven't loaded the project
@@ -122,9 +140,30 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
         project.spendLimitUsd === null || project.spendLimitUsd === undefined
           ? ""
           : String(project.spendLimitUsd),
+      compaction: null,
     });
     setFormError(null);
     setPopoverOpen(false);
+    // Loaded separately: it lives in the sandbox's Pi settings, not project.json.
+    void getProjectCompaction(project.id)
+      .then((settings) => {
+        setForm((f) =>
+          f.open && f.mode === "edit" && f.id === project.id
+            ? {
+                ...f,
+                compaction: {
+                  enabled: settings.enabled,
+                  reserveTokens: String(settings.reserveTokens),
+                  keepRecentTokens: String(settings.keepRecentTokens),
+                  initial: settings,
+                },
+              }
+            : f,
+        );
+      })
+      .catch(() => {
+        /* the section simply stays hidden */
+      });
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -166,6 +205,25 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
           tags,
           spendLimitUsd,
         });
+        const compaction = form.compaction;
+        if (compaction) {
+          const reserveTokens = Number(compaction.reserveTokens);
+          const keepRecentTokens = Number(compaction.keepRecentTokens);
+          if (!Number.isInteger(reserveTokens) || !Number.isInteger(keepRecentTokens)) {
+            throw new Error("Compaction token counts must be whole numbers");
+          }
+          const changed =
+            compaction.enabled !== compaction.initial.enabled ||
+            reserveTokens !== compaction.initial.reserveTokens ||
+            keepRecentTokens !== compaction.initial.keepRecentTokens;
+          if (changed) {
+            await putProjectCompaction(form.id, {
+              enabled: compaction.enabled,
+              reserveTokens,
+              keepRecentTokens,
+            });
+          }
+        }
       }
       setForm(EMPTY_FORM);
     } catch (exc) {
@@ -404,6 +462,71 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
                 the total reaches this cap; a warning shows at 80%.
               </p>
             </div>
+            {form.mode === "edit" && form.compaction && (
+              <fieldset className="rounded-md border p-3" data-testid="compaction-settings">
+                <legend className="px-1 text-xs font-medium text-muted-foreground">
+                  Context compaction
+                </legend>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs">Compact automatically near the context limit</span>
+                  <Switch
+                    checked={form.compaction.enabled}
+                    onCheckedChange={(enabled) =>
+                      setForm((f) =>
+                        f.compaction ? { ...f, compaction: { ...f.compaction, enabled } } : f,
+                      )
+                    }
+                    aria-label="Automatic compaction"
+                  />
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label className="text-[11px] text-muted-foreground">
+                    Reserve for the reply (tokens)
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={4000}
+                      max={64000}
+                      step={1000}
+                      value={form.compaction.reserveTokens}
+                      onChange={(e) =>
+                        setForm((f) =>
+                          f.compaction
+                            ? { ...f, compaction: { ...f.compaction, reserveTokens: e.target.value } }
+                            : f,
+                        )
+                      }
+                      aria-label="Reserve tokens"
+                    />
+                  </label>
+                  <label className="text-[11px] text-muted-foreground">
+                    Keep recent verbatim (tokens)
+                    <Input
+                      type="number"
+                      inputMode="numeric"
+                      min={5000}
+                      max={200000}
+                      step={1000}
+                      value={form.compaction.keepRecentTokens}
+                      onChange={(e) =>
+                        setForm((f) =>
+                          f.compaction
+                            ? { ...f, compaction: { ...f.compaction, keepRecentTokens: e.target.value } }
+                            : f,
+                        )
+                      }
+                      aria-label="Keep recent tokens"
+                    />
+                  </label>
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Compaction summarizes older messages when the conversation nears the
+                  model&apos;s window. Kady puts its own state block (plan, notebook,
+                  results, environment) ahead of the summary. Applies to every chat in
+                  this project.
+                </p>
+              </fieldset>
+            )}
             {formError && (
               <p className="text-xs text-destructive">{formError}</p>
             )}

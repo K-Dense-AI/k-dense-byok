@@ -27,6 +27,7 @@ import {
 import {
   assertModelAuthentication,
   ModelAuthenticationError,
+  modelReference,
   resolveModel,
 } from "../agent/models.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
@@ -47,6 +48,7 @@ import {
   executeRun,
   isRunClaimed,
   openRun,
+  snapshot,
   type OpenedRun,
 } from "../agent/run-pipeline.ts";
 import { SandboxError } from "../sandbox-fs.ts";
@@ -64,7 +66,13 @@ import {
   listSessions,
 } from "../agent/session-registry.ts";
 import { parseThinkingLevel } from "../agent/thinking.ts";
-import { isBudgetExceeded, sessionCostSummary } from "../cost/ledger.ts";
+import {
+  emptySnapshot,
+  isBudgetExceeded,
+  recordRun,
+  sessionCostSummary,
+  snapshotDelta,
+} from "../cost/ledger.ts";
 import {
   billingCountsTowardBudget,
   billingForModel,
@@ -478,6 +486,67 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         };
       }
       return { ok: true, pending: [...session.getSteeringMessages()] };
+    },
+  );
+
+  // Manual context compaction ("Compact now"). Runs outside a run: Pi's
+  // compact() aborts any live turn first, so refuse while streaming instead.
+  // The summary call's usage lands on the compaction entry and in
+  // getSessionStats(), so the before/after delta is ledgered like a turn.
+  app.post<{ Params: { id: string }; Body: { instructions?: string } }>(
+    "/sessions/:id/compact",
+    async (req, reply) => {
+      const projectId = currentProjectId();
+      const sessionId = req.params.id;
+      const session = await getSession(projectId, activePaths(), sessionId);
+      if (!session) {
+        reply.code(404);
+        return { detail: "No such session" };
+      }
+      if (session.isStreaming || isRunClaimed(projectId, sessionId)) {
+        reply.code(409);
+        return { detail: "Wait for the current run to finish before compacting", reason: "streaming" };
+      }
+      const instructions =
+        typeof req.body?.instructions === "string" ? req.body.instructions.slice(0, 2_000) : undefined;
+      const billing = session.model
+        ? await billingForModel(session.model, getModelRuntime())
+        : { provider: "unknown", authType: "none" as const, billingMode: "payg" as const };
+      const budget = isBudgetExceeded(projectId);
+      if (billingCountsTowardBudget(billing) && budget.exceeded) {
+        reply.code(402);
+        return {
+          detail:
+            `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+            `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project settings.`,
+          reason: "budget",
+        };
+      }
+      const before = snapshot(session);
+      let result: Awaited<ReturnType<typeof session.compact>>;
+      try {
+        result = await session.compact(instructions);
+      } catch (err) {
+        reply.code(502);
+        return { detail: `Compaction failed: ${(err as Error).message}` };
+      }
+      const entry = recordRun({
+        sessionId,
+        projectId,
+        model: session.model ? modelReference(session.model) : "unknown",
+        role: "agent",
+        before: emptySnapshot(),
+        after: snapshotDelta(before, snapshot(session)),
+        billing,
+      });
+      return {
+        ok: true,
+        tokensBefore: result.tokensBefore,
+        estimatedTokensAfter: result.estimatedTokensAfter ?? null,
+        costUsd: entry?.costUsd ?? 0,
+        billingMode: billing.billingMode,
+        contextUsage: contextUsageForClient(session) ?? null,
+      };
     },
   );
 

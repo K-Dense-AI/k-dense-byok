@@ -102,6 +102,37 @@ The agent's read-only **`notebook_search`** tool provides the same bounded recal
 
 See [notebook-memory.md](./notebook-memory.md) for coverage, budgets, privacy and source-link semantics.
 
+## Context compaction that keeps the science
+
+Long analyses outgrow a model's context window. Pi then **compacts** the
+conversation: older messages are replaced by a summary and the recent part is
+kept verbatim. Kady steers that step so the summary does not lose what a
+scientist needs:
+
+- A **state block comes first**, derived from Kady's own records rather than
+  written by the model: the latest frozen analysis plan, the last twenty
+  notebook entries with their ids, the ids of every `scientific_result` card,
+  and the environment snapshot in effect. Because it is read from the notebook,
+  plan journal and provenance log, compaction cannot invent or silently drop
+  state.
+- The **narrative summary** is generated under science-focused instructions:
+  keep hypotheses and their status, exact parameters and seeds, file paths,
+  numeric results with units, decisions and their reasons, and open questions.
+- The summary call is billed like a turn and appears in the session's cost.
+- A compaction shows up in the chat as a thin **"Context compacted"** divider
+  with the token count that was summarized.
+
+Compaction runs automatically near the limit. You can also trigger it from the
+context gauge next to the model picker ("Compact now", scissors icon) while no
+run is streaming — for example before switching to a new sub-question. In the
+project settings (edit project) you can turn automatic compaction off and tune
+how many tokens are reserved for the reply and how many recent tokens stay
+verbatim; these apply to every chat in the project.
+
+If the science-aware step fails (for example the model's credentials are
+missing), Pi's default compaction runs instead, so a compaction is never lost
+to a Kady error.
+
 ## Your layer: pins, comments, and notes
 
 Agent entries are immutable, but you can annotate them:

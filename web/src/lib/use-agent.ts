@@ -1093,6 +1093,61 @@ export function useAgent(projectId?: string) {
     [scopedProjectId],
   );
 
+  /**
+   * Compact the session's context now (outside a run). On success the
+   * transcript is reloaded from history so the compaction marker shows, and
+   * the context gauge resets to "unmeasured" until the next model reply.
+   */
+  const compact = useCallback(
+    async (
+      instructions?: string,
+    ): Promise<
+      | { ok: true; tokensBefore: number; estimatedTokensAfter: number | null; costUsd: number }
+      | { ok: false; reason: "streaming" | "budget" | "no_session" | "error"; detail?: string }
+    > => {
+      const id = sessionIdRef.current;
+      if (!id) return { ok: false, reason: "no_session" };
+      if (sendClaimRef.current || clientFetchRef.current) return { ok: false, reason: "streaming" };
+      try {
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/compact`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(instructions ? { instructions } : {}),
+          },
+          scopedProjectId,
+        );
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!response.ok) {
+          const reason =
+            response.status === 409 ? "streaming" : response.status === 402 ? "budget" : "error";
+          return { ok: false, reason, detail: typeof data.detail === "string" ? data.detail : undefined };
+        }
+        setContextUsage(parseContextUsage(data.contextUsage));
+        const historyResponse = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/history`,
+          {},
+          scopedProjectId,
+        );
+        if (historyResponse.ok && mountedRef.current && !clientFetchRef.current) {
+          const history = (await historyResponse.json()) as { messages?: HistoryItem[] };
+          setMessages(restoreHistory(history.messages ?? [], nextId));
+        }
+        return {
+          ok: true,
+          tokensBefore: typeof data.tokensBefore === "number" ? data.tokensBefore : 0,
+          estimatedTokensAfter:
+            typeof data.estimatedTokensAfter === "number" ? data.estimatedTokensAfter : null,
+          costUsd: typeof data.costUsd === "number" ? data.costUsd : 0,
+        };
+      } catch (error) {
+        return { ok: false, reason: "error", detail: (error as Error).message };
+      }
+    },
+    [nextId, scopedProjectId],
+  );
+
   /** Queue a message Pi delivers once the live run has no more tool calls or
    * steering messages — still inside this run. May carry images. */
   const followUp = useCallback(
@@ -1298,6 +1353,7 @@ export function useAgent(projectId?: string) {
     loadSession,
     steer,
     followUp,
+    compact,
     pendingSteers,
     pendingFollowUps,
     notebookEntries,
