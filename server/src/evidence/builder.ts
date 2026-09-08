@@ -49,6 +49,7 @@ export class EvidenceBuilder {
       }
       void archive.finalize().catch(fail);
     });
-    const handle = await fs.promises.open(target, "r"); try { await handle.sync(); } finally { await handle.close(); }
+    // Open read-write: Windows rejects fsync (FlushFileBuffers) on a read-only handle with EPERM.
+    const handle = await fs.promises.open(target, "r+"); try { await handle.sync(); } finally { await handle.close(); }
   }
 }
