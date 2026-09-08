@@ -4,7 +4,7 @@
 
 K-Dense BYOK is a free, open-source, local-first AI research workspace for scientists. It provides **Kady**, an agent that can move beyond answering questions to carrying out research tasks: inspecting files, writing and running analysis code, searching and reading sources, creating figures and reports, and recording its work in a living lab notebook.
 
-Users choose how Kady reaches AI models. It supports prepaid OpenRouter API access, NVIDIA NIM models via build.nvidia.com API credits, free local Ollama models, and subscription authentication for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, and xAI accounts. Projects, conversations, notebooks, and outputs remain in ordinary folders on the user’s computer; only material needed for a hosted request is sent to the selected provider.
+Users choose how Kady reaches AI models. It supports prepaid OpenRouter API access, a direct API key for every provider Pi supports (Anthropic, OpenAI, Google, Azure OpenAI, Amazon Bedrock, Google Vertex AI, Cloudflare, Groq, Mistral, DeepSeek, Hugging Face, and more), NVIDIA NIM models via build.nvidia.com API credits, free local Ollama models, and subscription authentication for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, xAI, and Kimi Code accounts. Projects, conversations, notebooks, and outputs remain in ordinary folders on the user’s computer; only material needed for a hosted request is sent to the selected provider.
 
 ## Core capabilities
 

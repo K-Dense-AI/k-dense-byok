@@ -35,7 +35,7 @@ import {
 import { resolvePaths } from "../projects.ts";
 import { listAgents, settingsPinnedModels, subagentsPackageDir } from "./agent-files.ts";
 import { isProviderRefusal, providerRefusalGuidance } from "./model-refusal.ts";
-import { modelReference } from "./models.ts";
+import { isOAuthOnlyProvider, modelReference } from "./models.ts";
 import { isSubscriptionProvider } from "./provider-auth.ts";
 
 const require_ = createRequire(import.meta.url);
@@ -381,8 +381,10 @@ function unsupportedDirectProviders(
     ...new Set(
       [...refs].flatMap((ref) => {
         const provider = ref.split("/", 1)[0] ?? "";
-        return isSubscriptionProvider(provider) &&
-          !isProviderUsingOAuth(provider)
+        // Only OAuth-only providers (openai-codex, github-copilot, radius)
+        // need the login; anthropic/xai/kimi-coding also take an API key,
+        // and the run-time auth check rejects a missing one with a clear error.
+        return isOAuthOnlyProvider(provider) && !isProviderUsingOAuth(provider)
           ? [provider]
           : [];
       }),

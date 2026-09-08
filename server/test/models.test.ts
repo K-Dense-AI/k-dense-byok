@@ -70,10 +70,12 @@ describe("provider-aware model resolution", () => {
     ).toThrowError(ModelResolutionError);
   });
 
-  it("requires OAuth rather than an ambient API key for subscription providers", async () => {
-    const model = resolveModel("anthropic/claude-opus-4-8", registry);
+  it("requires OAuth rather than an ambient token for OAuth-only providers", async () => {
+    // Anthropic/xAI now take an API key too (provider-catalog.ts); Copilot is
+    // OAuth-only, so its COPILOT_GITHUB_TOKEN must not pass as a subscription.
+    const model = resolveModel("github-copilot/claude-sonnet-5", registry);
     const apiKeyRuntime = {
-      checkAuth: async () => ({ type: "api_key" as const, source: "ANTHROPIC_API_KEY" }),
+      checkAuth: async () => ({ type: "api_key" as const, source: "COPILOT_GITHUB_TOKEN" }),
     };
     await expect(
       assertModelAuthentication(

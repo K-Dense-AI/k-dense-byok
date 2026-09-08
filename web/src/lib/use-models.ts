@@ -30,9 +30,14 @@ interface OpenAICompatibleListResponse {
   models?: Model[];
 }
 
-interface NvidiaListResponse {
-  /** True when an NVIDIA API key resolved on the backend. */
-  configured?: boolean;
+/**
+ * `GET /providers/models`: every direct (API-key / cloud-credential) Pi
+ * provider with whether a credential resolved, plus picker-shaped rows for the
+ * configured ones. Entries arrive pre-shaped from the backend (like the
+ * subscription providers), so discovery only needs the envelope.
+ */
+interface DirectProvidersResponse {
+  providers?: { id: string; configured: boolean }[];
   models?: Model[];
 }
 
@@ -59,10 +64,10 @@ let oaiCompatDiscoveryCache:
 let oaiCompatDiscoveryInFlight:
   | Promise<OpenAICompatibleListResponse>
   | undefined;
-let nvidiaDiscoveryCache:
-  | { value: NvidiaListResponse; loadedAt: number }
+let directDiscoveryCache:
+  | { value: DirectProvidersResponse; loadedAt: number }
   | undefined;
-let nvidiaDiscoveryInFlight: Promise<NvidiaListResponse> | undefined;
+let directDiscoveryInFlight: Promise<DirectProvidersResponse> | undefined;
 
 function discoverProviders(force = false): Promise<ProviderDiscovery> {
   if (
@@ -91,14 +96,19 @@ function discoverProviders(force = false): Promise<ProviderDiscovery> {
           openrouter?: { set?: boolean };
         })
       : null;
+    const providers = Array.isArray(providerData?.providers)
+      ? providerData.providers
+      : [];
+    // OpenRouter is usable with a pasted key OR a Pi OAuth sign-in.
+    const openrouterOAuth = providers.some(
+      (provider) => provider.id === "openrouter" && provider.connected,
+    );
     const value: ProviderDiscovery = {
-      providers: Array.isArray(providerData?.providers)
-        ? providerData.providers
-        : [],
+      providers,
       models: Array.isArray(modelData?.models) ? modelData.models : [],
       openrouterConfigured: credentialData?.openrouter
-        ? Boolean(credentialData.openrouter.set)
-        : null,
+        ? Boolean(credentialData.openrouter.set) || openrouterOAuth
+        : openrouterOAuth || null,
     };
     providerDiscoveryCache = { value, loadedAt: Date.now() };
     return value;
@@ -167,31 +177,30 @@ function discoverOpenAICompatible(
   return inFlight;
 }
 
-/** NVIDIA NIM models come pre-shaped from the backend (like the subscription
- *  providers), so discovery only needs the `{configured, models}` envelope. */
-function discoverNvidia(force = false): Promise<NvidiaListResponse> {
+/** Direct API-key providers (NVIDIA NIM, Anthropic, OpenAI, Groq, …) in one call. */
+function discoverDirectProviders(force = false): Promise<DirectProvidersResponse> {
   if (
     !force &&
-    nvidiaDiscoveryCache &&
-    Date.now() - nvidiaDiscoveryCache.loadedAt < DISCOVERY_CACHE_MS
+    directDiscoveryCache &&
+    Date.now() - directDiscoveryCache.loadedAt < DISCOVERY_CACHE_MS
   ) {
-    return Promise.resolve(nvidiaDiscoveryCache.value);
+    return Promise.resolve(directDiscoveryCache.value);
   }
-  if (nvidiaDiscoveryInFlight) return nvidiaDiscoveryInFlight;
-  const request = apiFetch("/nvidia/models").then(async (response) =>
+  if (directDiscoveryInFlight) return directDiscoveryInFlight;
+  const request = apiFetch("/providers/models").then(async (response) =>
     response.ok
-      ? ((await response.json()) as NvidiaListResponse)
-      : { configured: false, models: [] },
+      ? ((await response.json()) as DirectProvidersResponse)
+      : { providers: [], models: [] },
   );
   const inFlight = request
     .then((value) => {
-      nvidiaDiscoveryCache = { value, loadedAt: Date.now() };
+      directDiscoveryCache = { value, loadedAt: Date.now() };
       return value;
     })
     .finally(() => {
-      if (nvidiaDiscoveryInFlight === inFlight) nvidiaDiscoveryInFlight = undefined;
+      if (directDiscoveryInFlight === inFlight) directDiscoveryInFlight = undefined;
     });
-  nvidiaDiscoveryInFlight = inFlight;
+  directDiscoveryInFlight = inFlight;
   return inFlight;
 }
 
@@ -215,10 +224,10 @@ export interface UseModelsReturn {
   /** Direct Pi-provider models available through connected subscriptions. */
   providerModels: Model[];
   providerStatuses: ModelProviderStatus[];
-  /** NVIDIA NIM models, present once an NVIDIA API key is configured. */
-  nvidiaModels: Model[];
-  /** True when the backend resolved an NVIDIA API key. */
-  nvidiaConfigured: boolean;
+  /** Models from direct API-key providers (NVIDIA NIM, Anthropic, Groq, …), backend order. */
+  directProviderModels: Model[];
+  /** Ids of direct API-key providers for which the backend resolved a credential. */
+  configuredDirectProviders: string[];
   modelAvailability: (model: Pick<Model, "id">) => ModelAvailability;
   /** Whether a current or persisted model can accept a new request. */
   isModelAvailable: (model: Pick<Model, "id">) => boolean;
@@ -228,7 +237,7 @@ export interface UseModelsReturn {
 
 /**
  * Merge the static OpenRouter catalogue with connected Pi OAuth providers,
- * local Ollama tags, and user Fusion presets.
+ * key-configured direct providers, local Ollama tags, and user Fusion presets.
  *
  * Discovery is best-effort: unavailable sources are marked disconnected while
  * other providers remain usable. The hook refreshes on project/auth changes.
@@ -244,9 +253,11 @@ export function useModels(): UseModelsReturn {
   const [providerModels, setProviderModels] = useState<Model[]>([]);
   const [providerStatuses, setProviderStatuses] = useState<ModelProviderStatus[]>([]);
   const [providerStatusLoaded, setProviderStatusLoaded] = useState(false);
-  const [nvidiaModels, setNvidiaModels] = useState<Model[]>([]);
-  const [nvidiaConfigured, setNvidiaConfigured] = useState(false);
-  const [nvidiaLoaded, setNvidiaLoaded] = useState(false);
+  const [directModels, setDirectModels] = useState<Model[]>([]);
+  const [directProviders, setDirectProviders] = useState<
+    { id: string; configured: boolean }[]
+  >([]);
+  const [directLoaded, setDirectLoaded] = useState(false);
   const [openrouterConfigured, setOpenrouterConfigured] = useState<boolean | null>(
     null,
   );
@@ -281,17 +292,17 @@ export function useModels(): UseModelsReturn {
       });
   }, []);
 
-  const fetchNvidia = useCallback((force = false) => {
-    void discoverNvidia(force)
+  const fetchDirect = useCallback((force = false) => {
+    void discoverDirectProviders(force)
       .then((data) => {
-        setNvidiaConfigured(Boolean(data.configured));
-        setNvidiaModels(Array.isArray(data.models) ? data.models : []);
-        setNvidiaLoaded(true);
+        setDirectProviders(Array.isArray(data.providers) ? data.providers : []);
+        setDirectModels(Array.isArray(data.models) ? data.models : []);
+        setDirectLoaded(true);
       })
       .catch(() => {
-        setNvidiaConfigured(false);
-        setNvidiaModels([]);
-        setNvidiaLoaded(true);
+        setDirectProviders([]);
+        setDirectModels([]);
+        setDirectLoaded(true);
       });
   }, []);
 
@@ -316,31 +327,32 @@ export function useModels(): UseModelsReturn {
   useEffect(() => {
     fetchOllama();
     fetchOpenAICompatible();
-    fetchNvidia();
+    fetchDirect();
     fetchProviders();
-  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchDirect, fetchProviders]);
 
   useEffect(
     () =>
       onProjectChange(() => {
         fetchOllama(true);
         fetchOpenAICompatible(true);
-        fetchNvidia(true);
+        fetchDirect(true);
         fetchProviders();
       }),
-    [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders],
+    [fetchOllama, fetchOpenAICompatible, fetchDirect, fetchProviders],
   );
 
   useEffect(() => {
-    // Also re-probes NVIDIA: Settings fires this event when the key changes.
+    // Also re-probes the direct providers: Settings fires this event when a
+    // key changes as well as after an OAuth login/logout.
     const refreshProviders = () => {
       fetchProviders(true);
-      fetchNvidia(true);
+      fetchDirect(true);
     };
     window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
     return () =>
       window.removeEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
-  }, [fetchProviders, fetchNvidia]);
+  }, [fetchProviders, fetchDirect]);
 
   // Re-read Fusion configs when Settings saves them (or another tab edits them).
   const [fusionRevision, setFusionRevision] = useState(0);
@@ -479,7 +491,7 @@ export function useModels(): UseModelsReturn {
       ...fusionModels,
       ...providerModels,
       ...openrouterModels,
-      ...nvidiaModels,
+      ...directModels,
       ...enrichedOllamaModels,
       ...enrichedOpenAICompatibleModels,
     ],
@@ -487,7 +499,7 @@ export function useModels(): UseModelsReturn {
       enrichedOllamaModels,
       enrichedOpenAICompatibleModels,
       fusionModels,
-      nvidiaModels,
+      directModels,
       openrouterModels,
       providerModels,
     ],
@@ -502,54 +514,71 @@ export function useModels(): UseModelsReturn {
       ),
     [providerStatuses],
   );
+  const oauthProviderIds = useMemo(
+    () => new Set(providerStatuses.map((provider) => provider.id)),
+    [providerStatuses],
+  );
+  const directProviderIds = useMemo(
+    () => new Set(directProviders.map((provider) => provider.id)),
+    [directProviders],
+  );
+  const configuredDirectProviders = useMemo(
+    () =>
+      directProviders
+        .filter((provider) => provider.configured)
+        .map((provider) => provider.id),
+    [directProviders],
+  );
+  const configuredDirectSet = useMemo(
+    () => new Set(configuredDirectProviders),
+    [configuredDirectProviders],
+  );
 
   const modelAvailability = useCallback(
     (model: Pick<Model, "id">): ModelAvailability => {
-      if (model.id.startsWith("ollama/") && !ollamaLoaded) return "checking";
-      if (model.id.startsWith("openai-compatible/") && !oaiCompatLoaded) {
-        return "checking";
+      const isOllama = model.id.startsWith("ollama/");
+      const isOaiCompat = model.id.startsWith("openai-compatible/");
+      const isRouter =
+        model.id.startsWith("openrouter/") || model.id.startsWith("fusion/");
+      if (isOllama && !ollamaLoaded) return "checking";
+      if (isOaiCompat && !oaiCompatLoaded) return "checking";
+      if (isRouter && openrouterConfigured === null) return "checking";
+      // Every other prefix is a direct Pi provider (OAuth or API key); both
+      // status lists must land before we can call it disconnected.
+      if (!isOllama && !isOaiCompat && !isRouter) {
+        if (!providerStatusLoaded || !directLoaded) return "checking";
       }
-      if (model.id.startsWith("nvidia/") && !nvidiaLoaded) return "checking";
-      if (
-        (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) &&
-        openrouterConfigured === null
-      ) {
-        return "checking";
-      }
-      const providerId = model.id.split("/", 1)[0];
-      const isDirectProvider =
-        providerId === "openai-codex" ||
-        providerId === "anthropic" ||
-        providerId === "github-copilot" ||
-        providerId === "xai";
-      if (isDirectProvider && !providerStatusLoaded) return "checking";
 
       const current = models.find((candidate) => candidate.id === model.id);
       if (current) return current.available === false ? "unavailable" : "available";
-      if (model.id.startsWith("ollama/")) return "unavailable";
+      if (isOllama) return "unavailable";
       // A persisted selection whose server stopped, or whose model was unloaded.
-      if (model.id.startsWith("openai-compatible/")) return "unavailable";
-      // A persisted NIM model absent from Pi's catalogue still runs (the
-      // backend synthesizes it), so only a missing key makes it unavailable.
-      if (model.id.startsWith("nvidia/")) {
-        return nvidiaConfigured ? "available" : "unavailable";
-      }
-      if (model.id.startsWith("openrouter/") || model.id.startsWith("fusion/")) {
+      if (isOaiCompat) return "unavailable";
+      if (isRouter) {
         return openrouterConfigured === false ? "unavailable" : "available";
       }
-      if (isDirectProvider) {
-        return connectedProviders.has(providerId as ModelProviderStatus["id"])
-          ? "available"
-          : "unavailable";
+      const providerId = model.id.split("/", 1)[0];
+      // A persisted model absent from the provider's listed catalogue (e.g. a
+      // NIM id the backend synthesizes, or a model newer than Pi's snapshot)
+      // still reaches the backend, which is the final guard and answers with a
+      // clear error — so only a missing credential makes it unavailable.
+      if (configuredDirectSet.has(providerId) || connectedProviders.has(providerId)) {
+        return "available";
       }
+      if (directProviderIds.has(providerId) || oauthProviderIds.has(providerId)) {
+        return "unavailable";
+      }
+      // Unknown prefix: a legacy bare OpenRouter vendor ref. Let the backend decide.
       return "available";
     },
     [
+      configuredDirectSet,
       connectedProviders,
+      directLoaded,
+      directProviderIds,
       models,
-      nvidiaConfigured,
-      nvidiaLoaded,
       oaiCompatLoaded,
+      oauthProviderIds,
       ollamaLoaded,
       openrouterConfigured,
       providerStatusLoaded,
@@ -566,9 +595,9 @@ export function useModels(): UseModelsReturn {
   const refresh = useCallback(() => {
     fetchOllama(true);
     fetchOpenAICompatible(true);
-    fetchNvidia(true);
+    fetchDirect(true);
     fetchProviders(true);
-  }, [fetchOllama, fetchOpenAICompatible, fetchNvidia, fetchProviders]);
+  }, [fetchOllama, fetchOpenAICompatible, fetchDirect, fetchProviders]);
 
   return {
     models,
@@ -579,8 +608,8 @@ export function useModels(): UseModelsReturn {
     openaiCompatibleConfigured: oaiCompatConfigured,
     providerModels,
     providerStatuses,
-    nvidiaModels,
-    nvidiaConfigured,
+    directProviderModels: directModels,
+    configuredDirectProviders,
     modelAvailability,
     isModelAvailable,
     refresh,

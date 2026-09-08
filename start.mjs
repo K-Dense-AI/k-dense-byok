@@ -184,20 +184,68 @@ function hasSubscriptionCredential() {
     const credentials = JSON.parse(
       fs.readFileSync(path.join(agentDir, "auth.json"), "utf-8"),
     );
-    return ["openai-codex", "anthropic", "github-copilot", "xai"].some(
-      (providerId) => credentials?.[providerId]?.type === "oauth",
+    // Any stored Pi credential (OAuth login or a key saved through Pi).
+    return Object.values(credentials ?? {}).some(
+      (entry) => entry && typeof entry === "object" && "type" in entry,
     );
   } catch {
     return false;
   }
 }
 
+/**
+ * API-key variables of the direct Pi providers Kady exposes. Mirrors
+ * `server/src/agent/provider-catalog.ts` (the launcher cannot import TS); keep
+ * the two in step when adding a provider. Cloud providers with ambient
+ * credentials (Bedrock profiles, Vertex ADC) are only detected when their
+ * usual env vars are set, so a missing warning there is a false alarm, not a
+ * blocker — the UI still opens and Settings shows the live status.
+ */
+const DIRECT_PROVIDER_ENV_VARS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_CLOUD_API_KEY",
+  "GOOGLE_APPLICATION_CREDENTIALS",
+  "AZURE_OPENAI_API_KEY",
+  "AWS_BEARER_TOKEN_BEDROCK",
+  "AWS_PROFILE",
+  "AWS_ACCESS_KEY_ID",
+  "CLOUDFLARE_API_KEY",
+  "XAI_API_KEY",
+  "NVIDIA_API_KEY",
+  "DEEPSEEK_API_KEY",
+  "MISTRAL_API_KEY",
+  "GROQ_API_KEY",
+  "CEREBRAS_API_KEY",
+  "HF_TOKEN",
+  "FIREWORKS_API_KEY",
+  "TOGETHER_API_KEY",
+  "BASETEN_API_KEY",
+  "AI_GATEWAY_API_KEY",
+  "OPENCODE_API_KEY",
+  "KIMI_API_KEY",
+  "MOONSHOT_API_KEY",
+  "MINIMAX_API_KEY",
+  "MINIMAX_CN_API_KEY",
+  "ZAI_API_KEY",
+  "ZAI_CODING_CN_API_KEY",
+  "QWEN_TOKEN_PLAN_API_KEY",
+  "QWEN_TOKEN_PLAN_CN_API_KEY",
+  "XIAOMI_API_KEY",
+  "XIAOMI_TOKEN_PLAN_CN_API_KEY",
+  "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
+  "XIAOMI_TOKEN_PLAN_SGP_API_KEY",
+  "ANT_LING_API_KEY",
+];
+
 /** Warn when no immediately detectable model source is configured. */
 async function checkModelAccess() {
   if (
     process.env.OPENROUTER_API_KEY ||
     process.env.OR_API_KEY ||
-    process.env.NVIDIA_API_KEY ||
+    process.env.OPENAI_COMPATIBLE_BASE_URL ||
+    DIRECT_PROVIDER_ENV_VARS.some((name) => process.env[name]) ||
     hasSubscriptionCredential()
   ) {
     return;
@@ -205,14 +253,15 @@ async function checkModelAccess() {
   const ollama = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
   try {
     await fetch(`${ollama}/api/tags`, { signal: AbortSignal.timeout(2000) });
-    log(`  No OPENROUTER_API_KEY set — using local Ollama at ${ollama}.`);
+    log(`  No provider API key set — using local Ollama at ${ollama}.`);
   } catch {
     log("");
-    log(`  ${sym.warn} No OPENROUTER_API_KEY in .env and no Ollama at ${ollama}.`);
+    log(`  ${sym.warn} No model provider key in .env and no Ollama at ${ollama}.`);
     log("    The UI will start. To run the agent, either:");
     log("      - add OPENROUTER_API_KEY to .env (https://openrouter.ai/keys), or");
+    log("      - add a direct provider key (Anthropic, OpenAI, Google, Groq, …) in Settings → API keys, or");
     log("      - start a local Ollama (https://ollama.com) with a pulled model, or");
-    log("      - connect ChatGPT, Claude, Copilot, or xAI in Settings.");
+    log("      - connect ChatGPT, Claude, Copilot, xAI, or Kimi in Settings → Model providers.");
     log("");
   }
 }

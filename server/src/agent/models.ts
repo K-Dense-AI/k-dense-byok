@@ -2,13 +2,18 @@
  * Model resolution for the Pi agent.
  *
  * Supported access paths:
- *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY)
- *   - Pi OAuth providers (OpenAI Codex, Anthropic, GitHub Copilot, xAI)
- *   - NVIDIA NIM (built-in Pi provider, key via NVIDIA_API_KEY)
- *   - Ollama (local, OpenAI-compatible at OLLAMA_BASE_URL)
+ *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY or OAuth)
+ *   - Pi OAuth providers (OpenAI Codex, Anthropic, GitHub Copilot, xAI,
+ *     Kimi For Coding, Radius — `provider-auth.ts`)
+ *   - Every other built-in Pi API-key / cloud provider (Anthropic, OpenAI,
+ *     Google, Vertex, Azure, Bedrock, Cloudflare, NVIDIA NIM, Groq, Mistral,
+ *     DeepSeek, Hugging Face, Fireworks, Together, … — `provider-catalog.ts`)
+ *   - Ollama and any local OpenAI-compatible server (OLLAMA_BASE_URL /
+ *     OPENAI_COMPATIBLE_BASE_URL)
  *
- * The frontend picker sends model refs like "openrouter/anthropic/claude-opus-4.8"
- * or "ollama/llama3". OpenRouter has thousands of models that aren't all in Pi's
+ * The frontend picker sends model refs like "openrouter/anthropic/claude-opus-4.8",
+ * "groq/llama-3.3-70b-versatile" or "ollama/llama3". Direct providers resolve
+ * through Pi's registry only. OpenRouter has thousands of models that aren't all in Pi's
  * built-in table, so when `find()` misses we synthesize a Model from the
  * frontend catalogue (web/src/data/models.json) — Pi computes usage.cost from
  * `model.cost`, so we populate it from the catalogue's per-1M pricing.
@@ -24,10 +29,8 @@ import {
   OPENAI_COMPATIBLE_BASE_URL,
   REPO_ROOT,
 } from "../config.ts";
-import {
-  isSubscriptionProvider,
-  type SubscriptionProviderId,
-} from "./provider-auth.ts";
+import { isSubscriptionProvider, subscriptionProvider } from "./provider-auth.ts";
+import { directProvider, isDirectProvider } from "./provider-catalog.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
 // OpenAI-compatible provider can point at any compatible gateway — e.g.
@@ -313,6 +316,9 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
     apiKey: "openai-compatible",
   });
 
+  // Pi reads every direct provider's key straight from process.env (loaded
+  // from .env by env.ts), so only OpenRouter needs a push here — its legacy
+  // OR_API_KEY alias is unknown to Pi.
   const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
   if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
 }
@@ -360,24 +366,59 @@ function configuredDefaultRef(): string {
   return `${provider}/${id}`;
 }
 
+/**
+ * Split a `<provider>/<model-id>` ref for any direct Pi provider Kady exposes
+ * (API-key providers from `provider-catalog.ts` and OAuth providers from
+ * `provider-auth.ts`). Everything after the first slash is the model id
+ * verbatim: NIM, Hugging Face, Fireworks, Together, Baseten, Vercel and
+ * Cloudflare ids all contain slashes (`meta/llama-3.3-70b-instruct`,
+ * `accounts/fireworks/models/…`, `@cf/…`). `openrouter/` is excluded here
+ * because it has its own catalogue-priced path in `resolveModel`.
+ */
 function directProviderRef(
   ref: string,
-): { providerId: SubscriptionProviderId; modelId: string } | null {
+): { providerId: string; modelId: string } | null {
   const slash = ref.indexOf("/");
   if (slash <= 0) return null;
   const providerId = ref.slice(0, slash);
-  if (!isSubscriptionProvider(providerId)) return null;
+  if (providerId === "openrouter") return null;
+  if (!isDirectProvider(providerId) && !isSubscriptionProvider(providerId)) return null;
   return { providerId, modelId: ref.slice(slash + 1) };
 }
 
 export function isSubscriptionModelRef(ref: string): boolean {
-  return directProviderRef(ref.trim()) !== null;
+  const direct = directProviderRef(ref.trim());
+  return direct !== null && isSubscriptionProvider(direct.providerId);
+}
+
+/**
+ * True for providers Kady only reaches through an OAuth login: no API-key row
+ * exists for them, so an ambient token must not be mistaken for subscription
+ * access (`openai-codex`, `github-copilot`, `radius`). OpenRouter is in the
+ * OAuth list only as a sign-in alternative to its key row and is never
+ * OAuth-only.
+ */
+export function isOAuthOnlyProvider(providerId: string): boolean {
+  return (
+    isSubscriptionProvider(providerId) &&
+    !isDirectProvider(providerId) &&
+    providerId !== "openrouter"
+  );
+}
+
+function providerDisplayName(providerId: string): string {
+  return (
+    directProvider(providerId)?.name ??
+    subscriptionProvider(providerId)?.name ??
+    (providerId === "openrouter" ? "OpenRouter" : providerId)
+  );
 }
 
 /**
  * Verify that a model's provider is configured for the intended product path.
- * Direct subscription providers deliberately require OAuth; ambient API keys
- * are not silently treated as subscription access.
+ * API-key providers accept a key or (where Pi offers one) an OAuth login;
+ * OAuth-only providers require the login, so an ambient token is never
+ * silently treated as subscription access.
  */
 export async function assertModelAuthentication(
   model: Model<Api>,
@@ -387,20 +428,25 @@ export async function assertModelAuthentication(
   // real auth state to assert — reachability is the only failure mode.
   if (model.provider === "ollama" || model.provider === "openai-compatible") return;
   const auth = await modelRuntime.checkAuth(model.provider);
+  const name = providerDisplayName(model.provider);
   if (!auth) {
+    const hasKeyRow = model.provider === "openrouter" || isDirectProvider(model.provider);
+    const hasLogin = isSubscriptionProvider(model.provider);
+    const how =
+      hasKeyRow && hasLogin
+        ? "Add an API key under Settings → API keys or connect it under Settings → Model providers"
+        : hasKeyRow
+          ? "Add an API key under Settings → API keys"
+          : "Connect it under Settings → Model providers";
     throw new ModelAuthenticationError(
       model.provider,
-      model.provider === "openrouter"
-        ? "OpenRouter is not configured. Add an API key in Settings or choose another model provider."
-        : model.provider === "nvidia"
-          ? "NVIDIA is not configured. Add an API key in Settings or choose another model provider."
-          : `${model.provider} is not connected. Connect it in Settings or choose another model.`,
+      `${name} is not configured. ${how}, or choose another model.`,
     );
   }
-  if (isSubscriptionProvider(model.provider) && auth.type !== "oauth") {
+  if (isOAuthOnlyProvider(model.provider) && auth.type !== "oauth") {
     throw new ModelAuthenticationError(
       model.provider,
-      `${model.provider} has an API key but no subscription login. Connect the subscription in Settings.`,
+      `${name} has an API key but no subscription login. Connect the subscription in Settings.`,
     );
   }
 }
@@ -440,27 +486,31 @@ export function resolveModel(
     }
     return buildOpenAICompatibleModel(id);
   }
-  // NIM model ids contain slashes ("meta/llama-3.3-70b-instruct"), so like
-  // openai-compatible everything after the prefix is the id verbatim.
-  if (r.startsWith("nvidia/")) {
-    const id = r.slice("nvidia/".length);
-    if (!id) {
-      throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
-    }
-    return registry.find("nvidia", id) ?? buildNvidiaModel(id);
-  }
+  // Every other direct Pi provider: the id after the prefix is verbatim (NIM,
+  // Hugging Face, Fireworks, Cloudflare… ids contain slashes). Pi's registry
+  // supplies real pricing/capabilities; an id it doesn't know is an error
+  // unless the provider is credit-billed at $0 anyway (NVIDIA NIM), because a
+  // payg model synthesized at $0 would silently bypass the project spend cap.
   const direct = directProviderRef(r);
   if (direct) {
     if (!direct.modelId) {
       throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
     }
     const model = registry.find(direct.providerId, direct.modelId);
-    if (!model) {
-      throw new ModelResolutionError(
-        `Unknown ${direct.providerId} model "${direct.modelId}"`,
-      );
+    if (model) return model;
+    if (directProvider(direct.providerId)?.synthesizeUnknownIds) {
+      // Only NIM opts in (provider-catalog.ts); the synthesizer is
+      // provider-specific because the base URL is, so refuse anything else.
+      if (direct.providerId !== "nvidia") {
+        throw new ModelResolutionError(
+          `No synthesizer for ${direct.providerId} model "${direct.modelId}"`,
+        );
+      }
+      return buildNvidiaModel(direct.modelId);
     }
-    return model;
+    throw new ModelResolutionError(
+      `Unknown ${providerDisplayName(direct.providerId)} model "${direct.modelId}"`,
+    );
   }
   if (r.startsWith("openrouter/")) {
     const orId = stripOpenRouter(r);

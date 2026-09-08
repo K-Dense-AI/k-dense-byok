@@ -57,10 +57,10 @@ export function ProviderAuthPanel() {
       <div>
         <h3 className="text-sm font-medium">Model providers</h3>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-          Connect an existing AI subscription. OAuth tokens stay in Kady&apos;s
-          local Pi credential store, which is used by the lead agent and its
-          specialist processes. OpenRouter and optional service keys remain
-          under API keys.
+          Connect an existing AI subscription or account by signing in. OAuth
+          tokens stay in Kady&apos;s local Pi credential store, which is used by
+          the lead agent and its specialist processes. API keys for these and
+          every other Pi provider live under API keys.
         </p>
       </div>
 
@@ -97,16 +97,23 @@ export function ProviderAuthPanel() {
                         ? "Reconnect required"
                         : provider.connected
                           ? "Connected"
-                          : "Not connected"}
+                          : provider.credentialType === "api_key"
+                            ? "Using API key"
+                            : "Not connected"}
                     </Badge>
                     <Badge variant="outline">
                       {provider.billingMode === "metered_oauth"
                         ? "Metered extra usage"
-                        : "Subscription managed"}
+                        : provider.billingMode === "payg"
+                          ? "Pay-as-you-go"
+                          : "Subscription managed"}
                     </Badge>
                   </div>
                   <p className="mt-1 text-xs font-medium text-muted-foreground">
                     {provider.accountLabel}
+                    {provider.apiKeyAlternative ? (
+                      <span className="font-normal"> · or paste an API key under API keys</span>
+                    ) : null}
                   </p>
                   <p
                     className={

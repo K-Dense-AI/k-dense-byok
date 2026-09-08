@@ -9,16 +9,32 @@ import type {
   Model,
 } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import type { DirectProviderBilling, DirectProviderDefinition } from "./provider-catalog.ts";
 
+/**
+ * Pi providers with an OAuth login Kady hosts under Settings → Model providers.
+ * `anthropic`, `xai`, `kimi-coding` also take an API key (see
+ * `provider-catalog.ts`); `openai-codex`, `github-copilot`, `radius` are
+ * OAuth-only in Kady. `openrouter` is listed so its OAuth login can replace a
+ * pasted key, but its models come from the static catalogue, not this route.
+ */
 export const SUBSCRIPTION_PROVIDER_IDS = [
   "openai-codex",
   "anthropic",
   "github-copilot",
   "xai",
+  "kimi-coding",
+  "openrouter",
+  "radius",
 ] as const;
 
 export type SubscriptionProviderId = (typeof SUBSCRIPTION_PROVIDER_IDS)[number];
-export type ProviderBillingMode = "metered_oauth" | "subscription";
+/**
+ * `metered_oauth`: per-token extra usage Kady counts as spend. `subscription`:
+ * provider-managed plan limits, recorded but not cap-counted. `payg`: the OAuth
+ * login only stands in for an API key (OpenRouter, Radius) and bills like one.
+ */
+export type ProviderBillingMode = "metered_oauth" | "subscription" | "payg";
 
 export interface SubscriptionProviderDefinition {
   id: SubscriptionProviderId;
@@ -26,6 +42,12 @@ export interface SubscriptionProviderDefinition {
   accountLabel: string;
   billingMode: ProviderBillingMode;
   billingNote: string;
+  /**
+   * Whether `/model-providers/models` lists this provider's Pi catalogue once
+   * connected. False for OpenRouter, whose picker rows come from
+   * `web/src/data/models.json` (and would otherwise appear twice).
+   */
+  listModels: boolean;
 }
 
 export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] = [
@@ -36,6 +58,7 @@ export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] =
     billingMode: "subscription",
     billingNote:
       "Uses provider-managed ChatGPT subscription limits. Kady cannot read remaining quota or overages.",
+    listModels: true,
   },
   {
     id: "anthropic",
@@ -44,6 +67,7 @@ export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] =
     billingMode: "metered_oauth",
     billingNote:
       "Pi documents third-party Claude subscription use as extra usage billed per token.",
+    listModels: true,
   },
   {
     id: "github-copilot",
@@ -52,6 +76,7 @@ export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] =
     billingMode: "subscription",
     billingNote:
       "Uses provider-managed Copilot limits. Kady cannot read remaining premium requests or overages.",
+    listModels: true,
   },
   {
     id: "xai",
@@ -60,6 +85,34 @@ export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] =
     billingMode: "subscription",
     billingNote:
       "Uses provider-managed xAI subscription limits. Kady cannot read remaining quota or overages.",
+    listModels: true,
+  },
+  {
+    id: "kimi-coding",
+    name: "Kimi For Coding",
+    accountLabel: "Kimi Code subscription",
+    billingMode: "subscription",
+    billingNote:
+      "Uses provider-managed Kimi Code plan limits. Kady cannot read remaining quota or overages.",
+    listModels: true,
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    accountLabel: "OpenRouter account (OAuth)",
+    billingMode: "payg",
+    billingNote:
+      "Signing in creates a user-controlled key billed from your OpenRouter credits — an alternative to pasting a key under API keys. Usage is metered and counts toward the project cap exactly like a key.",
+    listModels: false,
+  },
+  {
+    id: "radius",
+    name: "Radius",
+    accountLabel: "Radius gateway account",
+    billingMode: "payg",
+    billingNote:
+      "Radius is a dynamic model gateway; its model list is fetched after sign-in. Pi prices what the gateway reports, and Kady counts it toward the project cap.",
+    listModels: true,
   },
 ] as const;
 
@@ -618,26 +671,29 @@ export function modelForClient(
   };
 }
 
-export interface ClientNvidiaModel
+export interface ClientDirectModel
   extends Omit<ClientProviderModel, "sourceId" | "billingMode"> {
-  sourceId: "nvidia";
-  billingMode: "subscription";
+  sourceId: string;
+  billingMode: DirectProviderBilling;
 }
 
 /**
- * NVIDIA NIM is an API-key provider, deliberately NOT in
- * SUBSCRIPTION_PROVIDERS (no OAuth flow; the key is NVIDIA_API_KEY, managed by
- * /credentials). It still bills like the subscription providers — usage draws
- * NVIDIA-managed API credits that Kady cannot meter — so its picker entries
- * carry billingMode "subscription", matching `billingForProvider("nvidia")`.
+ * Picker row for a model reached with a direct API key (`provider-catalog.ts`).
+ * These providers are deliberately NOT OAuth flows: the key is an env var
+ * managed by /credentials. `billingMode` mirrors `billingForProvider` so the
+ * picker's cap hint agrees with the ledger — `subscription` for credit/plan
+ * providers such as NVIDIA NIM, `payg` for everything Pi prices per token.
  */
-export function nvidiaModelForClient(model: Model<Api>): ClientNvidiaModel {
+export function directModelForClient(
+  model: Model<Api>,
+  definition: DirectProviderDefinition,
+): ClientDirectModel {
   return {
-    id: `nvidia/${model.id}`,
+    id: `${definition.id}/${model.id}`,
     label: model.name,
-    provider: "NVIDIA",
-    sourceId: "nvidia",
-    sourceLabel: "NVIDIA NIM",
+    provider: definition.name,
+    sourceId: definition.id,
+    sourceLabel: definition.sectionLabel,
     tier: tierFor(model),
     context_length: model.contextWindow,
     pricing: {
@@ -645,9 +701,9 @@ export function nvidiaModelForClient(model: Model<Api>): ClientNvidiaModel {
       completion: model.cost.output,
     },
     modality: model.input.includes("image") ? "text+image->text" : "text->text",
-    description: "NVIDIA NIM (build.nvidia.com) via NVIDIA API credits",
+    description: definition.description,
     reasoning: model.reasoning,
-    billingMode: "subscription",
+    billingMode: definition.billingMode,
     available: true,
   };
 }

@@ -123,20 +123,24 @@ The OAuth store intentionally sits outside this tree at `~/.kady/pi-agent/auth.j
 
 ## Provider authentication
 
-**Settings → Model providers** drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry; direct-provider entries are OAuth-only.
+**Settings → Model providers** drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry. Providers that also take an API key (Anthropic, xAI, Kimi) accept either credential; OpenAI Codex, GitHub Copilot, and Radius are OAuth-only.
 
 The backend creates one process-wide Pi `ModelRuntime` with its auth path set to Kady's store. `server/src/env.ts` defaults `PI_CODING_AGENT_DIR` to `~/.kady/pi-agent`, or to `KADY_PI_AGENT_DIR` when that override is set. An explicitly supplied `PI_CODING_AGENT_DIR` takes precedence and can intentionally point Kady at the same directory as a standalone Pi installation. The subagent runner process inherits it, so lead agents and subagents use the same file-locked `auth.json`.
 
 ## Model selection and routing
 
 Each chat tab picks one model. Model refs from the picker look like
-`openrouter/<vendor>/<model>`, `nvidia/<vendor>/<model>`, `ollama/<name>`,
-`openai-compatible/<id>`, or `<oauth-provider>/<model>` where the provider is
-`openai-codex`, `anthropic`, `github-copilot`, or `xai`. These canonical `provider/model` refs are also used
-by ledgers and subagents. The backend resolves them to Pi `Model` objects
-(`server/src/agent/models.ts`): OpenRouter uses `OPENROUTER_API_KEY`, NVIDIA
-NIM uses `NVIDIA_API_KEY`, Ollama points at `OLLAMA_BASE_URL`, and direct
-providers require a connected OAuth credential. There is no proxy — Pi calls the provider directly. OpenRouter
+`openrouter/<vendor>/<model>`, `ollama/<name>`, `openai-compatible/<id>`, or
+`<pi-provider>/<model-id>` for every other built-in Pi provider — `nvidia/…`,
+`anthropic/…`, `openai/…`, `groq/…`, `amazon-bedrock/…`, `cloudflare-workers-ai/@cf/…`,
+and so on; the id after the prefix is kept verbatim because many contain slashes.
+These canonical `provider/model` refs are also used by ledgers and subagents.
+The backend resolves them to Pi `Model` objects (`server/src/agent/models.ts`):
+OpenRouter uses `OPENROUTER_API_KEY` (or an OpenRouter sign-in), Ollama points at
+`OLLAMA_BASE_URL`, and every other provider uses the credential Pi resolves for it —
+an API key or cloud configuration from `server/src/agent/provider-catalog.ts`
+(managed in Settings → API keys), or an OAuth login from `provider-auth.ts`.
+There is no proxy — Pi calls the provider directly. OpenRouter
 Fusion and the server-side speech transcription fallback remain OpenRouter-only.
 See
 [Local models with Ollama](./local-models-ollama.md) and
@@ -144,4 +148,4 @@ See
 
 ## Usage accounting and budgets
 
-Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. NVIDIA NIM is classified the same way — build.nvidia.com bills NVIDIA-managed API credits rather than per-token USD, so tokens are recorded without cap-counted spend. Ollama and OpenAI-compatible local servers are `local` at $0, while Modal compute reserves and then settles its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.
+Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. NVIDIA NIM and the prepaid Qwen/Xiaomi token plans are classified the same way — they bill provider-managed credits or a plan quota rather than per-token USD, so tokens are recorded without cap-counted spend. Every other direct API-key provider (Anthropic, OpenAI, Google, Azure, Bedrock, Groq, …) is `payg` at Pi's list price and counts toward the cap; an OpenRouter or Radius OAuth sign-in bills like a key. Ollama and OpenAI-compatible local servers are `local` at $0, while Modal compute reserves and then settles its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.

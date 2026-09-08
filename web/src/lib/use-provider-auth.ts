@@ -5,10 +5,16 @@ import { apiFetch } from "@/lib/projects";
 
 export const PROVIDER_AUTH_CHANGED_EVENT = "kady:provider-auth-changed";
 
-export type ProviderBillingMode = "metered_oauth" | "subscription";
+/**
+ * `metered_oauth`: per-token extra usage counted as spend. `subscription`:
+ * provider-managed plan limits, recorded but not cap-counted. `payg`: the OAuth
+ * login only replaces an API key (OpenRouter, Radius) and bills like one.
+ */
+export type ProviderBillingMode = "metered_oauth" | "subscription" | "payg";
 
 export interface ModelProviderStatus {
-  id: "openai-codex" | "anthropic" | "github-copilot" | "xai";
+  /** Pi provider id: openai-codex, anthropic, github-copilot, xai, kimi-coding, openrouter, radius. */
+  id: string;
   name: string;
   accountLabel: string;
   billingMode: ProviderBillingMode;
@@ -19,6 +25,8 @@ export interface ModelProviderStatus {
   source: string | null;
   loginLabel: string | null;
   modelCount: number;
+  /** The same provider also accepts an API key under Settings → API keys. */
+  apiKeyAlternative?: boolean;
 }
 
 export type ProviderAuthEvent =

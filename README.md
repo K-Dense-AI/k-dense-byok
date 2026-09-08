@@ -78,6 +78,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 - **Connect supported subscriptions directly through Pi OAuth.** In **Settings → Model providers**, connect ChatGPT Plus/Pro (`openai-codex`), Claude Pro/Max (`anthropic`), GitHub Copilot, or xAI. Kady handles the provider's browser, device-code, or manual sign-in flow and makes its available models appear in the picker.
 - **Use major hosted models** from OpenAI, Anthropic, Google, xAI, Qwen, and others through one [OpenRouter](https://openrouter.ai/) account. Change the model and reasoning level independently in each chat.
+- **Bring a key for any provider Pi supports.** Under **Settings → API keys**, add a key for Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, Kimi, Moonshot, MiniMax, Z.AI, Qwen and Xiaomi token plans, or your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, or Cloudflare account — each configured provider gets its own section in the model picker (see [Model selection](./docs/model-selection.md#direct-api-key-providers)).
 - **Use NVIDIA NIM models directly** with an API key from [build.nvidia.com](https://build.nvidia.com/) — Nemotron, Llama, GPT-OSS, and more, billed against your NVIDIA API credits rather than per-token dollar pricing.
 - **Run free local models with [Ollama or any OpenAI-compatible server](./docs/local-models-ollama.md)** (LM Studio, vLLM, …) when cost or data locality matters. Local models appear in the same model picker.
 - **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information. Fusion remains OpenRouter-only and requires an OpenRouter API key.
@@ -85,7 +86,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 ### Stay in control
 
-- **See usage and cost as work happens.** Kady records model tokens, specialist usage, and Modal compute by run and project. OpenRouter and Anthropic OAuth metered usage count toward an optional hard dollar limit; provider-managed ChatGPT, Copilot, xAI subscription and NVIDIA NIM credit usage shows token and reference-price information without consuming that cap.
+- **See usage and cost as work happens.** Kady records model tokens, specialist usage, and Modal compute by run and project. OpenRouter, direct API-key providers, and Anthropic OAuth metered usage count toward an optional hard dollar limit; provider-managed ChatGPT, Copilot, xAI and Kimi subscriptions, NVIDIA NIM credits, and prepaid token plans show token and reference-price information without consuming that cap.
 - **Watch local resource use.** A compact system monitor shows CPU, memory, and GPU activity while analyses are running on your computer.
 - **Manage capabilities without editing configuration files.** Settings lets you connect model providers, add API keys, enable or disable skills, create or customize specialists, manage Fusion presets, and change appearance. Disabling a capability does not delete it.
 - **Connect your existing research tools** through [MCP](./docs/mcp-servers.md), a plug-in standard for AI assistants. Add reference managers, GitHub, databases, and other services, test the connection in the app, and make their tools available to Kady.
@@ -99,8 +100,8 @@ You need a compatible computer and at least one model source:
    - On Windows, install [Node.js 22+](https://nodejs.org/) (or `winget install OpenJS.NodeJS.LTS`) and [Git for Windows](https://git-scm.com/download/win) first — Kady's agent runs its shell commands through the Git Bash that Git for Windows provides. (Prefer a Linux environment? [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) works too.)
 2. One of:
    - an **[OpenRouter](https://openrouter.ai/) API key** for broad pay-as-you-go model access,
-   - an **[NVIDIA](https://build.nvidia.com/) API key** for NIM-served models billed against NVIDIA API credits,
-   - a supported **ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, or xAI subscription** that you connect after launch, or
+   - an **API key for any provider Pi supports** — Anthropic, OpenAI, Google, Groq, Mistral, DeepSeek, [NVIDIA NIM](https://build.nvidia.com/), Azure, Bedrock, Vertex, and [more](./docs/model-selection.md#direct-api-key-providers) — pasted in Settings after launch,
+   - a supported **ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, xAI, or Kimi Code subscription** that you connect after launch, or
    - [free local models through Ollama](./docs/local-models-ollama.md).
 
 Open a terminal (on a Mac: press `Cmd+Space`, type "Terminal", press Enter) and run these four lines:
@@ -160,7 +161,7 @@ All guides live in the [`docs/`](./docs) folder:
 | [Sub-agents](./docs/sub-agents.md) | Kady's team of 21 scientific specialists and how to customize them |
 | [Connecting external tools (MCP)](./docs/mcp-servers.md) | Give Kady extra abilities like GitHub, reference managers, and databases |
 | [Local models](./docs/local-models-ollama.md) | Run everything on free local models (Ollama or any OpenAI-compatible server), no API keys required |
-| [Model selection](./docs/model-selection.md) | OpenRouter, Pi subscription, NVIDIA NIM, Ollama, model refs, and billing behavior |
+| [Model selection](./docs/model-selection.md) | OpenRouter, Pi subscriptions, every direct Pi provider (Anthropic, OpenAI, Google, Azure, Bedrock, NVIDIA NIM, …), Ollama, model refs, and billing behavior |
 | [OpenRouter Fusion](./docs/openrouter-fusion.md) | Multi-model deliberation presets — what they are and how the integration works |
 | [Architecture](./docs/architecture.md) | How the two local services fit together (for the technically curious) |
 | [Contributing workflows](./docs/contributing-workflows.md) | Add new workflow templates to the library |

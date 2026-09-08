@@ -24,16 +24,23 @@ An [OpenRouter](https://openrouter.ai/) API key gives one pay-as-you-go account 
 
 ### Pi OAuth subscriptions
 
-Kady can connect these existing subscriptions directly through Pi:
+Kady can connect these existing subscriptions and accounts directly through Pi:
 
 - ChatGPT Plus/Pro (`openai-codex`)
 - Claude Pro/Max (`anthropic`)
 - GitHub Copilot (`github-copilot`)
 - xAI (`xai`, shown for supported SuperGrok or X Premium access)
+- Kimi Code (`kimi-coding`)
+- OpenRouter (`openrouter`, a sign-in alternative to pasting a key)
+- Radius (`radius`, a dynamic model gateway)
 
 After Kady starts, open **Settings → Model providers** and click **Connect**. Pi and the provider choose the appropriate browser redirect, device-code, or manual-code flow; Kady displays each step in the dialog.
 
-A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks OpenAI Codex, Copilot, and xAI subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap.
+A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks OpenAI Codex, Copilot, xAI, and Kimi Code subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap. OpenRouter and Radius sign-ins bill like an API key.
+
+### Any other Pi provider with an API key
+
+Every provider Pi supports natively is available with your own key: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, OpenCode, Kimi, Moonshot, MiniMax, Z.AI, the Qwen and Xiaomi token plans, Ant Ling, and your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, Cloudflare AI Gateway, or Cloudflare Workers AI account. After launch, open **Settings → API keys → Direct model providers**, pick the provider, and paste the key (cloud providers also take their endpoint, account, region, or project fields there). Each configured provider gets its own section in the model picker. Details and billing per provider are in [Model selection](./model-selection.md#direct-api-key-providers).
 
 ### NVIDIA NIM
 
@@ -89,7 +96,7 @@ The first run takes a few minutes. The script automatically:
 - checks for and installs anything missing (Node.js on a Mac, the [uv](https://docs.astral.sh/uv/) Python manager that Kady uses to run analyses — on every platform),
 - installs the backend and frontend packages,
 - downloads the catalogue of 149 scientific skills,
-- creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, NVIDIA key, stored subscription login, or local Ollama (the UI still opens for provider setup).
+- creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, a direct provider key (Anthropic, OpenAI, NVIDIA, …), stored subscription login, or local Ollama (the UI still opens for provider setup).
 
 When it finishes, your browser opens to **[http://localhost:3000](http://localhost:3000)** — that's the app. Future starts take only a few seconds.
 
@@ -124,7 +131,7 @@ The startup script picks up any new packages and skills automatically.
 - **`./start.sh: Permission denied`** (macOS/Linux) — run `chmod +x start.sh` once, then try again.
 - **Windows says "Windows protected your PC"** when double-clicking `start.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\start.cmd`).
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
-- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys** (OpenRouter or NVIDIA), start Ollama, or connect a supported subscription in **Settings → Model providers**.
+- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys** (OpenRouter, or any direct provider under "Direct model providers"), start Ollama, or connect a supported subscription in **Settings → Model providers**.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
 - **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node ignores system proxy settings, so until these variables are set Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
 

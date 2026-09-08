@@ -39,10 +39,12 @@ export function modelUsesBillableBudget(model: {
   if (model.billingMode === "subscription" || model.billingMode === "local") {
     return false;
   }
+  // Prefix fallback for persisted selections that predate `billingMode`.
+  // `xai/` is deliberately absent: with an API key it is pay-as-you-go, and
+  // the backend-supplied billingMode decides the OAuth case above.
   return !(
     model.id.startsWith("openai-codex/") ||
     model.id.startsWith("github-copilot/") ||
-    model.id.startsWith("xai/") ||
     model.id.startsWith("nvidia/") ||
     model.id.startsWith("ollama/") ||
     model.id.startsWith("openai-compatible/")
@@ -65,18 +67,47 @@ const FUSION_BADGE = "text-red-600 dark:text-red-400";
 
 const PROVIDER_COLORS: Record<string, string> = {
   Google:    "text-blue-600 dark:text-blue-400",
+  "Google Vertex AI": "text-blue-600 dark:text-blue-400",
   Anthropic: "text-orange-600 dark:text-orange-400",
   OpenAI:    "text-emerald-600 dark:text-emerald-400",
   "OpenAI Codex": "text-emerald-600 dark:text-emerald-400",
+  "Azure OpenAI": "text-sky-600 dark:text-sky-400",
   "GitHub Copilot": "text-violet-600 dark:text-violet-400",
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
   xAI:       "text-rose-600 dark:text-rose-400",
   Meta:      "text-indigo-600 dark:text-indigo-400",
   NVIDIA:    "text-green-600 dark:text-green-400",
+  Mistral:   "text-amber-600 dark:text-amber-400",
+  Groq:      "text-orange-600 dark:text-orange-400",
+  Cerebras:  "text-fuchsia-600 dark:text-fuchsia-400",
+  "Hugging Face": "text-yellow-600 dark:text-yellow-400",
+  "Amazon Bedrock": "text-amber-700 dark:text-amber-300",
+  "Cloudflare AI Gateway": "text-orange-500 dark:text-orange-300",
+  "Cloudflare Workers AI": "text-orange-500 dark:text-orange-300",
   Ollama:    "text-teal-600 dark:text-teal-400",
   "OpenAI-Compatible": "text-teal-600 dark:text-teal-400",
   "Openrouter Fusion": "text-red-600 dark:text-red-400",
 };
+
+/** Picker section order. OAuth subscriptions first, then OpenRouter, then every
+ *  direct API-key provider alphabetically, then the local servers. */
+const OAUTH_SECTION_ORDER = [
+  "openai-codex",
+  "anthropic",
+  "github-copilot",
+  "xai",
+  "kimi-coding",
+  "radius",
+];
+function sectionRank(id: string): number {
+  if (id === "fusion") return 0;
+  const oauth = OAUTH_SECTION_ORDER.indexOf(id);
+  if (oauth >= 0) return 1 + oauth;
+  if (id === "openrouter") return 100;
+  if (id === "ollama") return 900;
+  if (id === "openai-compatible") return 901;
+  return 500; // direct API-key providers, alphabetical among themselves
+}
 
 const isOllama = (m: Model) => m.provider === "Ollama" || m.id.startsWith("ollama/");
 const isOpenAICompatible = (m: Model) =>
@@ -175,23 +206,10 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       group.models.push(m);
       grouped.set(sourceId, group);
     }
-    const order = [
-      "fusion",
-      "openai-codex",
-      "anthropic",
-      "github-copilot",
-      "xai",
-      "openrouter",
-      "nvidia",
-      "ollama",
-      "openai-compatible",
-    ];
     const groups = [...grouped.entries()]
-      .sort(([left], [right]) => {
-        const leftIndex = order.indexOf(left);
-        const rightIndex = order.indexOf(right);
-        return (leftIndex < 0 ? order.length : leftIndex) -
-          (rightIndex < 0 ? order.length : rightIndex);
+      .sort(([leftId, left], [rightId, right]) => {
+        const byRank = sectionRank(leftId) - sectionRank(rightId);
+        return byRank !== 0 ? byRank : left.label.localeCompare(right.label);
       })
       .map(([id, group]) => ({ id, ...group }));
     return {
@@ -269,8 +287,12 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
             )}
             {model.sourceId === "nvidia" ? (
               <span>Billed via NVIDIA API credits · not metered by Kady</span>
-            ) : model.billingMode === "subscription" ? (
+            ) : model.billingMode === "subscription" &&
+              model.sourceId &&
+              OAUTH_SECTION_ORDER.includes(model.sourceId) ? (
               <span>Uses provider-managed subscription limits</span>
+            ) : model.billingMode === "subscription" ? (
+              <span>Billed to your provider plan or credits · not metered by Kady</span>
             ) : model.billingMode === "metered_oauth" ? (
               <span>
                 ${model.pricing.prompt.toFixed(2)} in / ${model.pricing.completion.toFixed(2)} out per 1M tok · extra usage

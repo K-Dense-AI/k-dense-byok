@@ -13,12 +13,17 @@
  *                          into the shared ModelRuntime.
  *
  * Managed keys: OpenRouter (model calls and cross-browser speech
- * transcription); NVIDIA (direct NVIDIA NIM model access via build.nvidia.com
- * API credits); the optional pi-web-access search providers — Exa,
- * Perplexity, Gemini (web search works without any of the three via the Exa MCP
- * fallback; a key unlocks the direct provider, and Gemini also unlocks
- * YouTube/video understanding); and the Modal remote-compute token pair
- * (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables the `modal_run` tool.
+ * transcription); every direct Pi model provider from
+ * `agent/provider-catalog.ts` (its API key plus any supporting configuration
+ * such as a Cloudflare account id or an Azure endpoint — generated below, one
+ * entry per distinct env var, since several providers share one); the
+ * optional pi-web-access search providers — Exa, Perplexity, Gemini (web
+ * search works without any of the three via the Exa MCP fallback; a key
+ * unlocks the direct provider, and Gemini also unlocks YouTube/video
+ * understanding — and GEMINI_API_KEY is the same variable Pi's `google`
+ * provider reads, so it also enables Gemini models); and the Modal
+ * remote-compute token pair (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables
+ * the `modal_run` tool.
  *
  * Keys are stored exactly where the app already expects them (repo-root
  * `.env`, plaintext, on the user's own machine) — we are removing friction,
@@ -29,6 +34,10 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
+import {
+  DIRECT_PROVIDERS,
+  providerKeyBodyField,
+} from "../agent/provider-catalog.ts";
 import { validateModalCredentials } from "../modal/adapter.ts";
 import { modalJobManager } from "../modal/manager.ts";
 import { notebookRobustness } from "../agent/notebook-robustness.ts";
@@ -45,37 +54,37 @@ interface ManagedKey {
   envVar: string;
   /** Extra env vars read (and cleared) for backwards compatibility. */
   envAliases?: string[];
+  /**
+   * Secrets are masked in status replies and must be ≥ 8 chars; configuration
+   * values (regions, account ids, endpoints) are echoed back in full and may be
+   * short (`global`, `us-east-1`).
+   */
+  secret?: boolean;
   /** Hook run after set/clear (e.g. push into ModelRuntime). */
   onChange?: (key: string | null) => Promise<void>;
 }
 
-const MANAGED_KEYS: ManagedKey[] = [
+/** Mirror a key into Pi's runtime credential so `checkAuth` flips immediately. */
+function runtimeKeyHook(providerIds: readonly string[]): ManagedKey["onChange"] {
+  return async (key) => {
+    for (const providerId of providerIds) {
+      try {
+        if (key) await getModelRuntime().setRuntimeApiKey(providerId, key);
+        else await getModelRuntime().removeRuntimeApiKey(providerId);
+      } catch {
+        /* Runtime refresh failure does not undo the persisted environment change. */
+      }
+    }
+  };
+}
+
+const BASE_MANAGED_KEYS: ManagedKey[] = [
   {
     id: "openrouter",
     bodyField: "openrouterApiKey",
     envVar: "OPENROUTER_API_KEY",
     envAliases: ["OR_API_KEY"],
-    onChange: async (key) => {
-      try {
-        if (key) await getModelRuntime().setRuntimeApiKey("openrouter", key);
-        else await getModelRuntime().removeRuntimeApiKey("openrouter");
-      } catch {
-        /* Runtime refresh failure does not undo the persisted environment change. */
-      }
-    },
-  },
-  {
-    id: "nvidia",
-    bodyField: "nvidiaApiKey",
-    envVar: "NVIDIA_API_KEY",
-    onChange: async (key) => {
-      try {
-        if (key) await getModelRuntime().setRuntimeApiKey("nvidia", key);
-        else await getModelRuntime().removeRuntimeApiKey("nvidia");
-      } catch {
-        /* Runtime refresh failure does not undo the persisted environment change. */
-      }
-    },
+    onChange: runtimeKeyHook(["openrouter"]),
   },
   { id: "exa", bodyField: "exaApiKey", envVar: "EXA_API_KEY" },
   { id: "perplexity", bodyField: "perplexityApiKey", envVar: "PERPLEXITY_API_KEY" },
@@ -85,6 +94,72 @@ const MANAGED_KEYS: ManagedKey[] = [
   { id: "modalTokenId", bodyField: "modalTokenId", envVar: "MODAL_TOKEN_ID" },
   { id: "modalTokenSecret", bodyField: "modalTokenSecret", envVar: "MODAL_TOKEN_SECRET" },
 ];
+
+/**
+ * Add one managed entry per direct-provider env var. A variable already
+ * managed (GEMINI_API_KEY via `gemini`; MOONSHOT_API_KEY shared by two
+ * Moonshot endpoints; CLOUDFLARE_* shared by both Cloudflare providers) keeps
+ * its first id/bodyField and only gains the extra runtime push, so the
+ * Settings UI and `/providers` can address every field by env var.
+ */
+function buildManagedKeys(): ManagedKey[] {
+  const keys = [...BASE_MANAGED_KEYS];
+  const byEnv = new Map(keys.map((k) => [k.envVar, k] as const));
+  const runtimeTargets = new Map<string, string[]>();
+  for (const provider of DIRECT_PROVIDERS) {
+    if (provider.keyEnvVar) {
+      if (!byEnv.has(provider.keyEnvVar)) {
+        const entry: ManagedKey = {
+          id: provider.id,
+          bodyField: providerKeyBodyField(provider.id),
+          envVar: provider.keyEnvVar,
+          secret: true,
+        };
+        keys.push(entry);
+        byEnv.set(provider.keyEnvVar, entry);
+      }
+      if (provider.runtimeKey) {
+        const targets = runtimeTargets.get(provider.keyEnvVar) ?? [];
+        targets.push(provider.id);
+        runtimeTargets.set(provider.keyEnvVar, targets);
+      }
+    }
+    for (const field of provider.extraEnv) {
+      if (byEnv.has(field.envVar)) continue;
+      const entry: ManagedKey = {
+        id: field.envVar,
+        bodyField: field.envVar,
+        envVar: field.envVar,
+        secret: field.secret,
+      };
+      keys.push(entry);
+      byEnv.set(field.envVar, entry);
+    }
+  }
+  for (const [envVar, providerIds] of runtimeTargets) {
+    const entry = byEnv.get(envVar)!;
+    const previous = entry.onChange;
+    const push = runtimeKeyHook(providerIds);
+    entry.onChange = previous
+      ? async (key) => {
+          await previous(key);
+          await push!(key);
+        }
+      : push;
+  }
+  return keys;
+}
+
+const MANAGED_KEYS: ManagedKey[] = buildManagedKeys();
+const MANAGED_BY_ENV = new Map(MANAGED_KEYS.map((k) => [k.envVar, k] as const));
+
+/** How the Settings UI addresses an env var: its status id and PUT body field. */
+export function credentialFieldFor(
+  envVar: string,
+): { credentialId: string; bodyField: string } | undefined {
+  const entry = MANAGED_BY_ENV.get(envVar);
+  return entry ? { credentialId: entry.id, bodyField: entry.bodyField } : undefined;
+}
 
 const MODAL_ID_FIELD = "modalTokenId";
 const MODAL_SECRET_FIELD = "modalTokenSecret";
@@ -144,7 +219,11 @@ function status() {
   const out: Record<string, { set: boolean; masked: string | null }> = {};
   for (const spec of MANAGED_KEYS) {
     const key = readKey(spec);
-    out[spec.id] = key ? { set: true, masked: mask(key) } : { set: false, masked: null };
+    // Non-secret configuration (regions, ids, endpoints) is echoed in full so
+    // the user can recognize a stale value; only secrets are masked.
+    out[spec.id] = key
+      ? { set: true, masked: spec.secret === false ? key : mask(key) }
+      : { set: false, masked: null };
   }
   return out;
 }
@@ -159,8 +238,9 @@ async function applyKey(spec: ManagedKey, raw: string | null): Promise<string | 
     return null;
   }
   // Basic sanity check — we don't hard-reject on format (providers change
-  // formats), just guard against pasted junk.
-  if (key.length < 8) {
+  // formats), just guard against pasted junk. Configuration values are exempt
+  // (`global`, `us-east-1`, a short resource name).
+  if (spec.secret !== false && key.length < 8) {
     return "That key looks too short to be valid.";
   }
   process.env[spec.envVar] = key;

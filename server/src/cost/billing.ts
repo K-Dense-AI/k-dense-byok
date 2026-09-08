@@ -1,5 +1,7 @@
 import type { Api, AuthType, Model } from "@earendil-works/pi-ai";
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { subscriptionProvider } from "../agent/provider-auth.ts";
+import { isPlanBilledProvider } from "../agent/provider-catalog.ts";
 
 export type BillingMode =
   | "payg"
@@ -47,24 +49,24 @@ export function billingForProvider(
   if (provider === "anthropic" && authType === "oauth") {
     return { provider, authType, billingMode: "metered_oauth" };
   }
-  // NVIDIA NIM (build.nvidia.com) bills against NVIDIA-managed API credits,
-  // not per-token USD — Pi's NIM catalogue prices every model at $0. Like the
-  // OAuth subscription providers, tokens (and any Pi-reported list price) are
+  // Prepaid plans and credit pools (NVIDIA NIM, the Qwen/Xiaomi token plans,
+  // Kimi For Coding): the endpoint draws NVIDIA API credits or a plan quota,
+  // not per-token USD, and Pi prices every such model at $0. Like the OAuth
+  // subscription providers, tokens (and any Pi-reported list price) are
   // recorded but the spend is external, so it neither counts toward nor is
-  // blocked by the project cap.
-  if (provider === "nvidia") {
+  // blocked by the project cap — classifying them payg would let an exceeded
+  // cap block runs that ledger $0. Whichever credential Pi resolved.
+  if (isPlanBilledProvider(provider)) {
     return {
       provider,
       authType: authType === "none" ? "api_key" : authType,
       billingMode: "subscription",
     };
   }
-  if (
-    authType === "oauth" &&
-    (provider === "openai-codex" ||
-      provider === "github-copilot" ||
-      provider === "xai")
-  ) {
+  // OAuth subscriptions (ChatGPT, Copilot, xAI, Kimi Code): provider-managed
+  // limits. OpenRouter/Radius OAuth logins are `payg` in provider-auth.ts and
+  // fall through to the default — they merely stand in for an API key.
+  if (authType === "oauth" && subscriptionProvider(provider)?.billingMode === "subscription") {
     return { provider, authType, billingMode: "subscription" };
   }
   return {

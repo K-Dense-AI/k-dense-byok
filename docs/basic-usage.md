@@ -32,7 +32,7 @@ Click `+` in the chat tab strip to open a new chat in the same project. Each tab
 
 ### Choosing a model
 
-Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, [NVIDIA NIM](./model-selection.md#nvidia-nim-models) (Nemotron, Llama, GPT-OSS, and more with a build.nvidia.com API key), or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, or xAI through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. A **thinking-level** chip next to the model picker sets how much the model reasons on each run (default *High*); it is unavailable for Ollama and Fusion. See [Model selection](./model-selection.md) for model refs and billing behavior.
+Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, [any direct Pi provider](./model-selection.md#direct-api-key-providers) you hold a key for (Anthropic, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, Azure, Bedrock, Vertex, Cloudflare, [NVIDIA NIM](./model-selection.md#nvidia-nim-models), and more), or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, xAI, or Kimi Code through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. A **thinking-level** chip next to the model picker sets how much the model reasons on each run (default *High*); it is unavailable for Ollama and Fusion. See [Model selection](./model-selection.md) for model refs and billing behavior.
 
 ### Files
 
@@ -77,7 +77,7 @@ Open any `.tex` file and click **Edit** for a split-pane editor with live PDF co
 The cost pill in the header shows the active tab's session spend (`sess`) and the project total across every tab (`proj`), with token details in its popover. You can set an optional hard spend cap per project in Settings.
 
 - OpenRouter pay-as-you-go and Anthropic OAuth's Pi-documented metered extra per-token usage count toward the cap.
-- OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited. NVIDIA NIM gets the same treatment: it bills NVIDIA-managed API credits rather than per-token dollars, so Kady records tokens without counting USD spend.
+- OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited. NVIDIA NIM and the prepaid Qwen/Xiaomi token plans get the same treatment: they bill provider-managed credits or a plan quota rather than per-token dollars, so Kady records tokens without counting USD spend. Every other direct provider key (Anthropic, OpenAI, Groq, Azure, Bedrock, …) is pay-as-you-go at Pi's list price and counts toward the cap.
 - Local Ollama usage does not add model spend. Modal compute remains separately estimated and counted.
 
 ## Host resource monitor
@@ -102,7 +102,7 @@ This monitor is **display-only**. Nothing in Kady routes work based on it: local
 Click the gear icon in the top-right to:
 
 - connect supported subscriptions under **Model providers**,
-- manage your **API keys** (OpenRouter, NVIDIA, Modal, and optional search keys),
+- manage your **API keys** (OpenRouter, every direct Pi model provider, Modal, and optional search keys),
 - browse, enable, install, write, and edit **[Skills](./skill-management.md)**,
 - view, edit, enable, and create **[Specialists](./sub-agents.md)** (sub-agents),
 - connect external tools under **Connectors** — **[MCP servers](./mcp-servers.md)** for GitHub, reference managers, databases, and hundreds more, with a built-in connection tester,

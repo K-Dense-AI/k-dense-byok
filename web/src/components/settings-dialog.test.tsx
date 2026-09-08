@@ -12,6 +12,32 @@ vi.mock("@/lib/use-projects", () => ({
 
 import { SettingsDialog } from "@/components/settings-dialog";
 
+function json(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+const NO_MODAL = {
+  modalTokenId: { set: false, masked: null },
+  modalTokenSecret: { set: false, masked: null },
+};
+
+/**
+ * Route mocked fetches by URL rather than call order: the API-keys panel
+ * fires several independent GETs on mount (/credentials, /providers, …), so
+ * an ordered mock queue would hand the wrong body to whichever lands first.
+ */
+function routeFetch(onCredentialsPut: () => Response | Promise<Response>) {
+  apiFetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url === "/providers") return json({ providers: [] });
+    if (url === "/credentials" && init?.method === "PUT") return onCredentialsPut();
+    if (url === "/credentials") return json(NO_MODAL);
+    return json({});
+  });
+}
+
 describe("SettingsDialog", () => {
   beforeEach(() => {
     apiFetch.mockReset();
@@ -43,26 +69,13 @@ describe("SettingsDialog", () => {
     const user = userEvent.setup();
     const changed = vi.fn();
     window.addEventListener("kady:credentials-changed", changed);
-    apiFetch
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            modalTokenId: { set: false, masked: null },
-            modalTokenSecret: { set: false, masked: null },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            modalConfigured: true,
-            modalTokenId: { set: true, masked: "ak-…1234" },
-            modalTokenSecret: { set: true, masked: "as-…5678" },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      );
+    routeFetch(() =>
+      json({
+        modalConfigured: true,
+        modalTokenId: { set: true, masked: "ak-…1234" },
+        modalTokenSecret: { set: true, masked: "as-…5678" },
+      }),
+    );
 
     render(<SettingsDialog open onOpenChange={() => {}} />);
     await screen.findByText("Not connected");
@@ -87,21 +100,12 @@ describe("SettingsDialog", () => {
 
   it("shows Testing and handles backend pair-validation errors", async () => {
     let resolveSave!: (response: Response) => void;
-    apiFetch
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            modalTokenId: { set: false, masked: null },
-            modalTokenSecret: { set: false, masked: null },
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
-      )
-      .mockReturnValueOnce(
+    routeFetch(
+      () =>
         new Promise<Response>((resolve) => {
           resolveSave = resolve;
         }),
-      );
+    );
     render(<SettingsDialog open onOpenChange={() => {}} />);
     await screen.findByText("Not connected");
     fireEvent.change(screen.getByLabelText("Token ID"), { target: { value: "ak-bad" } });

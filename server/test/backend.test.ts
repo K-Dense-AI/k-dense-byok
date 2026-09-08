@@ -435,12 +435,14 @@ describe("subagent model inheritance", () => {
     });
     expect(resumeResult).toMatchObject({ block: true });
 
+    // xAI now also takes an API key (provider-catalog.ts), so only an
+    // OAuth-only provider still needs the subscription login to delegate.
     const unsupported = await handlers.get("tool_call")!({
       toolName: "subagent",
       input: {
         agent: "custom",
         task: "test",
-        model: "xai/grok-4.5",
+        model: "github-copilot/claude-sonnet-5",
       },
     });
     expect(unsupported).toMatchObject({
@@ -454,7 +456,7 @@ describe("subagent model inheritance", () => {
       toolName: "subagent",
       input: {
         workflowScript:
-          `return runs.run("main", { agent: "custom", model: "xai/grok-4.5", task: "test" })`,
+          `return runs.run("main", { agent: "custom", model: "github-copilot/claude-sonnet-5", task: "test" })`,
       },
     });
     expect(scripted).toMatchObject({
