@@ -550,7 +550,9 @@ export function parseModalJob(value: unknown): ModalJobSummary | null {
       stringValue(wrapped.agent, wrapped.agentName, wrapped.agent_name) ??
       (stringValue(owner.subagentRunId, owner.subagent_run_id)
         ? `subagent ${stringValue(owner.subagentRunId, owner.subagent_run_id)}`
-        : null),
+        : stringValue(owner.subagentSessionFile, owner.subagent_session_file)
+          ? "subagent"
+          : null),
     status,
     command: stringValue(wrapped.command, wrapped.script, request.command),
     requestedResource: parseModalJobResource(

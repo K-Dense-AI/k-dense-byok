@@ -54,6 +54,35 @@ describe("ToolActivityList", () => {
     expect(screen.queryByText("subtask")).not.toBeInTheDocument();
   });
 
+  it("reads specialist names out of a workflowScript launch", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "subagent",
+            args: {
+              workflowScript:
+                'const a = runs.run("lit", { agent: "literature-reviewer", task: "Survey" });\n' +
+                "const b = runs.run('stats', { agent: 'statistical-reviewer', task: 'Audit' });",
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText("literature-reviewer + statistical-reviewer"),
+    ).toBeInTheDocument();
+  });
+
+  it("labels the pi-subagents wait tool", () => {
+    render(
+      <ToolActivityList
+        activities={[item({ toolName: "bg_wait", args: { id: "run-1" } })]}
+      />,
+    );
+    expect(screen.getByText("wait for subagents")).toBeInTheDocument();
+  });
+
   it("shows every specialist name from a parallel subagent call", () => {
     render(
       <ToolActivityList

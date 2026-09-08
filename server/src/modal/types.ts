@@ -53,6 +53,13 @@ export interface ModalJobOwner {
   sessionId: string;
   runId?: string;
   subagentRunId?: string;
+  /**
+   * Absolute path of the submitting child's Pi session file. pi-subagents ≥0.65
+   * children are native sessions without a per-child environment, so this —
+   * which the parent receives as `results[].sessionFile` — replaces the run id
+   * as the key that re-attributes a child's jobs to its parent chat.
+   */
+  subagentSessionFile?: string;
   submittedBy: "lead" | "subagent" | "api";
 }
 

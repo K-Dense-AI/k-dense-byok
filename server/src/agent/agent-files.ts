@@ -265,6 +265,16 @@ export function listProjectAgents(paths: ProjectPaths): AgentFile[] {
     .filter((a): a is AgentFile => a !== null);
 }
 
+/**
+ * True for a builtin that drives an external coding CLI (Claude Code, Codex,
+ * Cursor Agent; pi-subagents ≥0.57) instead of a Pi session. Its frontmatter
+ * carries a nested `runner:` block whose `type` is `external-cli`; our YAML
+ * subset flattens that block, so both keys land in `extra`.
+ */
+export function isExternalCliAgent(agent: Pick<AgentFile, "extra">): boolean {
+  return agent.extra?.runner !== undefined && agent.extra?.type === "external-cli";
+}
+
 /** Agents bundled inside the pi-subagents package (read-only). */
 export function listBuiltinAgents(): AgentFile[] {
   try {

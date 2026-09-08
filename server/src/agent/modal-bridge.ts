@@ -168,7 +168,7 @@ export function makeSubagentModalExtension(
     const payload = value as {
       id?: string | null;
       runId?: string | null;
-      results?: Array<{ runId?: string; id?: string }>;
+      results?: Array<{ runId?: string; id?: string; sessionFile?: string }>;
     };
     const ids = new Set<string>();
     if (payload.id) ids.add(payload.id);
@@ -176,6 +176,12 @@ export function makeSubagentModalExtension(
     for (const result of payload.results ?? []) {
       if (result.runId) ids.add(result.runId);
       if (result.id) ids.add(result.id);
+      // pi-subagents ≥0.65: children are native sessions with no per-child
+      // environment, so the kady-modal package stamps jobs with the child's
+      // session file instead of a run id (same key the harvests use).
+      if (typeof result.sessionFile === "string" && result.sessionFile.trim()) {
+        ids.add(path.resolve(result.sessionFile.trim()));
+      }
     }
     for (const id of ids) {
       modalJobManager.reattributeSubagentJobs(projectId, id, parentSessionId);

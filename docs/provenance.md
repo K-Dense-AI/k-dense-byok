@@ -161,7 +161,8 @@ How each tool class earns its level:
 Delegated work is recorded too, but it is reconstructed rather than watched, and
 the record says so.
 
-A child `pi` process writes every tool call to its own session file. On
+A child session (pi-subagents ≥0.65 runs children as native Pi sessions inside
+a detached runner process) writes every tool call to its own session file. On
 completion the parent parses that file and appends the steps to its own log —
 the same hook the notebook harvest and the cost ledger already use. Harvested
 steps carry `role: "subagent"` and the specialist's name, plus the child's own

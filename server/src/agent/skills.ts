@@ -29,8 +29,8 @@ const DEFAULT_DISABLED_MIGRATION = "package-skills-disabled-v1";
  *
  * Pi loads both — `package-manager.ts`'s builtin resolution adds
  * `<agentDir>/skills` unconditionally and `<cwd>/.pi/skills` when the project
- * is trusted — and child `pi` processes running subagents inherit the same
- * agent dir, so a global skill reaches them too. Project entries are resolved
+ * is trusted — and the child sessions running subagents (pi-subagents' runner
+ * inherits our env) use the same agent dir, so a global skill reaches them too. Project entries are resolved
  * first and skill-name collisions are first-wins, so **a project skill shadows
  * a global one of the same name**.
  */

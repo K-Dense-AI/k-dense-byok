@@ -48,6 +48,7 @@ const READ_ONLY_TOOLS = new Set([
   "web_search",
   "fetch_content",
   "get_search_content",
+  "source_check",
   "notebook",
   "scientific_result",
   "notebook_search",

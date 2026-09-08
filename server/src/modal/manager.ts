@@ -560,19 +560,23 @@ export class DurableModalJobManager {
     });
   }
 
+  /**
+   * Move every job a delegated child submitted under `subagentRef` — its
+   * pi-subagents run id, or (pi-subagents ≥0.65, where children have no
+   * per-process environment) the absolute path of its session file — onto the
+   * parent chat session, cost included.
+   */
   reattributeSubagentJobs(
     projectId: string,
-    subagentRunId: string,
+    subagentRef: string,
     parentSessionId: string,
   ): number {
     let changed = 0;
     for (const job of this.store.list(projectId)) {
-      if (
-        job.owner.subagentRunId !== subagentRunId ||
-        job.owner.sessionId === parentSessionId
-      ) {
-        continue;
-      }
+      const matches =
+        job.owner.subagentRunId === subagentRef ||
+        job.owner.subagentSessionFile === subagentRef;
+      if (!matches || job.owner.sessionId === parentSessionId) continue;
       const priorSessionId = ledgerSessionId(job.owner, job.id);
       if (job.accounting.reconciled) {
         reattributeModalJobCost(
@@ -589,7 +593,7 @@ export class DurableModalJobManager {
         type: "parent_attributed",
         state: job.state,
         message: "Subagent Modal job attributed to its parent chat session",
-        data: { subagentRunId, parentSessionId },
+        data: { subagentRef, parentSessionId },
       });
       changed++;
     }

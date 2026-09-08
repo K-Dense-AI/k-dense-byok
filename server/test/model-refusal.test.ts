@@ -183,6 +183,19 @@ describe("makeSubagentRefusalExtension", () => {
     expect(result).toBeTruthy();
   });
 
+  it("covers bg_wait, the wait tool's name since pi-subagents 0.61", async () => {
+    ensureProjectExists("p6b");
+    const pi = fakePi();
+    makeSubagentRefusalExtension("p6b")(pi.api as never);
+
+    const result = await pi.onHandlers.tool_result({
+      toolName: "bg_wait",
+      content: [{ type: "text", text: "run failed: Provider finish_reason: content_filter" }],
+      isError: true,
+    });
+    expect(result).toBeTruthy();
+  });
+
   it("leaves other tools and non-refusal failures untouched", async () => {
     ensureProjectExists("p7");
     const pi = fakePi();

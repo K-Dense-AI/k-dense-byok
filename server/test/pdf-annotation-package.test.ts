@@ -3,8 +3,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import registerPackage, {
   PDF_ANNOTATION_TOOL_NAMES,
+  childAuthor,
   makeChildPdfAnnotationTools,
 } from "../pi-packages/kady-pdf-annotations/index.ts";
+import { trackSubagentChildIdentity } from "../src/agent/subagent-child-identity.ts";
 import {
   kadyPdfAnnotationPackageDir,
   seedBuiltinAgentPdfAnnotationTools,
@@ -86,6 +88,44 @@ describe("kady-pdf-annotations child package", () => {
         id: "biostatistician",
         label: "Biostatistician",
       },
+    });
+  });
+
+  it("names the specialist from its child session when no legacy env exists", async () => {
+    const paths = ensureProjectExists("default");
+    fs.writeFileSync(path.join(paths.sandbox, "paper.pdf"), "%PDF-1.4\n");
+    delete process.env.PI_SUBAGENT_CHILD_AGENT;
+    delete process.env.PI_SUBAGENT_RUN_ID;
+
+    // pi-subagents ≥0.65 children are native sessions: identity arrives at
+    // session_start, after the tools were registered.
+    const handlers: Record<string, (event: unknown, ctx: unknown) => unknown> = {};
+    const identity = trackSubagentChildIdentity({
+      on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
+        handlers[name] = handler;
+      },
+    } as never);
+    const add = makeChildPdfAnnotationTools(paths.sandbox, () => childAuthor(identity())).find(
+      (tool) => tool.name === "add_pdf_annotation",
+    )!;
+    await handlers.session_start(
+      {},
+      {
+        sessionManager: {
+          getSessionId: () => "sess-9",
+          getSessionFile: () => path.join(paths.sandbox, ".pi", "sessions", "child.jsonl"),
+          getSessionName: () => "literature-reviewer: Check the cited effect sizes",
+        },
+      },
+    );
+
+    await add.execute(
+      "tool-call",
+      { pdf_path: "paper.pdf", type: "note", page: 1, anchor: { x: 10, y: 20 }, body: "Effect size misread." },
+      undefined as never,
+    );
+    expect(readPdfAnnotations(paths.sandbox, "paper.pdf").doc.annotations[0]).toMatchObject({
+      author: { kind: "expert", id: "literature-reviewer", label: "Literature Reviewer" },
     });
   });
 

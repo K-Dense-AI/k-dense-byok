@@ -1,3 +1,4 @@
+import path from "node:path";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { currentProjectId } from "../scope.ts";
 import { modalConfigured } from "../config.ts";
@@ -46,16 +47,25 @@ function ownerFromBody(body: Record<string, unknown>): ModalJobOwner {
     body.subagentRunId === undefined && body.subagent_run_id === undefined
       ? undefined
       : String(body.subagentRunId ?? body.subagent_run_id);
+  const rawSessionFile = body.subagentSessionFile ?? body.subagent_session_file;
+  // Normalised so it compares equal to the `results[].sessionFile` the parent
+  // receives from pi-subagents (modal-bridge.ts resolves that side too).
+  const subagentSessionFile =
+    typeof rawSessionFile === "string" && rawSessionFile.trim()
+      ? path.resolve(rawSessionFile.trim())
+      : undefined;
+  const fromSubagent = Boolean(subagentRunId || subagentSessionFile);
   const sessionId =
     body.sessionId === undefined && body.session_id === undefined
-      ? subagentRunId
-        ? `subagent-${subagentRunId}`
+      ? fromSubagent
+        ? `subagent-${subagentRunId ?? path.basename(subagentSessionFile ?? "", ".jsonl")}`
         : "modal-api"
       : String(body.sessionId ?? body.session_id);
   return {
     sessionId,
-    submittedBy: subagentRunId ? "subagent" : "api",
+    submittedBy: fromSubagent ? "subagent" : "api",
     ...(subagentRunId ? { subagentRunId } : {}),
+    ...(subagentSessionFile ? { subagentSessionFile } : {}),
     ...(body.runId || body.run_id ? { runId: String(body.runId ?? body.run_id) } : {}),
   };
 }

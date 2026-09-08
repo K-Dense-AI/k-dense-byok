@@ -656,4 +656,38 @@ describe("Durable Modal manager accounting", () => {
       role: "compute",
     });
   });
+
+  it("reattributes by the child's session file when no run id exists (pi-subagents ≥0.65)", async () => {
+    const fake = new FakeModal();
+    const manager = new DurableModalJobManager(fake.factory);
+    const sessionFile = path.resolve("/tmp/pi-sessions/child-a.jsonl");
+    const job = manager.submit(
+      "default",
+      { command: "echo child" },
+      {
+        sessionId: "subagent-child-a",
+        subagentSessionFile: sessionFile,
+        submittedBy: "subagent",
+      },
+    );
+    const other = manager.submit(
+      "default",
+      { command: "echo other" },
+      {
+        sessionId: "subagent-child-b",
+        subagentSessionFile: path.resolve("/tmp/pi-sessions/child-b.jsonl"),
+        submittedBy: "subagent",
+      },
+    );
+    await manager.wait("default", job.id, 3000);
+    await manager.wait("default", other.id, 3000);
+    expect(manager.reattributeSubagentJobs("default", sessionFile, "parent-session")).toBe(1);
+    expect(manager.get("default", job.id).owner.sessionId).toBe("parent-session");
+    expect(manager.get("default", other.id).owner.sessionId).toBe("subagent-child-b");
+    expect(sessionCostSummary("subagent-child-a", "default").entries).toEqual([]);
+    expect(sessionCostSummary("parent-session", "default").entries[0]).toMatchObject({
+      jobId: job.id,
+      role: "compute",
+    });
+  });
 });

@@ -2,16 +2,17 @@
  * Integration glue for the `pi-web-access` package (npm:pi-web-access).
  *
  * The package is a Pi extension that registers web tools — `web_search`,
- * `fetch_content`, `get_search_content` — covering search
+ * `fetch_content`, `get_search_content`, `source_check` — covering search
  * (Exa / Perplexity / Gemini), URL/PDF extraction, GitHub repo cloning, and
  * YouTube/video understanding. It works without any API key (Exa MCP
  * fallback); EXA_API_KEY / PERPLEXITY_API_KEY / GEMINI_API_KEY unlock the
  * direct providers and are managed live via the credentials API.
  *
  * Unlike pi-subagents (loaded in-process through additionalExtensionPaths),
- * web access must also reach the child `pi` CLI processes that pi-subagents
- * spawns, so the roster sub-agents can search too. Children discover
- * resources the normal Pi way — project settings in the sandbox — so we:
+ * web access must also reach the child sessions pi-subagents runs (≥0.65:
+ * native Pi sessions inside its detached runner process), so the roster
+ * sub-agents can search too. Children discover resources the normal Pi way —
+ * project settings in the sandbox — so we:
  *
  *  1. reference the locally installed package from
  *     `sandbox/.pi/settings.json` ("packages"). Local-path package sources
@@ -33,11 +34,14 @@ import type { ProjectPaths } from "../projects.ts";
 const require_ = createRequire(import.meta.url);
 
 /** Tool names registered by the pi-web-access extension. (`code_search` was
- *  removed upstream in 0.11 — `web_search`'s Exa provider covers it.) */
+ *  removed upstream in 0.11 — `web_search`'s Exa provider covers it;
+ *  `source_check` — claim verification with passage-level citations — was
+ *  added in 0.25 and is in the builtin `researcher`'s allowlist.) */
 export const WEB_ACCESS_TOOLS = [
   "web_search",
   "fetch_content",
   "get_search_content",
+  "source_check",
 ];
 
 /** Directory of the locally installed pi-web-access package. */
@@ -82,7 +86,7 @@ export function seedWebAccessPackage(paths: ProjectPaths): boolean {
 }
 
 /**
- * Pre-trust the sandbox so child `pi` processes load its project resources.
+ * Pre-trust the sandbox so child sessions load its project resources.
  * No-op when a decision (either way) is already recorded.
  */
 export function trustSandbox(paths: ProjectPaths, agentDir: string = getAgentDir()): void {

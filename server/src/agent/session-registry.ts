@@ -57,15 +57,18 @@ import {
   seedPdfAnnotationPackage,
 } from "./pdf-annotation-bridge.ts";
 import { BUILTIN_TOOLS } from "./tools.ts";
+import { seedSubagentRuntimeSettings } from "./subagent-runtime-settings.ts";
 
 // Entry points normally establish this in env.ts. Keep the registry safe when
 // imported directly (tests/scripts) so child Pi processes still share the same
 // Kady-scoped auth store as the in-process runtime.
 process.env.PI_CODING_AGENT_DIR ??= KADY_PI_AGENT_DIR;
 
-// pi-subagents runs each delegation as a child `pi` CLI process. The binary
-// ships with our pi-coding-agent dependency; make sure spawn("pi") resolves
-// even when the server wasn't started through an npm script.
+// pi-subagents ≥0.65 runs children as native Pi sessions (background ones in a
+// detached runner it imports from our pi-coding-agent dependency), so no `pi`
+// binary is spawned for delegation any more. The `pi` bin is still put on PATH
+// for the few places that shell out to it (Herdr panes, the profile model
+// probe) so they resolve even when the server wasn't started via npm.
 const localBin = path.resolve(import.meta.dirname, "..", "..", "node_modules", ".bin");
 if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
   process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH ?? ""}`;
@@ -141,10 +144,11 @@ async function build(
   // discovery (sandbox/.pi/agents/) before the session starts.
   seedAgentFiles(paths);
   // Reference pi-web-access from sandbox/.pi/settings.json and pre-trust the
-  // sandbox so both this session and pi-subagents' child `pi` processes load
-  // the web tools (web-access-bridge.ts explains why children need this).
+  // sandbox so both this session and pi-subagents' background children (native
+  // sessions in a detached runner that loads the sandbox's ambient packages)
+  // get the web tools (web-access-bridge.ts explains why children need this).
   ensureWebAccess(paths);
-  // Reference the kady-notebook package so child pi processes get the notebook
+  // Reference the kady-notebook package so child sessions get the notebook
   // tool (sandbox trust is already handled by ensureWebAccess above).
   seedNotebookPackage(paths);
   // Builtin pi-subagents specialists pin a tools allowlist that would filter
@@ -159,6 +163,11 @@ async function build(
   // child agents so both can create expert markup visible in the viewer.
   seedPdfAnnotationPackage(paths);
   seedBuiltinAgentPdfAnnotationTools(paths);
+  // Every child tool above arrives as an ambient package, which pi-subagents
+  // ≥0.65 loads only into *background* children — so force background
+  // launches; and keep the external-CLI builtins (Claude Code/Codex/Cursor)
+  // off until a user turns one on in Settings → Specialists.
+  seedSubagentRuntimeSettings(paths);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -215,10 +224,13 @@ async function build(
     tools: [
       ...BUILTIN_TOOLS,
       "subagent",
-      // pi-subagents ≥0.45 registers this alongside `subagent` and enables it by
-      // default. Since 0.47 a workflowScript launch is async by default and
+      // pi-subagents registers the wait tool alongside `subagent` and enables it
+      // by default. Since 0.47 a workflowScript launch is async by default and
       // returns a receipt, so without it in this allowlist Pi filters out the
-      // lead's only way to block on the children it just started.
+      // lead's only way to block on the children it just started. 0.61 renamed
+      // it `subagent_wait` → `bg_wait`; the old name is harmless here (unknown
+      // names are ignored) and covers a deliberate pin rollback.
+      "bg_wait",
       "subagent_wait",
       "interview",
       "notebook",

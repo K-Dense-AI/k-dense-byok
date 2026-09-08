@@ -1,6 +1,10 @@
 import path from "node:path";
 import { Type, type Static } from "typebox";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import {
+  trackSubagentChildIdentity,
+  type SubagentChildIdentity,
+} from "../../src/agent/subagent-child-identity.ts";
 
 const INSTANCE_IDS = [
   "cpu", "cpu-2", "cpu-4", "cpu-8", "cpu-16", "t4", "l4", "a10g",
@@ -139,20 +143,30 @@ async function api<T>(
   return data;
 }
 
-function ownerFields() {
-  const subagentRunId = process.env.PI_SUBAGENT_RUN_ID;
+/**
+ * Owner fields that let the server re-attribute this child's jobs to the
+ * parent chat once the delegation completes (modal-bridge.ts). The run id is
+ * only present under a legacy per-process runner; since pi-subagents 0.65 the
+ * child's session file is the correlation key the parent receives.
+ */
+function ownerFields(identity: SubagentChildIdentity) {
   return {
-    ...(subagentRunId ? { subagent_run_id: subagentRunId } : {}),
+    ...(identity.runId ? { subagent_run_id: identity.runId } : {}),
+    ...(identity.sessionFile ? { subagent_session_file: identity.sessionFile } : {}),
   };
 }
 
-async function submit(params: ModalRunParamsT, groupId?: string): Promise<ApiJob> {
+async function submit(
+  params: ModalRunParamsT,
+  identity: SubagentChildIdentity,
+  groupId?: string,
+): Promise<ApiJob> {
   return api<ApiJob>("/modal/jobs", {
     method: "POST",
     body: JSON.stringify({
       ...params,
       ...(groupId ? { group_id: groupId } : {}),
-      ...ownerFields(),
+      ...ownerFields(identity),
     }),
   });
 }
@@ -205,141 +219,154 @@ function failed(error: unknown) {
   });
 }
 
-export const modalChildTools: ToolDefinition<any>[] = [
-  {
-    name: "modal_run",
-    label: "Modal compute",
-    description:
-      "Run durable remote Modal CPU/GPU compute, wait, and return logs/results. Aborting cancels this job.",
-    parameters: ModalRunParams,
-    execute: async (_id, params: ModalRunParamsT, signal?: AbortSignal) => {
-      let job: ApiJob | undefined;
-      const cancel = () => {
-        if (job) void api(`/modal/jobs/${encodeURIComponent(job.id)}/cancel`, { method: "POST" });
-      };
-      signal?.addEventListener("abort", cancel, { once: true });
-      try {
-        job = await submit(params);
-        if (signal?.aborted) cancel();
-        await waitFor(job.id, params.timeout_sec ?? 600);
-        const output = await api<Record<string, unknown>>(
-          `/modal/jobs/${encodeURIComponent(job.id)}/results`,
-        );
-        return result(JSON.stringify(output, null, 2), output);
-      } catch (error) {
-        if (signal?.aborted) cancel();
-        return failed(error);
-      } finally {
-        signal?.removeEventListener("abort", cancel);
-      }
+/**
+ * The child tool set. `getIdentity` is read at call time so jobs carry the
+ * session the child learned at `session_start`, not module-load state shared
+ * with other children hosted in the same runner process.
+ */
+export function makeModalChildTools(
+  getIdentity: () => SubagentChildIdentity = () => ({}),
+): ToolDefinition<any>[] {
+  return [
+    {
+      name: "modal_run",
+      label: "Modal compute",
+      description:
+        "Run durable remote Modal CPU/GPU compute, wait, and return logs/results. Aborting cancels this job.",
+      parameters: ModalRunParams,
+      execute: async (_id, params: ModalRunParamsT, signal?: AbortSignal) => {
+        let job: ApiJob | undefined;
+        const cancel = () => {
+          if (job) void api(`/modal/jobs/${encodeURIComponent(job.id)}/cancel`, { method: "POST" });
+        };
+        signal?.addEventListener("abort", cancel, { once: true });
+        try {
+          job = await submit(params, getIdentity());
+          if (signal?.aborted) cancel();
+          await waitFor(job.id, params.timeout_sec ?? 600);
+          const output = await api<Record<string, unknown>>(
+            `/modal/jobs/${encodeURIComponent(job.id)}/results`,
+          );
+          return result(JSON.stringify(output, null, 2), output);
+        } catch (error) {
+          if (signal?.aborted) cancel();
+          return failed(error);
+        } finally {
+          signal?.removeEventListener("abort", cancel);
+        }
+      },
     },
-  },
-  {
-    name: "modal_submit",
-    label: "Submit Modal job",
-    description: "Submit durable asynchronous Modal compute. It survives child/chat abort.",
-    parameters: ModalRunParams,
-    execute: async (_id, params: ModalRunParamsT) => {
-      try {
-        const job = await submit(params);
-        return result(JSON.stringify(job, null, 2), job);
-      } catch (error) {
-        return failed(error);
-      }
+    {
+      name: "modal_submit",
+      label: "Submit Modal job",
+      description: "Submit durable asynchronous Modal compute. It survives child/chat abort.",
+      parameters: ModalRunParams,
+      execute: async (_id, params: ModalRunParamsT) => {
+        try {
+          const job = await submit(params, getIdentity());
+          return result(JSON.stringify(job, null, 2), job);
+        } catch (error) {
+          return failed(error);
+        }
+      },
     },
-  },
-  {
-    name: "modal_status",
-    label: "Modal job status",
-    description: "Read durable Modal job state.",
-    parameters: ModalJobIdParams,
-    execute: async (_id, params: { job_id: string }) => {
-      try {
-        const job = await status(params.job_id);
-        return result(JSON.stringify(job, null, 2), job);
-      } catch (error) {
-        return failed(error);
-      }
+    {
+      name: "modal_status",
+      label: "Modal job status",
+      description: "Read durable Modal job state.",
+      parameters: ModalJobIdParams,
+      execute: async (_id, params: { job_id: string }) => {
+        try {
+          const job = await status(params.job_id);
+          return result(JSON.stringify(job, null, 2), job);
+        } catch (error) {
+          return failed(error);
+        }
+      },
     },
-  },
-  {
-    name: "modal_wait",
-    label: "Wait for Modal job",
-    description: "Wait for a Modal job or return its current state after timeout.",
-    parameters: ModalWaitParams,
-    execute: async (
-      _id,
-      params: { job_id: string; timeout_sec?: number },
-      signal?: AbortSignal,
-    ) => {
-      try {
-        const job = await waitFor(params.job_id, params.timeout_sec ?? 600, signal);
-        return result(JSON.stringify(job, null, 2), job);
-      } catch (error) {
-        return failed(error);
-      }
+    {
+      name: "modal_wait",
+      label: "Wait for Modal job",
+      description: "Wait for a Modal job or return its current state after timeout.",
+      parameters: ModalWaitParams,
+      execute: async (
+        _id,
+        params: { job_id: string; timeout_sec?: number },
+        signal?: AbortSignal,
+      ) => {
+        try {
+          const job = await waitFor(params.job_id, params.timeout_sec ?? 600, signal);
+          return result(JSON.stringify(job, null, 2), job);
+        } catch (error) {
+          return failed(error);
+        }
+      },
     },
-  },
-  {
-    name: "modal_cancel",
-    label: "Cancel Modal job",
-    description: "Cancel a durable Modal job and terminate its sandbox.",
-    parameters: ModalJobIdParams,
-    execute: async (_id, params: { job_id: string }) => {
-      try {
-        const job = await api<ApiJob>(
-          `/modal/jobs/${encodeURIComponent(params.job_id)}/cancel`,
-          { method: "POST" },
-        );
-        return result(JSON.stringify(job, null, 2), job);
-      } catch (error) {
-        return failed(error);
-      }
+    {
+      name: "modal_cancel",
+      label: "Cancel Modal job",
+      description: "Cancel a durable Modal job and terminate its sandbox.",
+      parameters: ModalJobIdParams,
+      execute: async (_id, params: { job_id: string }) => {
+        try {
+          const job = await api<ApiJob>(
+            `/modal/jobs/${encodeURIComponent(params.job_id)}/cancel`,
+            { method: "POST" },
+          );
+          return result(JSON.stringify(job, null, 2), job);
+        } catch (error) {
+          return failed(error);
+        }
+      },
     },
-  },
-  {
-    name: "modal_results",
-    label: "Modal job results",
-    description: "Read retained logs and installed output metadata.",
-    parameters: ModalJobIdParams,
-    execute: async (_id, params: { job_id: string }) => {
-      try {
-        const output = await api<Record<string, unknown>>(
-          `/modal/jobs/${encodeURIComponent(params.job_id)}/results`,
-        );
-        return result(JSON.stringify(output, null, 2), output);
-      } catch (error) {
-        return failed(error);
-      }
+    {
+      name: "modal_results",
+      label: "Modal job results",
+      description: "Read retained logs and installed output metadata.",
+      parameters: ModalJobIdParams,
+      execute: async (_id, params: { job_id: string }) => {
+        try {
+          const output = await api<Record<string, unknown>>(
+            `/modal/jobs/${encodeURIComponent(params.job_id)}/results`,
+          );
+          return result(JSON.stringify(output, null, 2), output);
+        } catch (error) {
+          return failed(error);
+        }
+      },
     },
-  },
-  {
-    name: "modal_submit_batch",
-    label: "Submit Modal batch",
-    description: "Submit up to 32 independent durable Modal jobs as one group.",
-    parameters: ModalSubmitBatchParams,
-    execute: async (
-      _id,
-      params: { jobs: ModalRunParamsT[]; group_id?: string },
-    ) => {
-      try {
-        const output = await api<Record<string, unknown>>("/modal/jobs/batch", {
-          method: "POST",
-          body: JSON.stringify({
-            jobs: params.jobs,
-            group_id: params.group_id,
-            ...ownerFields(),
-          }),
-        });
-        return result(JSON.stringify(output, null, 2), output);
-      } catch (error) {
-        return failed(error);
-      }
+    {
+      name: "modal_submit_batch",
+      label: "Submit Modal batch",
+      description: "Submit up to 32 independent durable Modal jobs as one group.",
+      parameters: ModalSubmitBatchParams,
+      execute: async (
+        _id,
+        params: { jobs: ModalRunParamsT[]; group_id?: string },
+      ) => {
+        try {
+          const output = await api<Record<string, unknown>>("/modal/jobs/batch", {
+            method: "POST",
+            body: JSON.stringify({
+              jobs: params.jobs,
+              group_id: params.group_id,
+              ...ownerFields(getIdentity()),
+            }),
+          });
+          return result(JSON.stringify(output, null, 2), output);
+        } catch (error) {
+          return failed(error);
+        }
+      },
     },
-  },
-];
+  ];
+}
+
+/** Identity-less tool set, for schema parity checks and tool-name listings. */
+export const modalChildTools: ToolDefinition<any>[] = makeModalChildTools();
 
 export default function (pi: ExtensionAPI): void {
   if (!process.env.PI_SUBAGENT_CHILD) return;
-  for (const tool of modalChildTools) pi.registerTool(tool);
+  const identity = trackSubagentChildIdentity(pi);
+  for (const tool of makeModalChildTools(identity)) pi.registerTool(tool);
 }

@@ -2,7 +2,7 @@
  * Wiring so SUBAGENTS contribute to the lab notebook (Phase 5).
  *
  *  1. seedNotebookPackage — reference the vendored kady-notebook package from
- *     sandbox/.pi/settings.json "packages" so child pi processes load it and
+ *     sandbox/.pi/settings.json "packages" so child sessions load it and
  *     get the `notebook` tool. Mirrors seedWebAccessPackage. Sandbox trust is
  *     already established by ensureWebAccess (called in the same build()), so
  *     no separate trust write is needed here.

@@ -11,11 +11,11 @@
  *     DefaultResourceLoader can load it per session.
  *  2. `makeSubagentLedgerExtension()` — our own extension that (a) blocks
  *     `subagent` calls once the project's spend cap is hit, and (b) ledgers
- *     each child run's usage (child processes have their own sessions, so
- *     their spend would otherwise be invisible to the project budget).
+ *     each child run's usage (children have their own sessions, so their
+ *     spend would otherwise be invisible to the project budget).
  *  3. `makeSubagentRefusalExtension()` — annotates a child's tool result when
  *     the model provider refused it, since that failure happens in another
- *     process and reaches us only as opaque runner text.
+ *     session (pi-subagents' runner process) and reaches us only as runner text.
  * Agent definition files themselves (seeding, parsing, CRUD) live in
  * agent-files.ts; the seeding call happens in session-registry before each
  * session build.
@@ -676,17 +676,19 @@ export function makeSubagentLedgerExtension(
   };
 }
 
-/** Tools whose text output can carry a child process's provider error. */
-const CHILD_RESULT_TOOLS = new Set(["subagent", "subagent_wait"]);
+/** Tools whose text output can carry a child's provider error. The wait tool
+ *  was `subagent_wait` until pi-subagents 0.61 and is `bg_wait` since. */
+const CHILD_RESULT_TOOLS = new Set(["subagent", "bg_wait", "subagent_wait"]);
 
 /**
  * Explain a provider refusal that killed a child agent.
  *
- * A refused child fails inside its own `pi` process, so the only trace that
- * reaches the parent is the runner's text — "Provider finish_reason:
- * content_filter" — inside the tool result. Neither the SSE error frame nor
- * the run route ever sees it, and the lead agent, having no idea what happened,
- * tends to relay it verbatim or retry the same delegation.
+ * A refused child fails inside its own session — hosted by pi-subagents'
+ * detached runner, not by this process — so the only trace that reaches the
+ * parent is the runner's text — "Provider finish_reason: content_filter" —
+ * inside the tool result. Neither the SSE error frame nor the run route ever
+ * sees it, and the lead agent, having no idea what happened, tends to relay it
+ * verbatim or retry the same delegation.
  *
  * Appending the guidance to the tool result puts it in front of the lead (so
  * its summary to the user is right) and in the tool output the UI already

@@ -1,7 +1,7 @@
 /**
  * Harvest lab-notebook entries a SUBAGENT logged, out of its session JSONL.
  *
- * A child `pi` process gets the `notebook` tool from the kady-notebook package;
+ * A child session gets the `notebook` tool from the kady-notebook package;
  * every call it makes is recorded as an assistant `toolCall` content block in
  * the child's session file. The parent (which learns each child's sessionFile
  * on completion — exactly as usageFromSessionFile harvests cost) parses those

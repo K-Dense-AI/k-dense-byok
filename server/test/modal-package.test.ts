@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import factory, {
+  makeModalChildTools,
   modalChildTools,
   ModalJobIdParams as ChildJobIdParams,
   ModalRunParams as ChildRunParams,
@@ -51,6 +52,51 @@ describe("kady-modal child package", () => {
     factory({ registerTool: (tool: unknown) => parent.push(tool) } as never);
     expect(parent).toEqual([]);
     expect(modalChildTools.map((tool) => tool.name)).toEqual([...MODAL_TOOL_NAMES]);
+  });
+
+  it("stamps submissions with the child's session file for parent attribution", async () => {
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), body: JSON.parse(String(init?.body)) as Record<string, unknown> });
+      return new Response(JSON.stringify({ id: "job-1", state: "queued" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+    try {
+      const sessionFile = "/tmp/pi-sessions/child.jsonl";
+      const tools = makeModalChildTools(() => ({ sessionFile, sessionId: "sess-1" }));
+      const submit = tools.find((tool) => tool.name === "modal_submit")!;
+      await submit.execute("tc", { command: "echo hi" }, undefined as never);
+      const batch = tools.find((tool) => tool.name === "modal_submit_batch")!;
+      await batch.execute("tc2", { jobs: [{ command: "echo a" }] }, undefined as never);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(calls.map((c) => c.url.replace(/^https?:\/\/[^/]+/, ""))).toEqual([
+      "/modal/jobs",
+      "/modal/jobs/batch",
+    ]);
+    for (const call of calls) {
+      expect(call.body.subagent_session_file).toBe("/tmp/pi-sessions/child.jsonl");
+      expect(call.body).not.toHaveProperty("subagent_run_id");
+    }
+    // Identity-less tools (schema parity export) send neither key.
+    const bare: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bare.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return new Response(JSON.stringify({ id: "job-2", state: "queued" }), { status: 200 });
+    }) as typeof fetch;
+    try {
+      await modalChildTools
+        .find((tool) => tool.name === "modal_submit")!
+        .execute("tc3", { command: "echo bare" }, undefined as never);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(bare[0]).not.toHaveProperty("subagent_session_file");
+    expect(bare[0]).not.toHaveProperty("subagent_run_id");
   });
 
   it("keeps lead and child request/control schemas in parity", () => {

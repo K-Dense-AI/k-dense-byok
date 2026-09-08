@@ -23,11 +23,23 @@ import {
   type RemovePdfAnnotationParamsT,
 } from "../../src/agent/pdf-annotation-tool.ts";
 import type { PdfAnnotationAuthor } from "../../src/pdf-annotations-store.ts";
+import {
+  trackSubagentChildIdentity,
+  type SubagentChildIdentity,
+} from "../../src/agent/subagent-child-identity.ts";
 
-function childAuthor(): PdfAnnotationAuthor {
+/**
+ * The specialist identity stamped on child annotations. Legacy
+ * `PI_SUBAGENT_CHILD_AGENT` / `PI_SUBAGENT_RUN_ID` exports win; otherwise the
+ * agent name comes from the child session pi-subagents named after it, and a
+ * session id is the last resort before the generic label.
+ */
+export function childAuthor(identity: SubagentChildIdentity = {}): PdfAnnotationAuthor {
   const raw =
     process.env.PI_SUBAGENT_CHILD_AGENT?.trim() ||
     process.env.PI_SUBAGENT_RUN_ID?.trim() ||
+    identity.agent?.trim() ||
+    identity.sessionId?.trim() ||
     "subagent";
   const label = raw
     .split(/[-_]+/)
@@ -55,8 +67,11 @@ function result(value: unknown, details: Record<string, unknown> = {}) {
 
 export function makeChildPdfAnnotationTools(
   sandboxRoot = process.cwd(),
-  author: PdfAnnotationAuthor = childAuthor(),
+  author: PdfAnnotationAuthor | (() => PdfAnnotationAuthor) = childAuthor,
 ): ToolDefinition<any>[] {
+  // Resolved per call: the child only learns its session at `session_start`,
+  // after these tools were built.
+  const resolveAuthor = typeof author === "function" ? author : () => author;
   const add: ToolDefinition<typeof AddPdfAnnotationParams> = {
     name: "add_pdf_annotation",
     label: "Annotate PDF",
@@ -74,7 +89,7 @@ export function makeChildPdfAnnotationTools(
     ],
     parameters: AddPdfAnnotationParams,
     execute: async (_toolCallId, params: AddPdfAnnotationParamsT) => {
-      const annotation = await addPdfAnnotation(sandboxRoot, params, author);
+      const annotation = await addPdfAnnotation(sandboxRoot, params, resolveAuthor());
       return result(annotation, { annotation });
     },
   };
@@ -110,7 +125,10 @@ export const pdfAnnotationChildTools = makeChildPdfAnnotationTools();
 
 export default function registerPdfAnnotationTools(pi: ExtensionAPI): void {
   if (!process.env.PI_SUBAGENT_CHILD) return;
-  for (const tool of makeChildPdfAnnotationTools()) pi.registerTool(tool);
+  const identity = trackSubagentChildIdentity(pi);
+  for (const tool of makeChildPdfAnnotationTools(process.cwd(), () => childAuthor(identity()))) {
+    pi.registerTool(tool);
+  }
 }
 
 export {

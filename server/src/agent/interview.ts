@@ -16,7 +16,7 @@
  *      structured responses (plus any uploaded images) to the model and the
  *      run continues on the same SSE stream.
  *
- * Sub-agent child `pi` processes never get this tool — they are headless and
+ * Sub-agent child sessions never get this tool — they are headless and
  * must not block on user input.
  */
 import { Type, type Static } from "typebox";
