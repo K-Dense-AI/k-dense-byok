@@ -1,33 +1,5 @@
 [
   {
-    "id": "openrouter/openai/gpt-5.4-pro",
-    "label": "GPT-5.4 Pro",
-    "provider": "OpenAI",
-    "tier": "flagship",
-    "context_length": 1050000,
-    "pricing": {
-      "prompt": 30.0,
-      "completion": 180.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 Pro is OpenAI's most advanced model, building on GPT-5.4's unified architecture with enhanced reasoning capabilities for complex, high-stakes tasks. It features a 1M+ token context window (922K input, 128K...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.4-pro:batch",
-    "label": "GPT-5.4 Pro (batch)",
-    "provider": "OpenAI",
-    "tier": "flagship",
-    "context_length": 1050000,
-    "pricing": {
-      "prompt": 15.0,
-      "completion": 90.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 Pro is OpenAI's most advanced model, building on GPT-5.4's unified architecture with enhanced reasoning capabilities for complex, high-stakes tasks. It features a 1M+ token context window (922K input, 128K...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/openai/gpt-5.5",
     "label": "GPT-5.5",
     "provider": "OpenAI",
@@ -85,6 +57,20 @@
     "default": true
   },
   {
+    "id": "openrouter/openai/gpt-6-astra:batch",
+    "label": "GPT-6 Astra (batch)",
+    "provider": "OpenAI",
+    "tier": "flagship",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 5.0,
+      "completion": 25.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-6 Astra is OpenAI's flagship model for demanding end-to-end work. It is suited for advanced analysis, software engineering, deep research, scientific work, and document creation, with particular strengths in long-horizon...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/openai/gpt-6-astra-pro",
     "label": "GPT-6 Astra Pro",
     "provider": "OpenAI",
@@ -93,6 +79,20 @@
     "pricing": {
       "prompt": 10.0,
       "completion": 50.0
+    },
+    "modality": "text+image+file->text",
+    "description": "GPT-6 Astra Pro is the same underlying model as [GPT-6 Astra](https://openrouter.ai/openai/gpt-6-astra), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/openai/gpt-6-astra-pro:batch",
+    "label": "GPT-6 Astra Pro (batch)",
+    "provider": "OpenAI",
+    "tier": "flagship",
+    "context_length": 1050000,
+    "pricing": {
+      "prompt": 5.0,
+      "completion": 25.0
     },
     "modality": "text+image+file->text",
     "description": "GPT-6 Astra Pro is the same underlying model as [GPT-6 Astra](https://openrouter.ai/openai/gpt-6-astra), served with `reasoning.mode` set to `pro` for higher-quality responses on complex tasks.\n\nLearn more in OpenAI's docs: https://developers.openai.com/api/docs/guides/reasoning#reasoning-mode",
@@ -264,20 +264,6 @@
     },
     "modality": "text+image+file->text",
     "description": "GPT Chat Latest points to OpenAI's stable API alias `chat-latest` that always resolves to the latest Instant chat model used in ChatGPT. As OpenAI rolls out new Instant model updates...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.4",
-    "label": "GPT-5.4",
-    "provider": "OpenAI",
-    "tier": "high",
-    "context_length": 1050000,
-    "pricing": {
-      "prompt": 2.5,
-      "completion": 15.0
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 is OpenAI\u2019s latest frontier model, unifying the Codex and GPT lines into a single system. It features a 1M+ token context window (922K input, 128K output) with support for...",
     "isFusion": false
   },
   {
@@ -533,8 +519,8 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/qwen/qwen3.8-max",
-    "label": "Qwen3.8 Max",
+    "id": "openrouter/qwen/qwen3.8-max-0902",
+    "label": "Qwen3.8 Max (0902)",
     "provider": "Qwen",
     "tier": "high",
     "context_length": 1000000,
@@ -543,7 +529,7 @@
       "completion": 6.0
     },
     "modality": "text+image+video->text",
-    "description": "Qwen3.8 Max is the flagship model in Alibaba's Qwen3.8 series, the general-availability successor to the Qwen3.8 Max Preview. It is a multimodal reasoning model intended for complex reasoning, visual understanding,...",
+    "description": "Qwen3.8 Max 0902 is an updated snapshot of Qwen3.8 Max from Alibaba's Qwen team. It is a 2.4-trillion-parameter mixture-of-experts model that accepts text, image, and video input and returns text,...",
     "isFusion": false
   },
   {
@@ -651,25 +637,11 @@
     "tier": "mid",
     "context_length": 1310720,
     "pricing": {
-      "prompt": 1.15,
-      "completion": 3.5
+      "prompt": 1.113,
+      "completion": 3.498
     },
     "modality": "text->text",
     "description": "This model always redirects to the latest GLM model from Z.ai.",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/openai/gpt-5.4:batch",
-    "label": "GPT-5.4 (batch)",
-    "provider": "OpenAI",
-    "tier": "mid",
-    "context_length": 1050000,
-    "pricing": {
-      "prompt": 1.25,
-      "completion": 7.5
-    },
-    "modality": "text+image+file->text",
-    "description": "GPT-5.4 is OpenAI\u2019s latest frontier model, unifying the Codex and GPT lines into a single system. It features a 1M+ token context window (922K input, 128K output) with support for...",
     "isFusion": false
   },
   {
@@ -735,8 +707,8 @@
     "tier": "mid",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.981708,
-      "completion": 1.963416
+      "prompt": 0.95526,
+      "completion": 1.91052
     },
     "modality": "text->text",
     "description": "DeepSeek V4 Pro is a large-scale Mixture-of-Experts model from DeepSeek with 1.6T total parameters and 49B activated parameters, supporting a 1M-token context window. It is designed for advanced reasoning, coding,...",
@@ -763,8 +735,8 @@
     "tier": "mid",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 1.32,
-      "completion": 3.96
+      "prompt": 0.66,
+      "completion": 1.98
     },
     "modality": "text->text",
     "description": "DeepSeek V4 Pro 0813 is a large-scale mixture-of-experts model from DeepSeek. This is the GA release of DeepSeek V4 Pro.",
@@ -939,6 +911,34 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/z-ai/glm-5.2:batch",
+    "label": "Z.ai: GLM 5.2 (batch)",
+    "provider": "Z Ai",
+    "tier": "mid",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 0.7,
+      "completion": 2.2
+    },
+    "modality": "text->text",
+    "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/z-ai/glm-5.3:batch",
+    "label": "Z.ai: GLM 5.3 (batch)",
+    "provider": "Z Ai",
+    "tier": "mid",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 0.7,
+      "completion": 2.2
+    },
+    "modality": "text->text",
+    "description": "GLM-5.3 is a large-scale reasoning model from Z.ai, built for complex software engineering and long-horizon agent tasks. It supports text input and output with a 1M-token context window, and improves...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/anthropic/claude-sonnet-5:batch",
     "label": "Claude Sonnet 5 (batch)",
     "provider": "Anthropic",
@@ -1107,6 +1107,20 @@
     "isFusion": false
   },
   {
+    "id": "openrouter/mistralai/mistral-medium-3-5:batch",
+    "label": "Mistral Medium 3.5 (batch)",
+    "provider": "Mistral",
+    "tier": "mid",
+    "context_length": 262144,
+    "pricing": {
+      "prompt": 0.75,
+      "completion": 3.75
+    },
+    "modality": "text+image+file->text",
+    "description": "Mistral Medium 3.5 is a dense 128B instruction-following model from Mistral AI. It supports text and image inputs with text output, and is designed for agentic workflows, coding, and complex...",
+    "isFusion": false
+  },
+  {
     "id": "openrouter/moonshotai/kimi-k2.6",
     "label": "MoonshotAI: Kimi K2.6",
     "provider": "Moonshotai",
@@ -1127,8 +1141,8 @@
     "tier": "mid",
     "context_length": 262144,
     "pricing": {
-      "prompt": 0.66,
-      "completion": 3.4
+      "prompt": 0.71,
+      "completion": 3.5
     },
     "modality": "text+image->text",
     "description": "MoonshotAI: Kimi K2.7 Code is a coding-focused model in Moonshot AI's Kimi K2 family, built to complete end-to-end programming tasks reliably over long contexts. It uses a native multimodal mixture-of-experts...",
@@ -1261,20 +1275,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/mistralai/mistral-medium-3-5:batch",
-    "label": "Mistral Medium 3.5 (batch)",
-    "provider": "Mistral",
-    "tier": "mid",
-    "context_length": 32768,
-    "pricing": {
-      "prompt": 0.75,
-      "completion": 3.75
-    },
-    "modality": "text+image+file->text",
-    "description": "Mistral Medium 3.5 is a dense 128B instruction-following model from Mistral AI. It supports text and image inputs with text output, and is designed for agentic workflows, coding, and complex...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/deepseek/deepseek-v4-flash-0731",
     "label": "DeepSeek V4 Flash 0731",
     "provider": "DeepSeek",
@@ -1295,8 +1295,8 @@
     "tier": "budget",
     "context_length": 1310720,
     "pricing": {
-      "prompt": 0.04998,
-      "completion": 0.09996
+      "prompt": 0.05,
+      "completion": 0.16
     },
     "modality": "text->text",
     "description": "This model always redirects to the latest model in the DeepSeek V4 Flash family.",
@@ -1435,8 +1435,8 @@
     "tier": "budget",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.08778,
-      "completion": 0.17556
+      "prompt": 0.08708,
+      "completion": 0.17416
     },
     "modality": "text->text",
     "description": "DeepSeek V4 Flash is an efficiency-optimized Mixture-of-Experts model from DeepSeek with 284B total parameters and 13B activated parameters, supporting a 1M-token context window. It is designed for fast inference and...",
@@ -1449,8 +1449,8 @@
     "tier": "budget",
     "context_length": 1048576,
     "pricing": {
-      "prompt": 0.14,
-      "completion": 0.28
+      "prompt": 0.11,
+      "completion": 0.33
     },
     "modality": "text->text",
     "description": "DeepSeek V4 Flash 0731 is a sparse mixture-of-experts model from DeepSeek, with 13B active parameters out of 284B total. This re-post-trained revision is suited for coding, reasoning, and agent workflows....",
@@ -1465,6 +1465,20 @@
     "pricing": {
       "prompt": 0.22,
       "completion": 0.66
+    },
+    "modality": "text+image->text",
+    "description": "DeepSeek V4 Flash Vision Exp is an experimental vision-enabled version of [DeepSeek V4 Flash 0731](https://openrouter.ai/deepseek/deepseek-v4-flash-0731) from DeepSeek, adding image understanding while matching the base model on text capabilities including agents,...",
+    "isFusion": false
+  },
+  {
+    "id": "openrouter/deepseek/deepseek-v4-flash-vision-exp:batch",
+    "label": "DeepSeek V4 Flash Vision Exp (batch)",
+    "provider": "DeepSeek",
+    "tier": "budget",
+    "context_length": 1048576,
+    "pricing": {
+      "prompt": 0.11,
+      "completion": 0.33
     },
     "modality": "text+image->text",
     "description": "DeepSeek V4 Flash Vision Exp is an experimental vision-enabled version of [DeepSeek V4 Flash 0731](https://openrouter.ai/deepseek/deepseek-v4-flash-0731) from DeepSeek, adding image understanding while matching the base model on text capabilities including agents,...",
@@ -1591,20 +1605,6 @@
     "pricing": {
       "prompt": 0.3,
       "completion": 1.2
-    },
-    "modality": "text+image+video->text",
-    "description": "MiniMax-M3 is a multimodal foundation model from MiniMax. It supports text, image, and video inputs with text output, a 1M-token context window, and is suited for long-horizon agentic work, coding,...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/minimax/minimax-m3:free",
-    "label": "MiniMax M3 (free)",
-    "provider": "MiniMax",
-    "tier": "budget",
-    "context_length": 1048576,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
     },
     "modality": "text+image+video->text",
     "description": "MiniMax-M3 is a multimodal foundation model from MiniMax. It supports text, image, and video inputs with text output, a 1M-token context window, and is suited for long-horizon agentic work, coding,...",
@@ -2143,34 +2143,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/nex-agi/nex-n2-mini",
-    "label": "Nex AGI: Nex-N2-Mini",
-    "provider": "Nex Agi",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.025,
-      "completion": 0.1
-    },
-    "modality": "text+image->text",
-    "description": "Nex-N2-Mini is an open-source agentic mixture-of-experts model from Nex AGI, the smaller sibling in the Nex-N2 series. It accepts text and image input and is built for coding, tool use,...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/nex-agi/nex-n2-pro",
-    "label": "Nex AGI: Nex-N2-Pro",
-    "provider": "Nex Agi",
-    "tier": "budget",
-    "context_length": 262144,
-    "pricing": {
-      "prompt": 0.25,
-      "completion": 1.0
-    },
-    "modality": "text+image->text",
-    "description": "Nex-N2-Pro is an agentic mixture-of-experts model from Nex AGI, with 17B active parameters out of 397B total. Built on the Qwen3.5 architecture, it accepts text and image input and produces...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/qwen/qwen3.5-9b",
     "label": "Qwen3.5-9B",
     "provider": "Qwen",
@@ -2339,20 +2311,6 @@
     "isFusion": false
   },
   {
-    "id": "openrouter/z-ai/glm-5.2:free",
-    "label": "Z.ai: GLM 5.2 (free)",
-    "provider": "Z Ai",
-    "tier": "budget",
-    "context_length": 256000,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
-    },
-    "modality": "text->text",
-    "description": "GLM 5.2 is a large-scale reasoning model from Z.ai. It supports text input and output with a 1M-token context window, and is suited for long-horizon agent workflows, project-level software engineering,...",
-    "isFusion": false
-  },
-  {
     "id": "openrouter/minimax/minimax-m2.7",
     "label": "MiniMax M2.7",
     "provider": "MiniMax",
@@ -2361,20 +2319,6 @@
     "pricing": {
       "prompt": 0.3,
       "completion": 1.2
-    },
-    "modality": "text->text",
-    "description": "MiniMax-M2.7 is a next-generation large language model designed for autonomous, real-world productivity and continuous improvement. Built to actively participate in its own evolution, M2.7 integrates advanced agentic capabilities through multi-agent...",
-    "isFusion": false
-  },
-  {
-    "id": "openrouter/minimax/minimax-m2.7:free",
-    "label": "MiniMax M2.7 (free)",
-    "provider": "MiniMax",
-    "tier": "budget",
-    "context_length": 196608,
-    "pricing": {
-      "prompt": 0.0,
-      "completion": 0.0
     },
     "modality": "text->text",
     "description": "MiniMax-M2.7 is a next-generation large language model designed for autonomous, real-world productivity and continuous improvement. Built to actively participate in its own evolution, M2.7 integrates advanced agentic capabilities through multi-agent...",
