@@ -481,6 +481,63 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
+  // Follow-up side-channel: queue a message that Pi delivers once the live
+  // run has no more tool calls or steering messages, still inside the same
+  // run (same SSE stream, same ledger row). Unlike steering it may carry
+  // images. Same 409/403 contract as /steer.
+  app.post<{ Params: { id: string }; Body: { message?: string; images?: unknown } }>(
+    "/sessions/:id/follow-up",
+    async (req, reply) => {
+      const projectId = currentProjectId();
+      const session = await getSession(projectId, activePaths(), req.params.id);
+      if (!session) {
+        reply.code(404);
+        return { detail: "No such session" };
+      }
+      const message = req.body?.message;
+      if (!message || !message.trim()) {
+        reply.code(400);
+        return { detail: "message is required" };
+      }
+      const parsedImages = parseRunImages(req.body?.images);
+      if ("error" in parsedImages) {
+        reply.code(400);
+        return { detail: parsedImages.error };
+      }
+      if (!session.isStreaming) {
+        reply.code(409);
+        return { detail: "No run in flight", reason: "not_streaming" };
+      }
+      const budget = isBudgetExceeded(projectId);
+      const followUpBilling = session.model
+        ? await billingForModel(session.model, getModelRuntime())
+        : { provider: "unknown", authType: "none" as const, billingMode: "payg" as const };
+      if (billingCountsTowardBudget(followUpBilling) && budget.exceeded) {
+        reply.code(403);
+        return {
+          detail:
+            `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+            `$${(budget.limitUsd ?? 0).toFixed(2)}).`,
+          reason: "budget",
+        };
+      }
+      await session.followUp(
+        message,
+        parsedImages.images.length > 0 ? parsedImages.images : undefined,
+      );
+      if (!session.isStreaming) {
+        const cleared = session.clearQueue();
+        reply.code(409);
+        return {
+          detail: "Run ended before the message was delivered",
+          reason: "not_streaming",
+          restored: [...cleared.steering, ...cleared.followUp],
+        };
+      }
+      return { ok: true, pending: [...session.getFollowUpMessages()] };
+    },
+  );
+
   app.post<{ Params: { id: string }; Body: RunBody }>(
     "/sessions/:id/run",
     async (req, reply) => {

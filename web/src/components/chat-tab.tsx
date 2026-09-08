@@ -429,6 +429,7 @@ function QueuedMessageEditor({
 function MessageQueueDisplay({
   queue,
   steering,
+  followUp = [],
   onRemove,
   onMove,
   onEdit,
@@ -439,6 +440,8 @@ function MessageQueueDisplay({
 }: {
   queue: QueuedMessage[];
   steering: string[];
+  /** Pi follow-ups: delivered inside the live run once the agent is otherwise done. */
+  followUp?: string[];
   onRemove: (id: string) => void;
   onMove: (id: string, direction: QueueDirection) => void;
   onEdit: (id: string, text: string) => void;
@@ -449,7 +452,7 @@ function MessageQueueDisplay({
   paused?: boolean;
   onResume?: () => void;
 }) {
-  if (queue.length === 0 && steering.length === 0) return null;
+  if (queue.length === 0 && steering.length === 0 && followUp.length === 0) return null;
 
   return (
     <div className="absolute bottom-full left-0 right-0 z-10 mb-2">
@@ -470,6 +473,29 @@ function MessageQueueDisplay({
                 <div key={`${i}-${text}`} className="flex items-center gap-2.5 px-3 py-2 text-xs">
                   <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] tabular-nums text-muted-foreground">
                     ⏳
+                  </span>
+                  <div className="min-w-0 flex-1 truncate text-foreground">{text}</div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+        {followUp.length > 0 && (
+          <>
+            <div className="flex items-center gap-2 border-b px-3 py-1.5">
+              <ListOrderedIcon className="size-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                After this turn — Kady continues
+              </span>
+              <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
+                {followUp.length}
+              </span>
+            </div>
+            <div className="max-h-32 overflow-y-auto border-b py-1" data-testid="follow-up-queue">
+              {followUp.map((text, i) => (
+                <div key={`${i}-${text}`} className="flex items-center gap-2.5 px-3 py-2 text-xs">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold tabular-nums text-muted-foreground">
+                    {i + 1}
                   </span>
                   <div className="min-w-0 flex-1 truncate text-foreground">{text}</div>
                 </div>
@@ -616,6 +642,7 @@ function ChatInput({
   onClearFiles,
   onSend,
   pendingSteers,
+  pendingFollowUps = [],
   composerRestoreRef,
   inlineError,
   isStreaming,
@@ -661,6 +688,8 @@ function ChatInput({
   /** Resolves false when the message was rejected; the composer keeps its contents. */
   onSend: (text: string, intent: SendIntent, images: PromptImage[]) => Promise<boolean>;
   pendingSteers: string[];
+  /** Pi follow-ups queued for the live run (⌥↵). */
+  pendingFollowUps?: string[];
   composerRestoreRef: MutableRefObject<((text: string) => void) | null>;
   inlineError: string | null;
   isStreaming: boolean;
@@ -959,6 +988,7 @@ function ChatInput({
           <MessageQueueDisplay
             queue={queuedMessages}
             steering={pendingSteers}
+            followUp={pendingFollowUps}
             onRemove={onRemoveFromQueue}
             onMove={onMoveInQueue}
             onEdit={onEditQueued}
@@ -1021,9 +1051,9 @@ function ChatInput({
           <PromptInputTextarea
             placeholder={
               isStreaming
-                ? pendingSteers.length > 0
-                  ? `Steer the run… (${pendingSteers.length} pending · ⌥↵ to run after)`
-                  : "Steer the run… (⌥↵ to run after)"
+                ? pendingSteers.length + pendingFollowUps.length > 0
+                  ? `Steer the run… (${pendingSteers.length + pendingFollowUps.length} pending · ⌥↵ to run after this turn)`
+                  : "Steer the run… (⌥↵ to run after this turn)"
                 : queuedMessages.length >= MAX_QUEUE
                   ? `Queue full (${MAX_QUEUE}/${MAX_QUEUE})`
                   : "Ask Kady anything… (@ for files, + for data / compute / skills)"
@@ -1508,7 +1538,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     send,
     stop,
     steer,
+    followUp,
     pendingSteers,
+    pendingFollowUps,
     getSessionId,
     loadSession,
     notebookEntries,
@@ -1901,13 +1933,20 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           thinkingDisabled ? undefined : thinkingLevel,
           images.length > 0 ? images : undefined,
         );
-      // Steering is a text-only side channel; an image message sent during a
-      // live run waits its turn in the queue instead.
-      const route =
-        images.length > 0 && routeSubmit(isStreaming, intent) === "steer"
-          ? "queue"
-          : routeSubmit(isStreaming, intent);
-      if (route === "queue") {
+      const route = routeSubmit(isStreaming, intent, images.length > 0);
+      if (route === "followUp") {
+        // Pi delivers it inside the live run once the agent is otherwise done.
+        // If the run ends first, keep ordering behind any client-side queue.
+        const result = await followUp(trimmed, images.length > 0 ? images : undefined);
+        if (result === "ok") return true;
+        if (result === "not_streaming") {
+          if (steerNotStreamingFallback(messageQueueLengthRef.current) === "queue") {
+            return enqueue(trimmed, images);
+          }
+          void sendNow();
+          return true;
+        }
+        // Transport failure: hold it in the client-side queue rather than lose it.
         return enqueue(trimmed, images);
       }
       if (route === "steer") {
@@ -1938,6 +1977,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       selectedModelAvailable,
       isStreaming,
       steer,
+      followUp,
       enqueue,
       send,
       selectedModel,
@@ -2099,6 +2139,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             onClearFiles={clearAttachedFiles}
             onSend={handleSend}
             pendingSteers={pendingSteers}
+            pendingFollowUps={pendingFollowUps}
             composerRestoreRef={composerRestoreRef}
             inlineError={steerError}
             isStreaming={isStreaming}

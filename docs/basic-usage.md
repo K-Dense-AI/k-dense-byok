@@ -70,7 +70,8 @@ Open any `.tex` file and click **Edit** for a split-pane editor with live PDF co
 ### Other input options
 
 - **Voice input** — dictate your message instead of typing. Browser-native speech needs no model credential; the server-side fallback remains OpenRouter-only.
-- **Message queue** — keep typing while Kady works; up to 5 messages queue and run in order.
+- **Steer or follow up while Kady works** — press Enter to steer the live run (delivered before the next model call, text only) or ⌥↵ to queue a follow-up that Kady handles inside the same run once it has finished its current work (images allowed). Both show up above the composer until delivered; Stop hands undelivered text back to you.
+- **Message queue** — messages that miss a run (it ended as you typed) wait in an editable client-side queue, up to 5, and run in order as new turns.
 
 ## Costs and budgets
 

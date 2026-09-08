@@ -310,6 +310,8 @@ export interface TranscriptResult {
   state: TranscriptRunState;
   /** Pending steering texts when the frame updated them; null otherwise. */
   steering: string[] | null;
+  /** Pending Pi follow-up texts when the frame updated them; null otherwise. */
+  followUp?: string[] | null;
 }
 
 /**
@@ -327,7 +329,8 @@ export function applyFrameToTranscript(
 ): TranscriptResult {
   if (frame.type === "queue_update") {
     const steering = Array.isArray(frame.steering) ? frame.steering.map(String) : [];
-    return { messages, state, steering };
+    const followUp = Array.isArray(frame.followUp) ? frame.followUp.map(String) : [];
+    return { messages, state, steering, followUp };
   }
   if (frame.type === "message_start" && frame.role === "user") {
     if (!state.sawPromptEcho) {
@@ -678,6 +681,7 @@ export function useAgent(projectId?: string) {
   const [status, setStatus] = useState<Status>("ready");
   const [runState, setRunState] = useState<AgentRunState>("idle");
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
+  const [pendingFollowUps, setPendingFollowUps] = useState<string[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const clientFetchRef = useRef<AbortController | null>(null);
@@ -743,6 +747,7 @@ export function useAgent(projectId?: string) {
       consumer.transcript = result.messages;
       consumer.transcriptState = result.state;
       if (result.steering) setPendingSteers(result.steering);
+      if (result.followUp) setPendingFollowUps(result.followUp);
       if (frame.type === "text_delta" || frame.type === "thinking_delta") {
         messagePublisher.schedule(consumer.transcript);
       } else {
@@ -759,6 +764,7 @@ export function useAgent(projectId?: string) {
     consumer.transcript = finishActivities(consumer.transcript, "complete");
     messagePublisher.publish(consumer.transcript);
     setPendingSteers([]);
+    setPendingFollowUps([]);
     setStatus("ready");
     setRunState(consumer.outcome);
   }, [messagePublisher]);
@@ -774,6 +780,7 @@ export function useAgent(projectId?: string) {
     );
     messagePublisher.publish(consumer.transcript);
     setPendingSteers([]);
+    setPendingFollowUps([]);
     setStatus(aborted ? "ready" : "error");
     setRunState(aborted ? "idle" : "error");
   }, [messagePublisher]);
@@ -1086,6 +1093,38 @@ export function useAgent(projectId?: string) {
     [scopedProjectId],
   );
 
+  /** Queue a message Pi delivers once the live run has no more tool calls or
+   * steering messages — still inside this run. May carry images. */
+  const followUp = useCallback(
+    async (text: string, images?: PromptImage[]): Promise<"ok" | "not_streaming" | "error"> => {
+      const id = sessionIdRef.current;
+      if (!id) return "not_streaming";
+      try {
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/follow-up`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: text,
+              ...(images && images.length > 0 ? { images } : {}),
+            }),
+          },
+          scopedProjectId,
+        );
+        if (response.ok) {
+          const data = (await response.json()) as { pending?: unknown };
+          if (Array.isArray(data.pending)) setPendingFollowUps(data.pending.map(String));
+          return "ok";
+        }
+        return response.status === 409 ? "not_streaming" : "error";
+      } catch {
+        return "error";
+      }
+    },
+    [scopedProjectId],
+  );
+
   const send = useCallback(
     async (
       text: string,
@@ -1211,6 +1250,7 @@ export function useAgent(projectId?: string) {
       }
     }
     setPendingSteers([]);
+    setPendingFollowUps([]);
     setStatus("ready");
     setRunState("idle");
     return restored;
@@ -1225,6 +1265,7 @@ export function useAgent(projectId?: string) {
     setNotebookEntries([]);
     setSubagentCompletions(0);
     setPendingSteers([]);
+    setPendingFollowUps([]);
     setStatus("ready");
     setRunState("idle");
     lastRunIdRef.current = null;
@@ -1256,7 +1297,9 @@ export function useAgent(projectId?: string) {
     getSessionId,
     loadSession,
     steer,
+    followUp,
     pendingSteers,
+    pendingFollowUps,
     notebookEntries,
     subagentCompletions,
   };

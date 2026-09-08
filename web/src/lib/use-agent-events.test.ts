@@ -228,7 +228,21 @@ describe("applyFrameToTranscript", () => {
       5,
     );
     expect(r.steering).toEqual(["a", "b"]);
+    expect(r.followUp).toEqual([]);
     expect(r.messages).toBe(messages);
+  });
+
+  it("reports pending Pi follow-ups from queue_update", () => {
+    const { messages, state } = start();
+    const r = applyFrameToTranscript(
+      messages,
+      state,
+      { type: "queue_update", steering: [], followUp: ["then plot it"] },
+      makeNextId(),
+      5,
+    );
+    expect(r.followUp).toEqual(["then plot it"]);
+    expect(r.steering).toEqual([]);
   });
 
   it("ignores a user message_start without content after the echo", () => {

@@ -94,12 +94,24 @@ class FakeSession {
   getSteeringMessages(): readonly string[] {
     return this.steered;
   }
+  followUps: { text: string; images?: unknown }[] = [];
+  onFollowUp: (() => void) | null = null;
+  async followUp(text: string, images?: unknown): Promise<void> {
+    this.calls.push("followUp");
+    this.followUps.push({ text, images });
+    this.onFollowUp?.();
+  }
+  getFollowUpMessages(): readonly string[] {
+    return this.followUps.map((f) => f.text);
+  }
   clearQueue(): { steering: string[]; followUp: string[] } {
     this.calls.push("clearQueue");
     this.clearQueueCalls += 1;
     const steering = [...this.steered];
     this.steered = [];
-    return { steering, followUp: [] };
+    const followUp = this.followUps.map((f) => f.text);
+    this.followUps = [];
+    return { steering, followUp };
   }
   async abort(): Promise<void> {
     this.calls.push("abort");
@@ -533,5 +545,70 @@ describe("system-initiated runs vs POST /sessions/:id/run", () => {
     } finally {
       detach();
     }
+  });
+});
+
+function followUp(id: string, body: unknown, projectId = "default") {
+  return app.inject({
+    method: "POST",
+    url: `/sessions/${id}/follow-up`,
+    headers: { "x-project-id": projectId, "content-type": "application/json" },
+    payload: body as Record<string, unknown>,
+  });
+}
+
+describe("POST /sessions/:id/follow-up", () => {
+  it("queues a follow-up with images into the live run and reports the pending list", async () => {
+    const s = new FakeSession();
+    fakeSessions.set("s1", s);
+    const image = { data: "aW1hZ2U=", mimeType: "image/png" };
+    const res = await followUp("s1", { message: "then plot it", images: [image] });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true, pending: ["then plot it"] });
+    expect(s.followUps).toHaveLength(1);
+    expect(s.followUps[0].images).toEqual([{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" }]);
+  });
+
+  it("409s with reason not_streaming when no run is live, and 400s on bad images", async () => {
+    const s = new FakeSession();
+    s.isStreaming = false;
+    fakeSessions.set("s1", s);
+    const idle = await followUp("s1", { message: "later" });
+    expect(idle.statusCode).toBe(409);
+    expect(idle.json()).toMatchObject({ reason: "not_streaming" });
+    s.isStreaming = true;
+    const bad = await followUp("s1", { message: "x", images: [{ data: "zz", mimeType: "text/plain" }] });
+    expect(bad.statusCode).toBe(400);
+  });
+
+  it("pulls the follow-up back when the run ends before delivery", async () => {
+    const s = new FakeSession();
+    s.onFollowUp = () => {
+      s.isStreaming = false;
+    };
+    fakeSessions.set("s1", s);
+    const res = await followUp("s1", { message: "late" });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ reason: "not_streaming", restored: ["late"] });
+    expect(s.clearQueueCalls).toBe(1);
+  });
+
+  it("403s with reason budget when the project cap is reached", async () => {
+    const p = createProject({ name: "Capped2", spendLimitUsd: 0.01 });
+    const zero = { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 };
+    recordRun({ sessionId: "s1", projectId: p.id, model: "m", before: zero, after: { costUsd: 0.02, input: 10, output: 10, cacheRead: 0, total: 20 } });
+    fakeSessions.set("s1", new FakeSession());
+    const res = await followUp("s1", { message: "hi" }, p.id);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ reason: "budget" });
+  });
+
+  it("abort returns queued follow-ups alongside steers", async () => {
+    const s = new FakeSession();
+    await s.steer("steer me");
+    await s.followUp("then this");
+    fakeSessions.set("s1", s);
+    const res = await app.inject({ method: "POST", url: "/sessions/s1/abort", headers: { "x-project-id": "default" } });
+    expect(res.json()).toEqual({ ok: true, restored: ["steer me", "then this"] });
   });
 });
