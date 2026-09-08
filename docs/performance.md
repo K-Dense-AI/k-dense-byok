@@ -54,31 +54,3 @@ code-view chunks load only when needed, distant PDF canvases release pixels,
 annotations survive eviction, and there are no runtime errors. A deterministic
 local OpenAI-compatible test provider can exercise streaming without paid model
 calls; it does not validate hosted-provider availability.
-
-## Browser validation for this implementation
-
-Exercised a production Next.js build in isolated Chromium against a temporary
-project and a deterministic localhost model (no paid model calls):
-
-- A 5,001-row CSV mounted 250 rows; Next reached row 250 and search found row
-  5,000. CodeMirror chunks were absent until a source file was opened.
-- An external source update surfaced the disk-conflict notice without replacing
-  the user's draft; Save wrote the draft successfully. Unchanged polls returned
-  304. During an in-progress hidden-browser interval, the sandbox request count
-  stayed unchanged; the return-to-visible catch-up and terminal refresh remained.
-- Real NumPy summary requests took 70 ms initially and 4 ms on reopening in this
-  local run. These are illustrative observations, not a general benchmark.
-  A real multi-page TIFF rendered successfully, its slice control changed the
-  selected image, and conditional image requests returned 304.
-- A mixed-size 40-page PDF held two raster canvases initially, three near a deep
-  jump/zoom, and two after returning. Page-one pixels were released off screen,
-  while its selectable text and saved note survived. The note's sidebar link
-  returned to the correct page and redrew it.
-- Settings panels and Workflows loaded on demand. Streaming survived chat-tab
-  switches; Stop retained partial output; an interview paused and resumed with
-  prose in order. After reload and reopening the project, all six completed
-  replies and the stopped partial reply were restored without duplication.
-- No captured uncaught JavaScript errors or unhandled rejections in these flows.
-
-Hosted providers, native Windows/Linux browsers, and every scientific format
-were not exercised in this browser pass; the unit suites cover the shared paths.

@@ -35,12 +35,12 @@ Every row carries a `role`, and the panel names the actor in words:
 | **remote compute** | A durable Modal job, recorded at its terminal transition from the transfer layer's own staging/collection hashes (below). |
 
 User steps exist because every chain of analysis ends at a file somebody
-uploaded, and without a record of the upload the root of every lineage read "no
-recorded provenance" — indistinguishable from a file of unknown origin. They also
-explain what used to look like corruption: an editor save turned an artifact
-**Stale** with nothing in its history to say why. Now the save is the newest
-producing step, the overwritten version is its input, and the artifact is
-**Current** again.
+uploaded; without a record of the upload the root of every lineage would read
+"no recorded provenance", indistinguishable from a file of unknown origin. They
+also keep an editor save from looking like corruption: the save is recorded as
+the newest producing step with the overwritten version as its input, so the
+artifact stays **Current** instead of turning **Stale** with nothing in its
+history to say why.
 
 ## Lineage
 
@@ -64,10 +64,11 @@ rename to the original producer.
 ### Inputs of opaque calls
 
 `python de_analysis.py counts.csv` reads two files and the sandbox scan sees
-neither — a read leaves nothing on disk. Lineage used to break at exactly the
-step that does the science. The command line is the best available witness, so
-an opaque call now gets an **`inferred`** input edge for every token that names
-a file which existed before the call and which the call did not write. The
+neither — a read leaves nothing on disk, and without more evidence lineage would
+break at exactly the step that does the science. The command line is the best
+available witness, so an opaque call gets an **`inferred`** input edge for every
+token that names a file which existed before the call and which the call did not
+write. The
 script and its data both qualify; a redirect target does not (it shows up as an
 output). Quoting, `./` prefixes and `--flag=path` are handled; globs, variables
 and `..` are not resolved. This is evidence, not observation, and the edges say
@@ -76,8 +77,8 @@ predate the call's timestamp.
 
 ## Environment
 
-A step used to tell you *what ran* but not *in what*. The recorder now captures
-the sandbox's execution environment at the start of every run, stamps each step
+A step records not only *what ran* but *in what*. The recorder captures the
+sandbox's execution environment at the start of every run, stamps each step
 with its id, and re-captures after any step that changed it. Change is detected
 two ways: an `install`-shaped command (`uv add`, `pip install`,
 `install.packages`, …), and a cheap stat fingerprint of the lockfiles, the
@@ -285,9 +286,9 @@ These are real and worth knowing before you rely on a record:
 Rows live inside the project sandbox and travel with a project archive. They are
 plain JSONL: one object per line, `schemaVersion` on every row, rows from a newer
 schema ignored rather than half-parsed. Environment snapshots sit beside them in
-`.kady/environments/`, one JSON file per distinct environment. New optional
-fields (`environmentId`, `compute`, the `user`/`compute` roles) were added
-without a schema bump: an older build reads such a row and simply shows less.
+`.kady/environments/`, one JSON file per distinct environment. `environmentId`,
+`compute`, and the `user`/`compute` roles are optional fields, so rows written
+by an older build simply lack them and show less.
 
 ## API
 

@@ -6,7 +6,7 @@ This guide walks you through installing K-Dense BYOK from scratch. No coding exp
 
 | Requirement | Details |
 |-------------|---------|
-| **Operating system** | macOS, Linux, or Windows 10/11. (On Windows, [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) also works if you prefer a Linux environment — but it's no longer required.) |
+| **Operating system** | macOS, Linux, or Windows 10/11. (On Windows, [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) also works if you prefer a Linux environment, but it isn't required.) |
 | **Node.js ≥ 22.19** | The startup script installs it for you via Homebrew on a Mac if it's missing. On Linux, install it from [nodejs.org](https://nodejs.org/). On Windows, install it from [nodejs.org](https://nodejs.org/) or run `winget install OpenJS.NodeJS.LTS`. |
 | **git** | Pre-installed on most macOS/Linux systems (on a Mac, run `xcode-select --install` if it's missing). **Windows: required** — install [Git for Windows](https://git-scm.com/download/win) with its default components; it provides the Git Bash shell Kady's agent uses to run commands. |
 
@@ -88,7 +88,7 @@ The first run takes a few minutes. The script automatically:
 
 - checks for and installs anything missing (Node.js on a Mac, the [uv](https://docs.astral.sh/uv/) Python manager that Kady uses to run analyses — on every platform),
 - installs the backend and frontend packages,
-- downloads the catalogue of 140+ scientific skills,
+- downloads the catalogue of 149 scientific skills,
 - creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, NVIDIA key, stored subscription login, or local Ollama (the UI still opens for provider setup).
 
 When it finishes, your browser opens to **[http://localhost:3000](http://localhost:3000)** — that's the app. Future starts take only a few seconds.
@@ -101,7 +101,7 @@ These unlock extra capabilities. All of them can be added later in **Settings �
 
 | Key | What it adds | Where to get it |
 |-----|--------------|-----------------|
-| **Exa** | Direct web + code search with neural retrieval tuned for scientific content. Web search works without it via a free fallback. | [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) |
+| **Exa** | Direct web search with neural retrieval tuned for scientific content. Web search works without it via a free fallback. | [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) |
 | **Perplexity** | Alternative web search with synthesized, cited answers. | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
 | **Gemini** | Search fallback plus YouTube / video understanding. | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 
@@ -126,7 +126,7 @@ The startup script picks up any new packages and skills automatically.
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
 - **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys** (OpenRouter or NVIDIA), start Ollama, or connect a supported subscription in **Settings → Model providers**.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
-- **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node does not read `HTTP_PROXY` / `HTTPS_PROXY` by itself, so Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
+- **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node ignores system proxy settings, so until these variables are set Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
 
   ```bash
   HTTPS_PROXY=http://proxy.example.com:3128

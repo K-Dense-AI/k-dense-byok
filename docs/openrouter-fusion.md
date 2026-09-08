@@ -1,6 +1,6 @@
 # OpenRouter Fusion
 
-> **Fork addition.** This fork adds **OpenRouter Fusion** presets to the model picker: instead of one model answering, a *panel* of models deliberates on your prompt in parallel and a *judge* model synthesizes a single answer. It's [OpenRouter's Fusion router](https://openrouter.ai/blog/announcements/fusion-beats-frontier/) wired into Kady's single-agent run loop, with combined pricing and benchmark scores shown right in the picker.
+**OpenRouter Fusion** presets in the model picker let a *panel* of models deliberate on your prompt in parallel while a *judge* model synthesizes a single answer, instead of one model answering. It's [OpenRouter's Fusion router](https://openrouter.ai/blog/announcements/fusion-beats-frontier/) wired into Kady's single-agent run loop, with combined pricing and benchmark scores shown right in the picker.
 
 ## What you get
 

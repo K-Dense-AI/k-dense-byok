@@ -189,8 +189,8 @@ Arbitrary code is not independently audited. This version is Python-only, uses a
 single backend as the Modal owner, and is not a distributed exactly-once system.
 Local records/snapshots are not a same-user shell security boundary or external
 preregistration. Approved snapshots are retained, so users must account for their
-local storage footprint; full reviewer packaging and archival controls are later
-stages.
+local storage footprint; reviewer packaging and version-vault pruning are handled
+by [evidence packages](./evidence-packages.md).
 
 ## Storage and API
 

@@ -2,8 +2,6 @@
 
 This page explains how K-Dense BYOK runs on your computer. You do not need to read this to use the app - it is here if you are curious or troubleshooting.
 
-![K-Dense BYOK Architecture](k-dense-byok-architecture.png)
-
 ## The two services
 
 The start script (`start.sh` on macOS/Linux, `start.cmd` on Windows — both thin wrappers around the cross-platform `start.mjs` launcher) launches two local services that work together:
@@ -13,16 +11,19 @@ The start script (`start.sh` on macOS/Linux, `start.cmd` on Windows — both thi
 | **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
 | **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
 
-The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools plus a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)) and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter**, **NVIDIA NIM**, **Ollama**, or a connected Pi OAuth provider (**OpenAI Codex, Anthropic, GitHub Copilot, or xAI**) — there is no separate proxy.
+The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools, a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)), web search and fetch tools (pi-web-access), an `interview` tool for clarifying questions, the `notebook` tool behind the [Living Lab Notebook](./lab-notebook.md), PDF annotation tools, the durable [Modal compute](./modal-compute.md) tools, and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter**, **NVIDIA NIM**, **Ollama** or another local OpenAI-compatible server, or a connected Pi OAuth provider (**OpenAI Codex, Anthropic, GitHub Copilot, or xAI**) — there is no separate proxy.
 
 When you send a message:
 
 1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
-2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent runs as its own short-lived `pi` process in the same sandbox, with usage ledgered under the parent session).
+2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent is a native Pi session inside a detached runner process that pi-subagents starts, working in the same sandbox, with usage ledgered under the parent session).
 3. Model calls go straight to the selected OpenRouter, NVIDIA NIM, Ollama, or authenticated Pi provider.
 4. A backend run broker sequences and buffers events (text, tool calls, cost)
    and streams them to the browser over SSE. The broker, rather than an
    individual browser connection, owns the live turn.
+5. Alongside the stream, a provenance recorder watches the same events and
+   appends one observed step per tool call (files read and written, with
+   hashes) — see [Provenance](./provenance.md).
 
 Heavy remote commands follow a separate durable path. The lead agent or a
 sub-agent submits a project-scoped Modal job to the backend job manager. The
@@ -58,6 +59,7 @@ What every tab in a project shares:
 - Project settings: the budget cap (`spendLimitUsd`) and the project-level
   cost total shown in the header pill.
 - API keys and global preferences from the repo-root `.env`, plus the process-wide Kady Pi OAuth store shared by lead and child agents.
+- The Living Lab Notebook (project view), provenance log, and Modal job list — all read across every tab's session.
 
 Switching tabs in the UI is purely client-side; the backend doesn't need to
 know which tab is "active" because each request already carries its own
@@ -90,9 +92,13 @@ k-dense-byok/
 │   └── src/
 │       ├── index.ts          ← Fastify app, CORS, project-scope hook
 │       ├── projects.ts       ← Project registry + path resolution
-│       ├── agent/            ← Pi wiring: models, sessions, tools, events, skills
+│       ├── agent/            ← Pi wiring: models, sessions, tools, events, skills, notebook
 │       ├── modal/            ← Durable Modal jobs, storage, resources, transfers
-│       ├── api/              ← Routes: projects, sessions (SSE), sandbox, system
+│       ├── provenance/       ← Observed step recorder, sandbox scanner, lineage lookup
+│       ├── evidence/         ← Reviewer evidence packages
+│       ├── latex/            ← LaTeX compile, SyncTeX, AI assist
+│       ├── helpers/          ← Python helpers (uv venv) for scientific file previews
+│       ├── api/              ← Routes: projects, sessions (SSE), sandbox, notebook, skills, system
 │       └── cost/             ← Billing policy, ledger, and budget caps
 ├── web/                  ← Frontend (the UI you see in your browser)
 ├── docs/                 ← Extended documentation (this folder)
@@ -101,12 +107,16 @@ k-dense-byok/
     └── default/          ← The "Default" project
         ├── project.json      ← Project metadata
         └── sandbox/          ← Workspace (the Pi agent's cwd)
-            ├── .pi/skills/        ← Per-project scientific skills
-            ├── .pi/agents/        ← Sub-agent definitions (one .md per specialist)
+            ├── .pi/skills/        ← Per-project scientific skills (disabled ones sit in .pi/skills-disabled/)
+            ├── .pi/agents/        ← Sub-agent definitions (one .md per specialist; disabled ones in .pi/agents-disabled/)
             ├── .pi/mcp.json       ← MCP server connections for this project
             ├── .pi/sessions/      ← Pi JSONL session files (one per chat tab)
-            ├── .kady/runs/<sessionId>/costs.jsonl  ← Per-session cost ledger
-            └── .kady/modal/jobs/<jobId>/           ← Durable compute state + logs
+            ├── .kady/runs/<sessionId>/costs.jsonl        ← Per-session cost ledger
+            ├── .kady/notebook/<sessionId>.jsonl          ← Living Lab Notebook entries (+ annotation sidecars, plans)
+            ├── .kady/provenance/<sessionId>/steps.jsonl  ← Observed step provenance
+            ├── .kady/environments/<id>.json              ← Content-addressed environment snapshots
+            ├── .kady/evidence/                           ← Reviewer evidence packages and version vault
+            └── .kady/modal/jobs/<jobId>/                 ← Durable compute state + logs
 ```
 
 The OAuth store intentionally sits outside this tree at `~/.kady/pi-agent/auth.json` by default, so tokens are not copied into projects or session files.
@@ -115,14 +125,14 @@ The OAuth store intentionally sits outside this tree at `~/.kady/pi-agent/auth.j
 
 **Settings → Model providers** drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry; direct-provider entries are OAuth-only.
 
-The backend creates one process-wide Pi `ModelRuntime` with its auth path set to Kady's store. `server/src/env.ts` defaults `PI_CODING_AGENT_DIR` to `~/.kady/pi-agent`, or to `KADY_PI_AGENT_DIR` when that override is set. An explicitly supplied `PI_CODING_AGENT_DIR` takes precedence and can intentionally point Kady at the same directory as a standalone Pi installation. Child `pi` processes inherit it, so lead agents and subagents use the same file-locked `auth.json`.
+The backend creates one process-wide Pi `ModelRuntime` with its auth path set to Kady's store. `server/src/env.ts` defaults `PI_CODING_AGENT_DIR` to `~/.kady/pi-agent`, or to `KADY_PI_AGENT_DIR` when that override is set. An explicitly supplied `PI_CODING_AGENT_DIR` takes precedence and can intentionally point Kady at the same directory as a standalone Pi installation. The subagent runner process inherits it, so lead agents and subagents use the same file-locked `auth.json`.
 
 ## Model selection and routing
 
 Each chat tab picks one model. Model refs from the picker look like
-`openrouter/<vendor>/<model>`, `nvidia/<vendor>/<model>`, `ollama/<name>`, or
-`<oauth-provider>/<model>` where the provider is `openai-codex`, `anthropic`,
-`github-copilot`, or `xai`. These canonical `provider/model` refs are also used
+`openrouter/<vendor>/<model>`, `nvidia/<vendor>/<model>`, `ollama/<name>`,
+`openai-compatible/<id>`, or `<oauth-provider>/<model>` where the provider is
+`openai-codex`, `anthropic`, `github-copilot`, or `xai`. These canonical `provider/model` refs are also used
 by ledgers and subagents. The backend resolves them to Pi `Model` objects
 (`server/src/agent/models.ts`): OpenRouter uses `OPENROUTER_API_KEY`, NVIDIA
 NIM uses `NVIDIA_API_KEY`, Ollama points at `OLLAMA_BASE_URL`, and direct
@@ -134,4 +144,4 @@ See
 
 ## Usage accounting and budgets
 
-Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. NVIDIA NIM is classified the same way — build.nvidia.com bills NVIDIA-managed API credits rather than per-token USD, so tokens are recorded without cap-counted spend. Ollama is local, while Modal compute counts its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.
+Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. NVIDIA NIM is classified the same way — build.nvidia.com bills NVIDIA-managed API credits rather than per-token USD, so tokens are recorded without cap-counted spend. Ollama and OpenAI-compatible local servers are `local` at $0, while Modal compute reserves and then settles its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.

@@ -1,6 +1,6 @@
 # Model Selection
 
-Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `subagent` tool use the model named in their agent file (`sandbox/.pi/agents/*.md`) or passed per call; otherwise they fall back to Pi's default model resolution.
+Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `subagent` tool inherit the chat's model unless their agent file (`sandbox/.pi/agents/*.md`) pins one, a project-level override names one, or Kady passes a per-run override.
 
 The choice is stored per tab, so different chats in the same project can use different models, and you can switch models between messages within a tab.
 
@@ -12,6 +12,7 @@ Kady uses canonical `provider/model` references in the picker, backend, cost led
 - Pi OAuth providers: `openai-codex/<model>`, `anthropic/<model>`, `github-copilot/<model>`, or `xai/<model>`
 - NVIDIA NIM: `nvidia/<vendor>/<model>`
 - Ollama: `ollama/<name>`
+- Any other local OpenAI-compatible server (LM Studio, vLLM, …): `openai-compatible/<id>`
 
 This distinction matters: `openrouter/anthropic/<model>` is an OpenRouter API-key request, while `anthropic/<model>` is a direct Anthropic OAuth request. Fusion picker entries use an internal `fusion/<preset>` selector and resolve to the OpenRouter-only `openrouter/fusion` request.
 
@@ -46,7 +47,7 @@ The picker lists Pi's built-in NIM catalogue, which won't include private or ear
 
 ## OpenRouter Fusion presets
 
-This fork adds an **Openrouter Fusion** section at the top of the picker: named presets where a panel of models deliberates on your prompt and an Opus 4.8 judge synthesizes one answer, with the combined panel price and (where published) the DRACO benchmark score shown on each entry. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.
+The picker also has an **Openrouter Fusion** section at the top: named presets where a panel of models deliberates on your prompt and an Opus 4.8 judge synthesizes one answer, with the combined panel price and (where published) the DRACO benchmark score shown on each entry. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.
 
 ## Defaults
 
@@ -56,11 +57,15 @@ This fork adds an **Openrouter Fusion** section at the top of the picker: named 
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
 - To default to a NIM model, set `DEFAULT_MODEL_PROVIDER=nvidia` and `DEFAULT_MODEL_ID` to the NIM model id (e.g. `nvidia/llama-3.3-nemotron-super-49b-v1.5`).
 
-## Local Ollama models
+## Local models
 
-Pulled Ollama models are discovered live: the backend's `/ollama/models` endpoint queries your local daemon (`OLLAMA_BASE_URL/api/tags`), and the results appear under the **Local (Ollama)** section of the picker as `ollama/<name>`. Selecting one makes Pi call your local daemon directly — no OpenRouter key required for those models.
+Pulled Ollama models are discovered live: the backend's `/ollama/models` endpoint queries your local daemon (`OLLAMA_BASE_URL/api/tags`), and the results appear under the **Local (Ollama)** section of the picker as `ollama/<name>`. Any other server speaking the OpenAI API (LM Studio, vLLM, …) appears under **Local (OpenAI-compatible)** once `OPENAI_COMPATIBLE_BASE_URL` is set or a server answers on LM Studio's default port. Selecting either makes Pi call your local server directly — no OpenRouter key required, and nothing is counted against the spend cap.
 
-Local models are useful for privacy and cost control, but tool-calling quality varies widely. For complex, tool-heavy tasks, frontier OpenRouter models are usually more reliable. See [Local models with Ollama](./local-models-ollama.md).
+Local models are useful for privacy and cost control, but tool-calling quality varies widely. For complex, tool-heavy tasks, frontier OpenRouter models are usually more reliable. See [Local models](./local-models-ollama.md).
+
+## Thinking level
+
+Each chat tab also has a thinking-level chip (`off` … `xhigh`, default `high`) applied per run. Ollama and Fusion runs send no level, so the chip is disabled for them. Pi persists the last level picked as the default in Kady's Pi agent directory, so it also becomes the starting level for specialists unless their agent file pins a `thinking` level.
 
 ## Speech transcription
 

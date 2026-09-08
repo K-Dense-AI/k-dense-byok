@@ -1,6 +1,6 @@
 # Known Limitations
 
-K-Dense BYOK is in beta. The agent now runs on the [Pi coding-agent SDK](https://pi.dev) - a single flat agent with file/shell tools and a `subagent` delegation tool (pi-subagents) - which removed the old orchestrator/expert/Gemini-CLI stack and its biggest rough edges. The remaining limitations worth knowing are below.
+K-Dense BYOK is in beta. Kady is a single flat agent on the [Pi coding-agent SDK](https://pi.dev) with file/shell tools and a `subagent` delegation tool (pi-subagents). The limitations worth knowing are below.
 
 ## Skills depend on model quality
 
@@ -93,7 +93,9 @@ Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access))
 Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple of edges:
 
 - **Sub-agents can't use MCP tools yet.** Tools from connected [MCP servers](./mcp-servers.md) are available to Kady itself but not to the sub-agents it spawns. Making them available to sub-agents is on the roadmap.
-- **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Sub-agents, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
+- **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Specialists, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
+- **Sub-agents cannot ask you questions.** The `interview` clarifying-questions tool is deliberately not given to sub-agents, because they run headless and must not block on user input. A specialist that needs a decision reports back to Kady instead.
+- **External-CLI specialists bypass Kady's accounting.** pi-subagents ships `claude-code`, `codex-exec`, `cursor-agent` and their `-writer` variants, which shell out to a locally installed and authenticated Claude Code, Codex, or Cursor CLI. They run outside Kady's model runtime, cost ledger, and spend cap, so they are disabled by default; enable them in Settings → Specialists only if you understand that their usage is billed by that CLI's own account.
 - **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
 
 ## Modal compute
@@ -119,10 +121,10 @@ tracked in the center-panel Compute tab. The remaining boundaries are:
 
 See [Durable Modal compute](./modal-compute.md) for lifecycle and recovery details.
 
-## Native Windows support is new
+## Native Windows has less mileage
 
-The app now runs natively on Windows 10/11 (no WSL needed) as of this release. It goes through the same test suite as macOS/Linux, but has had less real-world mileage — if you hit something Windows-specific, please [open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues). WSL remains a supported alternative.
+The app runs natively on Windows 10/11 (no WSL needed) and goes through the same test suite as macOS/Linux, but it has had less real-world use — if you hit something Windows-specific, please [open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues). Git for Windows is required there because the agent's shell tool uses Git Bash. WSL remains a supported alternative.
 
-## Features deferred during the Pi migration
+## Not built in
 
-First-party literature/regulatory search (Paperclip), document conversion, browser automation, citation verification, and the provenance-aware "Copy as Methods" export are not available yet in the Pi-based backend. Web research and Modal remote compute are available now, as is per-artifact [provenance](./provenance.md) — the record the Methods export will eventually draw on. In the meantime, many additional capabilities (GitHub, reference managers, databases, and more) can be added by connecting an [MCP server](./mcp-servers.md).
+First-party literature/regulatory search, document conversion, browser automation, and automated citation verification are not built into Kady. Many of these can be added by connecting an [MCP server](./mcp-servers.md); the `citation-checker` specialist covers reference checking with the web tools. Record-keeping is covered by per-artifact [provenance](./provenance.md), the notebook's [Methods draft](./lab-notebook.md#methods-draft), and [evidence packages](./evidence-packages.md); none of these verifies scientific claims on your behalf.

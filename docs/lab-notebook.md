@@ -28,9 +28,9 @@ Entries are author-stamped, timestamped, and stamped with the run that produced 
 
 The notebook is more than a log — entries link into an argument structure:
 
-- An **observation** that tests a hypothesis points to it with an evidence link (or legacy `relatesTo` and stance). The hypothesis summarizes **all active linked evidence**: **Awaiting evidence**, **Supporting evidence**, **Challenging evidence**, **Conflicting evidence**, or **Inconclusive**. The latest entry no longer overwrites conflicting findings. These labels describe authored interpretations, not scientific truth. Provisional live entries are visible immediately but do not count as evidence or supersede saved records until confirmed by the server.
+- An **observation** that tests a hypothesis points to it with an evidence link (or legacy `relatesTo` and stance). The hypothesis summarizes **all active linked evidence**: **Awaiting evidence**, **Supporting evidence**, **Challenging evidence**, **Conflicting evidence**, or **Inconclusive**. No single latest entry overrides conflicting findings. These labels describe authored interpretations, not scientific truth. Provisional live entries are visible immediately but do not count as evidence or supersede saved records until confirmed by the server.
 - A **decision** can cite the observation that drove it; the reference line under the title (`↳ supports …` / `↳ refutes …`) is clickable and scrolls to the target.
-- History is append-only: to correct an entry, Kady logs a new one with `supersedes`. The old card is struck through and dimmed, with links in both directions ("superseded by" / "amends"). Superseded observations no longer count as active evidence. An amendment must explicitly restate its evidence links; links are never silently inherited.
+- History is append-only: to correct an entry, Kady logs a new one with `supersedes`. The old card is struck through and dimmed, with links in both directions ("superseded by" / "amends"). Superseded observations do not count as active evidence. An amendment must explicitly restate its evidence links; links are never silently inherited.
 - Expand **Inspect active evidence** to inspect supporting, challenging and inconclusive entries. Counts are not independent replications or probabilities. Technical failures are treated as context rather than negative scientific evidence. A null result is not automatically a challenge.
 - Cross-chat ids are session-qualified in the project view. Missing/out-of-view references are identified rather than resolving to an unrelated entry with the same id.
 
@@ -45,7 +45,7 @@ New lead-agent notebook writes capture bounded **server-measured citation-time h
 
 A **Needs review** warning appears on the entry and on hypotheses with direct active evidence citing changed/missing artifacts. It does **not** change the evidence stance or refute the claim. Expand **Artifact checks** for paths, reasons and check timestamps.
 
-Hashes are not retained historical copies. Old notebooks and harvested child entries have no citation-time identity and remain unverified when files exist; no retrospective hash is promoted to citation-time proof. The file-preview Provenance panel remains available for execution lineage and upstream investigation. This stage checks direct citations, not the whole transitive dependency graph.
+Hashes are not retained historical copies. Old notebooks and harvested child entries have no citation-time identity and remain unverified when files exist; no retrospective hash is promoted to citation-time proof. The file-preview Provenance panel remains available for execution lineage and upstream investigation. This check covers direct citations, not the whole transitive dependency graph.
 
 Checks are asynchronous, request-local and bounded: 25 unique citations per entry, 100 unique file checks per read, 8 MiB per file and 32 MiB of hashing per request/capture. Recent entries receive the request budget first. Additional citations and exhausted budgets are visible as incomplete checks. Hidden files, traversal and symlink escapes are rejected.
 
@@ -59,7 +59,7 @@ Use **Analysis plan** (or **Review proposed analysis plan**) on a saved hypothes
 4. **Revise without rewriting.** A revised plan requires a reason and another approval. Prior revisions remain intact with their own timestamps and dataset hashes.
 5. **Record deviations.** Select the exact frozen revision and changed field, record what was actually done, why, and whether the decision was made before or after inspecting results (or unknown). The planned value is read from the frozen record, not supplied by the caller. **Correct this deviation** appends a correction while retaining the original.
 
-This is a **local user-confirmed record, not external preregistration or proof of data-naivety**. Freezing does not pause an active analysis or enforce a procedure, and recorded intentions are not evidence that the method was executed. Deviations are user-entered/self-reported in this stage; the agent may report changes in notebook prose but does not automatically create approved plan/deviation events. No new AI call or compute job is made by these controls.
+This is a **local user-confirmed record, not external preregistration or proof of data-naivety**. Freezing does not pause an active analysis or enforce a procedure, and recorded intentions are not evidence that the method was executed. Deviations are user-entered/self-reported; the agent may report changes in notebook prose but does not automatically create approved plan/deviation events. No new AI call or compute job is made by these controls.
 
 The journal lives under `.kady/notebook/plans/<hash-of-session-and-entry>/`, one exclusively published JSON file per event. Atomic exclusive publication and head preconditions prevent concurrent writers from overwriting one another, including across processes. Records carry content digests and a previous-event digest; corrupt/gapped retained records fail visibly rather than being reset. Maximums: 256 events per hypothesis, 128 KiB per record, and 64 live previews per source. Plan dataset hashing uses the artifact budgets above. Publication requires filesystem hard-link support (normal APFS/ext4/NTFS); unsupported filesystems fail rather than falling back to unsafe overwrites.
 
@@ -148,7 +148,7 @@ The header's **Export** menu offers:
 - **Bundle with artifacts (.zip)** — the Markdown plus every referenced artifact file under `artifacts/`, with links rewritten so figures resolve inside the bundle. Missing artifacts are noted rather than breaking the export.
 - **JSON (.json)** — the raw entries for programmatic use.
 
-Frozen revisions, deviations and scientific-result source identifiers/content digests are preserved in JSON, Markdown/ZIP and print. Notebook exports do not bundle canonical Pi session logs or historical plan datasets; full reviewer-ready packaging is a later stage.
+Frozen revisions, deviations and scientific-result source identifiers/content digests are preserved in JSON, Markdown/ZIP and print. Notebook exports do not bundle canonical Pi session logs or historical plan datasets; for reviewer-ready packaging with version-matched artifacts use an [evidence package](#reviewer-evidence-packages).
 
 The **PDF** button opens a print-ready view — Markdown bodies fully rendered, figures embedded, lanes, threading, pins, and comments included — and triggers your browser's print dialog. If your browser blocks the popup, a notification tells you.
 
@@ -189,4 +189,4 @@ A typical data-analysis session might produce entries like:
 
 Each entry can include code, artifact links, author-reported confidence, and tags. The hypothesis card shows **Supporting evidence** once the observation lands, **Conflicting evidence** if an active challenge also exists, and **Needs review** if directly cited artifacts change. Notebook code is authored narrative; execution provenance is what establishes what actually ran.
 
-The remaining approved roadmap (next-experiment proposals) is tracked in [notebook-roadmap.md](./notebook-roadmap.md).
+[notebook-roadmap.md](./notebook-roadmap.md) gives a one-page map of the notebook's evidence features and the design rules they share.

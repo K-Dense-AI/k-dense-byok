@@ -1,12 +1,12 @@
 # Connecting external tools (MCP servers)
 
-Out of the box, Kady can read and write files, run code, and delegate to [sub-agents](./sub-agents.md). **MCP servers** let you give it more abilities - searching the web, querying a database, reading your reference manager, controlling lab software, and so on.
+Out of the box, Kady can read and write files, run code, search the web, and delegate to [sub-agents](./sub-agents.md). **MCP servers** let you give it more abilities - querying a database, reading your reference manager, controlling lab software, and so on.
 
 MCP ([Model Context Protocol](https://modelcontextprotocol.io)) is an open standard for connecting AI assistants to external tools. Many services publish an MCP server, and there are hundreds of community-built ones. When you connect one, every tool it provides shows up in Kady's toolbox automatically.
 
 ## Adding a server
 
-Open **Settings (gear icon) → MCP servers** and click *Add server*. There are two kinds:
+Open **Settings (gear icon) → Connectors** and click *Add server*. There are two kinds:
 
 ### Remote (HTTP)
 
@@ -43,6 +43,7 @@ Nothing special required. Once a server is saved, its tools are available to Kad
 ## Good to know
 
 - **Per project.** Each project has its own server list, stored in the project at `sandbox/.pi/mcp.json`. Tokens stay on your machine.
+- **Disabling is non-destructive.** Toggling a server off moves its entry to `sandbox/.pi/mcp-disabled.json`; toggle it back on when you need it again.
 - **A broken server never blocks you.** If a server is down or misconfigured, Kady starts without it (you'll see a warning in the backend logs) and everything else works normally.
 - **Changes apply to new chat tabs.** Already-open tabs keep the toolset they started with.
 - **Sub-agents don't see MCP tools yet.** Tools from MCP servers are currently available to Kady itself but not to the sub-agents it spawns. This is on the roadmap.

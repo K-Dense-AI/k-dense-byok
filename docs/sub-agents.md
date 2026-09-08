@@ -22,7 +22,9 @@ A few examples of what they do:
 - **`peer-reviewer`** writes a full, journal-style referee report on a manuscript: major concerns, minor concerns, questions for the authors, and a recommendation.
 - **`reproducibility-auditor`** checks whether someone else could re-run your analysis from scratch - and actually tries to.
 
-There are also 6 general-purpose agents that ship with the underlying delegation engine ([pi-subagents](https://github.com/nicobailon/pi-subagents)): `reviewer`, `scout`, `worker`, `researcher`, `oracle`, and `delegate`. (`planner` and `context-builder` were retired upstream in pi-subagents 0.43; the Specialists tab always shows the roster actually installed.)
+The underlying delegation engine ([pi-subagents](https://github.com/nicobailon/pi-subagents)) also ships six general-purpose agents — `reviewer`, `scout`, `worker`, `researcher`, `oracle`, and `delegate` — plus six that shell out to a locally installed and authenticated Claude Code, Codex, or Cursor CLI (`claude-code`, `codex-exec`, `cursor-agent` and their `-writer` variants). The external-CLI agents are **disabled by default** because they run outside Kady's model runtime, cost ledger, and spend cap; the Specialists tab always shows the roster actually installed.
+
+Specialists work in the same project sandbox as Kady with the same file/shell tools, and can search the web, write to the [Lab Notebook](./lab-notebook.md), annotate PDFs, and submit [Modal compute](./modal-compute.md) jobs. They run headless, so they never get the clarifying-questions form, and tools from connected [MCP servers](./mcp-servers.md) are currently available to Kady only.
 
 ## Asking for a specialist directly
 
@@ -38,14 +40,15 @@ Sub-agents can run one at a time, several in parallel, or chained (one's output 
 
 ## Viewing and customizing sub-agents
 
-Open **Settings (gear icon) → Sub-agents**. From there you can:
+Open **Settings (gear icon) → Specialists**. From there you can:
 
 - **See every agent** available in the current project, with its description.
+- **Enable or disable an agent** with its toggle. Disabling is non-destructive (the file moves to `sandbox/.pi/agents-disabled/`) and applies to new chat tabs.
 - **Edit an agent** (pencil icon) - change its instructions, give it a different model, restrict its tools, or adjust its thinking depth.
 - **Add your own agent** - click *Add agent*, give it a name like `assay-qc-checker`, write its instructions in plain language, and save. It's immediately available for delegation in new chats.
 - **Delete agents** you don't need. Deletions stick - they won't silently come back.
 - **Restore defaults** - brings back the 21 scientific specialists in their original form (your own custom agents are untouched).
-- **Customize a built-in** - the 8 engine agents are read-only, but clicking *Customize* copies one into your project where your version takes priority.
+- **Customize a built-in** - the engine's agents are read-only, but clicking *Customize* copies one into your project where your version takes priority.
 
 ### What the settings mean
 
@@ -53,7 +56,7 @@ Open **Settings (gear icon) → Sub-agents**. From there you can:
 |-------|--------------|
 | **Name** | How Kady refers to the agent (lowercase, hyphens allowed, e.g. `code-reviewer`) |
 | **Description** | One line telling Kady when this specialist is the right pick |
-| **Model** *(optional)* | Make this agent use a specific model - e.g. a cheaper model for routine checks, a stronger one for hard reviews. Leave empty to use sensible defaults |
+| **Model** *(optional)* | Make this agent use a specific model - e.g. a cheaper model for routine checks, a stronger one for hard reviews. Leave empty and the agent inherits the chat's model |
 | **Thinking level** | How much the agent "thinks before speaking" - higher levels reason more deeply but cost more |
 | **Tools** *(optional)* | Limit what the agent can do - e.g. `read, grep, find, ls` makes an agent that can inspect files but never modify them. Empty = full toolset |
 | **Inherit project context** | Whether the agent sees your project's `AGENTS.md` instructions |
@@ -67,4 +70,4 @@ Each agent is a plain markdown file in your project at `sandbox/.pi/agents/<name
 
 ## Cost and budgets
 
-Sub-agent work uses your API key like everything else. Their spend is recorded in the same project cost ledger you see in the header, and the project's **spend cap applies to them too** - once a project hits its limit, Kady is blocked from starting new sub-agents.
+Sub-agent work uses your model access like everything else - a specialist inherits the chat's model unless it pins its own. Their spend is recorded in the same project cost ledger you see in the header, and the project's **spend cap applies to them too** - once a project hits its limit, Kady is blocked from starting new sub-agents. The exception is the external-CLI agents above, whose usage is billed by that CLI's own account and never appears in Kady's ledger.
