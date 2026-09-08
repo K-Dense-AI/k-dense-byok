@@ -70,6 +70,54 @@ export function findSessionFile(paths: ProjectPaths, sessionId: string): string 
   return match ? path.join(paths.sessionsDir, match) : null;
 }
 
+/** Extension-injected message (`pi.sendMessage`); participates in LLM context. */
+export interface CustomMessageRow {
+  type: "custom_message";
+  customType: string;
+  content: string | ContentPart[];
+  display?: boolean;
+  details?: unknown;
+  /** ISO timestamp (entry-level, unlike message rows' epoch ms). */
+  timestamp?: string;
+}
+
+/** Context compaction record: older messages were replaced by `summary`. */
+export interface CompactionRow {
+  type: "compaction";
+  summary: string;
+  firstKeptEntryId?: string;
+  tokensBefore?: number;
+  details?: unknown;
+  timestamp?: string;
+}
+
+export type SessionEntryRow = MessageRow | CustomMessageRow | CompactionRow;
+
+/**
+ * Every entry the transcript view cares about, in file order: messages plus
+ * the custom messages and compactions that `readRows` (used by the sh/md
+ * exports) deliberately skips.
+ */
+export function readEntries(file: string): SessionEntryRow[] {
+  const rows: SessionEntryRow[] = [];
+  for (const line of fs.readFileSync(file, "utf-8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const obj = JSON.parse(trimmed);
+      if (obj.type === "message" && obj.message) rows.push(obj as MessageRow);
+      else if (obj.type === "custom_message" && typeof obj.customType === "string") {
+        rows.push(obj as CustomMessageRow);
+      } else if (obj.type === "compaction" && typeof obj.summary === "string") {
+        rows.push(obj as CompactionRow);
+      }
+    } catch {
+      /* skip malformed line */
+    }
+  }
+  return rows;
+}
+
 export function readRows(file: string): MessageRow[] {
   const rows: MessageRow[] = [];
   for (const line of fs.readFileSync(file, "utf-8").split("\n")) {

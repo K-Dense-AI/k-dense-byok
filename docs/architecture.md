@@ -61,6 +61,24 @@ What every tab in a project shares:
 - API keys and global preferences from the repo-root `.env`, plus the process-wide Kady Pi OAuth store shared by lead and child agents.
 - The Living Lab Notebook (project view), provenance log, and Modal job list — all read across every tab's session.
 
+### System-initiated runs
+
+Not every turn starts with a message you typed. The pi-subagents extension
+loaded into each session can inject a message on its own — a background
+specialist asking for a decision through `contact_supervisor`, a scheduled
+run's completion notice, a watchdog finding — and Pi then runs a turn on the
+idle session. A per-session observer (`server/src/agent/session-observer.ts`)
+adopts such a turn as a **system run**: it claims the session exactly like
+`POST /sessions/:id/run` does, opens a run in the broker with `origin:
+"system"`, and hands it to the same pipeline (`server/src/agent/run-pipeline.ts`),
+so it is streamed, provenance-recorded, cost-ledgered and abortable like any
+other run. Over the project cap the run is aborted (and its partial spend
+ledgered) instead of continuing unattended. A custom message appended without
+a turn is published as a short `kind: "notice"` run. Idle chat tabs probe
+`GET /sessions/:id/run/state?frames=0` every few seconds and attach when a run
+they did not start appears; those messages render as cards between the
+bubbles (and as `role: "system"` items in `GET /sessions/:id/history`).
+
 Switching tabs in the UI is purely client-side; the backend doesn't need to
 know which tab is "active" because each request already carries its own
 session id. Inactive tabs stay mounted in the DOM (hidden with CSS) so a

@@ -27,6 +27,8 @@ import { registerAgentRoutes } from "./api/agents.ts";
 import { registerSpeechRoutes } from "./api/speech.ts";
 import { registerModalRoutes } from "./api/modal.ts";
 import { registerModelProviderRoutes } from "./api/model-providers.ts";
+import { setSessionObserver } from "./agent/session-registry.ts";
+import { attachSessionObserver } from "./agent/session-observer.ts";
 import { registerNextExperimentRoutes } from "./api/next-experiments.ts";
 import { registerEvidencePackageRoutes } from "./api/evidence-packages.ts";
 import { registerNotebookMemoryRoutes } from "./api/notebook-memory.ts";
@@ -123,6 +125,10 @@ export async function buildApp() {
 
   app.get("/health", async () => ({ status: "ok" }));
   app.get("/config", async () => ({ modal_configured: modalConfigured() }));
+
+  // Adopt turns that Pi extensions start on an idle session (supervisor
+  // requests, scheduled-run notices) as streamed, ledgered Kady runs.
+  setSessionObserver((ctx) => attachSessionObserver({ ...ctx, log: app.log }));
 
   await registerProjectRoutes(app);
   await registerSessionRoutes(app);

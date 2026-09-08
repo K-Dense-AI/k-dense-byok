@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import * as projects from "@/lib/projects";
 import {
   buildRunBody,
+  IDLE_RUN_POLL_MS,
   parseContextUsage,
   useAgent,
   type SessionLoadOutcome,
@@ -645,5 +646,188 @@ describe("useAgent live-run reconnect", () => {
     expect(restored).toEqual(["queued one", "queued two"]);
     expect(calls).toContain("/sessions/stop-me/abort");
     expect(result.current.runState).toBe("idle");
+  });
+});
+
+describe("useAgent system-initiated runs", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("restores a running system run without echoing a prompt bubble", async () => {
+    let eventsController!: ReadableStreamDefaultController<Uint8Array>;
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      if (path === "/sessions/sys/run/state") {
+        return new Response(
+          JSON.stringify({
+            status: "running",
+            run: {
+              runId: "sys-1",
+              prompt: "",
+              images: [],
+              origin: "system",
+              kind: "turn",
+              reason: "subagent_supervisor_request",
+              baseline: { messages: [{ role: "user", content: "earlier", timestamp: 1 }], contextUsage: null },
+              frames: [
+                { seq: 1, type: "run_start", runId: "sys-1", origin: "system", kind: "turn" },
+                { seq: 2, type: "agent_start" },
+                {
+                  seq: 3,
+                  type: "message_start",
+                  role: "custom",
+                  customType: "subagent_supervisor_request",
+                  content: "Child asks: which cutoff?",
+                  details: { agent: "worker" },
+                },
+                { seq: 4, type: "text_delta", delta: "Relaying" },
+              ],
+              lastSeq: 4,
+            },
+          }),
+        );
+      }
+      if (path === "/sessions/sys/interview") return new Response(JSON.stringify({ pending: null }));
+      if (path === "/sessions/sys/run/events?after=4") {
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              eventsController = controller;
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+
+    const { result } = renderHook(() => useAgent("p"));
+    let loadPromise!: Promise<SessionLoadOutcome>;
+    act(() => {
+      loadPromise = result.current.loadSession("sys");
+    });
+    await waitFor(() => expect(result.current.status).toBe("streaming"));
+    expect(result.current.messages.map((m) => m.role)).toEqual(["user", "system", "assistant"]);
+    expect(result.current.messages[1]).toMatchObject({
+      customType: "subagent_supervisor_request",
+      content: "Child asks: which cutoff?",
+    });
+    expect(result.current.messages[2].content).toBe("Relaying");
+
+    const encoder = new TextEncoder();
+    eventsController.enqueue(encoder.encode(`data: ${JSON.stringify({ seq: 5, type: "done" })}\n\n`));
+    eventsController.close();
+    await act(async () => {
+      expect(await loadPromise).toBe("restored");
+    });
+    expect(result.current.status).toBe("ready");
+  });
+
+  it("loads history for a completed notice run", async () => {
+    const calls: string[] = [];
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      calls.push(path);
+      if (path === "/sessions/n/run/state") {
+        return new Response(
+          JSON.stringify({
+            status: "complete",
+            run: { runId: "notice-1", prompt: "", images: [], origin: "system", kind: "notice", baseline: { messages: [], contextUsage: null }, frames: [], lastSeq: 3 },
+          }),
+        );
+      }
+      if (path === "/sessions/n/history") {
+        return new Response(
+          JSON.stringify({
+            messages: [
+              { role: "user", content: "stored" },
+              { role: "system", customType: "subagent_watchdog_warning", content: "Stalemate", details: { severity: "concern" } },
+            ],
+          }),
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+    const { result } = renderHook(() => useAgent("p"));
+    await act(async () => {
+      expect(await result.current.loadSession("n")).toBe("restored");
+    });
+    expect(calls).toEqual(["/sessions/n/run/state", "/sessions/n/history"]);
+    expect(result.current.messages.map((m) => m.role)).toEqual(["user", "system"]);
+    expect(result.current.messages[1]).toMatchObject({ customType: "subagent_watchdog_warning", details: { severity: "concern" } });
+  });
+
+  it("polls run state while idle and adopts a new system run", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let probes = 0;
+    let stateCalls = 0;
+    const calls: string[] = [];
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string) => {
+      calls.push(path);
+      if (path === "/sessions/idle/run/state" && ++stateCalls === 1) {
+        // Mount-time restore: nothing running yet.
+        return new Response(JSON.stringify({ status: "none" }));
+      }
+      if (path === "/sessions/idle/history") {
+        return new Response(JSON.stringify({ messages: [{ role: "user", content: "stored" }, { role: "assistant", frames: [{ type: "text_delta", delta: "reply" }] }] }));
+      }
+      if (path === "/sessions/idle/run/state?frames=0") {
+        probes++;
+        if (probes === 1) return new Response(JSON.stringify({ status: "none" }));
+        return new Response(
+          JSON.stringify({ status: "complete", run: { runId: "sys-2", prompt: "", images: [], origin: "system", kind: "turn", baseline: { messages: [], contextUsage: null }, frames: [], lastSeq: 3 } }),
+        );
+      }
+      if (path === "/sessions/idle/run/state") {
+        return new Response(
+          JSON.stringify({
+            status: "complete",
+            run: {
+              runId: "sys-2",
+              prompt: "",
+              images: [],
+              origin: "system",
+              kind: "turn",
+              baseline: { messages: [], contextUsage: null },
+              frames: [
+                { seq: 1, type: "run_start", runId: "sys-2", origin: "system", kind: "turn" },
+                { seq: 2, type: "message_start", role: "custom", customType: "subagent-notify", content: "worker finished", details: { agent: "worker", status: "complete" } },
+                { seq: 3, type: "text_delta", delta: "Summarizing the result" },
+                { seq: 4, type: "done" },
+              ],
+              lastSeq: 4,
+            },
+          }),
+        );
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+
+    const { result } = renderHook(() => useAgent("p"));
+    await act(async () => {
+      expect(await result.current.loadSession("idle")).toBe("restored");
+    });
+    expect(result.current.messages).toHaveLength(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_RUN_POLL_MS + 10);
+    });
+    expect(probes).toBe(1);
+    expect(result.current.messages).toHaveLength(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_RUN_POLL_MS + 10);
+    });
+    await waitFor(() => expect(result.current.messages).toHaveLength(4));
+    expect(result.current.messages.map((m) => m.role)).toEqual(["user", "assistant", "system", "assistant"]);
+    expect(result.current.messages[2]).toMatchObject({ customType: "subagent-notify", content: "worker finished" });
+    expect(result.current.messages[3].content).toBe("Summarizing the result");
+    expect(result.current.status).toBe("ready");
+
+    // Already adopted: later probes with the same run id change nothing.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(IDLE_RUN_POLL_MS + 10);
+    });
+    expect(result.current.messages).toHaveLength(4);
+    expect(calls.filter((c) => c === "/sessions/idle/run/state").length).toBe(2);
   });
 });

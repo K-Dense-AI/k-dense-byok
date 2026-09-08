@@ -197,6 +197,108 @@ function userMessageText(message: unknown): string {
   return "";
 }
 
+/**
+ * Detail keys forwarded to the client per custom message type. Anything else
+ * (nested objects, interview payloads, child outputs) is dropped: like tool
+ * results, arbitrary extension details never reach the wire — only scalars we
+ * know how to render. pi-subagents 0.66 types; `compaction` is Kady's own.
+ */
+export const CUSTOM_MESSAGE_DETAIL_KEYS: Record<string, readonly string[]> = {
+  subagent_supervisor_request: [
+    "id",
+    "requestId",
+    "reason",
+    "expectsReply",
+    "runId",
+    "agent",
+    "childIndex",
+    "childTarget",
+    "requestBody",
+    "replyHint",
+  ],
+  subagent_watchdog_warning: [
+    "severity",
+    "summary",
+    "evidence",
+    "recommendedAction",
+    "category",
+    "confidence",
+    "source",
+    "agent",
+    "runId",
+    "stale",
+    "state",
+    "displayedAt",
+    "stalemateRepeats",
+  ],
+  subagent_steering_notice: ["state", "runId", "agent", "childIndex", "childTarget", "noticeText"],
+  subagent_control_notice: ["source", "childIntercomTarget", "noticeText"],
+  "subagent-notify": [
+    "agent",
+    "status",
+    "source",
+    "taskInfo",
+    "durationMs",
+    "workflowRunId",
+    "sessionLabel",
+    "handoffPath",
+  ],
+  "subagent-wait-subscription": ["token", "runId", "outcome"],
+  compaction: ["tokensBefore", "reason"],
+};
+
+export const MAX_CUSTOM_MESSAGE_CHARS = 8_000;
+const MAX_CUSTOM_DETAIL_CHARS = 512;
+
+export interface CustomMessageLike {
+  customType?: unknown;
+  content?: unknown;
+  display?: unknown;
+  details?: unknown;
+}
+
+/**
+ * Bounded, UI-safe projection of a Pi custom message (`role: "custom"`), the
+ * vehicle pi-subagents uses for supervisor requests, watchdog findings and
+ * completion notices. Returns null for `display: false` messages.
+ */
+export function customMessageFrame(
+  message: CustomMessageLike,
+  sandboxRoot = "",
+): ClientFrame | null {
+  if (message.display === false) return null;
+  const customType = typeof message.customType === "string" ? message.customType : "custom";
+  const raw = userMessageText(message);
+  const content = relativizeSandboxPaths(
+    raw.length > MAX_CUSTOM_MESSAGE_CHARS ? raw.slice(0, MAX_CUSTOM_MESSAGE_CHARS) + "…" : raw,
+    sandboxRoot,
+  );
+  const allowed = CUSTOM_MESSAGE_DETAIL_KEYS[customType];
+  const details: Record<string, string | number | boolean> = {};
+  if (allowed && message.details && typeof message.details === "object") {
+    const source = message.details as Record<string, unknown>;
+    for (const key of allowed) {
+      const value = source[key];
+      if (typeof value === "number" || typeof value === "boolean") details[key] = value;
+      else if (typeof value === "string") {
+        details[key] = relativizeSandboxPaths(
+          value.length > MAX_CUSTOM_DETAIL_CHARS
+            ? value.slice(0, MAX_CUSTOM_DETAIL_CHARS) + "…"
+            : value,
+          sandboxRoot,
+        );
+      }
+    }
+  }
+  return {
+    type: "message_start",
+    role: "custom",
+    customType,
+    content,
+    ...(Object.keys(details).length > 0 ? { details } : {}),
+  };
+}
+
 function cap(s: unknown, max = 4000): string {
   const str = resultText(s);
   return str.length > max ? str.slice(0, max) + "…" : str;
@@ -302,7 +404,22 @@ export function toClientFrame(
       if (role === "user") {
         return { type: "message_start", role, content: userMessageText(ev.message) };
       }
+      // Extension-injected messages (supervisor requests, watchdog findings,
+      // completion notices) carry their type and a bounded detail set.
+      if (role === "custom") return customMessageFrame(ev.message as CustomMessageLike, sandboxRoot);
       return { type: "message_start", role };
+    }
+    case "compaction_end": {
+      if (ev.aborted || !ev.result) return null;
+      // One code path client-side: a compaction renders as a system card.
+      return customMessageFrame(
+        {
+          customType: "compaction",
+          content: "Context compacted",
+          details: { tokensBefore: ev.result.tokensBefore, reason: ev.reason },
+        },
+        sandboxRoot,
+      );
     }
     case "message_end":
       return { type: "message_end", role: (ev.message as { role?: string }).role };

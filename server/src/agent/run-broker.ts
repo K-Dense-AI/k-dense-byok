@@ -18,16 +18,34 @@ export interface RunBaseline {
   contextUsage: ContextUsage | null;
 }
 
+/**
+ * Who started the run. `user` = POST /sessions/:id/run; `system` = the session
+ * observer adopted a turn an extension started (supervisor request, scheduled
+ * run notice, …) while no Kady run was active.
+ */
+export type RunOrigin = "user" | "system";
+/**
+ * `turn` = a full agent turn; `notice` = a single custom message appended to an
+ * idle session (no model call), published so a connected tab sees it live.
+ */
+export type RunKind = "turn" | "notice";
+
 export interface RunMetadata {
   runId: string;
   prompt: string;
   images: { data: string; mimeType: string }[];
   baseline: RunBaseline;
+  origin?: RunOrigin;
+  kind?: RunKind;
+  /** For system runs: the custom message type that started it, once known. */
+  reason?: string;
 }
 
 export interface RunState {
   status: "none" | "running" | "complete";
   run?: RunMetadata & {
+    origin: RunOrigin;
+    kind: RunKind;
     frames: SequencedClientFrame[];
     lastSeq: number;
   };
@@ -68,6 +86,9 @@ export class RunHandle {
   readonly prompt: string;
   readonly images: { data: string; mimeType: string }[];
   readonly baseline: RunBaseline;
+  readonly origin: RunOrigin;
+  readonly kind: RunKind;
+  private reasonValue: string | undefined;
 
   private readonly frames: SequencedClientFrame[] = [];
   private readonly subscribers = new Set<Subscriber>();
@@ -93,6 +114,9 @@ export class RunHandle {
     this.prompt = metadata.prompt;
     this.images = metadata.images;
     this.baseline = metadata.baseline;
+    this.origin = metadata.origin ?? "user";
+    this.kind = metadata.kind ?? "turn";
+    this.reasonValue = metadata.reason;
     this.onCompleted = onCompleted;
     this.completion = new Promise((resolve) => {
       this.resolveCompletion = resolve;
@@ -118,6 +142,15 @@ export class RunHandle {
 
   requestAbort(): void {
     this.abortRequested = true;
+  }
+
+  get reason(): string | undefined {
+    return this.reasonValue;
+  }
+
+  /** A system run learns why it started from the first custom message it sees. */
+  setReason(reason: string): void {
+    if (this.reasonValue === undefined) this.reasonValue = reason;
   }
 
   waitForCompletion(): Promise<void> {
@@ -210,15 +243,23 @@ export class RunHandle {
     }
   }
 
-  state(): RunState {
+  /**
+   * Snapshot for reconnecting clients. `includeFrames: false` returns the
+   * metadata only (no replay buffer, no baseline), for cheap idle polling.
+   */
+  state(options: { includeFrames?: boolean } = {}): RunState {
+    const includeFrames = options.includeFrames ?? true;
     return {
       status: this.completed ? "complete" : "running",
       run: {
         runId: this.runId,
         prompt: this.prompt,
-        images: this.images,
-        baseline: this.baseline,
-        frames: [...this.frames],
+        images: includeFrames ? this.images : [],
+        baseline: includeFrames ? this.baseline : { messages: [], contextUsage: null },
+        origin: this.origin,
+        kind: this.kind,
+        ...(this.reasonValue !== undefined ? { reason: this.reasonValue } : {}),
+        frames: includeFrames ? [...this.frames] : [],
         lastSeq: this.lastSeq,
       },
     };
@@ -297,8 +338,12 @@ export class RunBroker {
       }));
   }
 
-  state(projectId: string, sessionId: string): RunState {
-    return this.get(projectId, sessionId)?.state() ?? { status: "none" };
+  state(
+    projectId: string,
+    sessionId: string,
+    options: { includeFrames?: boolean } = {},
+  ): RunState {
+    return this.get(projectId, sessionId)?.state(options) ?? { status: "none" };
   }
 
   /** Primarily for test/process cleanup. Active handles are simply forgotten. */

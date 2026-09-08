@@ -17,6 +17,8 @@ import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./
 // Keep the full tool-call trace per message: scientists rely on it to see and
 // reproduce what the agent ran, and the session export reads it too.
 const MAX_ACTIVITY_ITEMS = 200;
+/** Idle probe cadence for runs this tab did not start (see the poll effect). */
+export const IDLE_RUN_POLL_MS = 5_000;
 
 export interface ActivityItem {
   id: string;
@@ -68,8 +70,14 @@ export interface CitationReport {
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  /** `system` = an extension-injected notice (supervisor request, watchdog
+   *  finding, scheduled-run completion) or a compaction marker. */
+  role: "user" | "assistant" | "system";
   content: string;
+  /** Custom message type — system messages only (e.g. `subagent_watchdog_warning`). */
+  customType?: string;
+  /** Whitelisted scalar details — system messages only. */
+  details?: Record<string, string | number | boolean>;
   /** Inline image attachments — user messages only. */
   images?: PromptImage[];
   activities?: ActivityItem[];
@@ -339,6 +347,49 @@ export function applyFrameToTranscript(
       steering: null,
     };
   }
+  if (frame.type === "message_start" && frame.role === "custom") {
+    const content = typeof frame.content === "string" ? frame.content : "";
+    if (!content.trim()) return { messages, state, steering: null };
+    const card: ChatMessage = {
+      id: nextId(),
+      role: "system",
+      content,
+      customType: typeof frame.customType === "string" ? frame.customType : "custom",
+      ...(frame.details && typeof frame.details === "object"
+        ? { details: frame.details as ChatMessage["details"] }
+        : {}),
+      timestamp: now,
+    };
+    const current = messages.find((m) => m.id === state.assistantId);
+    const bubbleEmpty =
+      !current ||
+      (!current.content &&
+        !current.reasoning &&
+        (current.activities?.length ?? 0) === 0 &&
+        (current.segments?.length ?? 0) === 0);
+    if (bubbleEmpty && current) {
+      // The card opens the run (e.g. a supervisor request that started a
+      // system turn): show it above the still-empty reply bubble.
+      const index = messages.indexOf(current);
+      return {
+        messages: [...messages.slice(0, index), card, ...messages.slice(index)],
+        state,
+        steering: null,
+      };
+    }
+    // Mid-run (a steered watchdog finding): close the current bubble, show
+    // the card, and open a fresh bubble for what the agent says next.
+    const assistantId = nextId();
+    return {
+      messages: [
+        ...messages,
+        card,
+        { id: assistantId, role: "assistant", content: "", timestamp: now },
+      ],
+      state: { ...state, assistantId },
+      steering: null,
+    };
+  }
   let changed = false;
   const next = messages.map((m) => {
     if (m.id !== state.assistantId) return m;
@@ -351,8 +402,10 @@ export function applyFrameToTranscript(
 
 /** One transcript entry from GET /sessions/:id/history. */
 export interface HistoryItem {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "system";
   content?: string;
+  customType?: string;
+  details?: Record<string, string | number | boolean>;
   images?: PromptImage[];
   frames?: AgentFrame[];
   timestamp?: number;
@@ -373,6 +426,11 @@ interface RunSnapshot {
     messages: HistoryItem[];
     contextUsage: unknown;
   };
+  /** `system` = adopted from a Pi extension (no user prompt to echo). */
+  origin?: "user" | "system";
+  /** `notice` = one idle custom message, no agent turn. */
+  kind?: "turn" | "notice";
+  reason?: string;
   frames: SequencedAgentFrame[];
   lastSeq: number;
 }
@@ -444,6 +502,18 @@ function restoreHistory(
   const fallbackTs = Date.now();
   for (const item of items) {
     const timestamp = item.timestamp ?? fallbackTs;
+    if (item.role === "system") {
+      if (!item.content?.trim()) continue;
+      restored.push({
+        id: nextId(),
+        role: "system",
+        content: item.content,
+        customType: item.customType ?? "custom",
+        ...(item.details ? { details: item.details } : {}),
+        timestamp,
+      });
+      continue;
+    }
     if (item.role === "user") {
       restored.push({
         id: nextId(),
@@ -476,6 +546,65 @@ function restoreHistory(
     restored.push(message);
   }
   return restored;
+}
+
+/**
+ * Transcript + reducer state for attaching to a run in progress. A user run
+ * echoes its prompt as a user bubble and waits for the prompt echo frame; a
+ * system run (adopted from a Pi extension) has no prompt, so only the empty
+ * reply bubble is added and the echo is treated as already seen.
+ */
+export function buildRunConsumer(
+  transcript: ChatMessage[],
+  snapshot: {
+    runId: string;
+    prompt: string;
+    images?: PromptImage[];
+    origin?: "user" | "system";
+  },
+  nextId: () => string,
+  now = Date.now(),
+): RunConsumer {
+  const assistantId = nextId();
+  const system = snapshot.origin === "system";
+  return {
+    transcript: [
+      ...transcript,
+      ...(system
+        ? []
+        : [
+            {
+              id: nextId(),
+              role: "user" as const,
+              content: snapshot.prompt,
+              ...(snapshot.images?.length ? { images: snapshot.images } : {}),
+              timestamp: now,
+            },
+          ]),
+      { id: assistantId, role: "assistant", content: "", timestamp: now },
+    ],
+    transcriptState: { assistantId, sawPromptEcho: system },
+    lastSeq: -1,
+    currentRunId: snapshot.runId,
+    outcome: "done",
+    sawDone: false,
+  };
+}
+
+/** Drop a trailing reply bubble that never received content (notice runs). */
+export function pruneEmptyTrailingAssistant(messages: ChatMessage[]): ChatMessage[] {
+  const last = messages[messages.length - 1];
+  if (
+    last &&
+    last.role === "assistant" &&
+    !last.content &&
+    !last.reasoning &&
+    (last.activities?.length ?? 0) === 0 &&
+    (last.segments?.length ?? 0) === 0
+  ) {
+    return messages.slice(0, -1);
+  }
+  return messages;
 }
 
 function finishActivities(
@@ -557,6 +686,12 @@ export function useAgent(projectId?: string) {
   // resolving mid-run must not replace the transcript.
   const sendClaimRef = useRef(false);
   const messageCounter = useRef(0);
+  // Newest run this tab has seen; the idle poll adopts anything newer.
+  const lastRunIdRef = useRef<string | null>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
 
   const nextId = useCallback(() => String(++messageCounter.current), []);
 
@@ -584,6 +719,7 @@ export function useAgent(projectId?: string) {
         consumer.sawDone = true;
       } else if (frame.type === "run_start" && typeof frame.runId === "string") {
         consumer.currentRunId = frame.runId;
+        lastRunIdRef.current = frame.runId;
       }
 
       if (frame.type === "context_usage") {
@@ -690,6 +826,26 @@ export function useAgent(projectId?: string) {
     [applyRunFrame, scopedProjectId],
   );
 
+  /** Reconnect to a live run: pending interview, then the sequenced stream. */
+  const attachToRun = useCallback(
+    async (id: string, consumer: RunConsumer, controller: AbortController) => {
+      await restorePendingInterview(id, consumer, controller.signal);
+      const eventsResponse = await apiFetch(
+        `/sessions/${encodeURIComponent(id)}/run/events?after=${encodeURIComponent(
+          String(Math.max(0, consumer.lastSeq)),
+        )}`,
+        { signal: controller.signal },
+        scopedProjectId,
+        "stream",
+      );
+      if (!eventsResponse.ok) {
+        throw new Error(`run reconnect failed: ${eventsResponse.status}`);
+      }
+      await consumeRunResponse(eventsResponse, consumer);
+    },
+    [consumeRunResponse, restorePendingInterview, scopedProjectId],
+  );
+
   /**
    * Bind an untouched tab to a stored session. The run snapshot is checked
    * before history so a refresh can rebuild an in-flight transcript from its
@@ -707,6 +863,27 @@ export function useAgent(projectId?: string) {
       const controller = new AbortController();
       clientFetchRef.current = controller;
       let activeConsumer: RunConsumer | null = null;
+      const loadHistory = async (): Promise<SessionLoadOutcome> => {
+        const historyResponse = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/history`,
+          { signal: controller.signal },
+          scopedProjectId,
+        );
+        if (!historyResponse.ok) return "gone";
+        const history = (await historyResponse.json()) as {
+          messages?: HistoryItem[];
+          contextUsage?: unknown;
+        };
+        if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) {
+          return "superseded";
+        }
+        bindSession(id);
+        setMessages(restoreHistory(history.messages ?? [], nextId));
+        setContextUsage(parseContextUsage(history.contextUsage));
+        setStatus("ready");
+        setRunState("idle");
+        return "restored";
+      };
       try {
         const stateResponse = await apiFetch(
           `/sessions/${encodeURIComponent(id)}/run/state`,
@@ -719,52 +896,17 @@ export function useAgent(projectId?: string) {
           return "superseded";
         }
 
-        if (state.status === "none") {
-          const historyResponse = await apiFetch(
-            `/sessions/${encodeURIComponent(id)}/history`,
-            { signal: controller.signal },
-            scopedProjectId,
-          );
-          if (!historyResponse.ok) return "gone";
-          const history = (await historyResponse.json()) as {
-            messages?: HistoryItem[];
-            contextUsage?: unknown;
-          };
-          if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) {
-            return "superseded";
-          }
-          bindSession(id);
-          setMessages(restoreHistory(history.messages ?? [], nextId));
-          setContextUsage(parseContextUsage(history.contextUsage));
-          setStatus("ready");
-          setRunState("idle");
-          return "restored";
-        }
+        if (state.status === "none") return await loadHistory();
 
         const snapshot = state.run;
         if (!snapshot) return "gone";
+        lastRunIdRef.current = snapshot.runId;
+        // A notice run is one custom message that is already in the JSONL:
+        // history has it, so there is nothing to replay.
+        if (snapshot.kind === "notice") return await loadHistory();
         bindSession(id);
         const transcript = restoreHistory(snapshot.baseline.messages ?? [], nextId);
-        const timestamp = Date.now();
-        const assistantId = nextId();
-        const consumer: RunConsumer = {
-          transcript: [
-            ...transcript,
-            {
-              id: nextId(),
-              role: "user",
-              content: snapshot.prompt,
-              ...(snapshot.images?.length ? { images: snapshot.images } : {}),
-              timestamp,
-            },
-            { id: assistantId, role: "assistant", content: "", timestamp },
-          ],
-          transcriptState: { assistantId, sawPromptEcho: false },
-          lastSeq: -1,
-          currentRunId: snapshot.runId,
-          outcome: "done",
-          sawDone: false,
-        };
+        const consumer = buildRunConsumer(transcript, snapshot, nextId);
         activeConsumer = consumer;
         setContextUsage(parseContextUsage(snapshot.baseline.contextUsage));
         setMessages(consumer.transcript);
@@ -781,19 +923,7 @@ export function useAgent(projectId?: string) {
           return "restored";
         }
 
-        await restorePendingInterview(id, consumer, controller.signal);
-        const eventsResponse = await apiFetch(
-          `/sessions/${encodeURIComponent(id)}/run/events?after=${encodeURIComponent(
-            String(Math.max(0, consumer.lastSeq)),
-          )}`,
-          { signal: controller.signal },
-          scopedProjectId,
-          "stream",
-        );
-        if (!eventsResponse.ok) {
-          throw new Error(`run reconnect failed: ${eventsResponse.status}`);
-        }
-        await consumeRunResponse(eventsResponse, consumer);
+        await attachToRun(id, consumer, controller);
         if (clientFetchRef.current === controller && mountedRef.current) finalizeRun(consumer);
         return "restored";
       } catch (error) {
@@ -813,15 +943,105 @@ export function useAgent(projectId?: string) {
     },
     [
       applyRunFrame,
+      attachToRun,
       bindSession,
-      consumeRunResponse,
       failRun,
       finalizeRun,
       nextId,
-      restorePendingInterview,
       scopedProjectId,
     ],
   );
+
+  /**
+   * Adopt a run this tab did not start (a system-initiated run, or a run
+   * started from another window). Appends to the current transcript and
+   * attaches to the live stream exactly like a refresh does.
+   */
+  const adoptRun = useCallback(
+    async (id: string, runId: string) => {
+      const controller = new AbortController();
+      clientFetchRef.current = controller;
+      let consumer: RunConsumer | null = null;
+      try {
+        const stateResponse = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/run/state`,
+          { signal: controller.signal, cache: "no-store" },
+          scopedProjectId,
+        );
+        if (!stateResponse.ok) return;
+        const state = (await stateResponse.json()) as RunStateResponse;
+        const snapshot = state.run;
+        if (state.status === "none" || !snapshot || snapshot.runId !== runId) return;
+        if (!mountedRef.current || sendClaimRef.current) return;
+        lastRunIdRef.current = snapshot.runId;
+        consumer = buildRunConsumer(messagesRef.current, snapshot, nextId);
+        setMessages(consumer.transcript);
+        setStatus(state.status === "running" ? "streaming" : "ready");
+        setRunState(state.status === "running" ? "running" : "done");
+        for (const frame of snapshot.frames ?? []) applyRunFrame(consumer, frame);
+        if (Number.isSafeInteger(snapshot.lastSeq)) {
+          consumer.lastSeq = Math.max(consumer.lastSeq, snapshot.lastSeq);
+        }
+        if (state.status !== "complete") await attachToRun(id, consumer, controller);
+        if (clientFetchRef.current === controller && mountedRef.current) {
+          finalizeRun(consumer);
+          if (snapshot.kind === "notice") {
+            // No agent turn happened: drop the reply bubble the consumer opened
+            // and leave the tab idle.
+            consumer.transcript = pruneEmptyTrailingAssistant(consumer.transcript);
+            messagePublisher.publish(consumer.transcript);
+            setRunState("idle");
+          }
+        }
+      } catch (error) {
+        if (clientFetchRef.current === controller && mountedRef.current && consumer) {
+          failRun(consumer, isAbortError(error));
+        }
+      } finally {
+        if (clientFetchRef.current === controller) clientFetchRef.current = null;
+      }
+    },
+    [applyRunFrame, attachToRun, failRun, finalizeRun, messagePublisher, nextId, scopedProjectId],
+  );
+
+  // Idle poll: a Pi extension can start a turn on this session while the tab
+  // is not streaming (a subagent's supervisor request, a scheduled run's
+  // completion notice). The server adopts it as a system run; this poll
+  // notices the new run id and attaches. Cheap: metadata only, no frames.
+  useEffect(() => {
+    const id = sessionId;
+    if (!id || status === "streaming" || status === "submitted") return;
+    let cancelled = false;
+    let ticks = 0;
+    const tick = async () => {
+      ticks++;
+      // Hidden tabs probe every 30s, visible ones every 5s.
+      if (cancelled || (document.hidden && ticks % 6 !== 0)) return;
+      if (sendClaimRef.current || clientFetchRef.current) return;
+      try {
+        const response = await apiFetch(
+          `/sessions/${encodeURIComponent(id)}/run/state?frames=0`,
+          { cache: "no-store" },
+          scopedProjectId,
+        );
+        if (!response.ok || cancelled) return;
+        const state = (await response.json()) as RunStateResponse;
+        if (state.status === "none" || !state.run) return;
+        if (state.run.runId === lastRunIdRef.current) return;
+        if (cancelled || sendClaimRef.current || clientFetchRef.current) return;
+        await adoptRun(id, state.run.runId);
+      } catch {
+        // Next tick retries; the poll is a convenience, not the source of truth.
+      }
+    };
+    const timer = setInterval(() => {
+      void tick();
+    }, IDLE_RUN_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [adoptRun, scopedProjectId, sessionId, status]);
 
   const ensureSession = useCallback(async (signal?: AbortSignal) => {
     if (sessionIdRef.current) return sessionIdRef.current;
@@ -1007,6 +1227,7 @@ export function useAgent(projectId?: string) {
     setPendingSteers([]);
     setStatus("ready");
     setRunState("idle");
+    lastRunIdRef.current = null;
     bindSession(null);
   }, [bindSession, messagePublisher]);
 

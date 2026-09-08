@@ -52,6 +52,7 @@ import {
   ToolActivityList,
 } from "@/components/tool-activity";
 import { InterviewCard } from "@/components/interview-form";
+import { SystemCard } from "@/components/system-card";
 import { KadyFileIcon } from "@/components/file-icon";
 import { ScientificResultCard } from "@/components/scientific-result-card";
 import { hasDirectoryEntries, traverseDroppedEntries } from "@/lib/directory-upload";
@@ -1296,6 +1297,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
   onCopy: (id: string, content: string) => void;
   copied: boolean;
 }) {
+  // Extension notices and compaction markers sit between the bubbles.
+  if (message.role === "system") return <SystemCard message={message} />;
   return (
     <Message from={message.role} key={message.id}>
       <MessageContent>

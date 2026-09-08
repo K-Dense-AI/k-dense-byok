@@ -91,6 +91,24 @@ export function getModelRegistry(): ModelRegistry {
 /** Max live (in-memory) sessions kept per project; oldest idle ones are evicted. */
 const MAX_LIVE_PER_PROJECT = 10;
 
+/**
+ * Hook for the session observer (agent/session-observer.ts). Registered from
+ * index.ts rather than imported here: the observer needs the run pipeline,
+ * which imports this module for pin/unpin, and this module has top-level
+ * awaits — keep the cycle out.
+ */
+export type SessionObserverFactory = (ctx: {
+  projectId: string;
+  paths: ProjectPaths;
+  session: AgentSession;
+}) => () => void;
+let observerFactory: SessionObserverFactory | null = null;
+export function setSessionObserver(factory: SessionObserverFactory | null): void {
+  observerFactory = factory;
+}
+/** Detach functions of attached observers, keyed like `live`. */
+const observers = new Map<string, () => void>();
+
 // Insertion-ordered Map doubles as an LRU: we delete+re-set an entry on access
 // so the first matching key for a project is always the least-recently-used.
 const live = new Map<string, AgentSession>();
@@ -127,6 +145,17 @@ function evictOverCap(projectId: string): void {
 
 /** Dispose one live session and drop everything keyed off it. */
 function release(projectId: string, key: string, session: AgentSession): void {
+  // Detach before dispose so an in-flight system run can finalize its handle
+  // while the session is still queryable.
+  const detach = observers.get(key);
+  if (detach) {
+    observers.delete(key);
+    try {
+      detach();
+    } catch {
+      /* an observer failure must not block disposal */
+    }
+  }
   session.dispose();
   live.delete(key);
   pinned.delete(key);
@@ -252,6 +281,9 @@ async function build(
     ],
   });
   holder.session = session;
+  if (observerFactory) {
+    observers.set(keyFor(projectId, session.sessionId), observerFactory({ projectId, paths, session }));
+  }
   return session;
 }
 

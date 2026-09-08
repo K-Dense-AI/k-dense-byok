@@ -66,6 +66,7 @@ class FakeSession {
     await this.promptWait;
     this.emit({ type: "agent_end" });
     this.isStreaming = false;
+    this.emit({ type: "agent_settled" });
   }
   getContextUsage() {
     return { tokens: 12, contextWindow: 1_000, percent: 1.2 };
@@ -126,6 +127,7 @@ vi.mock("../src/agent/session-registry.ts", () => ({
   disposeSession: vi.fn(),
   pinSession: vi.fn(),
   unpinSession: vi.fn(),
+  setSessionObserver: vi.fn(),
 }));
 
 import { buildApp } from "../src/index.ts";
@@ -133,6 +135,8 @@ import { PROJECTS_ROOT } from "../src/config.ts";
 import { createProject } from "../src/projects.ts";
 import { recordRun } from "../src/cost/ledger.ts";
 import { runBroker } from "../src/agent/run-broker.ts";
+import { attachSessionObserver } from "../src/agent/session-observer.ts";
+import { resolvePaths } from "../src/projects.ts";
 
 const app = await buildApp();
 
@@ -476,5 +480,58 @@ describe("persistent run routes", () => {
       expect(runBroker.state("default", "s1").status).toBe("complete");
     });
     expect(session.aborted).toBe(false);
+  });
+});
+
+describe("system-initiated runs vs POST /sessions/:id/run", () => {
+  it("409s while an observer-owned system run is live, then admits a user run", async () => {
+    const s = new FakeSession();
+    s.isStreaming = false;
+    fakeSessions.set("s1", s);
+    const detach = attachSessionObserver({
+      projectId: "default",
+      paths: resolvePaths("default"),
+      session: s as never,
+      log: { warn: () => {}, error: () => {} },
+    });
+    try {
+      s.isStreaming = true;
+      s.emit({ type: "agent_start" });
+      expect(runBroker.state("default", "s1")).toMatchObject({
+        status: "running",
+        run: { origin: "system", kind: "turn" },
+      });
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/sessions/s1/run",
+        headers: { "x-project-id": "default", "content-type": "application/json" },
+        payload: { message: "hi" },
+      });
+      expect(blocked.statusCode).toBe(409);
+
+      s.emit({ type: "agent_end" });
+      s.isStreaming = false;
+      s.emit({ type: "agent_settled" });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(runBroker.state("default", "s1").status).toBe("complete");
+
+      const state = await app.inject({
+        method: "GET",
+        url: "/sessions/s1/run/state?frames=0",
+        headers: { "x-project-id": "default" },
+      });
+      expect(state.json()).toMatchObject({ status: "complete", run: { origin: "system", frames: [] } });
+
+      const started = await app.inject({
+        method: "POST",
+        url: "/sessions/s1/run",
+        headers: { "x-project-id": "default", "content-type": "application/json" },
+        payload: { message: "hi" },
+      });
+      expect(started.statusCode).toBe(200);
+      expect(s.promptCalls).toHaveLength(1);
+    } finally {
+      detach();
+    }
   });
 });

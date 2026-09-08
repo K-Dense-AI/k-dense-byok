@@ -7,13 +7,14 @@
  * reasoning blocks, and tool activity rows with args and capped results.
  */
 import {
+  customMessageFrame,
   relativizeSandboxPaths,
   skillFieldFor,
   toolResultFields,
   type ClientFrame,
 } from "./events.ts";
 import {
-  readRows,
+  readEntries,
   textOf,
   type TextPart,
   type ThinkingPart,
@@ -21,9 +22,14 @@ import {
 } from "./session-export.ts";
 
 export interface HistoryMessage {
-  role: "user" | "assistant";
-  /** Prompt text — user messages only. */
+  /** `system` = an extension-injected custom message or a compaction marker. */
+  role: "user" | "assistant" | "system";
+  /** Prompt text (user) or rendered notice text (system). */
   content?: string;
+  /** Custom message type — system messages only (e.g. `subagent_watchdog_warning`). */
+  customType?: string;
+  /** Whitelisted scalar details — system messages only. */
+  details?: Record<string, string | number | boolean>;
   /** Inline image attachments (base64 + mime type) — user messages only. */
   images?: { data: string; mimeType: string }[];
   /** Ordered replay frames — assistant messages only. */
@@ -58,7 +64,40 @@ export function toHistory(file: string, sandboxRoot = ""): HistoryMessage[] {
     assistant.frames!.push(f);
   };
 
-  for (const row of readRows(file)) {
+  const pushSystem = (frame: ClientFrame | null, timestamp?: string) => {
+    if (!frame) return;
+    const ms = timestamp ? Date.parse(timestamp) : NaN;
+    out.push({
+      role: "system",
+      content: typeof frame.content === "string" ? frame.content : "",
+      customType: typeof frame.customType === "string" ? frame.customType : "custom",
+      ...(frame.details ? { details: frame.details as HistoryMessage["details"] } : {}),
+      ...(Number.isFinite(ms) ? { timestamp: ms } : {}),
+    });
+    // The card sits between turns: whatever the agent says next opens a new
+    // bubble, mirroring the live order (card, then reply).
+    assistant = null;
+  };
+
+  for (const row of readEntries(file)) {
+    if (row.type === "custom_message") {
+      pushSystem(customMessageFrame(row, sandboxRoot), row.timestamp);
+      continue;
+    }
+    if (row.type === "compaction") {
+      pushSystem(
+        customMessageFrame(
+          {
+            customType: "compaction",
+            content: "Context compacted",
+            details: { tokensBefore: row.tokensBefore },
+          },
+          sandboxRoot,
+        ),
+        row.timestamp,
+      );
+      continue;
+    }
     const m = row.message;
     if (m.role === "user") {
       const text = textOf(m.content);

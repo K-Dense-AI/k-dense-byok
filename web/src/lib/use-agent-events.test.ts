@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyFrameToMessage,
   applyFrameToTranscript,
+  buildRunConsumer,
+  pruneEmptyTrailingAssistant,
   type ChatMessage,
   type TranscriptRunState,
 } from "@/lib/use-agent";
@@ -239,5 +241,97 @@ describe("applyFrameToTranscript", () => {
       5,
     );
     expect(r.messages).toBe(messages);
+  });
+});
+
+describe("custom (system) messages in the transcript", () => {
+  const makeNextId = () => {
+    let n = 0;
+    return () => `n${++n}`;
+  };
+  const start = () => {
+    const messages: ChatMessage[] = [
+      { id: "u", role: "user", content: "run it", timestamp: 1 },
+      { id: "a", role: "assistant", content: "", timestamp: 1 },
+    ];
+    const state: TranscriptRunState = { assistantId: "a", sawPromptEcho: true };
+    return { messages, state };
+  };
+  const supervisor = {
+    type: "message_start",
+    role: "custom",
+    customType: "subagent_supervisor_request",
+    content: "Child asks: which cutoff?",
+    details: { agent: "worker", reason: "need_decision" },
+  };
+
+  it("inserts the card above a still-empty reply bubble", () => {
+    const { messages, state } = start();
+    const r = applyFrameToTranscript(messages, state, supervisor, makeNextId(), 5);
+    expect(r.messages.map((m) => m.role)).toEqual(["user", "system", "assistant"]);
+    expect(r.messages[1]).toMatchObject({
+      role: "system",
+      customType: "subagent_supervisor_request",
+      content: "Child asks: which cutoff?",
+      details: { agent: "worker" },
+    });
+    expect(r.state.assistantId).toBe("a");
+    const r2 = applyFrameToTranscript(r.messages, r.state, { type: "text_delta", delta: "relaying" }, makeNextId(), 6);
+    expect(r2.messages[2].content).toBe("relaying");
+  });
+
+  it("splits the transcript when the bubble already has content (mid-run watchdog finding)", () => {
+    const { messages, state } = start();
+    const nextId = makeNextId();
+    let r = applyFrameToTranscript(messages, state, { type: "text_delta", delta: "working" }, nextId, 5);
+    r = applyFrameToTranscript(
+      r.messages,
+      r.state,
+      { type: "message_start", role: "custom", customType: "subagent_watchdog_warning", content: "Tests not run", details: { severity: "blocker" } },
+      nextId,
+      6,
+    );
+    expect(r.messages.map((m) => m.role)).toEqual(["user", "assistant", "system", "assistant"]);
+    expect(r.messages[1].content).toBe("working");
+    expect(r.state.assistantId).toBe(r.messages[3].id);
+    r = applyFrameToTranscript(r.messages, r.state, { type: "text_delta", delta: "fixing" }, nextId, 7);
+    expect(r.messages[3].content).toBe("fixing");
+  });
+
+  it("ignores a custom message without content", () => {
+    const { messages, state } = start();
+    const r = applyFrameToTranscript(messages, state, { type: "message_start", role: "custom", customType: "x", content: "  " }, makeNextId(), 5);
+    expect(r.messages).toBe(messages);
+  });
+});
+
+describe("buildRunConsumer / pruneEmptyTrailingAssistant", () => {
+  const nextId = (() => {
+    let n = 0;
+    return () => `c${++n}`;
+  })();
+  const history: ChatMessage[] = [{ id: "h", role: "user", content: "earlier", timestamp: 1 }];
+
+  it("echoes the prompt for a user run and waits for the echo frame", () => {
+    const c = buildRunConsumer(history, { runId: "r1", prompt: "new", images: [{ data: "aW1n", mimeType: "image/png" }] }, nextId, 9);
+    expect(c.transcript.map((m) => m.role)).toEqual(["user", "user", "assistant"]);
+    expect(c.transcript[1]).toMatchObject({ content: "new", images: [{ mimeType: "image/png" }] });
+    expect(c.transcriptState).toEqual({ assistantId: c.transcript[2].id, sawPromptEcho: false });
+    expect(c.currentRunId).toBe("r1");
+  });
+
+  it("adds only a reply bubble for a system run and treats the echo as seen", () => {
+    const c = buildRunConsumer(history, { runId: "sys", prompt: "", origin: "system" }, nextId, 9);
+    expect(c.transcript.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(c.transcriptState.sawPromptEcho).toBe(true);
+  });
+
+  it("prunes only an empty trailing assistant bubble", () => {
+    const empty: ChatMessage = { id: "e", role: "assistant", content: "", timestamp: 1 };
+    const full: ChatMessage = { id: "f", role: "assistant", content: "done", timestamp: 1 };
+    expect(pruneEmptyTrailingAssistant([...history, empty])).toEqual(history);
+    const kept = [...history, full];
+    expect(pruneEmptyTrailingAssistant(kept)).toBe(kept);
+    expect(pruneEmptyTrailingAssistant([...history, { ...empty, reasoning: "hmm" }])).toHaveLength(2);
   });
 });

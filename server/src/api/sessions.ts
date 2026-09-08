@@ -10,12 +10,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { activePaths, getProject, touchProject } from "../projects.ts";
 import { corsResponseHeaders } from "../cors.ts";
 import { currentProjectId } from "../scope.ts";
-import {
-  contextUsageForClient,
-  contextUsageFrame,
-  toClientFrame,
-  type ClientFrame,
-} from "../agent/events.ts";
+import { contextUsageForClient } from "../agent/events.ts";
 import { setFusionConfig } from "../agent/fusion-bridge.ts";
 import {
   cancelInterviewsForSession,
@@ -32,10 +27,8 @@ import {
 import {
   assertModelAuthentication,
   ModelAuthenticationError,
-  modelReference,
   resolveModel,
 } from "../agent/models.ts";
-import { explainProviderRefusal } from "../agent/model-refusal.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { withNotebookArtifactHealth } from "../agent/notebook-artifacts.ts";
@@ -48,9 +41,14 @@ import {
   writeNotebookAnnotations,
 } from "../agent/notebook-annotations.ts";
 import { MethodsDraftError, runMethodsDraft } from "../agent/methods-draft.ts";
-import { mintRunId, setSessionRunId } from "../agent/run-ids.ts";
 import { runBroker, type RunHandle } from "../agent/run-broker.ts";
-import { ProvenanceRecorder } from "../provenance/recorder.ts";
+import {
+  claimRun,
+  executeRun,
+  isRunClaimed,
+  openRun,
+  type OpenedRun,
+} from "../agent/run-pipeline.ts";
 import { SandboxError } from "../sandbox-fs.ts";
 import {
   findSessionFile,
@@ -64,38 +62,14 @@ import {
   getModelRuntime,
   getSession,
   listSessions,
-  pinSession,
-  unpinSession,
 } from "../agent/session-registry.ts";
 import { parseThinkingLevel } from "../agent/thinking.ts";
-import {
-  addTurnUsage,
-  emptySnapshot,
-  isBudgetExceeded,
-  recordRun,
-  sessionCostSummary,
-  snapshotDelta,
-  snapshotMax,
-  trackInFlightRun,
-  untrackInFlightRun,
-  type CostSnapshot,
-} from "../cost/ledger.ts";
+import { isBudgetExceeded, sessionCostSummary } from "../cost/ledger.ts";
 import {
   billingCountsTowardBudget,
   billingForModel,
   type BillingContext,
 } from "../cost/billing.ts";
-
-function snapshot(session: { getSessionStats(): { cost: number; tokens: { input: number; output: number; cacheRead: number; total: number } } }): CostSnapshot {
-  const s = session.getSessionStats();
-  return {
-    costUsd: s.cost,
-    input: s.tokens.input,
-    output: s.tokens.output,
-    cacheRead: s.tokens.cacheRead,
-    total: s.tokens.total,
-  };
-}
 
 interface RunBody {
   message?: string;
@@ -110,12 +84,6 @@ interface RunBody {
   /** Inline image attachments (base64 + mime type); ride the user message as image blocks. */
   images?: unknown;
 }
-
-// Sessions with a run in flight, claimed synchronously. `session.isStreaming`
-// flips true only after awaits inside prompt(), so concurrent POSTs could
-// otherwise both pass the guard and the loser's close handler would abort the
-// winner's live turn.
-const activeRuns = new Set<string>();
 
 /** Attach one HTTP response to a broker-owned run. Closing the response only
  * removes this observer; the run itself remains owned by the broker. */
@@ -411,10 +379,16 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     return { pending: pendingInterviewFor(currentProjectId(), req.params.id) };
   });
 
-  app.get<{ Params: { id: string } }>("/sessions/:id/run/state", async (req, reply) => {
-    reply.header("Cache-Control", "no-store");
-    return runBroker.state(currentProjectId(), req.params.id);
-  });
+  // `?frames=0` returns metadata only (no replay buffer/baseline) so an idle
+  // tab can poll cheaply for a run it did not start (system-initiated runs).
+  app.get<{ Params: { id: string }; Querystring: { frames?: string } }>(
+    "/sessions/:id/run/state",
+    async (req, reply) => {
+      reply.header("Cache-Control", "no-store");
+      const includeFrames = req.query.frames !== "0";
+      return runBroker.state(currentProjectId(), req.params.id, { includeFrames });
+    },
+  );
 
   app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
     "/sessions/:id/run/events",
@@ -522,9 +496,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       // than a normal path. (Pi's followUp queueing returns immediately, which
       // would orphan the SSE stream and abort the live turn — so we reject.)
       const sessionId = req.params.id;
-      const runKey = `${projectId}:${sessionId}`;
       const retained = runBroker.get(projectId, sessionId);
-      if (session.isStreaming || activeRuns.has(runKey) || (retained && !retained.isComplete)) {
+      if (
+        session.isStreaming ||
+        isRunClaimed(projectId, sessionId) ||
+        (retained && !retained.isComplete)
+      ) {
         reply.code(409);
         return { detail: "Session is already streaming a response" };
       }
@@ -549,10 +526,11 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       };
       // Claim before the first awaited auth check so concurrent requests cannot
       // both pass the run guard. Preflight failures release the claim below.
-      activeRuns.add(runKey);
-      // Held for the whole claim, not just while streaming: another tab opening
-      // during model setup could otherwise evict this session out from under us.
-      pinSession(projectId, session.sessionId);
+      const claim = claimRun(projectId, session.sessionId);
+      if (!claim) {
+        reply.code(409);
+        return { detail: "Session is already streaming a response" };
+      }
       const isFusion = Boolean(body.model && body.model.startsWith("fusion/"));
       let requestedModel: ReturnType<typeof resolveModel>;
       let runBilling: BillingContext;
@@ -563,8 +541,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         await assertModelAuthentication(requestedModel, getModelRuntime());
         runBilling = await billingForModel(requestedModel, getModelRuntime());
       } catch (error) {
-        unpinSession(projectId, session.sessionId);
-        activeRuns.delete(runKey);
+        claim.release();
         reply.code(error instanceof ModelAuthenticationError ? 401 : 400);
         return {
           detail:
@@ -573,51 +550,33 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             error instanceof ModelAuthenticationError ? "provider_not_connected" : "invalid_model",
         };
       }
-      // One id per run invocation; notebook entries appended during this run
-      // (lead tool + subagent harvest) are stamped with it. Cleared in the
-      // owner cleanup so it covers every exit path.
-      const runId = mintRunId();
-      let handle: RunHandle;
+      // For a Fusion run we disable Pi's local tools for the turn (see below).
+      // Remember the real active set so we can restore it in cleanup; `null`
+      // means "not a fusion run, nothing to restore".
+      let savedToolNames: string[] | null = null;
+      let opened: OpenedRun;
       try {
-        setSessionRunId(projectId, session.sessionId, runId);
-        handle = runBroker.start(projectId, sessionId, {
-          runId,
+        opened = openRun(claim, {
+          origin: "user",
+          kind: "turn",
           prompt,
           images: parsedImages.images.map(({ data, mimeType }) => ({ data, mimeType })),
           baseline,
+          session,
+          onCleanup: () => {
+            if (savedToolNames !== null) {
+              session.setActiveToolsByName(savedToolNames);
+              savedToolNames = null;
+            }
+          },
         });
-        // Publish immediately, before any awaited model setup, so refresh recovery
-        // can discover the accepted run during that setup window.
-        handle.publish({ type: "run_start", runId });
       } catch (err) {
-        // The claim is taken but nothing owns it yet: without this release the
-        // tab stays permanently 409-locked until the process restarts.
-        setSessionRunId(projectId, session.sessionId, null);
-        unpinSession(projectId, session.sessionId);
-        activeRuns.delete(runKey);
+        // openRun released the claim; without that the tab would stay
+        // permanently 409-locked until the process restarts.
         reply.code(500);
         return { detail: (err as Error).message };
       }
-      // For a Fusion run we disable Pi's local tools for the turn (see below).
-      // Remember the real active set so we can restore it in the finally; `null`
-      // means "not a fusion run, nothing to restore".
-      let savedToolNames: string[] | null = null;
-      let detachedOwner = false;
-      const log = req.log;
-      const cleanup = () => {
-        // Restore the local tool set disabled for a fusion run. No-op for
-        // non-fusion runs (savedToolNames stays null).
-        if (savedToolNames !== null) {
-          session.setActiveToolsByName(savedToolNames);
-          savedToolNames = null;
-        }
-        setSessionRunId(projectId, session.sessionId, null);
-        // Runs after the ledger row is written (the owner's inner finally),
-        // so the run's spend is never invisible to a concurrent admission.
-        untrackInFlightRun(runKey);
-        unpinSession(projectId, session.sessionId);
-        activeRuns.delete(runKey);
-      };
+      const { handle } = opened;
       try {
         // Stash this run's selected compute instance so the modal_run tool uses
         // it as the default when the agent doesn't name one ("local"/unset clears it).
@@ -648,12 +607,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             // is the supported API: it empties agent.state.tools (so the loop's
             // snapshot carries no tools and any stray tool_call resolves to "not
             // found") AND rebuilds the system prompt without tool guidelines.
-            // Restored in the finally so non-fusion runs keep all tools.
+            // Restored in cleanup so non-fusion runs keep all tools.
             savedToolNames = session.getActiveToolNames();
             session.setActiveToolsByName([]);
           } catch (err) {
             // Make sure no stale fusion config rewrites this run's body.
-            // (The outer finally releases the activeRuns claim on return.)
+            // (The outer finally abandons the run and releases the claim.)
             setFusionConfig(projectId, session.sessionId, null);
             handle.publish({
               type: "error",
@@ -692,185 +651,35 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         // Model selection can change the context window. Refresh the baseline
         // value and publish the configured model's usage before prompt().
         baseline.contextUsage = contextUsageForClient(session) ?? null;
-        const publishContextUsage = () => {
-          const frame = contextUsageFrame(contextUsageForClient(session));
-          if (frame) handle.publish(frame);
-        };
-        publishContextUsage();
+        opened.publishContextUsage();
 
         // The detached task owns the Pi run and every finalizer. HTTP responses
         // below are observers only, so browser refresh/socket close cannot abort
         // or skip ledger/tool restoration. projectId/paths/sessionId are already
         // captured; no AsyncLocalStorage-backed project lookup occurs here.
-        detachedOwner = true;
-        void (async () => {
-          let unsubscribePi: (() => void) | null = null;
-          try {
-            // Explicit POST /abort may have raced with awaited model setup.
-            // In that case abort is authoritative and prompt must never start.
-            if (handle.isAbortRequested) return;
-
-            // Hard budget cap: refuse to run if the project has reached its limit.
-            const budget = isBudgetExceeded(projectId);
-            if (billingCountsTowardBudget(runBilling) && budget.exceeded) {
-              handle.publish({
-                type: "error",
-                kind: "budget",
-                message:
-                  `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
-                  `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project ` +
-                  `settings and retry.`,
-              });
-              return;
-            }
-
-            // Usage tallied straight from turn_end events. getSessionStats() is
-            // recomputed from the in-context messages, so auto-compaction mid-run
-            // can shrink the cumulative stats and make the before/after delta lie
-            // low; the per-turn events are immune to that.
-            const turnTally = emptySnapshot();
-            // Observational provenance: binds each tool call to the sandbox
-            // files it actually read and wrote. Constructed before prompt() so
-            // its baseline sandbox walk overlaps the first model round-trip.
-            const provenance = new ProvenanceRecorder({
-              projectId,
-              sessionId,
-              sandboxRoot: paths.sandbox,
-              runId,
-              getModel: () => (session.model ? modelReference(session.model) : undefined),
-              onError: (err) => log.warn({ err }, "provenance recorder step failed"),
-            });
-            // A provider refusal reaches the client as an opaque
-            // "Provider finish_reason: content_filter". Attach what to do about
-            // it, naming the enabled skills known to cause it — the classifier
-            // reads the system prompt, so the user cannot find the cause by
-            // rereading what they typed.
-            const withRefusalGuidance = (frame: ClientFrame): ClientFrame =>
-              frame.type === "error" && typeof frame.message === "string"
-                ? {
-                    ...frame,
-                    message: explainProviderRefusal(frame.message, {
-                      projectId,
-                      modelRef: session.model ? modelReference(session.model) : undefined,
-                    }),
-                  }
-                : frame;
-            unsubscribePi = session.subscribe((ev) => {
-              provenance.observe(ev);
-              if (ev.type === "turn_end") {
-                const usage = (ev.message as {
-                  usage?: Parameters<typeof addTurnUsage>[1];
-                }).usage;
-                if (usage) addTurnUsage(turnTally, usage);
-              }
-              const frame = toClientFrame(ev, paths.sandbox);
-              if (frame) handle.publish(withRefusalGuidance(frame));
-              if (ev.type === "turn_end") publishContextUsage();
-            });
-
-            // errorMessage is sticky on the session; only report it if THIS run set it.
-            const priorError = session.state.errorMessage;
-            const before = snapshot(session);
-            // Publish this run's live spend so a concurrent run in another tab
-            // is admitted against what we are actually spending, not against
-            // the ledger total from before this run started.
-            if (billingCountsTowardBudget(runBilling)) {
-              trackInFlightRun(runKey, projectId, () =>
-                Math.max(0, snapshot(session).costUsd - before.costUsd),
-              );
-            }
-            try {
-              await session.prompt(
-                prompt,
-                parsedImages.images.length > 0 ? { images: parsedImages.images } : undefined,
-              );
-              // Surface a provider/agent error that didn't already stream as a
-              // frame (e.g. auth failure with an empty assistant turn).
-              const errorMessage = session.state.errorMessage;
-              if (errorMessage && errorMessage !== priorError) {
-                handle.publish(
-                  withRefusalGuidance({ type: "error", message: errorMessage }),
-                );
-              }
-            } catch (err) {
-              handle.publish({ type: "error", message: (err as Error).message });
-            } finally {
-              unsubscribePi();
-              unsubscribePi = null;
-              // Drain queued provenance scans before the terminal frames go out,
-              // so a client that reads provenance on `done` sees a complete file.
-              try {
-                await provenance.flush();
-              } catch (err) {
-                log.warn({ err }, "failed to flush provenance");
-              }
-              // Ledger in the finally: a run that threw mid-turn still spent real
-              // tokens. The stats delta catches a partial turn that never reached
-              // turn_end; the tally catches compaction — take the max of the two.
-              try {
-                const run = snapshotMax(snapshotDelta(before, snapshot(session)), turnTally);
-                const entry = recordRun({
-                  sessionId,
-                  projectId,
-                  model: session.model ? modelReference(session.model) : "unknown",
-                  before: emptySnapshot(),
-                  after: run,
-                  billing: runBilling,
-                });
-                const stats = session.getSessionStats();
-                // `cost` is the session's full ledgered spend (subagents included,
-                // restart/compaction-proof); `tokens` is Pi's in-context cumulative;
-                // `runCost`/`runTokens` are the delta for THIS turn.
-                publishContextUsage();
-                handle.publish({
-                  type: "cost",
-                  cost: sessionCostSummary(sessionId, projectId).totalUsd,
-                  tokens: stats.tokens,
-                  runCost: entry?.costUsd ?? 0,
-                  runTokens: run.total,
-                  runBillingMode: runBilling.billingMode,
-                  runProvider: runBilling.provider,
-                  ...(entry?.listPriceUsd !== undefined
-                    ? { runListPriceUsd: entry.listPriceUsd }
-                    : {}),
-                });
-              } catch (err) {
-                log.warn({ err }, "failed to ledger run cost");
-              }
-            }
-          } catch (err) {
-            log.error({ err }, "detached run failed");
-            if (!handle.isComplete) {
-              handle.publish({ type: "error", message: (err as Error).message });
-            }
-          } finally {
-            unsubscribePi?.();
-            if (!handle.isComplete) {
-              handle.publish({ type: "done" });
-              handle.complete();
-            }
-            cleanup();
-          }
-        })();
+        void executeRun(opened, {
+          session,
+          paths,
+          billing: runBilling,
+          budgetPolicy: "refuse",
+          log: req.log,
+          run: () =>
+            session.prompt(
+              prompt,
+              parsedImages.images.length > 0 ? { images: parsedImages.images } : undefined,
+            ),
+        });
 
         // POST /run remains an SSE endpoint, now subscribed to the same replay
         // buffer used by reconnecting GET /run/events clients.
         streamRun(req, reply, handle);
       } catch (err) {
-        if (!detachedOwner && !handle.isComplete) {
-          handle.publish({ type: "error", message: (err as Error).message });
-        }
+        opened.abandon(err as Error);
         throw err;
       } finally {
         // Once handed off, the detached owner performs cleanup after Pi and
         // ledger finalization. Preparation failures still clean up here.
-        if (!detachedOwner) {
-          if (!handle.isComplete) {
-            handle.publish({ type: "done" });
-            handle.complete();
-          }
-          cleanup();
-        }
+        opened.abandon();
       }
     },
   );
