@@ -6,7 +6,7 @@ import { modalJobManager } from "../modal/manager.ts";
 import { subagentsPackageDir } from "./agent-files.ts";
 import { MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import { PDF_ANNOTATION_TOOL_NAMES } from "./pdf-annotation-tool.ts";
-import { reconcileBuiltinTools } from "./builtin-tool-overrides.ts";
+import { reconcileBuiltinTools, uniqueTools } from "./builtin-tool-overrides.ts";
 
 export function kadyModalPackageDir(): string {
   return path.resolve(import.meta.dirname, "..", "..", "pi-packages", "kady-modal");
@@ -132,7 +132,7 @@ export function seedBuiltinAgentModalTools(paths: ProjectPaths): boolean {
         existing: existingTools,
         declared: builtin.tools,
         add: MODAL_TOOL_NAMES,
-        shapes: [generatedNotebook, generatedModal, generatedModalWithPdf],
+        shapes: [generatedNotebook, generatedModal, generatedModalWithPdf].flatMap((shape) => [shape, uniqueTools([...shape, "notebook_search"])]),
       });
       if (!next) continue;
       overrides[builtin.name] = { ...override, tools: next };

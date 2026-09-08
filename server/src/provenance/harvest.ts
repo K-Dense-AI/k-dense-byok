@@ -50,6 +50,7 @@ const READ_ONLY_TOOLS = new Set([
   "get_search_content",
   "notebook",
   "scientific_result",
+  "notebook_search",
   "list_pdf_annotations",
   "modal_status",
   "modal_instances",

@@ -7,6 +7,7 @@ import { createProject, resolvePaths } from "../src/projects.ts";
 import { withActiveProject } from "../src/scope.ts";
 import { emptySnapshot, recordRun, sessionCostSummary } from "../src/cost/ledger.ts";
 import { appendNotebookEntry, type NotebookEntry } from "../src/agent/notebook-store.ts";
+import { previewAnalysisPlan, freezeAnalysisPlan, recordPlanDeviation } from "../src/agent/notebook-plans.ts";
 import {
   METHODS_DRAFT_SESSION_ID,
   buildMethodsDraftContext,
@@ -72,12 +73,49 @@ describe("buildMethodsDraftContext", () => {
     expect(text).toContain("artifacts: pca.png");
   });
 
+  it("excludes superseded methods and preserves source ids, limitations and check warnings", () => {
+    const ctx = buildMethodsDraftContext([
+      entryOf({ id: "old", title: "Incorrect method" }),
+      entryOf({ id: "new", timestamp: 2000, supersedes: "old", title: "Corrected method", limitations: ["Seed not recorded"], outcome: "inconclusive", evidence: [{ entryId: "h", relation: "inconclusive" }], artifactHealth: [{ path: "result.csv", status: "changed", checkedAt: 3000, reason: "Needs review" }] }),
+    ], { sessionId: "s" });
+    const digest = ctx.messages[0].content as string;
+    expect(digest).not.toContain("METHOD: Incorrect method");
+    expect(digest).toContain("source entry: new");
+    expect(digest).toContain("Seed not recorded");
+    expect(digest).toContain("artifact check result.csv: changed");
+    expect(digest).toContain("evidence inconclusive: h");
+  });
+
   it("shows the stance line referencing the target title", () => {
     expect(text).toContain("supports: Six populations exist");
   });
 });
 
 describe("runMethodsDraft", () => {
+  it("does not spend an AI call drafting performed methods from a plan alone", async () => {
+    const p = createProject({ name: "Plan only" });
+    appendNotebookEntry("s", entryOf({ id: "h", type: "hypothesis" }), p.id);
+    await expect(runMethodsDraft("s", p.id, {}, async () => { throw new Error("must not call model"); })).rejects.toThrow(/plan alone is not evidence/);
+  });
+
+  it("includes real frozen plans and deviations in the draft context without treating intentions as execution", async () => {
+    const p = createProject({ name: "Plan context" });
+    appendNotebookEntry("s", entryOf({ id: "h", type: "hypothesis" }), p.id);
+    appendNotebookEntry("s", entryOf({ id: "m", timestamp: 2000 }), p.id);
+    fs.writeFileSync(path.join(resolvePaths(p.id).sandbox, "data.csv"), "data");
+    const source = { sessionId: "s", entryId: "h" };
+    const plan = { hypothesis: "Question", primaryOutcome: "Mean score", exclusions: "QC", model: "Linear model", multiplicity: "One test", qc: "No missingness", stopping: "100 samples", exposureNotes: "Unknown", datasets: ["data.csv"], intent: "exploratory", priorExposure: "unknown" };
+    const preview = await previewAnalysisPlan(p.id, source, { plan, expectedHead: null });
+    const history = await freezeAnalysisPlan(p.id, source, { previewId: preview.id, acknowledgeLocalFreeze: true });
+    recordPlanDeviation(p.id, source, { expectedHead: history.head, planId: history.events[0].id, field: "model", actual: "Huber regression", reason: "Heavy tails", timing: "after-results" });
+    await runMethodsDraft("s", p.id, {}, async (_model, context) => {
+      expect(context.messages[0].content).toContain("Huber regression");
+      expect(context.messages[0].content).toContain("Frozen revision 1");
+      expect(context.systemPrompt).toContain("intended methods, not execution");
+      return fakeMessage("## Methods\nA draft with recorded deviations.");
+    });
+  });
+
   it("drafts the methods, writes the file, and ledgers under methods-draft", async () => {
     const p = createProject({ name: "Draft" });
     appendNotebookEntry("sess-1", entryOf({ type: "method", title: "Ran PCA" }), p.id);

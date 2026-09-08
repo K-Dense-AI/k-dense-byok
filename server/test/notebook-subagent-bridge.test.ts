@@ -104,7 +104,7 @@ describe("makeSubagentNotebookExtension", () => {
     expect(entries[0].runId).toBe("run_y");
   });
 
-  it("stamps harvested entries with the run id on subagent:async-complete", () => {
+  it("does not misattribute async completions to a later active run", () => {
     const projectId = "default";
     const parentSession = "parent-run-async";
     const childFile = writeChildSession(projectId, "child-async.jsonl");
@@ -119,7 +119,7 @@ describe("makeSubagentNotebookExtension", () => {
 
     const entries = readNotebookEntries(parentSession, projectId);
     expect(entries).toHaveLength(1);
-    expect(entries[0].runId).toBe("run_z");
+    expect(entries[0].runId).toBeUndefined();
   });
 
   it("uses the owning project's run id when parent session ids overlap", () => {
@@ -196,7 +196,7 @@ describe("seedBuiltinAgentNotebookTools", () => {
     expect(researcher?.tools).toBeDefined();
     expect(researcher.tools).toContain("notebook");
     expect(researcher.tools).toContain("web_search");
-    expect(researcher.tools?.at(-1)).toBe("notebook");
+    expect(researcher.tools?.at(-1)).toBe("notebook_search");
     for (const override of Object.values(overrides)) {
       expect(override.tools).toContain("notebook");
     }
@@ -272,7 +272,7 @@ describe("seedBuiltinAgentNotebookTools", () => {
     const settings = readSettings("default");
     const overrides = (settings.subagents as Record<string, unknown>)
       .agentOverrides as Record<string, { tools?: string[] }>;
-    expect(overrides.reviewer.tools).toEqual([...declared, "notebook"]);
+    expect(overrides.reviewer.tools).toEqual([...declared, "notebook", "notebook_search"]);
     for (const removed of ["bash", "edit", "write"]) {
       expect(overrides.reviewer.tools).not.toContain(removed);
     }

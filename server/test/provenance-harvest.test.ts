@@ -151,6 +151,11 @@ describe("subagent provenance harvest", () => {
     expect(steps[0].degraded).toBeUndefined();
   });
 
+  it("does not infer files or degradation for a child's research-memory read", () => {
+    const { steps } = harvest([callRow("memory", "notebook_search", { query: "Harmony" }, iso(0)), resultRow("memory", "notebook_search", false, T0 + 20)]);
+    expect(steps[0].degraded).toBeUndefined(); expect(steps[0].inputs).toEqual([]); expect(steps[0].outputs).toEqual([]);
+  });
+
   it("still records the write when the artifact was later deleted", () => {
     const { steps } = harvest([
       callRow("c1", "write", { path: "gone.txt" }, iso(0)),

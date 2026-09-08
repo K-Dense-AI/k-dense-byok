@@ -6,7 +6,11 @@
  * missingArtifacts to rewrite or annotate artifact references.
  */
 import type { NotebookEntry, NotebookEntryType } from "./notebook-store.ts";
+import { deriveEvidenceThreads, evidenceLinks, notebookEntryKey, notebookTargetKey, HYPOTHESIS_LABELS } from "../../../web/src/lib/notebook-evidence-core.ts";
 import type { NotebookAnnotation } from "./notebook-annotations.ts";
+import { nextExperimentsText } from "../../../web/src/lib/next-experiments.ts";
+import { planHistoryText } from "../../../web/src/lib/notebook-plans.ts";
+import { resultReferenceText } from "../../../web/src/lib/notebook-result-links.ts";
 
 const LABEL: Record<NotebookEntryType, string> = {
   hypothesis: "Hypothesis",
@@ -68,21 +72,19 @@ export function notebookToMarkdown(
   lines.push("---");
   lines.push("");
 
-  const byId = new Map(entries.map((e) => [e.id, e]));
-  const supersededBy = new Map<string, NotebookEntry>();
+  const byId = new Map(entries.map((e) => [notebookEntryKey(e as ScopedEntry), e]));
+  const threads = deriveEvidenceThreads(entries);
   const annotationsByEntry = new Map<string, NotebookAnnotation[]>();
   const notes: NotebookAnnotation[] = [];
   const unresolved: NotebookAnnotation[] = [];
-  for (const e of entries) {
-    if (e.supersedes) supersededBy.set(e.supersedes, e);
-  }
   for (const annotation of opts.annotations ?? []) {
     if (annotation.kind === "note") {
       notes.push(annotation);
-    } else if (annotation.entryId && byId.has(annotation.entryId)) {
-      const annotations = annotationsByEntry.get(annotation.entryId) ?? [];
+    } else if (annotation.entryId && byId.has(notebookEntryKey({ id: annotation.entryId, sessionId: (annotation as { sessionId?: string }).sessionId }))) {
+      const key = notebookEntryKey({ id: annotation.entryId, sessionId: (annotation as { sessionId?: string }).sessionId });
+      const annotations = annotationsByEntry.get(key) ?? [];
       annotations.push(annotation);
-      annotationsByEntry.set(annotation.entryId, annotations);
+      annotationsByEntry.set(key, annotations);
     } else {
       unresolved.push(annotation);
     }
@@ -103,22 +105,34 @@ export function notebookToMarkdown(
     const elapsed = Math.max(0, Math.round((e.timestamp - t0) / 1000));
     lines.push(`${h} ${LABEL[e.type]}: ${e.title}`);
     const bits = [`+${elapsed}s`, `by ${e.role}`];
-    if (e.confidence) bits.push(`confidence: ${e.confidence}`);
+    if (e.confidence) bits.push(`author confidence: ${e.confidence} (self-reported)`);
     if (e.tags?.length) bits.push(e.tags.map((t) => `#${t}`).join(" "));
     lines.push(`_${bits.join(" · ")}_`);
-    if (e.relatesTo) {
-      const target = byId.get(e.relatesTo);
-      const rel =
-        e.stance === "supports" ? "supports" : e.stance === "refutes" ? "refutes" : "relates to";
-      lines.push(`_↳ ${rel} “${target?.title ?? e.relatesTo}” (${e.relatesTo})_`);
+    const thread = threads.get(notebookEntryKey(e as ScopedEntry));
+    if (thread?.status) lines.push(`**Evidence status:** ${HYPOTHESIS_LABELS[thread.status]} (authored interpretations, not a scientific verdict)`);
+    if (thread?.reviewRequired) lines.push("**Needs review:** direct artifacts in this entry or its linked evidence changed or are missing. This does not refute the claim.");
+    for (const link of evidenceLinks(e)) {
+      const target = byId.get(notebookTargetKey(e as ScopedEntry, link.entryId, link.sessionId));
+      const rel = link.relation === "challenges" ? "refutes / challenges" : link.relation === "context" ? "relates to" : link.relation;
+      lines.push(`_↳ ${rel} “${target?.title ?? link.entryId}” (${link.entryId})${!target ? " — unavailable in this export" : ""}_`);
+      if (link.rationale) lines.push(link.rationale);
     }
     if (e.supersedes) {
-      const target = byId.get(e.supersedes);
+      const target = byId.get(notebookTargetKey(e as ScopedEntry, e.supersedes));
       lines.push(`_↺ supersedes “${target?.title ?? e.supersedes}” (${e.supersedes})_`);
     }
-    const superseder = supersededBy.get(e.id);
+    const superseder = thread?.supersededBy ? byId.get(thread.supersededBy) : undefined;
     if (superseder) lines.push(`_⚠ superseded by “${superseder.title}”_`);
-    const entryAnnotations = annotationsByEntry.get(e.id) ?? [];
+    if (e.scope) lines.push(`**Applicability (authored):** ${e.scope}`);
+    if (e.revisitWhen) lines.push(`**Revisit when (condition, not an automatic action):** ${e.revisitWhen}`);
+    if (e.outcome) lines.push(`**Outcome:** ${e.outcome} (null results and technical failures do not automatically refute a hypothesis)`);
+    if (e.limitations?.length) lines.push("**Limitations:**", ...e.limitations.map((x) => `- ${x}`));
+    if (e.artifactHealth?.length) {
+      lines.push("**Artifact checks:** direct cited files only; unchanged bytes do not verify scientific validity or upstream inputs.");
+      for (const check of e.artifactHealth) lines.push(`- \`${check.path}\`: **${check.status}** — ${check.reason ?? ""} (checked ${annotationTime(check.checkedAt)})`);
+    }
+    if (e.artifactHealthTruncated) lines.push(`**Incomplete checks:** ${e.artifactHealthTruncated} additional artifacts were not checked.`);
+    const entryAnnotations = annotationsByEntry.get(notebookEntryKey(e as ScopedEntry)) ?? [];
     const pins = entryAnnotations.filter((annotation) => annotation.kind === "pin");
     if (pins.length > 0) {
       const times = pins.map((pin) => annotationTime(pin.createdAt)).join(", ");
@@ -126,6 +140,22 @@ export function notebookToMarkdown(
     }
     lines.push("");
     if (e.body) { lines.push(e.body); lines.push(""); }
+    if (e.nextExperiments) lines.push("**Proposed next investigations — not performed:**", nextExperimentsText(e.nextExperiments), "");
+    if (e.nextExperimentBinding) lines.push("**Recorded proposal context (not scientific verification):**", "```json", JSON.stringify(e.nextExperimentBinding, null, 2), "```", "");
+    if (e.nextExperimentDecision) lines.push("**User planning preference — not execution/spending approval:**", "```json", JSON.stringify(e.nextExperimentDecision, null, 2), "```", "");
+    if (e.analysisPlan) lines.push("**Proposed analysis plan (draft, not approved):**", "```json", JSON.stringify(e.analysisPlan, null, 2), "```", "");
+    if (e.robustness) lines.push("**Proposed robustness workflow (not approved or executed):**", "```json", JSON.stringify(e.robustness, null, 2), "```", "");
+    if (e.planHistory) lines.push(planHistoryText(e.planHistory), "");
+    if (e.planHistoryError) lines.push(`**Plan history unavailable:** ${e.planHistoryError}`, "");
+    if (e.results?.length) {
+      lines.push("**Recorded scientific-result references:** source identifiers and pinned content digests, not independently verified measurements. Canonical source session logs are not bundled in this notebook export.");
+      for (const ref of e.results) {
+        const sid = ref.sessionId ?? (e as ScopedEntry).sessionId ?? opts.sessionId;
+        const snapshot = e.resultSnapshots?.find((s) => s.sessionId === sid && s.toolCallId === ref.toolCallId);
+        lines.push(`- ${resultReferenceText(snapshot ?? ref, sid)}`);
+      }
+      lines.push("");
+    }
     if (e.code) {
       lines.push("```" + (e.code.lang ?? ""));
       lines.push(e.code.source);

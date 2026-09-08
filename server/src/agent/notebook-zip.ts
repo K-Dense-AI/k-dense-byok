@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import AdmZip from "adm-zip";
-import { isWithin } from "../sandbox-fs.ts";
+import { isWithin, isUserVisible } from "../sandbox-fs.ts";
 import { notebookToMarkdown } from "./notebook-export.ts";
 import type { NotebookAnnotation } from "./notebook-annotations.ts";
 import type { NotebookEntry } from "./notebook-store.ts";
@@ -44,7 +44,10 @@ export function buildNotebookZip(
       const abs = path.resolve(opts.sandboxRoot, normalizeRel(p));
       let ok = false;
       try {
-        ok = isWithin(opts.sandboxRoot, abs) && fs.statSync(abs).isFile();
+        const realRoot = fs.realpathSync(opts.sandboxRoot);
+        const real = fs.realpathSync(abs);
+        ok = isWithin(opts.sandboxRoot, abs) && isUserVisible(abs, opts.sandboxRoot)
+          && isWithin(realRoot, real) && isUserVisible(real, realRoot) && fs.statSync(real).isFile();
       } catch {
         ok = false;
       }

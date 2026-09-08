@@ -16,6 +16,8 @@ import {
 } from "../projects.ts";
 import { projectCostSummary } from "../cost/ledger.ts";
 import { readProjectNotebooks } from "../agent/notebook-store.ts";
+import { withNotebookArtifactHealth } from "../agent/notebook-artifacts.ts";
+import { withNotebookPlanHistory } from "../agent/notebook-research.ts";
 import { readNotebookAnnotations } from "../agent/notebook-annotations.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
 import { buildNotebookZip } from "../agent/notebook-zip.ts";
@@ -98,9 +100,10 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
   app.get<{ Params: { projectId: string } }>("/projects/:projectId/notebook", async (req, reply) => {
     try {
       const notebooks = readProjectNotebooks(req.params.projectId);
-      const entries = notebooks
+      reply.header("Cache-Control", "no-store");
+      const entries = withNotebookPlanHistory(await withNotebookArtifactHealth(notebooks
         .flatMap((nb) => nb.entries.map((e) => ({ ...e, sessionId: nb.sessionId })))
-        .sort((a, b) => a.timestamp - b.timestamp || a.sessionId.localeCompare(b.sessionId));
+        .sort((a, b) => a.timestamp - b.timestamp || a.sessionId.localeCompare(b.sessionId)), req.params.projectId), req.params.projectId);
       const sessions = notebooks
         .filter((nb) => nb.entries.length > 0)
         .map((nb) => ({
@@ -131,11 +134,12 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       const projectId = req.params.projectId;
       try {
         const notebooks = readProjectNotebooks(projectId);
-        const entries = notebooks
+        reply.header("Cache-Control", "no-store");
+        const entries = withNotebookPlanHistory(await withNotebookArtifactHealth(notebooks
           .flatMap((nb) => nb.entries.map((e) => ({ ...e, sessionId: nb.sessionId })))
-          .sort((a, b) => a.timestamp - b.timestamp || a.sessionId.localeCompare(b.sessionId));
+          .sort((a, b) => a.timestamp - b.timestamp || a.sessionId.localeCompare(b.sessionId)), projectId), projectId);
         const annotations = notebooks.flatMap(
-          (nb) => readNotebookAnnotations(nb.sessionId, projectId).doc.annotations,
+          (nb) => readNotebookAnnotations(nb.sessionId, projectId).doc.annotations.map((a) => ({ ...a, sessionId: nb.sessionId })),
         );
         const paths = resolvePaths(projectId);
         const projectName = getProject(projectId)?.name ?? projectId;

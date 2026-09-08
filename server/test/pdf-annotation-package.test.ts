@@ -109,6 +109,9 @@ describe("kady-pdf-annotations child package", () => {
     ) as any;
     expect(settings.packages).toContain(kadyPdfAnnotationPackageDir());
     const tools = settings.subagents.agentOverrides.researcher.tools as string[];
+    expect(tools).toContain("notebook_search");
+    expect(seedBuiltinAgentNotebookTools(paths)).toBe(false);
+    expect(seedBuiltinAgentModalTools(paths)).toBe(false);
     for (const name of PDF_ANNOTATION_TOOL_NAMES) {
       expect(tools).toContain(name);
     }

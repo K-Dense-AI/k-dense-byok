@@ -1,4 +1,8 @@
 import crypto from "node:crypto";
+import fs from "node:fs";
+import { protectedApprovalReservations } from "./approval-reservations.ts";
+import { jsonDigest } from "../canonical-json.ts";
+import { approvedBatchDir, approvedInputPlan, approvedJobDigest, assertApprovedJob, batchCancelled, batchCommitted, publishExclusiveJson, readManagedJson } from "./approved.ts";
 import path from "node:path";
 import { modalConfigured } from "../config.ts";
 import { listProjects, resolvePaths } from "../projects.ts";
@@ -41,6 +45,7 @@ import {
   ModalJobError,
   type ModalJob,
   type ModalJobOwner,
+  type ModalJobApproval,
   type ModalJobRequest,
   type ModalJobResult,
   type ModalTerminalState,
@@ -232,6 +237,12 @@ export class DurableModalJobManager {
   private active = new Map<string, ActiveRuntime>();
   private previousRemoteLogs = new Map<string, { stdout: string; stderr: string }>();
   private deletingProjects = new Set<string>();
+  private terminalListeners = new Set<(job: ModalJob) => void>();
+
+  onTerminal(listener: (job: ModalJob) => void): () => void {
+    this.terminalListeners.add(listener);
+    return () => { this.terminalListeners.delete(listener); };
+  }
 
   constructor(
     adapterFactory: ModalAdapterFactory = sdkModalAdapterFactory,
@@ -346,6 +357,73 @@ export class DurableModalJobManager {
     return { groupId, jobs };
   }
 
+  /** Trusted notebook path: all holds/jobs are durable before a shared admission
+   * gate permits any remote work. Stable ids make replay after a crash safe.
+   * Ordinary modal tool/API requests cannot supply the approval metadata. */
+  submitApprovedBatch(projectId: string, batchId: string, items: { id: string; request: ModalJobRequest; approval: ModalJobApproval }[], owner: ModalJobOwner): ModalJob[] {
+    const dir = approvedBatchDir(projectId, batchId);
+    if (this.deletingProjects.has(projectId)) throw new ModalJobError("PROJECT_DELETING", "Project is being deleted", 409);
+    if (this.requireCredentials && !modalConfigured()) throw new ModalJobError("NOT_CONFIGURED", "Configure Modal credentials in Settings before approving remote work", 503);
+    if (!items.length || items.length > 16 || new Set(items.map((i) => i.id)).size !== items.length || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/.test(owner.sessionId)) throw new ModalJobError("INVALID_APPROVED_BATCH", "Invalid approved batch");
+    if (batchCancelled(projectId, batchId)) throw new ModalCancellationError();
+    const prepared = items.map((item): ModalJob => {
+      modalJobFiles(projectId, item.id); // validate before creating budget holds
+      const request = normalizeModalJobRequest({ ...item.request, groupId: batchId });
+      if (request.gpuFallback?.length || request.environment || request.cache !== "none" || item.approval.batchId !== batchId) throw new ModalJobError("INVALID_APPROVED_BATCH", "Approved work cannot add fallbacks, named environments or a mutable project cache");
+      const reservationUsd = worstCaseReservationUsd(request);
+      if (!Number.isFinite(item.approval.maxReservationUsd) || reservationUsd > item.approval.maxReservationUsd + 1e-12) throw new ModalJobError("PRICE_CHANGED", "Resource pricing exceeds the approved estimate; review a new workflow", 409);
+      const now = Date.now();
+      return { version: 1, id: item.id, projectId, request, owner: { ...owner }, approval: item.approval,
+        state: "queued", createdAt: now, updatedAt: now, queuedAt: now, cancelRequested: false,
+        reservationUsd, sandboxName: sandboxName(projectId, item.id), sandboxTags: { kady: "true", project: projectId, job: item.id, group: batchId },
+        inputFiles: item.approval.inputs, outputFiles: [], missingOutputs: [], stdoutBytes: 0, stderrBytes: 0, stdoutBaseCursor: 0, stderrBaseCursor: 0, eventSeq: 0, accounting: { reconciled: false } };
+    });
+    if (batchCommitted(projectId, batchId)) {
+      for (const wanted of prepared) {
+        const actual = this.store.require(projectId, wanted.id);
+        assertApprovedJob(actual);
+        if (approvedJobDigest(actual) !== approvedJobDigest(wanted)) throw new ModalJobError("APPROVAL_CHANGED", "Approved job definition changed", 409);
+        if (!isTerminalModalState(actual.state)) this.schedule(projectId, actual.id, true);
+      }
+      return prepared.map((j) => this.store.require(projectId, j.id));
+    }
+    const gate = { version: 1, batchId, jobs: Object.fromEntries(prepared.map((job) => [job.id, approvedJobDigest(job)])) };
+    const intent = path.join(dir, "intent.json");
+    if (fs.existsSync(intent)) {
+      if (jsonDigest(readManagedJson(intent)) !== jsonDigest(gate)) throw new ModalJobError("APPROVAL_CHANGED", "Admission intent no longer matches the approved batch", 409);
+    } else publishExclusiveJson(intent, gate);
+    try {
+      // No awaits and no scheduling in this admission section: the one backend
+      // that owns Modal cannot interleave another reservation or worker here.
+      for (const job of prepared) {
+        const existing = this.store.read(projectId, job.id);
+        if (existing && (isTerminalModalState(existing.state) || approvedJobDigest(existing) !== approvedJobDigest(job))) throw new ModalJobError("APPROVAL_CHANGED", "Partial admission was cancelled or changed; review a new workflow", 409);
+        reserveComputeBudget({ projectId, reservationId: job.id, sessionId: owner.sessionId, amountUsd: job.reservationUsd });
+      }
+      for (const job of prepared) if (!this.store.read(projectId, job.id)) this.store.create(job);
+      publishExclusiveJson(path.join(dir, "committed.json"), gate);
+    } catch (error) {
+      for (const job of prepared) {
+        const existing = this.store.read(projectId, job.id);
+        if (existing?.approval?.batchId === batchId) void this.cancel(projectId, job.id).catch(() => {});
+        else if (!existing) releaseComputeReservation(projectId, job.id);
+      }
+      if ((error as Error).name === "BudgetReservationError") throw new ModalJobError("BUDGET_EXCEEDED", (error as Error).message, 402);
+      throw error;
+    }
+    for (const job of prepared) this.schedule(projectId, job.id, false);
+    return prepared.map((j) => this.store.require(projectId, j.id));
+  }
+
+  async cancelApprovedBatch(projectId: string, batchId: string): Promise<void> {
+    const marker = path.join(approvedBatchDir(projectId, batchId), "cancelled.json");
+    if (!fs.existsSync(marker)) {
+      try { publishExclusiveJson(marker, { cancelledAt: Date.now() }); }
+      catch (e) { if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e; }
+    }
+    await Promise.all(this.list(projectId, { groupId: batchId }).filter((job) => job.approval?.batchId === batchId).map((job) => this.cancel(projectId, job.id)));
+  }
+
   get(projectId: string, jobId: string): ModalJob {
     return this.store.require(projectId, jobId);
   }
@@ -376,7 +454,7 @@ export class DurableModalJobManager {
         active?.state ??
         (jobs.some((job) => job.state === "failed" || job.state === "lost")
           ? "failed"
-          : jobs.every((job) => job.state === "cancelled")
+          : jobs.some((job) => job.state === "cancelled")
             ? "cancelled"
             : "succeeded");
       return {
@@ -440,15 +518,22 @@ export class DurableModalJobManager {
         message: "Cancellation requested",
       });
     }
-    const runtime = this.active.get(this.key(projectId, jobId));
+    let runtime = this.active.get(this.key(projectId, jobId));
+    if (!runtime && job.approval && job.sandboxId) {
+      this.schedule(projectId, jobId, true); // reattach solely to honor cancellation
+      runtime = this.active.get(this.key(projectId, jobId));
+    }
     if (runtime?.sandbox) {
       try {
-        await runtime.sandbox.terminate();
+        await this.terminateAndRecord(projectId, jobId, runtime.sandbox);
       } catch {
         // The worker/recovery path still observes cancelRequested and finalizes.
       }
     } else if (!runtime) {
-      await this.finish(projectId, jobId, "cancelled", new ModalCancellationError());
+      const error = job.approval && job.state !== "queued" && !job.sandboxId
+        ? new ModalJobError("LAUNCH_UNCERTAIN", "Interrupted launch cancelled; remote creation is unknown. Full approved estimate counted against the project budget conservatively.", 502)
+        : new ModalCancellationError();
+      await this.finish(projectId, jobId, "cancelled", error);
     }
     if (runtime) {
       // Only the worker can finalize a live job. Give it a bounded window so
@@ -465,6 +550,7 @@ export class DurableModalJobManager {
 
   retry(projectId: string, jobId: string, owner?: ModalJobOwner): ModalJob {
     const previous = this.store.require(projectId, jobId);
+    if (previous.approval) throw new ModalJobError("WORKFLOW_APPROVAL_REQUIRED", "Create and approve a new robustness workflow to retry; this preserves every attempt and its budget", 409);
     if (!isTerminalModalState(previous.state)) {
       throw new ModalJobError("JOB_ACTIVE", "Only terminal Modal jobs can be retried", 409);
     }
@@ -610,10 +696,12 @@ export class DurableModalJobManager {
   ): Promise<ModalRemoteSandbox> {
     const job = this.assertNotCancelled(projectId, jobId);
     const chain = validateInstanceChain(job.request);
+    if (job.approval && worstCaseReservationUsd(job.request) > job.reservationUsd + 1e-12) throw new ModalJobError("PRICE_CHANGED", "Resource pricing exceeds this job's approved reservation", 409);
     let lastError: unknown;
     for (const spec of chain) {
       this.assertNotCancelled(projectId, jobId);
       let created: ModalRemoteSandbox | undefined;
+      let createAttempted = false;
       try {
         const environment = await this.checked(projectId, jobId)(
           prepareModalEnvironment(
@@ -628,6 +716,7 @@ export class DurableModalJobManager {
         // Persisting happens synchronously immediately after create resolves,
         // before the cancellation check, so a concurrent abort can always find
         // and terminate the newly-created remote sandbox.
+        createAttempted = true;
         const sandbox = await adapter.createSandbox(environment, {
           instance: spec,
           gpuCount: job.request.gpuCount,
@@ -652,12 +741,14 @@ export class DurableModalJobManager {
           data: { sandboxId: sandbox.id, instance: spec.id },
         });
         if (this.store.require(projectId, jobId).cancelRequested) {
-          await sandbox.terminate();
+          await this.terminateAndRecord(projectId, jobId, sandbox);
           throw new ModalCancellationError();
         }
         return sandbox;
       } catch (error) {
         if (error instanceof ModalCancellationError) throw error;
+        if (job.approval && createAttempted && !created) throw new ModalJobError("LAUNCH_UNCERTAIN", "Remote creation was not confirmed. No automatic retry; the full approved sandbox estimate is counted against the project budget conservatively. A remote resource may remain until its timeout.", 502, false);
+        if (job.approval && created) throw error; // retain the known id for final cleanup; never launch a fallback
         // A sandbox created just before this failure would keep billing while
         // we move on to the next instance in the chain. Its identity is also
         // cleared so a later successful attempt reconciles against its own
@@ -800,6 +891,7 @@ export class DurableModalJobManager {
       sandboxRoot: resolvePaths(projectId).sandbox,
       stagingDir: path.join(files.staging, "outputs"),
       patterns: job.request.filesOut ?? [],
+      ...(job.approval ? { maxFiles: 1, maxBytes: 64 * 1024 } : {}),
       checked: this.checked(projectId, jobId, sandbox),
     });
     this.store.update(projectId, jobId, (current) => {
@@ -832,16 +924,26 @@ export class DurableModalJobManager {
     runtime.adapter = adapter;
     let sandbox: ModalRemoteSandbox | undefined;
     try {
+      const initial = this.assertNotCancelled(projectId, jobId);
+      assertApprovedJob(initial);
+      const pinnedInputs = initial.approval ? await approvedInputPlan(initial) : undefined;
       this.assertNotCancelled(projectId, jobId);
       this.store.transition(projectId, jobId, "preparing");
       sandbox = await this.createSandbox(projectId, jobId, runtime, adapter);
       const checked = this.checked(projectId, jobId, sandbox);
       const job = this.store.require(projectId, jobId);
-      const inputPlan = planInputs(resolvePaths(projectId).sandbox, job.request.filesIn ?? []);
+      const inputPlan = pinnedInputs ?? planInputs(resolvePaths(projectId).sandbox, job.request.filesIn ?? []);
       this.store.update(projectId, jobId, (current) => {
         current.inputFiles = inputPlan.manifest;
       });
       await stageInputs(sandbox, inputPlan, checked);
+      if (job.approval) {
+        // Hash the bytes actually uploaded, not merely the local snapshot that
+        // preceded a potentially racing upload. Mismatch fails before science.
+        const verify = `import hashlib,json,sys\nfiles=json.loads(sys.argv[1])\nfor f in files:\n h=hashlib.sha256()\n with open('/workspace/'+f['path'],'rb') as r:\n  for chunk in iter(lambda:r.read(1048576),b''): h.update(chunk)\n if h.hexdigest()!=f['sha256']: raise RuntimeError('Approved input checksum mismatch: '+f['path'])\n`;
+        const check = await checked(sandbox.exec(["python3", "-I", "-c", verify, JSON.stringify(job.approval.inputs)], { stdout: "ignore", stderr: "ignore" }));
+        if (await checked(check.wait()) !== 0) throw new ModalJobError("INPUT_CHANGED", "Uploaded inputs do not match the approved snapshot", 409);
+      }
       await checked(
         sandbox.filesystem.makeDirectory(REMOTE_CONTROL_DIR, { createParents: true }),
       );
@@ -895,10 +997,10 @@ export class DurableModalJobManager {
       }
       await this.collectAndFinish(projectId, jobId, sandbox, status.exitCode!);
     } catch (error) {
-      if (
-        error instanceof ModalCancellationError ||
-        this.store.require(projectId, jobId).cancelRequested
-      ) {
+      const cancelled = this.store.require(projectId, jobId).cancelRequested;
+      if (error instanceof ModalJobError && error.code === "LAUNCH_UNCERTAIN") {
+        await this.finish(projectId, jobId, cancelled ? "cancelled" : "failed", error);
+      } else if (error instanceof ModalCancellationError || cancelled) {
         await this.finish(projectId, jobId, "cancelled", new ModalCancellationError());
       } else {
         await this.finish(projectId, jobId, "failed", error);
@@ -908,16 +1010,7 @@ export class DurableModalJobManager {
       // cancel racing creation), so the local binding is not the source of
       // truth for whether one exists.
       const created = sandbox ?? runtime.sandbox;
-      if (created) {
-        try {
-          await created.terminate();
-        } catch {
-          // terminal state and accounting remain durable
-        }
-        this.store.update(projectId, jobId, (job) => {
-          job.sandboxTerminatedAt ??= Date.now();
-        });
-      }
+      if (created) await this.terminateAndRecord(projectId, jobId, created);
       // Unconditional: finish() defers reconciliation to here whenever a
       // sandbox was created, so skipping it strands the budget reservation
       // for the life of the process. It no-ops when already reconciled.
@@ -935,6 +1028,10 @@ export class DurableModalJobManager {
       await this.reconcile(projectId, jobId);
       return;
     }
+    if (!existing.sandboxId && existing.approval && existing.state !== "queued") {
+      await this.finish(projectId, jobId, "lost", new ModalJobError("LAUNCH_UNCERTAIN", "Restart interrupted a possible remote launch; no automatic re-execution. Full approved estimate counted against the project budget conservatively.", 502));
+      return;
+    }
     if (!existing.sandboxId) {
       await this.executeJob(projectId, jobId, runtime);
       return;
@@ -946,10 +1043,11 @@ export class DurableModalJobManager {
       sandbox = await adapter.fromId(existing.sandboxId);
       runtime.sandbox = sandbox;
       if (this.store.require(projectId, jobId).cancelRequested) {
-        await sandbox.terminate();
+        await this.terminateAndRecord(projectId, jobId, sandbox);
         throw new ModalCancellationError();
       }
     } catch (error) {
+      if (existing.approval && !(error instanceof ModalCancellationError)) this.store.update(projectId, jobId, (j) => { j.approvalCleanupUncertain = true; });
       if (
         error instanceof ModalCancellationError ||
         this.store.require(projectId, jobId).cancelRequested
@@ -1011,16 +1109,22 @@ export class DurableModalJobManager {
         );
       }
     } finally {
-      try {
-        await sandbox.terminate();
-      } catch {
-        // best effort
-      }
-      this.store.update(projectId, jobId, (job) => {
-        job.sandboxTerminatedAt ??= Date.now();
-      });
+      await this.terminateAndRecord(projectId, jobId, sandbox);
       await this.reconcile(projectId, jobId);
     }
+  }
+
+  private async terminateAndRecord(projectId: string, jobId: string, sandbox: ModalRemoteSandbox): Promise<void> {
+    const current = this.store.require(projectId, jobId);
+    if (current.approval && current.sandboxTerminatedAt) return;
+    let confirmed = false;
+    try { await sandbox.terminate(); confirmed = true; } catch { /* timeout remains the backstop */ }
+    this.store.update(projectId, jobId, (job) => {
+      if (confirmed || !job.approval) {
+        job.sandboxTerminatedAt ??= Date.now();
+        if (confirmed) job.approvalCleanupUncertain = undefined;
+      } else job.approvalCleanupUncertain = true;
+    });
   }
 
   private async finish(
@@ -1043,6 +1147,9 @@ export class DurableModalJobManager {
     recordModalJobStep(this.store.require(projectId, jobId), (err) =>
       console.warn("[modal] failed to record provenance step", err),
     );
+    for (const listener of this.terminalListeners) {
+      try { listener(this.store.require(projectId, jobId)); } catch (err) { console.warn("[modal] terminal observer failed", err); }
+    }
     if (!current.sandboxCreatedAt) await this.reconcile(projectId, jobId);
   }
 
@@ -1051,7 +1158,7 @@ export class DurableModalJobManager {
     if (job.accounting.reconciled || !isTerminalModalState(job.state)) return;
     let costUsd = 0;
     let entryId: string | undefined;
-    if (job.sandboxCreatedAt && job.pricePerHour !== undefined) {
+    if (job.sandboxCreatedAt && job.pricePerHour !== undefined && !job.approvalCleanupUncertain) {
       const endedAt = job.sandboxTerminatedAt ?? job.finishedAt ?? Date.now();
       // Modal enforces timeoutSec as the sandbox's maximum lifetime. Cap local
       // observation lag (for example, a slow terminate RPC) so actual
@@ -1070,6 +1177,10 @@ export class DurableModalJobManager {
         terminalState: job.state,
       });
       entryId = entry?.entryId;
+    }
+    if (job.approval && ((!job.sandboxCreatedAt && job.error?.code === "LAUNCH_UNCERTAIN") || job.approvalCleanupUncertain)) {
+      costUsd = job.reservationUsd;
+      entryId = recordModalJobCost({ projectId, sessionId: job.owner.sessionId, jobId, costUsd, model: `modal:${job.request.instance}`, terminalState: job.state })?.entryId;
     }
     releaseComputeReservation(projectId, jobId);
     this.store.update(projectId, jobId, (current) => {
@@ -1094,16 +1205,29 @@ export class DurableModalJobManager {
   async recoverProject(projectId: string): Promise<void> {
     const jobs = this.store.list(projectId);
     const jobIds = new Set(jobs.map((job) => job.id));
+    const protectedHolds = protectedApprovalReservations(projectId);
     // A process crash in the tiny interval between reservation creation and
     // atomic job creation can leave an orphan hold. No remote resource could
     // have been created at that point, so startup recovery safely releases it.
     for (const reservation of listComputeReservations(projectId)) {
-      if (!jobIds.has(reservation.id)) {
+      if (!jobIds.has(reservation.id) && protectedHolds !== null && !protectedHolds.has(reservation.id)) {
         releaseComputeReservation(projectId, reservation.id);
       }
     }
     for (const job of jobs) {
+      if (job.approval && !isTerminalModalState(job.state)) {
+        if (batchCancelled(projectId, job.approval.batchId)) { await this.cancel(projectId, job.id); continue; }
+        if (!batchCommitted(projectId, job.approval.batchId)) continue; // held for admission recovery
+        try { assertApprovedJob(job); }
+        catch (e) { await this.finish(projectId, job.id, "failed", e); continue; }
+      }
       if (isTerminalModalState(job.state)) {
+        if (job.approval && job.sandboxId && !job.sandboxTerminatedAt && !job.accounting.reconciled) {
+          const adapter = this.adapterFactory();
+          try { await this.terminateAndRecord(projectId, job.id, await adapter.fromId(job.sandboxId)); }
+          catch { this.store.update(projectId, job.id, (j) => { j.approvalCleanupUncertain = true; }); }
+          finally { adapter.close(); }
+        }
         if (!job.accounting.reconciled) await this.reconcile(projectId, job.id);
       } else if (this.requireCredentials && !modalConfigured()) {
         this.store.appendEvent(projectId, job.id, {

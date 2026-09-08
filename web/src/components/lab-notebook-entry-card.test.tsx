@@ -116,7 +116,7 @@ describe("LabNotebookEntryCard", () => {
         thread={{ status: "refuted" }}
       />,
     );
-    expect(screen.getByText("refuted")).toBeInTheDocument();
+    expect(screen.getByText("Challenging evidence")).toBeInTheDocument();
   });
 
   it("summarizes linked evidence on a hypothesis", () => {
@@ -125,17 +125,17 @@ describe("LabNotebookEntryCard", () => {
         entry={entry()}
         onOpenFile={() => {}}
         thread={{
-          status: "supported",
-          incoming: [
-            { id: "o1", stance: "supports" },
-            { id: "o2", stance: "supports" },
-            { id: "o3", stance: "refutes" },
+          status: "mixed",
+          activeEvidence: [
+            { id: "o1", relation: "supports" },
+            { id: "o2", relation: "supports" },
+            { id: "o3", relation: "challenges" },
           ],
         }}
       />,
     );
-    expect(screen.getByText("2 supports")).toBeInTheDocument();
-    expect(screen.getByText("1 challenge")).toBeInTheDocument();
+    expect(screen.getByText("2 supporting · 1 challenging · 0 inconclusive")).toBeInTheDocument();
+    expect(screen.getByText("Conflicting evidence")).toBeInTheDocument();
   });
 
   it("lets readers expand and collapse long entries", () => {

@@ -18,6 +18,26 @@ describe("parseNotebookFrame", () => {
     expect(typeof e!.timestamp).toBe("number");
   });
 
+  it("parses bounded evidence but rejects tool-authored verification", () => {
+    const e = parseNotebookFrame(frame({ type: "observation", title: "x", evidence: [{ entryId: "h", relation: "inconclusive" }, { entryId: "bad", relation: "certain" }],
+      outcome: "technical-failure", limitations: ["No output"], artifactHealth: [{ path: "fake", status: "unchanged", checkedAt: 1 }] }));
+    expect(e!.evidence).toEqual([{ entryId: "h", relation: "inconclusive" }]);
+    expect(e!.artifactHealth).toBeUndefined();
+    expect(e!.provisional).toBe(true);
+  });
+
+  it("accepts result references but not authored approval history or pinned digests", () => {
+    const e = parseNotebookFrame(frame({ type: "hypothesis", title: "Question", results: [{ toolCallId: "result-1", sha256: "forged" }], planHistory: { events: [{ kind: "freeze" }] }, resultSnapshots: [{ sha256: "forged" }] }));
+    expect(e!.results).toEqual([{ toolCallId: "result-1" }]);
+    expect(e!.planHistory).toBeUndefined();
+    expect(e!.resultSnapshots).toBeUndefined();
+  });
+
+  it("does not turn model-supplied robustness approval metadata into a saved workflow", () => {
+    const e = parseNotebookFrame(frame({ type: "hypothesis", title: "Question", robustnessHistory: [{ approvedAt: 1 }], approval: { approvedAt: 1 } }));
+    expect(e).not.toHaveProperty("robustnessHistory"); expect(e).not.toHaveProperty("approval");
+  });
+
   it("ignores non-notebook tool_start frames", () => {
     expect(parseNotebookFrame(frame({ type: "hypothesis", title: "x" }, { toolName: "bash" }))).toBeNull();
   });
@@ -97,13 +117,18 @@ describe("mergeNotebookEntries", () => {
     expect(merged[0].title).toBe("authoritative");
   });
 
+  it("never deduplicates entries across different project chats", () => {
+    const result = mergeNotebookEntries([mk("same", { sessionId: "a" })], [mk("same", { sessionId: "b" })]);
+    expect(result).toHaveLength(2);
+  });
+
   it("sorts the union by timestamp", () => {
     const merged = mergeNotebookEntries([mk("a", { timestamp: 3 })], [mk("b", { timestamp: 1 })]);
     expect(merged.map((e) => e.id)).toEqual(["b", "a"]);
   });
 
   it("preserves the new link/run fields, with the authoritative (b) side winning", () => {
-    const live = [mk("tc_1", { relatesTo: "tc_h", stance: "supports", runId: "run_live" })];
+    const live = [mk("tc_1", { relatesTo: "tc_h", stance: "supports", runId: "run_live", sessionId: "s1" })];
     const fetched = [
       mk("tc_1", {
         relatesTo: "tc_h",

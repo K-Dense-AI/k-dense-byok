@@ -663,13 +663,13 @@ export function makeScientificResultTool(
       "Do not paste large datasets into a card; save them to files and include the files as artifacts.",
     ],
     parameters: ScientificResultParams,
-    async execute(_toolCallId, params) {
+    async execute(toolCallId, params) {
       const card = normalizeCard(projectId, cardFromParams(params));
       return {
         content: [
           {
             type: "text",
-            text: `Presented ${card.kind} result: ${card.title}`,
+            text: `Presented ${card.kind} result: ${card.title} (result id: ${toolCallId}). Reference it in notebook results: [{toolCallId: ${JSON.stringify(toolCallId)}}].`,
           },
         ],
         details: { scientificResult: card },

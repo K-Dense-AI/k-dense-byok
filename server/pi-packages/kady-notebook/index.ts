@@ -14,6 +14,11 @@
  * process; server/test/notebook-package.test.ts asserts field parity.
  */
 import { Type } from "typebox";
+import { AnalysisPlanSchema, NotebookResultsSchema } from "./plan-schema.ts";
+import { NextExperimentsSchema } from "./next-experiments-schema.ts";
+import { RobustnessDraftSchema } from "./robustness-schema.ts";
+import { notebookSearchTool } from "./memory-tool.ts";
+import { callMemoryApi } from "./memory-client.ts";
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 
 const CodeSchema = Type.Object({
@@ -60,6 +65,20 @@ export const NotebookParams = Type.Object({
       { description: "How this entry bears on the `relatesTo` target" },
     ),
   ),
+  evidence: Type.Optional(Type.Array(Type.Object({
+    entryId: Type.String({ minLength: 1, maxLength: 500 }),
+    sessionId: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$" })),
+    relation: Type.Union([Type.Literal("supports"), Type.Literal("challenges"), Type.Literal("inconclusive"), Type.Literal("context")]),
+    rationale: Type.Optional(Type.String({ maxLength: 2000 })),
+  }), { maxItems: 32, description: "Earlier entries this result bears on. Multiple typed links are allowed. Omit sessionId for this chat. These are your interpretations, not verified verdicts." })),
+  limitations: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { maxItems: 16 })),
+  scope: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: "Applicability: dataset/version, cohort, organism, assay or conditions. Do not generalize beyond what was tested." })),
+  revisitWhen: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: "What new data, controls or changed assumptions would justify revisiting this finding or rejected method? This is a condition, not an automatic action." })),
+  outcome: Type.Optional(Type.Union([Type.Literal("signal"), Type.Literal("null"), Type.Literal("inconclusive"), Type.Literal("technical-failure")], { description: "Distinguish scientific outcomes from technical failures. A null or inconclusive result is not automatically evidence against a hypothesis." })),
+  analysisPlan: Type.Optional(AnalysisPlanSchema),
+  robustness: Type.Optional(RobustnessDraftSchema),
+  nextExperiments: Type.Optional(NextExperimentsSchema),
+  results: Type.Optional(NotebookResultsSchema),
   supersedes: Type.Optional(
     Type.String({
       description:
@@ -83,12 +102,20 @@ export const notebookChildTool: ToolDefinition<typeof NotebookParams> = {
   promptGuidelines: [
     "Keep a running lab notebook: call `notebook` at natural milestones as you work, not in one dump at the end.",
     "Attach `artifacts` for any entry tied to a file you wrote so the notebook links to real output.",
-    "Thread the narrative: when an observation tests an earlier hypothesis, log it with `relatesTo: <that entry's id>` and a `stance`; to correct an earlier entry, log a new one with `supersedes: <its id>`.",
+    "Use notebook_search to retrieve relevant prior work before repeating analyses. Record scope and revisitWhen for decisions, rejected methods and null/inconclusive outcomes. Cite original sources rather than copying old text into a new finding.",
+    "Use evidence: [{entryId, relation, rationale}] to connect observations to hypotheses or decisions. Relations are supports/challenges/inconclusive/context. Preserve disagreements and record limitations. Technical failures are not negative scientific evidence; null results do not automatically refute hypotheses. Repeated analyses are not independent replications.",
+    "Propose nextExperiments only on a NOTE targeting a saved hypothesis. Compare competing explanations and every test's predicted outcomes/decision consequences, including inconclusive outcomes. Use explicit source refs from notebook_search, prefer existing data, justify new collection, and use qualitative priorities/time/cost—not fabricated probabilities or information gain. Never execute a proposal or report its predictions as observed evidence.",
+    "You may propose robustness on a hypothesis with a real --spec/--output Python script, defensible variations and seeds. Never launch proposed jobs or claim approval; the scientist must review the exact snapshot and compute budget in Stress-test finding. Do not search for significance or hide failed specifications.",
+    "You may propose analysisPlan on a hypothesis; it is only a draft until the user reviews and freezes it in the UI. Never claim approval or external preregistration. Results can reference saved scientific_result calls in explicit parent/project sessionIds; local child result references remain unverified after harvest.",
+    "Legacy relatesTo/stance links still work. To correct an entry use supersedes and explicitly restate its evidence links: amendments do not inherit relationships. Local entry ids refer to this child's notebook; only use sessionId for an explicit parent/project reference.",
   ],
   parameters: NotebookParams,
   execute: async (toolCallId, params) => {
     const title = (params.title ?? "").trim();
     if (!title) throw new Error("notebook entry needs a non-empty title");
+    if (params.nextExperiments && params.type !== "note") throw new Error("Next-experiment proposals belong on note entries");
+    if (params.robustness && params.type !== "hypothesis") throw new Error("Robustness proposals belong on hypothesis entries");
+    if (params.analysisPlan && params.type !== "hypothesis") throw new Error("Analysis-plan drafts belong on hypothesis entries");
     return {
       content: [
         {
@@ -107,4 +134,5 @@ export default function (pi: ExtensionAPI): void {
   // duplicate tool name.
   if (!process.env.PI_SUBAGENT_CHILD) return;
   pi.registerTool(notebookChildTool);
+  pi.registerTool(notebookSearchTool(callMemoryApi));
 }

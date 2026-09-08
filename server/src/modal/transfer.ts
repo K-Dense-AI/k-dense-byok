@@ -269,6 +269,9 @@ export async function collectOutputs(args: {
   sandboxRoot: string;
   stagingDir: string;
   patterns: string[];
+  /** Optional stricter server-owned limits for approved structured workflows. */
+  maxFiles?: number;
+  maxBytes?: number;
   checked: <T>(promise: Promise<T>) => Promise<T>;
 }): Promise<{ files: ModalTransferFile[]; missing: string[] }> {
   if (args.patterns.length > MAX_OUTPUT_PATTERNS) {
@@ -292,10 +295,12 @@ export async function collectOutputs(args: {
   }
   const files = [...selected.values()].sort((a, b) => a.path.localeCompare(b.path));
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-  if (files.length > MAX_TRANSFER_FILES || totalBytes > MAX_TRANSFER_BYTES) {
+  const maxFiles = Math.min(args.maxFiles ?? MAX_TRANSFER_FILES, MAX_TRANSFER_FILES);
+  const maxBytes = Math.min(args.maxBytes ?? MAX_TRANSFER_BYTES, MAX_TRANSFER_BYTES);
+  if (files.length > maxFiles || totalBytes > maxBytes) {
     throw new ModalTransferError(
       "TRANSFER_LIMIT",
-      `Output transfer exceeds ${MAX_TRANSFER_FILES} files or ${MAX_TRANSFER_BYTES} bytes`,
+      `Output transfer exceeds ${maxFiles} files or ${maxBytes} bytes`,
       413,
     );
   }

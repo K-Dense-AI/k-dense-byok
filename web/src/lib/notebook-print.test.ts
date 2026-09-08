@@ -93,7 +93,7 @@ describe("buildNotebookPrintHtml", () => {
       e("h", { type: "hypothesis", title: "Six types" }),
       e("o", { relatesTo: "h", stance: "refutes" }),
     ]);
-    expect(refutes).toContain("refutes: Six types");
+    expect(refutes).toContain("refutes / challenges: Six types");
   });
 
   it("renders hypothesis status badges, tags, and confidence", () => {
@@ -101,7 +101,7 @@ describe("buildNotebookPrintHtml", () => {
       e("h", { type: "hypothesis", title: "Six types", timestamp: 1 }),
       e("o", { relatesTo: "h", stance: "refutes", timestamp: 2, tags: ["scRNA", "qc"], confidence: "high" }),
     ]);
-    expect(html).toContain('badge-refuted">refuted</span>');
+    expect(html).toContain('badge-refuted">Challenging evidence</span>');
     expect(html).toContain("#scRNA");
     expect(html).toContain("#qc");
     expect(html).toContain("confidence: high");

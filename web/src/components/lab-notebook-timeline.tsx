@@ -11,7 +11,7 @@ import { buildTimeline, type TimelineItem } from "@/lib/notebook-timeline";
 import { agentAccent, roleLabel } from "@/lib/notebook-filters";
 import type { ThreadInfo } from "@/lib/notebook-threads";
 import type { NotebookAnnotation } from "@/lib/notebook-annotations";
-import type { NotebookEntry, NotebookEntryType } from "@/lib/notebook";
+import { notebookEntryKey, notebookTargetKey, type NotebookEntry, type NotebookEntryType } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
 
 const STORY_PHASES: {
@@ -48,6 +48,7 @@ const STORY_PHASES: {
 
 export interface TimelineCallbacks {
   onOpenFile: (path: string) => void;
+  onResearchSaved?: () => void;
   onTogglePin?: (id: string) => void;
   onAddComment?: (id: string, body: string) => void;
   onJumpToChat?: (id: string) => void;
@@ -68,10 +69,13 @@ function EntryRow({
     pinnedIds: ReadonlySet<string>;
     commentsByEntry: ReadonlyMap<string, NotebookAnnotation[]>;
     canAnnotate: boolean;
+    sessionId?: string;
+    model?: string;
+    projectId?: string;
     cb: TimelineCallbacks;
   };
 }) {
-  const thread = ctx.threads.get(entry.id);
+  const thread = ctx.threads.get(notebookEntryKey(entry));
   const isUserNote = entry.role === "you";
   const meta = TYPE_META[entry.type];
   return (
@@ -91,10 +95,15 @@ function EntryRow({
       <div className="[contain-intrinsic-size:auto_11rem] [content-visibility:auto]">
         <LabNotebookEntryCard
           entry={entry}
+          sessionId={entry.sessionId ?? ctx.sessionId}
+          projectId={ctx.projectId}
+          model={ctx.model}
+          onResearchSaved={ctx.cb.onResearchSaved}
           onOpenFile={ctx.cb.onOpenFile}
           thread={thread}
-          relatedEntry={entry.relatesTo ? ctx.entryById.get(entry.relatesTo) : undefined}
-          supersedesEntry={entry.supersedes ? ctx.entryById.get(entry.supersedes) : undefined}
+          evidenceEntries={ctx.entryById}
+          relatedEntry={entry.relatesTo ? ctx.entryById.get(notebookTargetKey(entry, entry.relatesTo)) : undefined}
+          supersedesEntry={entry.supersedes ? ctx.entryById.get(notebookTargetKey(entry, entry.supersedes)) : undefined}
           supersededByEntry={
             thread?.supersededBy ? ctx.entryById.get(thread.supersededBy) : undefined
           }
@@ -103,7 +112,7 @@ function EntryRow({
           onTogglePin={ctx.canAnnotate && !isUserNote ? ctx.cb.onTogglePin : undefined}
           comments={ctx.commentsByEntry.get(entry.id)}
           onAddComment={ctx.canAnnotate && !isUserNote ? ctx.cb.onAddComment : undefined}
-          onJumpToChat={!isUserNote ? ctx.cb.onJumpToChat : undefined}
+          onJumpToChat={!isUserNote && !entry.id.startsWith("robustness:") && !entry.id.startsWith("next-experiments:") ? ctx.cb.onJumpToChat : undefined}
           onJumpToEntry={ctx.cb.onJumpToEntry}
           onTagClick={ctx.cb.onTagClick}
         />
@@ -152,6 +161,9 @@ function Rail({ children }: { children: React.ReactNode }) {
 
 export function LabNotebookTimeline({
   entries,
+  sessionId,
+  projectId,
+  model,
   viewMode,
   scope,
   sessionNames,
@@ -165,6 +177,9 @@ export function LabNotebookTimeline({
 }: {
   /** Already filtered, time-sorted. */
   entries: NotebookEntry[];
+  sessionId?: string;
+  projectId?: string;
+  model?: string;
   viewMode: "story" | "agents" | "chrono";
   scope: "session" | "project";
   sessionNames?: ReadonlyMap<string, string>;
@@ -176,7 +191,7 @@ export function LabNotebookTimeline({
   callbacks: TimelineCallbacks;
   reducedMotion: boolean;
 }) {
-  const ctx = { threads, entryById, pinnedIds, commentsByEntry, canAnnotate, cb: callbacks };
+  const ctx = { threads, entryById, pinnedIds, commentsByEntry, canAnnotate, sessionId, projectId, model, cb: callbacks };
   const chrono = viewMode === "chrono" || scope === "project";
   const story = viewMode === "story" && scope === "session";
 
@@ -277,7 +292,7 @@ export function LabNotebookTimeline({
                     <Rail>
                       {phase.entries.map((entry) => (
                         <EntryRow
-                          key={entry.id}
+                          key={notebookEntryKey(entry)}
                           entry={entry}
                           showAgentBadge={storyHasMultipleAuthors || entry.role === "you"}
                           ctx={ctx}
@@ -294,7 +309,7 @@ export function LabNotebookTimeline({
             {chronoItems.map((item) =>
               item.kind === "entry" ? (
                 <EntryRow
-                  key={item.entry.id}
+                  key={notebookEntryKey(item.entry)}
                   entry={item.entry}
                   showAgentBadge
                   ctx={ctx}
@@ -308,7 +323,7 @@ export function LabNotebookTimeline({
           <Rail>
             {lanes[0].items.map((item) =>
               item.kind === "entry" ? (
-                <EntryRow key={item.entry.id} entry={item.entry} showAgentBadge={false} ctx={ctx} />
+                <EntryRow key={notebookEntryKey(item.entry)} entry={item.entry} showAgentBadge={false} ctx={ctx} />
               ) : (
                 <Divider key={item.key} item={item} />
               ),
@@ -334,7 +349,7 @@ export function LabNotebookTimeline({
                   {lane.items.map((item) =>
                     item.kind === "entry" ? (
                       <EntryRow
-                        key={item.entry.id}
+                        key={notebookEntryKey(item.entry)}
                         entry={item.entry}
                         showAgentBadge={false}
                         ctx={ctx}

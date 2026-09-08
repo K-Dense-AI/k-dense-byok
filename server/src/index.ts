@@ -27,6 +27,12 @@ import { registerAgentRoutes } from "./api/agents.ts";
 import { registerSpeechRoutes } from "./api/speech.ts";
 import { registerModalRoutes } from "./api/modal.ts";
 import { registerModelProviderRoutes } from "./api/model-providers.ts";
+import { registerNextExperimentRoutes } from "./api/next-experiments.ts";
+import { registerEvidencePackageRoutes } from "./api/evidence-packages.ts";
+import { registerNotebookMemoryRoutes } from "./api/notebook-memory.ts";
+import { registerNotebookResearchRoutes } from "./api/notebook-research.ts";
+import { registerNotebookRobustnessRoutes } from "./api/notebook-robustness.ts";
+import { notebookRobustness } from "./agent/notebook-robustness.ts";
 import { startAutomaticSkillSync } from "./agent/skills-sync.ts";
 import { modalJobManager } from "./modal/manager.ts";
 import { syncHelperVenv } from "./helpers-env.ts";
@@ -74,7 +80,7 @@ export async function buildApp() {
       cb(null, isCorsOriginAllowed(origin));
     },
     credentials: true,
-    exposedHeaders: ["ETag", "X-Project-Fallback"],
+    exposedHeaders: ["ETag", "X-Project-Fallback", "X-Content-SHA256"],
   });
 
   await app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });
@@ -120,6 +126,11 @@ export async function buildApp() {
 
   await registerProjectRoutes(app);
   await registerSessionRoutes(app);
+  await registerNotebookResearchRoutes(app);
+  await registerNotebookMemoryRoutes(app);
+  await registerEvidencePackageRoutes(app);
+  await registerNextExperimentRoutes(app);
+  await registerNotebookRobustnessRoutes(app);
   await registerSandboxRoutes(app);
   await registerSkillRoutes(app);
   await registerSystemRoutes(app);
@@ -134,6 +145,7 @@ export async function buildApp() {
   // active jobs in the background and immediately reconciles any terminal job
   // whose accounting write was interrupted by a prior shutdown.
   await modalJobManager.recoverAllProjects();
+  await notebookRobustness.recoverAll();
 
   return app;
 }

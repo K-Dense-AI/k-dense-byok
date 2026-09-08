@@ -50,6 +50,16 @@ describe("buildNotebookZip", () => {
     expect(md).toContain("`../outside.txt` _(artifact missing at export time)_");
   });
 
+  it.skipIf(process.platform === "win32")("does not bypass sandbox visibility through artifact symlinks", () => {
+    const sandboxRoot = resolvePaths("default").sandbox; fs.mkdirSync(sandboxRoot, { recursive: true });
+    const outside = path.join(PROJECTS_ROOT, "secret.txt"); fs.writeFileSync(outside, "secret");
+    fs.symlinkSync(outside, path.join(sandboxRoot, "linked.txt"));
+    fs.writeFileSync(path.join(sandboxRoot, ".env"), "secret");
+    const { buffer, missing } = buildNotebookZip([{ id: "a", type: "note", title: "unsafe", timestamp: 1, role: "agent", artifacts: ["linked.txt", ".env"] }], { sessionId: "s", sandboxRoot });
+    expect(missing).toEqual(["linked.txt", ".env"]);
+    expect(new AdmZip(buffer).getEntries().map((e) => e.entryName)).toEqual(["lab-notebook.md"]);
+  });
+
   it("produces a markdown-only archive when there are no artifacts", () => {
     const sandboxRoot = resolvePaths("default").sandbox;
     fs.mkdirSync(sandboxRoot, { recursive: true });

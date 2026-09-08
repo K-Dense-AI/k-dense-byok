@@ -38,6 +38,8 @@ import {
 import { explainProviderRefusal } from "../agent/model-refusal.ts";
 import { parseRunImages } from "../agent/prompt-images.ts";
 import { readNotebookEntries } from "../agent/notebook-store.ts";
+import { withNotebookArtifactHealth } from "../agent/notebook-artifacts.ts";
+import { withNotebookPlanHistory } from "../agent/notebook-research.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
 import { buildNotebookZip } from "../agent/notebook-zip.ts";
 import {
@@ -202,7 +204,9 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
 
   app.get<{ Params: { id: string } }>("/sessions/:id/notebook", async (req, reply) => {
     try {
-      return { entries: readNotebookEntries(req.params.id, currentProjectId()) };
+      reply.header("Cache-Control", "no-store");
+      const projectId = currentProjectId();
+      return { entries: withNotebookPlanHistory(await withNotebookArtifactHealth(readNotebookEntries(req.params.id, projectId), projectId), projectId, req.params.id) };
     } catch (exc) {
       reply.code(400);
       return { detail: (exc as Error).message };
@@ -219,7 +223,8 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       }
       try {
         const projectId = currentProjectId();
-        const entries = readNotebookEntries(req.params.id, projectId);
+        const entries = withNotebookPlanHistory(await withNotebookArtifactHealth(readNotebookEntries(req.params.id, projectId), projectId), projectId, req.params.id);
+        reply.header("Cache-Control", "no-store");
         const projectName = getProject(projectId)?.name ?? projectId;
         // Pins, comments and standalone notes live in a sidecar. Leaving them
         // out made every export silently drop the user's own layer.

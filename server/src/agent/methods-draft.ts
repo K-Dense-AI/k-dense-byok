@@ -24,6 +24,11 @@ import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
 import { billingCountsTowardBudget, billingForModel } from "../cost/billing.ts";
 import { getProject, resolvePaths, touchProject } from "../projects.ts";
 import { readNotebookEntries, type NotebookEntry } from "./notebook-store.ts";
+import { withNotebookArtifactHealth } from "./notebook-artifacts.ts";
+import { deriveEvidenceThreads, evidenceLinks } from "../../../web/src/lib/notebook-evidence-core.ts";
+import { withNotebookPlanHistory } from "./notebook-research.ts";
+import { planHistoryText } from "../../../web/src/lib/notebook-plans.ts";
+import { resultReferenceText } from "../../../web/src/lib/notebook-result-links.ts";
 
 export const METHODS_DRAFT_SESSION_ID = "methods-draft";
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -58,7 +63,13 @@ const SYSTEM_PROMPT = [
   "versions, thresholds, or sample sizes that are not recorded. Organize by",
   "analysis stage, not by timestamp. Where the notebook names an artifact",
   "file, reference it by filename. Respond with Markdown only, starting with",
-  'a "## Methods" heading. Do not add an introduction, results, or commentary.',
+  'a "## Methods" heading. Do not add an introduction or results.',
+  "Preserve recorded limitations and explicitly flag incomplete or changed artifact evidence.",
+  "Cite source entry ids for factual method statements. Missing parameters must remain unrecorded, never guessed.",
+  "Technical failures and null results are not automatically evidence against a hypothesis.",
+  "Next-experiment predictions and planning preferences are not observations, performed procedures or execution approvals; never write them as completed Methods.",
+  "Robustness approval records are authorization, not execution. Preserve all failed/cancelled/invalid attempts; sensitivity runs are not independent replications and script-provided QC is not independent verification.",
+  "A frozen plan records intended methods, not execution. Keep recorded deviations explicit and never describe a local freeze as external preregistration or proof that data were unseen. Unapproved drafts are not methods performed.",
 ].join(" ");
 
 function digestEntry(e: NotebookEntry, t0: number, byId: Map<string, NotebookEntry>): string {
@@ -87,6 +98,15 @@ function digestEntry(e: NotebookEntry, t0: number, byId: Map<string, NotebookEnt
   if (e.artifacts?.length) {
     parts.push(`artifacts: ${e.artifacts.map((p) => p.split("/").pop() ?? p).join(", ")}`);
   }
+  parts.push(`source entry: ${e.id}`);
+  for (const link of evidenceLinks(e)) parts.push(`evidence ${link.relation}: ${link.sessionId ? link.sessionId + "/" : ""}${link.entryId}${link.rationale ? " — " + link.rationale : ""}`);
+  if (e.scope) parts.push(`applicability (authored): ${e.scope}`);
+  if (e.revisitWhen) parts.push(`revisit condition (not a completed action): ${e.revisitWhen}`);
+  if (e.outcome) parts.push(`outcome: ${e.outcome}`);
+  for (const ref of e.resultSnapshots ?? e.results ?? []) parts.push(`saved scientific-result reference: ${resultReferenceText(ref)}`);
+  if (e.limitations?.length) parts.push(`limitations: ${e.limitations.join("; ")}`);
+  for (const check of e.artifactHealth ?? []) parts.push(`artifact check ${check.path}: ${check.status} — ${check.reason ?? ""}`);
+  if (e.artifactHealthTruncated) parts.push(`${e.artifactHealthTruncated} artifact checks omitted (limit)`);
   return parts.join("\n");
 }
 
@@ -94,8 +114,9 @@ export function buildMethodsDraftContext(
   entries: NotebookEntry[],
   meta: { sessionId: string; projectName?: string },
 ): Context {
+  const threads = deriveEvidenceThreads(entries);
   const relevant = entries.filter(
-    (e) => e.type === "method" || e.type === "decision" || e.type === "observation",
+    (e) => !e.proposalOnly && !e.nextExperiments && !e.nextExperimentDecision && !threads.get(e.id)?.supersededBy && (e.type === "method" || e.type === "decision" || e.type === "observation"),
   );
   const byId = new Map(entries.map((e) => [e.id, e]));
   const t0 = entries[0]?.timestamp ?? 0;
@@ -121,8 +142,12 @@ export function buildMethodsDraftContext(
       omitted++;
     }
   }
-  const body = digests.map((d) => d.text).join("\n\n");
-  const truncated = omitted > 0 ? `\n\n[digest truncated: ${omitted} observation entries omitted]` : "";
+  const plans = entries.filter((e) => e.planHistory || e.planHistoryError).map((e) => `Plan record for source entry ${e.id}:\n${e.planHistory ? planHistoryText(e.planHistory) : `UNAVAILABLE: ${e.planHistoryError}`}`).join("\n\n");
+  const fullBody = [digests.map((d) => d.text).join("\n\n"), plans].filter(Boolean).join("\n\n");
+  // Plan histories and old method-only notebooks can exceed the budget too.
+  const body = fullBody.slice(0, DIGEST_CHAR_BUDGET);
+  const truncated = (omitted > 0 ? `\n\n[digest truncated: ${omitted} observation entries omitted]` : "")
+    + (fullBody.length > body.length ? "\n\n[INCOMPLETE CONTEXT: further method/plan records omitted at the digest limit. Flag the draft as partial; do not infer absent details.]" : "");
   return {
     systemPrompt: SYSTEM_PROMPT,
     messages: [
@@ -159,13 +184,18 @@ export async function runMethodsDraft(
 ): Promise<MethodsDraftResult> {
   let entries: NotebookEntry[];
   try {
-    entries = readNotebookEntries(sessionId, projectId);
+    entries = withNotebookPlanHistory(await withNotebookArtifactHealth(readNotebookEntries(sessionId, projectId), projectId), projectId, sessionId);
   } catch (err) {
     throw new MethodsDraftError(400, (err as Error).message);
   }
   if (entries.length === 0) {
     throw new MethodsDraftError(400, "Notebook has no entries to draft from");
   }
+  const active = deriveEvidenceThreads(entries);
+  const hasWorkRecord = entries.some((e) =>
+    (!e.proposalOnly && !e.nextExperiments && !e.nextExperimentDecision && !active.get(e.id)?.supersededBy && ["method", "observation", "decision"].includes(e.type))
+    || e.planHistory?.events.some((event) => event.kind === "deviation"));
+  if (!hasWorkRecord) throw new MethodsDraftError(400, "No methods, observations, decisions or deviations are recorded. A plan alone is not evidence of execution.");
   if (opts.model?.startsWith("fusion/")) {
     throw new MethodsDraftError(422, "Fusion models are not supported for the Methods draft");
   }

@@ -12,6 +12,7 @@ import { buildApp } from "../src/index.ts";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { resolvePaths } from "../src/projects.ts";
 import { appendNotebookEntry, type NotebookEntry } from "../src/agent/notebook-store.ts";
+import { captureNotebookArtifacts } from "../src/agent/notebook-artifacts.ts";
 
 const app = await buildApp();
 
@@ -49,6 +50,31 @@ describe("GET /sessions/:id/notebook", () => {
     appendNotebookEntry("route-sess", entry({ id: "tc_2", type: "observation" }), "default");
     const res = await getNotebook("route-sess");
     expect(res.json().entries.map((e: NotebookEntry) => e.id)).toEqual(["tc_1", "tc_2"]);
+  });
+});
+
+describe("evidence freshness across reads and exports", () => {
+  it("warns on changed cited bytes in session/project reads and every export format", async () => {
+    const sandbox = resolvePaths("default").sandbox;
+    fs.mkdirSync(sandbox, { recursive: true });
+    fs.writeFileSync(path.join(sandbox, "data.csv"), "old");
+    appendNotebookEntry("evidence", entry({ id: "h", type: "hypothesis", title: "Claim", timestamp: 1 }), "default");
+    appendNotebookEntry("evidence", entry({ id: "o", title: "Finding", timestamp: 2, type: "observation", artifacts: ["data.csv"],
+      artifactSnapshots: await captureNotebookArtifacts("default", ["data.csv"]), evidence: [{ entryId: "h", relation: "supports" }], limitations: ["Single cohort"],
+    }), "default");
+    fs.writeFileSync(path.join(sandbox, "data.csv"), "new");
+    for (const base of ["/sessions/evidence/notebook", "/projects/default/notebook"]) {
+      const got = await app.inject({ method: "GET", url: base });
+      expect(got.headers["cache-control"]).toContain("no-store");
+      expect(got.json().entries[1].artifactHealth[0].status).toBe("changed");
+      const json = await app.inject({ method: "GET", url: `${base}/export?format=json` });
+      expect(json.json().entries[1].artifactHealth[0].status).toBe("changed");
+      const md = await app.inject({ method: "GET", url: `${base}/export?format=md` });
+      expect(md.body).toContain("**Needs review:**");
+      expect(md.body).toContain("Single cohort");
+      const zip = await app.inject({ method: "GET", url: `${base}/export?format=zip` });
+      expect(new AdmZip(zip.rawPayload).readAsText("lab-notebook.md")).toContain("**Needs review:**");
+    }
   });
 });
 

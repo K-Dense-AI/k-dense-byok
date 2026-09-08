@@ -7,6 +7,12 @@
  * from GET /sessions/:id/notebook; mergeNotebookEntries reconciles the two by id.
  */
 import type { AgentFrame } from "./use-agent";
+import { readExperimentBinding, readExperimentChoice, normalizeNextExperiments, type NextExperimentPlan, type NextExperimentBinding, type NextExperimentChoice } from "./next-experiments";
+import { normalizeRobustnessDraft, type RobustnessDraft } from "./notebook-robustness";
+import { normalizeAnalysisPlan, type AnalysisPlanInput, type AnalysisPlanHistory } from "./notebook-plans";
+import { normalizeResultLinks, type NotebookResultLink, type NotebookResultSnapshot } from "./notebook-result-links";
+import { notebookEntryKey, normalizeEvidenceLinks, type NotebookEvidenceLink, type NotebookOutcome, type NotebookArtifactHealth } from "./notebook-evidence-core";
+export { notebookEntryKey, notebookTargetKey, evidenceLinks, HYPOTHESIS_LABELS } from "./notebook-evidence-core";
 
 export type NotebookEntryType =
   | "hypothesis" | "method" | "observation" | "decision" | "note";
@@ -26,6 +32,25 @@ export interface NotebookEntry {
   code?: { source: string; lang?: string };
   confidence?: "low" | "medium" | "high";
   tags?: string[];
+  evidence?: NotebookEvidenceLink[];
+  limitations?: string[];
+  scope?: string;
+  revisitWhen?: string;
+  outcome?: NotebookOutcome;
+  analysisPlan?: AnalysisPlanInput;
+  robustness?: RobustnessDraft;
+  nextExperiments?: NextExperimentPlan;
+  nextExperimentBinding?: NextExperimentBinding;
+  nextExperimentDecision?: NextExperimentChoice;
+  proposalOnly?: boolean;
+  planHistory?: AnalysisPlanHistory;
+  planHistoryError?: string;
+  results?: NotebookResultLink[];
+  resultSnapshots?: NotebookResultSnapshot[];
+  /** Read-time server measurement. Never accepted from provisional tool args. */
+  artifactHealth?: NotebookArtifactHealth[];
+  artifactHealthTruncated?: number;
+  provisional?: boolean;
   timestamp: number;
   role?: string;
   /** Id of an earlier entry this one responds to (threading). */
@@ -37,6 +62,18 @@ export interface NotebookEntry {
   runId?: string;
   /** Present only in project-scope responses. */
   sessionId?: string;
+}
+
+function nextExperimentDraft(value: unknown): NextExperimentPlan | undefined {
+  try { return normalizeNextExperiments(value); } catch { return undefined; }
+}
+
+function robustnessDraft(value: unknown): RobustnessDraft | undefined {
+  try { return normalizeRobustnessDraft(value); } catch { return undefined; }
+}
+
+function planDraft(value: unknown): AnalysisPlanInput | undefined {
+  try { return normalizeAnalysisPlan(value); } catch { return undefined; }
 }
 
 function isEntryType(v: unknown): v is NotebookEntryType {
@@ -80,7 +117,18 @@ export function parseNotebookFrame(
         : undefined,
     supersedes:
       typeof a.supersedes === "string" && a.supersedes.trim() ? a.supersedes.trim() : undefined,
+    evidence: normalizeEvidenceLinks(a.evidence),
+    analysisPlan: planDraft(a.analysisPlan),
+    robustness: robustnessDraft(a.robustness),
+    nextExperiments: nextExperimentDraft(a.nextExperiments),
+    ...(a.nextExperiments ? { proposalOnly: true } : {}),
+    results: normalizeResultLinks(a.results),
+    scope: typeof a.scope === "string" ? a.scope.slice(0, 2000) : undefined,
+    revisitWhen: typeof a.revisitWhen === "string" ? a.revisitWhen.slice(0, 2000) : undefined,
+    limitations: Array.isArray(a.limitations) ? a.limitations.filter((x): x is string => typeof x === "string").slice(0, 16) : undefined,
+    outcome: a.outcome === "signal" || a.outcome === "null" || a.outcome === "inconclusive" || a.outcome === "technical-failure" ? a.outcome : undefined,
     timestamp: Date.now(),
+    provisional: true,
     // Provisional stamp from the run_start frame; the authoritative refetch
     // (server-stamped runId) wins on merge.
     ...(runId ? { runId } : {}),
@@ -96,9 +144,25 @@ export function parseNotebookFrame(
  * notebook panel; treating it as a plain note keeps the entry visible.
  */
 export function normalizeNotebookEntries(entries: readonly NotebookEntry[]): NotebookEntry[] {
-  return entries.map((entry) =>
-    isEntryType(entry.type) ? entry : { ...entry, type: "note" as const },
-  );
+  return entries.filter((entry) => entry && typeof entry === "object" && typeof entry.id === "string" && Number.isFinite(entry.timestamp)).map((entry) => ({
+    ...entry,
+    type: isEntryType(entry.type) ? entry.type : "note" as const,
+    title: typeof entry.title === "string" ? entry.title : "Untitled entry",
+    artifacts: Array.isArray(entry.artifacts) ? entry.artifacts.filter((p): p is string => typeof p === "string") : undefined,
+    evidence: normalizeEvidenceLinks(entry.evidence),
+    analysisPlan: planDraft(entry.analysisPlan),
+    robustness: robustnessDraft(entry.robustness),
+    nextExperiments: nextExperimentDraft(entry.nextExperiments),
+    proposalOnly: Boolean(entry.proposalOnly || entry.nextExperiments || entry.nextExperimentDecision),
+    nextExperimentBinding: readExperimentBinding(entry.nextExperimentBinding),
+    nextExperimentDecision: readExperimentChoice(entry.nextExperimentDecision),
+    results: normalizeResultLinks(entry.results, true),
+    scope: typeof entry.scope === "string" ? entry.scope.slice(0, 2000) : undefined,
+    revisitWhen: typeof entry.revisitWhen === "string" ? entry.revisitWhen.slice(0, 2000) : undefined,
+    limitations: Array.isArray(entry.limitations) ? entry.limitations.filter((x): x is string => typeof x === "string").slice(0, 16) : undefined,
+    artifactHealth: Array.isArray(entry.artifactHealth) ? entry.artifactHealth.filter((h) => h && typeof h.path === "string" && Number.isFinite(h.checkedAt) && ["unchanged", "changed", "missing", "unverified"].includes(h.status)) : undefined,
+    provisional: false,
+  }));
 }
 
 export function mergeNotebookEntries(
@@ -106,7 +170,7 @@ export function mergeNotebookEntries(
   b: NotebookEntry[],
 ): NotebookEntry[] {
   const byId = new Map<string, NotebookEntry>();
-  for (const e of a) byId.set(e.id, e);
-  for (const e of b) byId.set(e.id, e); // b (authoritative) wins on conflict
+  for (const e of a) byId.set(notebookEntryKey(e), e);
+  for (const e of b) byId.set(notebookEntryKey(e), e); // b (authoritative) wins on conflict
   return [...byId.values()].sort((x, y) => x.timestamp - y.timestamp);
 }

@@ -42,6 +42,18 @@ The lead agent and sub-agents share the same project job service:
 Background jobs intentionally survive the chat turn that created them. They
 continue until completion, explicit cancellation, timeout, or project deletion.
 
+## Notebook robustness batches
+
+The notebook's **Stress-test finding** control adds a separately reviewed workflow
+on top of this manager: exact private input snapshots, 2–16 specifications, explicit
+remote-upload approval and a full-batch cost quote. These managed batches reserve
+all jobs before any is scheduled and have no automatic fallback or direct retry.
+Do not substitute ordinary `modal_submit_batch` for this approval-aware admission
+path. Uncertain launches/cleanup use a conservative full-reservation estimate,
+and missing committed job records retain their holds pending recovery. See
+[Notebook robustness workflows](./notebook-robustness.md) for the Python contract,
+limits and the distinction between estimated sandbox commitments and invoices.
+
 ## Job lifecycle and recovery
 
 A job moves through these durable states:

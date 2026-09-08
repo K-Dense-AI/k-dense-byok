@@ -3,6 +3,7 @@ import { render as rtlRender, screen, fireEvent, waitFor, act } from "@testing-l
 import userEvent from "@testing-library/user-event";
 import { LabNotebookView } from "./lab-notebook-view";
 import type { NotebookEntry } from "@/lib/notebook";
+import { memoryHit, memorySearch } from "@/test/memory-fixture";
 
 vi.mock("@/lib/projects", () => ({
   apiFetch: vi.fn(),
@@ -96,6 +97,60 @@ describe("LabNotebookView", () => {
     } catch {
       /* jsdom localStorage can be unavailable */
     }
+  });
+
+  it("shows new live entries immediately in the default project view without cross-chat id collisions", async () => {
+    routeFetch((url) => url === "/projects/default/notebook" ? okJson({ entries: [e({ id: "same", title: "Other chat", sessionId: "other" })] }) : undefined);
+    const { rerender } = rtlRender(<LabNotebookView {...baseProps} />);
+    await waitFor(() => expect(screen.getByText("Other chat")).toBeInTheDocument());
+    rerender(<LabNotebookView {...baseProps} liveEntries={[e({ id: "same", title: "Live finding" })]} streaming />);
+    expect(screen.getByText("Live finding")).toBeInTheDocument();
+    expect(screen.getByText("Other chat")).toBeInTheDocument();
+  });
+
+  it("shows a refresh error and retry without silently switching scope", async () => {
+    let failed = true;
+    routeFetch((url) => url === "/projects/default/notebook" ? failed ? errJson(500) : okJson({ entries: [e({ title: "Recovered project" })] }) : undefined);
+    rtlRender(<LabNotebookView {...baseProps} sessionId={null} />);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("refresh failed"));
+    expect(screen.getByRole("button", { name: "All chats" })).toHaveAttribute("aria-pressed", "true");
+    failed = false;
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByText("Recovered project")).toBeInTheDocument());
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("summarizes conflicts from all entries even when the view is filtered to hypotheses", () => {
+    render(<LabNotebookView {...baseProps} liveEntries={[
+      e({ id: "h", title: "Claim" }),
+      e({ id: "a", type: "observation", title: "Positive", evidence: [{ entryId: "h", relation: "supports" }] }),
+      e({ id: "b", type: "observation", title: "Negative", evidence: [{ entryId: "h", relation: "challenges" }], artifactHealth: [{ path: "fig.png", status: "changed", checkedAt: 1 }] }),
+    ]} />);
+    fireEvent.click(screen.getByRole("button", { name: /hypothesis/i }));
+    expect(screen.getByText("Conflicting evidence")).toBeInTheDocument();
+    expect(screen.getByText("Needs review.")).toBeInTheDocument();
+    expect(screen.queryByTestId("nb-entry-a")).not.toBeInTheDocument();
+  });
+
+  it("memory navigation wins over an old chat focus token and uses the source session's id", async () => {
+    const original = Element.prototype.scrollIntoView;
+    const targets: string[] = [];
+    Element.prototype.scrollIntoView = function () { targets.push((this as HTMLElement).dataset.testid ?? ""); };
+    routeFetch((url) => {
+      if (url === "/sessions/s1/notebook") return okJson({ entries: [e({ id: "same", title: "Active source" })] });
+      if (url === "/projects/default/notebook") return okJson({ entries: [e({ id: "same", title: "Active source", sessionId: "s1" }), e({ id: "same", title: "Other source", sessionId: "s2" })] });
+      if (url.endsWith("/memory/search")) return okJson({ ...memorySearch, projectId: "default", hits: [{ ...memoryHit, source: { kind: "notebook", sessionId: "s2", entryId: "same" } }] });
+    });
+    try {
+      render(<LabNotebookView {...baseProps} focusEntry={{ id: "same", token: 1 }} />);
+      await waitFor(() => expect(screen.getByText("Active source")).toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: "Research memory" }));
+      fireEvent.change(screen.getByLabelText("Scientific memory query"), { target: { value: "Harmony" } });
+      fireEvent.click(screen.getByRole("button", { name: "Search memory" }));
+      await screen.findByText(memoryHit.title);
+      fireEvent.click(screen.getByRole("button", { name: "View in notebook" }));
+      await waitFor(() => expect(targets.at(-1)).toBe(`nb-entry-${JSON.stringify(["s2", "same"])}`));
+    } finally { Element.prototype.scrollIntoView = original; }
   });
 
   it("shows the empty state with no entries", () => {

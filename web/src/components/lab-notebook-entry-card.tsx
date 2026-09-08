@@ -31,7 +31,14 @@ import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { agentAccent, roleLabel } from "@/lib/notebook-filters";
 import type { NotebookAnnotation } from "@/lib/notebook-annotations";
-import type { NotebookEntry, NotebookEntryType } from "@/lib/notebook";
+import { notebookEntryKey, notebookTargetKey, HYPOTHESIS_LABELS, type NotebookEntry, type NotebookEntryType } from "@/lib/notebook";
+import { NotebookEvidenceSummary } from "./notebook-evidence-summary";
+import { NotebookPlanDialog } from "./notebook-plan-dialog";
+import { NotebookResultLinks } from "./notebook-result-links";
+import { NotebookRobustnessDialog } from "./notebook-robustness-dialog";
+import { NextExperimentsDialog } from "./next-experiments-dialog";
+import { NextExperimentCards } from "./next-experiment-cards";
+import { EvidencePackageDialog } from "./evidence-package-dialog";
 import type { ThreadInfo } from "@/lib/notebook-threads";
 import { useProjectScopeId } from "@/lib/projects";
 import { cn } from "@/lib/utils";
@@ -123,7 +130,7 @@ function ConfidenceMeter({ level }: { level: "low" | "medium" | "high" }) {
           ))}
         </span>
       </TooltipTrigger>
-      <TooltipContent>Confidence: {level}</TooltipContent>
+      <TooltipContent>Author confidence: {level} (self-reported, not a calibrated probability)</TooltipContent>
     </Tooltip>
   );
 }
@@ -133,6 +140,8 @@ const STATUS_META = {
   supported:
     "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
   refuted: "border-rose-500/30 bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  mixed: "border-violet-500/30 bg-violet-500/10 text-violet-600 dark:text-violet-400",
+  inconclusive: "border-border bg-muted text-muted-foreground",
 } as const;
 
 function displayTime(timestamp: number): string {
@@ -150,9 +159,14 @@ function fileExtension(path: string): string {
 
 export function LabNotebookEntryCard({
   entry,
+  sessionId,
+  model,
+  onResearchSaved,
+  projectId: explicitProjectId,
   onOpenFile,
   thread,
   relatedEntry,
+  evidenceEntries,
   supersedesEntry,
   supersededByEntry,
   agentBadge,
@@ -165,10 +179,15 @@ export function LabNotebookEntryCard({
   onTagClick,
 }: {
   entry: NotebookEntry;
+  sessionId?: string;
+  model?: string;
+  onResearchSaved?: () => void;
+  projectId?: string;
   onOpenFile: (path: string) => void;
   thread?: ThreadInfo;
   /** Resolved target of entry.relatesTo, when present in the visible set. */
   relatedEntry?: NotebookEntry;
+  evidenceEntries?: ReadonlyMap<string, NotebookEntry>;
   /** Resolved target of entry.supersedes. */
   supersedesEntry?: NotebookEntry;
   /** Resolved entry that supersedes this one. */
@@ -183,7 +202,8 @@ export function LabNotebookEntryCard({
   onJumpToEntry?: (entryId: string) => void;
   onTagClick?: (tag: string) => void;
 }) {
-  const projectId = useProjectScopeId();
+  const contextProjectId = useProjectScopeId();
+  const projectId = explicitProjectId ?? contextProjectId;
   const meta = TYPE_META[entry.type];
   const [codeOpen, setCodeOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -201,10 +221,6 @@ export function LabNotebookEntryCard({
   );
   const hasFooter = Boolean(onAddComment || comments?.length);
   const bodyCollapsible = (entry.body?.length ?? 0) > 420;
-  const supportingEvidence =
-    thread?.incoming?.filter((incoming) => incoming.stance === "supports").length ?? 0;
-  const challengingEvidence =
-    thread?.incoming?.filter((incoming) => incoming.stance === "refutes").length ?? 0;
 
   function submitComment() {
     const body = commentDraft.trim();
@@ -214,7 +230,7 @@ export function LabNotebookEntryCard({
   }
 
   return (
-    <div data-testid={`nb-entry-${entry.id}`} data-nb-type={entry.type}>
+    <div data-testid={`nb-entry-${notebookEntryKey(entry)}`} data-nb-type={entry.type}>
       <Card
         className={cn(
           "group/card relative gap-0 overflow-hidden rounded-lg py-0 shadow-none transition-colors hover:border-foreground/20",
@@ -226,7 +242,7 @@ export function LabNotebookEntryCard({
             `white-space: nowrap` would otherwise blow the auto track out to
             the untruncated text width and overflow the panel. */}
         <CardHeader className="relative grid-cols-[minmax(0,1fr)] gap-1.5 px-3 pb-0 pt-2.5">
-          <div className="flex min-w-0 items-center gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <Badge
               variant="outline"
               className={cn("h-5 gap-1 px-1.5 text-[10px] font-medium", meta.surface, meta.chip)}
@@ -258,7 +274,7 @@ export function LabNotebookEntryCard({
                   variant="outline"
                   className={cn("h-5 px-1.5 text-[9px] uppercase tracking-wider", STATUS_META[status])}
                 >
-                  {status}
+                  {HYPOTHESIS_LABELS[status]}
                 </Badge>
               )}
               {entry.confidence && <ConfidenceMeter level={entry.confidence} />}
@@ -313,7 +329,7 @@ export function LabNotebookEntryCard({
                       "border-rose-500/25 text-rose-600 dark:text-rose-400",
                     (!entry.stance || entry.stance === "neutral") && "text-muted-foreground",
                   )}
-                  onClick={() => onJumpToEntry?.(entry.relatesTo!)}
+                  onClick={() => onJumpToEntry?.(notebookTargetKey(entry, entry.relatesTo!))}
                 >
                   <CornerDownRightIcon className="size-3 shrink-0" />
                   <span className="truncate">
@@ -332,7 +348,7 @@ export function LabNotebookEntryCard({
                 <button
                   type="button"
                   className="flex min-w-0 items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                  onClick={() => onJumpToEntry?.(entry.supersedes!)}
+                  onClick={() => onJumpToEntry?.(notebookTargetKey(entry, entry.supersedes!))}
                 >
                   <RotateCcwIcon className="size-3 shrink-0" />
                   <span className="truncate">
@@ -361,27 +377,16 @@ export function LabNotebookEntryCard({
             </div>
           )}
 
-          {entry.type === "hypothesis" && (
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-              {supportingEvidence + challengingEvidence === 0 ? (
-                <span>Awaiting linked evidence</span>
-              ) : (
-                <>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="size-1.5 rounded-full bg-emerald-500" />
-                    {supportingEvidence} support{supportingEvidence === 1 ? "" : "s"}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="size-1.5 rounded-full bg-rose-500" />
-                    {challengingEvidence} challenge{challengingEvidence === 1 ? "" : "s"}
-                  </span>
-                </>
-              )}
-            </div>
-          )}
+          <NotebookEvidenceSummary entry={entry} thread={thread} entries={evidenceEntries}
+            onJump={onJumpToEntry} onOpenFile={onOpenFile} />
         </CardHeader>
 
         <CardContent className="relative flex flex-col gap-2.5 px-3 pb-2.5 pt-2">
+          {sessionId && entry.type === "hypothesis" && <div className="flex flex-wrap gap-1.5"><NotebookPlanDialog key={`${projectId}:${sessionId}:${entry.id}`} entry={entry} sessionId={sessionId} projectId={projectId} /><NotebookRobustnessDialog key={`robustness:${projectId}:${sessionId}:${entry.id}`} entry={entry} sessionId={sessionId} projectId={projectId} onOpenFile={onOpenFile} /><NextExperimentsDialog entry={entry} sessionId={sessionId} projectId={projectId} model={model} onSaved={onResearchSaved} /></div>}
+          {sessionId && !entry.provisional && ["hypothesis", "observation", "decision"].includes(entry.type) && <div><EvidencePackageDialog projectId={projectId} initialRoot={{ sessionId, entryId: entry.id }} candidates={[{ sessionId, entryId: entry.id, title: entry.title, type: entry.type }]} /></div>}
+          {sessionId && Boolean(entry.results?.length) && <NotebookResultLinks key={`${projectId}:${sessionId}:${entry.id}`} entry={entry} sessionId={sessionId} projectId={projectId} onOpenFile={onOpenFile} />}
+          {entry.proposalOnly && <p className="rounded border border-amber-500/30 p-2 text-xs">Planning record only — not observed evidence, a performed method or execution approval.</p>}
+          {entry.nextExperiments && sessionId && <details className="min-w-0 rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Proposed next investigations ({entry.nextExperiments.experiments.length}) · not executed</summary><div className="mt-2"><NextExperimentCards plan={entry.nextExperiments} projectId={projectId} sessionId={sessionId} sourceDigests={entry.nextExperimentBinding?.sourceDigests} /></div></details>}
           {entry.body && (
             <div className="flex flex-col items-start gap-0.5">
               <div

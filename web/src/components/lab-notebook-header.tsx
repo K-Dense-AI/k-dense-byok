@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ActivityIcon,
   BookOpenIcon,
@@ -47,7 +47,7 @@ export interface NotebookOverview {
   artifactCount: number;
   collaboratorCount: number;
   pinnedCount: number;
-  hypotheses: { open: number; supported: number; refuted: number };
+  hypotheses: { open: number; supported: number; refuted: number; mixed: number; inconclusive: number };
   topTags: { label: string; count: number }[];
   latestObservation?: NotebookHighlight;
   latestDecision?: NotebookHighlight;
@@ -172,6 +172,8 @@ export function LabNotebookHeader({
   onTagClick,
   onEntryJump,
   methods,
+  memory,
+  packageControl,
 }: {
   streaming: boolean;
   scope: NotebookScope;
@@ -193,6 +195,8 @@ export function LabNotebookHeader({
   onTagClick: (tag: string) => void;
   onEntryJump: (entryId: string) => void;
   methods: { enabled: boolean; busy: boolean; run: () => void };
+  memory?: ReactNode;
+  packageControl?: ReactNode;
 }) {
   const [methodsOpen, setMethodsOpen] = useState(false);
 
@@ -205,7 +209,7 @@ export function LabNotebookHeader({
 
   const hasEntries = totalCount > 0;
   const hypothesisTotal =
-    overview.hypotheses.open + overview.hypotheses.supported + overview.hypotheses.refuted;
+    Object.values(overview.hypotheses).reduce((sum, n) => sum + n, 0);
   const hasMeta =
     Boolean(overview.latestDecision || overview.latestObservation) ||
     hypothesisTotal > 0 ||
@@ -246,7 +250,9 @@ export function LabNotebookHeader({
           </span>
         )}
 
-        <div className="ml-auto flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          {memory}
+          {packageControl}
           {scope === "session" && hasEntries && (
             <Popover open={methodsOpen} onOpenChange={setMethodsOpen}>
               <PopoverTrigger asChild>
@@ -468,7 +474,7 @@ export function LabNotebookHeader({
                 <span className="inline-flex shrink-0 items-center gap-2 tabular-nums">
                   <span
                     className="inline-flex items-center gap-1"
-                    title={`${overview.hypotheses.supported} supported`}
+                    title={`${overview.hypotheses.supported} hypotheses with supporting evidence`}
                   >
                     <CheckCircle2Icon className="size-3 text-emerald-600 dark:text-emerald-400" />
                     {overview.hypotheses.supported}
@@ -482,11 +488,13 @@ export function LabNotebookHeader({
                   </span>
                   <span
                     className="inline-flex items-center gap-1"
-                    title={`${overview.hypotheses.refuted} refuted`}
+                    title={`${overview.hypotheses.refuted} hypotheses with challenging evidence`}
                   >
                     <XCircleIcon className="size-3 text-rose-600 dark:text-rose-400" />
                     {overview.hypotheses.refuted}
                   </span>
+                  {overview.hypotheses.mixed > 0 && <span className="text-violet-600 dark:text-violet-400">{overview.hypotheses.mixed} conflicting</span>}
+                  {overview.hypotheses.inconclusive > 0 && <span>{overview.hypotheses.inconclusive} inconclusive</span>}
                 </span>
               )}
               {overview.topTags.length > 0 && (

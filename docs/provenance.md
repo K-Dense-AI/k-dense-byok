@@ -153,7 +153,7 @@ How each tool class earns its level:
   are `observed`: the server or the transfer layer hashed the bytes as it
   handled them.
 - Tools known to be read-only (`grep`, `find`, `ls`, the web tools, `notebook`,
-  `interview`, `scientific_result`) are recorded as steps with no file edges and
+  `interview`, `scientific_result`, `notebook_search`) are recorded as steps with no file edges and
   trigger no scan.
 
 ## Subagent work

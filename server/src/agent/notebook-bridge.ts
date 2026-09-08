@@ -152,7 +152,7 @@ export function seedBuiltinAgentNotebookTools(paths: ProjectPaths): boolean {
   let changed = false;
   for (const file of files) {
     const { name, tools } = parseAgentFrontmatter(path.join(agentsDir, file));
-    if (!name || !tools?.length || tools.includes("notebook")) continue;
+    if (!name || !tools?.length || ["notebook", "notebook_search"].every((tool) => tools.includes(tool))) continue;
     const existing = overrides[name];
     if (existing !== undefined && (typeof existing !== "object" || existing === null || Array.isArray(existing))) {
       continue; // malformed user entry — leave it alone
@@ -166,19 +166,19 @@ export function seedBuiltinAgentNotebookTools(paths: ProjectPaths): boolean {
         continue;
       }
       const existingTools = override.tools as string[];
-      const base = uniqueTools([...tools, "notebook"]);
+      const bases = [uniqueTools([...tools, "notebook"]), uniqueTools([...tools, "notebook", "notebook_search"])];
       const next = reconcileBuiltinTools({
         existing: existingTools,
         declared: tools,
-        add: ["notebook"],
-        shapes: [base, ...MODAL_AND_PDF_SHAPES.map((extra) => uniqueTools([...base, ...extra]))],
+        add: ["notebook", "notebook_search"],
+        shapes: bases.flatMap((base) => [base, ...MODAL_AND_PDF_SHAPES.map((extra) => uniqueTools([...base, ...extra]))]),
       });
       if (!next) continue;
       overrides[name] = { ...override, tools: next };
       changed = true;
       continue;
     }
-    overrides[name] = { ...override, tools: [...tools, "notebook"] };
+    overrides[name] = { ...override, tools: uniqueTools([...tools, "notebook", "notebook_search"]) };
     changed = true;
   }
   if (!changed) return false;
@@ -206,23 +206,20 @@ export function makeSubagentNotebookExtension(
   projectId: string,
   getSessionId: () => string,
 ): ExtensionFactory {
-  const harvest = (results: ChildResult[] | undefined) => {
+  const harvest = (results: ChildResult[] | undefined, synchronous: boolean) => {
     const parentSession = getSessionId();
     if (!parentSession) return;
     const sandboxRoot = resolvePaths(projectId).sandbox;
-    // Attribute harvested entries to the parent's in-flight run. Sync harvests
-    // always happen mid-run; an async child that completes after the run ends
-    // is left unstamped — and one that completes during a LATER run of this
-    // session gets that run's id (no correlation exists in the payload; see
-    // run-ids.ts). Dedup means an entry harvested unstamped is never
-    // re-appended with a runId later.
-    const runId = currentRunId(projectId, parentSession);
+    // An async completion may arrive during a DIFFERENT run. Without durable
+    // launch correlation, unknown is more honest than misattribution. Sync
+    // results still inherit the active run; async entries remain unstamped.
+    const runId = synchronous ? currentRunId(projectId, parentSession) : undefined;
     for (const r of results ?? []) {
       if (!r.agent || !r.sessionFile) continue;
       const entries = notebookEntriesFromSessionFile(r.sessionFile, r.agent, sandboxRoot);
       const candidates: NotebookEntry[] = [];
       for (const entry of entries) {
-        const dedupKey = `${r.sessionFile}:${entry.id}`;
+        const dedupKey = JSON.stringify([projectId, parentSession, r.sessionFile, entry.id]);
         if (harvestedIds.has(dedupKey)) continue;
         boundedSetAdd(harvestedIds, dedupKey, MAX_HARVESTED_IDS);
         candidates.push(runId ? { ...entry, runId } : entry);
@@ -235,11 +232,11 @@ export function makeSubagentNotebookExtension(
     pi.on("tool_result", async (event) => {
       if (event.toolName !== "subagent") return;
       const details = event.details as { results?: ChildResult[] } | undefined;
-      harvest(details?.results);
+      harvest(details?.results, true);
     });
     pi.events.on("subagent:async-complete", (data: unknown) => {
       const payload = data as { results?: ChildResult[] };
-      harvest(payload.results);
+      harvest(payload.results, false);
     });
   };
 }

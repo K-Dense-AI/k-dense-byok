@@ -79,6 +79,7 @@ const READ_ONLY_TOOLS = new Set([
   "interview",
   "notebook",
   "scientific_result",
+  "notebook_search",
   "list_pdf_annotations",
   "modal_status",
   "modal_instances",

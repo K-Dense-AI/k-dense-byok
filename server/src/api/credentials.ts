@@ -31,6 +31,7 @@ import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 import { validateModalCredentials } from "../modal/adapter.ts";
 import { modalJobManager } from "../modal/manager.ts";
+import { notebookRobustness } from "../agent/notebook-robustness.ts";
 
 const ENV_PATH = path.join(REPO_ROOT, ".env");
 let credentialEnvPath = ENV_PATH;
@@ -237,6 +238,7 @@ export async function registerCredentialRoutes(app: FastifyInstance): Promise<vo
         // absent can reattach immediately; no server restart or cold session
         // rebuild is required.
         await modalJobManager.recoverAllProjects();
+        await notebookRobustness.recoverAll();
       }
       return status();
     },

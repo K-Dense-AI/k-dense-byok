@@ -10,8 +10,11 @@
 import { Marked } from "marked";
 import DOMPurify from "dompurify";
 import { rawFileUrl, fileCategory } from "./use-sandbox";
-import type { NotebookEntry } from "./notebook";
+import { notebookEntryKey, notebookTargetKey, evidenceLinks, HYPOTHESIS_LABELS, type NotebookEntry } from "./notebook";
 import { deriveThreads } from "./notebook-threads";
+import { nextExperimentsText } from "./next-experiments";
+import { planHistoryText } from "./notebook-plans";
+import { resultReferenceText } from "./notebook-result-links";
 import { roleLabel } from "./notebook-filters";
 import { derive, type NotebookAnnotation } from "./notebook-annotations";
 
@@ -71,30 +74,55 @@ function entryHtml(
     projectId?: string;
   },
 ): string {
-  const thread = ctx.threads.get(entry.id);
+  const thread = ctx.threads.get(notebookEntryKey(entry));
   const superseded = Boolean(thread?.supersededBy);
   const meta: string[] = [
     `<span class="entry-type">${escapeHtml(TYPE_LABEL[entry.type] ?? entry.type)}</span>`,
   ];
   if (ctx.showRole) meta.push(`<span>by ${escapeHtml(roleLabel(entry.role ?? "agent"))}</span>`);
-  if (entry.confidence) meta.push(`<span>confidence: ${escapeHtml(entry.confidence)}</span>`);
+  if (entry.confidence) meta.push(`<span>author confidence: ${escapeHtml(entry.confidence)} (self-reported)</span>`);
+  if (entry.provisional) meta.push("<span>Provisional — not yet saved</span>");
   meta.push(`<span class="entry-time">${escapeHtml(new Date(entry.timestamp).toLocaleString())}</span>`);
 
   const badges: string[] = [];
   if (entry.type === "hypothesis" && thread?.status) {
-    badges.push(`<span class="badge badge-${thread.status}">${thread.status}</span>`);
+    badges.push(`<span class="badge badge-${thread.status}">${HYPOTHESIS_LABELS[thread.status]}</span>`);
   }
   if (ctx.pinnedIds.has(entry.id)) badges.push(`<span class="badge badge-pin">★ pinned</span>`);
 
   const threadLines: string[] = [];
-  if (entry.relatesTo) {
-    const target = ctx.byId.get(entry.relatesTo);
-    const rel =
-      entry.stance === "supports" ? "supports" : entry.stance === "refutes" ? "refutes" : "relates to";
-    threadLines.push(`<div class="thread">↳ ${rel}: ${escapeHtml(target?.title ?? entry.relatesTo)}</div>`);
+  for (const link of evidenceLinks(entry)) {
+    const target = ctx.byId.get(notebookTargetKey(entry, link.entryId, link.sessionId));
+    const rel = link.relation === "challenges" ? "refutes / challenges" : link.relation === "context" ? "relates to" : link.relation;
+    threadLines.push(`<div class="thread">↳ ${rel}: ${escapeHtml(target?.title ?? link.entryId)}${!target ? " (not in this export)" : ""}${link.rationale ? ` — ${escapeHtml(link.rationale)}` : ""}</div>`);
+  }
+  if (thread?.reviewRequired) threadLines.push('<div class="thread">Needs review: cited artifacts changed or are missing. This does not refute the claim.</div>');
+  if (thread?.status) threadLines.push('<div class="thread">Evidence links are authored interpretations, not independent replications or probabilities.</div>');
+  if (entry.scope) threadLines.push(`<div class="thread">Applicability (authored): ${escapeHtml(entry.scope)}</div>`);
+  if (entry.revisitWhen) threadLines.push(`<div class="thread">Revisit when (condition, not an automatic action): ${escapeHtml(entry.revisitWhen)}</div>`);
+  if (entry.outcome) threadLines.push(`<div class="thread">Outcome: ${escapeHtml(entry.outcome)} — null results and technical failures do not automatically refute a hypothesis.</div>`);
+  if (entry.limitations?.length) threadLines.push(`<div class="thread">Limitations:<ul>${entry.limitations.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>`);
+  if (entry.artifactHealth?.length) {
+    threadLines.push('<div class="thread">Artifact checks: direct cited files only, not scientific validity or upstream inputs.</div>');
+    for (const health of entry.artifactHealth) threadLines.push(`<div class="thread">${escapeHtml(health.path)}: ${escapeHtml(health.status)} — ${escapeHtml(health.reason ?? "")} (checked ${escapeHtml(new Date(health.checkedAt).toLocaleString())})</div>`);
+  }
+  if (entry.artifactHealthTruncated) threadLines.push(`<div class="thread">${entry.artifactHealthTruncated} additional artifacts were not checked.</div>`);
+  if (entry.nextExperiments) threadLines.push(`<div class="thread">Proposed next investigations — not performed:<pre>${escapeHtml(nextExperimentsText(entry.nextExperiments))}</pre></div>`);
+  if (entry.nextExperimentBinding) threadLines.push(`<div class="thread">Recorded proposal context (not scientific verification):<pre>${escapeHtml(JSON.stringify(entry.nextExperimentBinding, null, 2))}</pre></div>`);
+  if (entry.nextExperimentDecision) threadLines.push(`<div class="thread">User planning preference — not execution/spending approval:<pre>${escapeHtml(JSON.stringify(entry.nextExperimentDecision, null, 2))}</pre></div>`);
+  if (entry.analysisPlan) threadLines.push(`<div class="thread">Proposed analysis plan (draft, not approved):<pre>${escapeHtml(JSON.stringify(entry.analysisPlan, null, 2))}</pre></div>`);
+  if (entry.robustness) threadLines.push(`<div class="thread">Proposed robustness workflow (not approved or executed):<pre>${escapeHtml(JSON.stringify(entry.robustness, null, 2))}</pre></div>`);
+  if (entry.planHistory) threadLines.push(`<div class="body">${mdToHtml(planHistoryText(entry.planHistory), ctx.projectId)}</div>`);
+  if (entry.planHistoryError) threadLines.push(`<div class="thread">Plan history unavailable: ${escapeHtml(entry.planHistoryError)}</div>`);
+  if (entry.results?.length) {
+    threadLines.push('<div class="thread">Recorded scientific-result references (not independently verified measurements):</div>');
+    for (const ref of entry.results) {
+      const snapshot = entry.resultSnapshots?.find((s) => s.toolCallId === ref.toolCallId && (ref.sessionId === undefined || s.sessionId === ref.sessionId));
+      threadLines.push(`<div class="thread">${escapeHtml(resultReferenceText(snapshot ?? ref, entry.sessionId))}</div>`);
+    }
   }
   if (entry.supersedes) {
-    const target = ctx.byId.get(entry.supersedes);
+    const target = ctx.byId.get(notebookTargetKey(entry, entry.supersedes));
     threadLines.push(`<div class="thread">↺ supersedes: ${escapeHtml(target?.title ?? entry.supersedes)}</div>`);
   }
   if (thread?.supersededBy) {
@@ -145,7 +173,7 @@ export function buildNotebookPrintHtml(
   entries: NotebookEntry[],
   opts: NotebookPrintOpts = {},
 ): string {
-  const byId = new Map(entries.map((e) => [e.id, e]));
+  const byId = new Map(entries.map((e) => [notebookEntryKey(e), e]));
   const threads = deriveThreads(entries);
   const { pinnedIds, commentsByEntry } = derive({
     version: 1,
@@ -238,7 +266,8 @@ export function buildNotebookPrintHtml(
   .badge { font-size: 0.65rem; border: 1px solid #ccc; border-radius: 999px; padding: 0.1rem 0.5rem; vertical-align: middle; text-transform: uppercase; }
   .badge-supported { color: #047857; border-color: #047857; }
   .badge-refuted { color: #be123c; border-color: #be123c; }
-  .badge-open { color: #555; }
+  .badge-open, .badge-inconclusive { color: #555; }
+  .badge-mixed { color: #7c3aed; border-color: #7c3aed; }
   .badge-pin { color: #b45309; border-color: #b45309; }
   .thread { font-size: 0.8rem; color: #555; margin: 0.1rem 0; }
   .superseded-note { color: #be123c; }

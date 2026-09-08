@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { apiFetch, useProjectScopeId } from "@/lib/projects";
 import {
   mergeNotebookEntries,
-  normalizeNotebookEntries,
+  notebookEntryKey,
   type NotebookEntry,
 } from "@/lib/notebook";
 import { deriveThreads } from "@/lib/notebook-threads";
@@ -21,7 +21,7 @@ import {
 } from "@/lib/notebook-filters";
 import { buildNotebookPrintHtml } from "@/lib/notebook-print";
 import { useNotebookAnnotations } from "@/lib/use-notebook-annotations";
-import { useNotebookPolling } from "@/lib/use-notebook-polling";
+import { useNotebookData } from "@/lib/use-notebook-data";
 import { usePrefersReducedMotion } from "@/lib/use-reduced-motion";
 import {
   LabNotebookHeader,
@@ -32,6 +32,8 @@ import {
 } from "./lab-notebook-header";
 import { LabNotebookTimeline } from "./lab-notebook-timeline";
 import { TYPE_META } from "./lab-notebook-entry-card";
+import { NotebookMemoryDialog } from "./notebook-memory-dialog";
+import { EvidencePackageDialog } from "./evidence-package-dialog";
 
 const VIEW_MODE_KEY = "kady:notebook:view:v2";
 const FOCUS_DEADLINE_MS = 4000;
@@ -72,23 +74,23 @@ export function LabNotebookView({
 }) {
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
-  const [fetched, setFetched] = useState<NotebookEntry[]>([]);
   const [scope, setScope] = useState<NotebookScope>("project");
   const [viewMode, setViewMode] = useState<NotebookViewMode>("story");
   const [filters, setFilters] = useState<NotebookFilterState>(EMPTY_FILTERS);
-  const [projectEntries, setProjectEntries] = useState<NotebookEntry[]>([]);
   const [sessionNames, setSessionNames] = useState<Map<string, string>>(new Map());
   const [methodsBusy, setMethodsBusy] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const reduced = usePrefersReducedMotion();
 
-  // Always holds the *current* sessionId, independent of which effect's
-  // closure a given refetch() call happened to capture. Updated on every
-  // render (not just in the sessionId effect) so it's current even while
-  // other effects' async work is in flight.
-  const currentSessionRef = useRef(sessionId);
-  currentSessionRef.current = sessionId;
-  const inFlightRef = useRef(false);
+  const revision = `${subagentCompletions}:${streaming}`;
+  const sessionData = useNotebookData({ projectId: scopedProjectId,
+    url: sessionId ? `/sessions/${encodeURIComponent(sessionId)}/notebook` : null,
+    revision, poll: scope === "session", active: streaming || subagentCompletions > 0 });
+  const projectData = useNotebookData({ projectId: scopedProjectId,
+    url: scope === "project" ? `/projects/${encodeURIComponent(scopedProjectId)}/notebook` : null,
+    revision, poll: true, active: streaming || subagentCompletions > 0 });
+  const fetched = sessionData.entries;
+  const displayedData = scope === "project" ? projectData : sessionData;
 
   useEffect(() => {
     try {
@@ -108,70 +110,6 @@ export function LabNotebookView({
     }
   }, []);
 
-  const refetch = useCallback(() => {
-    let cancelled = false;
-    const capturedSessionId = sessionId;
-    if (!sessionId) {
-      setFetched([]);
-      return () => { cancelled = true; };
-    }
-    if (inFlightRef.current) return () => { cancelled = true; };
-    inFlightRef.current = true;
-    (async () => {
-      try {
-        const res = await apiFetch(
-          `/sessions/${encodeURIComponent(sessionId)}/notebook`,
-          {},
-          scopedProjectId,
-        );
-        if (!res.ok) return;
-        const data = (await res.json()) as { entries?: NotebookEntry[] };
-        // Guard against a response for a session we've since navigated away
-        // from (e.g. a subagentCompletions- or run-end-triggered fetch for
-        // session A resolving after sessionId has moved to B). `cancelled`
-        // only covers the effect that kicked this call off unmounting/
-        // re-running; `currentSessionRef` covers the cross-effect race.
-        if (!cancelled && capturedSessionId === currentSessionRef.current && Array.isArray(data.entries)) {
-          setFetched(normalizeNotebookEntries(data.entries));
-        }
-      } catch {
-        // Non-fatal: live entries still render.
-      } finally {
-        inFlightRef.current = false;
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [sessionId, scopedProjectId]);
-
-  // Cold-open/reload on session change, and re-pull when a subagent completes
-  // (its harvested entries are now in the durable notebook).
-  useEffect(() => {
-    if (sessionId) setFetched([]); // clear only on a real session switch
-    const cleanup = refetch();
-    return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (subagentCompletions > 0) return refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subagentCompletions]);
-
-  // The subagentCompletions signal fires on tool_end[subagent], which for
-  // async/background subagents corresponds to dispatch, not completion (async
-  // completion is delivered off the SSE stream). Re-fetch on run-end too, so
-  // entries harvested by an async child mid-run still surface once the parent
-  // run finishes. The polling hook below covers the residual gap (a child
-  // finishing after the parent run ends).
-  const wasStreamingRef = useRef(streaming);
-  useEffect(() => {
-    let cleanup: (() => void) | undefined;
-    if (wasStreamingRef.current && !streaming) cleanup = refetch();
-    wasStreamingRef.current = streaming;
-    return cleanup;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streaming]);
-
   const canAnnotate = scope === "session" && Boolean(sessionId);
   const {
     pinnedIds,
@@ -183,36 +121,13 @@ export function LabNotebookView({
     addNote,
   } = useNotebookAnnotations(sessionId, canAnnotate, scopedProjectId);
 
-  // Poll while async subagent work may still land entries post-run.
-  const hasSubagentActivity =
-    subagentCompletions > 0 || fetched.some((e) => e.role && e.role !== "agent");
-  useNotebookPolling({
-    enabled: scope === "session" && Boolean(sessionId) && hasSubagentActivity,
-    refetch,
-    signature: fetched.map((e) => e.id).join(","),
-    resetKey: subagentCompletions * 2 + (streaming ? 1 : 0),
-    // For async subagents the completion signal fires at dispatch, so a child
-    // dispatched in this session may still be running long after the quiet
-    // budget expires. Keep polling (slower) rather than going blind.
-    hasOutstandingWork: subagentCompletions > 0,
-  });
-
-  // Project scope: merged read-only view across all sessions.
+  // Labels are cosmetic; a failed label lookup must not hide notebook data.
   useEffect(() => {
     if (scope !== "project") return;
     let cancelled = false;
     (async () => {
       try {
-        const [nbRes, sessRes] = await Promise.all([
-          apiFetch(
-            `/projects/${encodeURIComponent(scopedProjectId)}/notebook`,
-            {},
-            scopedProjectId,
-          ),
-          apiFetch(`/sessions`, {}, scopedProjectId),
-        ]);
-        if (!nbRes.ok) throw new Error(`project notebook failed: ${nbRes.status}`);
-        const nb = (await nbRes.json()) as { entries?: NotebookEntry[] };
+        const sessRes = await apiFetch(`/sessions`, {}, scopedProjectId);
         const names = new Map<string, string>();
         if (sessRes.ok) {
           const sessions = (await sessRes.json()) as SessionInfo[];
@@ -221,16 +136,10 @@ export function LabNotebookView({
           }
         }
         if (!cancelled) {
-          setProjectEntries(
-            Array.isArray(nb.entries) ? normalizeNotebookEntries(nb.entries) : [],
-          );
           setSessionNames(names);
         }
       } catch {
-        if (!cancelled) {
-          toast.error("Couldn't load the project notebook.");
-          setScope("session");
-        }
+        if (!cancelled) setSessionNames(new Map());
       }
     })();
     return () => { cancelled = true; };
@@ -255,18 +164,25 @@ export function LabNotebookView({
     () => mergeNotebookEntries(mergeNotebookEntries(liveEntries, fetched), noteEntries),
     [liveEntries, fetched, noteEntries],
   );
-  const displayEntries = scope === "project" ? projectEntries : sessionEntries;
+  // The project stream has no separate SSE channel. Overlay this chat's live
+  // entries immediately, then let authoritative project rows win by scoped id.
+  const displayEntries = useMemo(() => scope === "project"
+    ? mergeNotebookEntries(
+        sessionId ? sessionEntries.filter((e) => e.role !== "you").map((e) => ({ ...e, sessionId })) : [],
+        projectData.entries,
+      )
+    : sessionEntries, [scope, sessionEntries, sessionId, projectData.entries]);
 
   const threads = useMemo(() => deriveThreads(displayEntries), [displayEntries]);
   const entryById = useMemo(
-    () => new Map(displayEntries.map((e) => [e.id, e])),
+    () => new Map(displayEntries.map((e) => [notebookEntryKey(e), e])),
     [displayEntries],
   );
   const overview = useMemo<NotebookOverview>(() => {
     const artifacts = new Set<string>();
     const collaborators = new Set<string>();
     const tags = new Map<string, number>();
-    const hypotheses = { open: 0, supported: 0, refuted: 0 };
+    const hypotheses = { open: 0, supported: 0, refuted: 0, mixed: 0, inconclusive: 0 };
     let latestObservation: NotebookOverview["latestObservation"];
     let latestDecision: NotebookOverview["latestDecision"];
     let updatedAt: number | undefined;
@@ -275,15 +191,15 @@ export function LabNotebookView({
       for (const artifact of entry.artifacts ?? []) artifacts.add(artifact);
       collaborators.add(entry.role ?? "agent");
       for (const tag of entry.tags ?? []) tags.set(tag, (tags.get(tag) ?? 0) + 1);
-      if (entry.type === "hypothesis") {
-        const status = threads.get(entry.id)?.status ?? "open";
+      if (entry.type === "hypothesis" && !threads.get(notebookEntryKey(entry))?.supersededBy) {
+        const status = threads.get(notebookEntryKey(entry))?.status ?? "open";
         hypotheses[status]++;
       }
       if (entry.type === "observation") {
-        latestObservation = { id: entry.id, title: entry.title };
+        latestObservation = { id: notebookEntryKey(entry), title: entry.title };
       }
       if (entry.type === "decision") {
-        latestDecision = { id: entry.id, title: entry.title };
+        latestDecision = { id: notebookEntryKey(entry), title: entry.title };
       }
       updatedAt = updatedAt === undefined ? entry.timestamp : Math.max(updatedAt, entry.timestamp);
     }
@@ -322,6 +238,7 @@ export function LabNotebookView({
 
   // --- Deep-link focus (chat → notebook, and thread-reference jumps) ---
   const pendingFocusRef = useRef<string | null>(null);
+  const memorySuppressedFocusToken = useRef<number | undefined>(undefined);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const tryFocus = useCallback(() => {
@@ -358,9 +275,10 @@ export function LabNotebookView({
 
   const focusToken = focusEntry?.token;
   useEffect(() => {
-    if (focusEntry && focusToken !== undefined) focusById(focusEntry.id);
+    if (focusEntry && focusToken !== undefined && focusToken !== memorySuppressedFocusToken.current) focusById(scope === "project" && sessionId
+      ? notebookEntryKey({ id: focusEntry.id, sessionId }) : focusEntry.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusToken]);
+  }, [focusToken, scope, sessionId]);
 
   // Retry pending focus whenever the rendered set changes (refetch landing).
   useEffect(() => {
@@ -482,6 +400,19 @@ export function LabNotebookView({
   return (
     <div className="flex h-full flex-col">
       <LabNotebookHeader
+        packageControl={<EvidencePackageDialog projectId={scopedProjectId} candidates={displayEntries.filter((e) => !e.provisional && ["hypothesis", "method", "observation", "decision"].includes(e.type) && (e.sessionId ?? sessionId)).map((e) => ({ sessionId: e.sessionId ?? sessionId!, entryId: e.id, title: e.title, type: e.type }))} />}
+        memory={<NotebookMemoryDialog projectId={scopedProjectId} activeSessionId={sessionId} onOpenFile={onOpenFile} onJump={(source) => {
+          memorySuppressedFocusToken.current = focusToken;
+          if (source.kind === "user-note") {
+            if (source.sessionId !== sessionId) return;
+            setScope("session");
+            focusById(`note-${source.entryId}`);
+          } else {
+            setScope("project");
+            projectData.refresh();
+            focusById(notebookEntryKey({ id: source.entryId, sessionId: source.sessionId }));
+          }
+        }} />}
         streaming={streaming}
         scope={scope}
         onScopeChange={setScope}
@@ -505,6 +436,12 @@ export function LabNotebookView({
           run: runMethodsDraft,
         }}
       />
+      {displayedData.error && (
+        <div role="alert" className="flex items-center gap-2 border-b bg-amber-500/10 px-4 py-2 text-xs">
+          <span>Notebook refresh failed. Displayed evidence checks may be out of date.</span>
+          <Button variant="outline" size="xs" onClick={displayedData.refresh}>Retry</Button>
+        </div>
+      )}
       {displayEntries.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 py-12 text-center">
           <div className="flex size-12 items-center justify-center rounded-2xl bg-muted/50">
@@ -537,7 +474,10 @@ export function LabNotebookView({
         </div>
       ) : (
         <LabNotebookTimeline
+          model={model}
           entries={visible}
+          sessionId={sessionId ?? undefined}
+          projectId={scopedProjectId}
           viewMode={viewMode}
           scope={scope}
           sessionNames={scope === "project" ? sessionNames : undefined}
@@ -548,10 +488,11 @@ export function LabNotebookView({
           canAnnotate={canAnnotate}
           reducedMotion={reduced}
           callbacks={{
+            onResearchSaved: () => { sessionData.refresh(); projectData.refresh(); },
             onOpenFile,
             onTogglePin: togglePin,
             onAddComment: addComment,
-            onJumpToChat,
+            onJumpToChat: scope === "session" ? onJumpToChat : undefined,
             onJumpToEntry: focusById,
             onTagClick: (tag) => setFilters((f) => ({ ...f, query: tag })),
           }}

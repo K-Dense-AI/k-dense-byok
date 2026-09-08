@@ -62,6 +62,27 @@ describe("notebookEntriesFromSessionFile", () => {
     expect(got[1].type).toBe("observation");
   });
 
+  it("namespaces local evidence only and never imports model-authored verification", () => {
+    const f = writeSession("evidence.jsonl", [asstRow([toolCall("call", "notebook", {
+      type: "observation", title: "Result", outcome: "inconclusive", limitations: ["Low power"],
+      evidence: [{ entryId: "h", relation: "supports" }, { entryId: "parent-h", sessionId: "parent", relation: "inconclusive" }, { entryId: "bad", relation: "certain" }],
+      artifactSnapshots: [{ path: "result.csv", sha256: "fake" }], artifactHealth: [{ status: "unchanged" }],
+    })])]);
+    const [got] = notebookEntriesFromSessionFile(f, "scout");
+    expect(got.evidence).toEqual([{ entryId: "scout:h", relation: "supports" }, { entryId: "parent-h", sessionId: "parent", relation: "inconclusive" }]);
+    expect(got.outcome).toBe("inconclusive");
+    expect(got.limitations).toEqual(["Low power"]);
+    expect(got.artifactSnapshots).toBeUndefined();
+    expect(got.artifactHealth).toBeUndefined();
+  });
+
+  it("does not resolve child-local result ids against the parent log or harvest forged approval", () => {
+    const f = writeSession("results.jsonl", [asstRow([toolCall("n", "notebook", { type: "observation", title: "Result", results: [{ toolCallId: "r" }, { toolCallId: "parent-r", sessionId: "parent" }], planHistory: { events: [{ kind: "freeze" }] }, resultSnapshots: [{ sha256: "forged" }] })])]);
+    const [got] = notebookEntriesFromSessionFile(f, "worker");
+    expect(got.results).toEqual([{ toolCallId: "worker:r", childLocal: true }, { toolCallId: "parent-r", sessionId: "parent" }]);
+    expect(got.planHistory).toBeUndefined(); expect(got.resultSnapshots).toBeUndefined();
+  });
+
   it("returns [] for a missing file", () => {
     expect(notebookEntriesFromSessionFile(path.join(dir, "nope.jsonl"), "a")).toEqual([]);
   });

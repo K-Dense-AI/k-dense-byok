@@ -351,6 +351,15 @@ describe("provenance recorder", () => {
     expect(row.inputs).toEqual([]);
   });
 
+  it("treats research recall as read-only rather than attributing concurrent file changes to it", async () => {
+    const rec = recorder(); await rec.flush();
+    rec.observe(startEvent("memory", "notebook_search", { query: "Harmony" }));
+    write("other-result.txt", "concurrent work");
+    rec.observe(endEvent("memory", "notebook_search")); await rec.flush();
+    const [step] = readSteps("sess-a", PROJECT);
+    expect(step.inputs).toEqual([]); expect(step.outputs).toEqual([]);
+  });
+
   it("ignores a failed declared write", async () => {
     const rec = recorder();
     rec.observe(startEvent("tc_f", "write", { path: "nope.py" }));

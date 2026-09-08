@@ -5,9 +5,9 @@
  * the run they belong to. Mirrors the sessionComputeTargets holder in
  * modal-tool.ts.
  *
- * Known limitation (accepted): an async/background subagent that completes
- * while a LATER run of the same session is in flight gets that later run's id
- * — the completion payload carries no correlation to the run that spawned it.
+ * Async notebook harvest deliberately does not consult this holder: a later
+ * active run is not the originating run. Until durable launch correlation is
+ * available, those notebook entries remain unstamped.
  */
 import { randomUUID } from "node:crypto";
 

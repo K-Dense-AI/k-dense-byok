@@ -6,6 +6,11 @@
  * This file is the authoritative source of truth for reload and export;
  * the live SSE `tool_start` frame is only a provisional mirror.
  */
+import type { NotebookEvidenceLink, NotebookOutcome, NotebookArtifactSnapshot, NotebookArtifactHealth } from "../../../web/src/lib/notebook-evidence-core.ts";
+import type { AnalysisPlanInput, AnalysisPlanHistory } from "../../../web/src/lib/notebook-plans.ts";
+import type { NotebookResultLink, NotebookResultSnapshot } from "../../../web/src/lib/notebook-result-links.ts";
+import type { RobustnessDraft } from "../../../web/src/lib/notebook-robustness.ts";
+import type { NextExperimentPlan, NextExperimentBinding, NextExperimentChoice } from "../../../web/src/lib/next-experiments.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { activePaths, resolvePaths } from "../projects.ts";
@@ -28,6 +33,18 @@ export interface NotebookEntryInput {
   code?: NotebookCode;
   confidence?: "low" | "medium" | "high";
   tags?: string[];
+  /** Authored relationships, not verified scientific conclusions. */
+  evidence?: NotebookEvidenceLink[];
+  limitations?: string[];
+  /** Authored applicability and reconsideration conditions, not verified facts. */
+  scope?: string;
+  revisitWhen?: string;
+  outcome?: NotebookOutcome;
+  /** Authored proposal only, never a frozen/approved record. */
+  analysisPlan?: AnalysisPlanInput;
+  robustness?: RobustnessDraft;
+  nextExperiments?: NextExperimentPlan;
+  results?: NotebookResultLink[];
   /** Id of an earlier entry this one responds to (threading). */
   relatesTo?: string;
   /** How this entry bears on relatesTo. */
@@ -42,6 +59,20 @@ export interface NotebookEntry extends NotebookEntryInput {
   role: string;
   /** Server-stamped id of the /run invocation that produced this entry. */
   runId?: string;
+  /** Server-measured at citation time; never supplied by the model. */
+  artifactSnapshots?: NotebookArtifactSnapshot[];
+  /** Derived at read/export time, not persisted as scientific truth. */
+  artifactHealth?: NotebookArtifactHealth[];
+  artifactHealthTruncated?: number;
+  /** Pinned result identities measured by the server, not copied cards. */
+  resultSnapshots?: NotebookResultSnapshot[];
+  /** Read/export-time enrichment from the immutable plan journal. */
+  planHistory?: AnalysisPlanHistory;
+  planHistoryError?: string;
+  /** Proposal-only records never constitute evidence or execution permission. */
+  proposalOnly?: boolean;
+  nextExperimentBinding?: NextExperimentBinding;
+  nextExperimentDecision?: NextExperimentChoice;
 }
 
 /** Session ids become filenames; they arrive raw from URLs. Reject traversal. */

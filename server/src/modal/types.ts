@@ -77,6 +77,13 @@ export interface ModalJobEvent {
   data?: Record<string, unknown>;
 }
 
+export interface ModalJobApproval {
+  /** Server-only association; ordinary modal tool/API inputs cannot set it. */
+  batchId: string;
+  inputs: ModalTransferFile[];
+  maxReservationUsd: number;
+}
+
 export interface ModalJob {
   version: 1;
   id: string;
@@ -114,6 +121,9 @@ export interface ModalJob {
   stderrBaseCursor: number;
   eventSeq: number;
   retryOf?: string;
+  approval?: ModalJobApproval;
+  /** Managed workflow cleanup was not confirmed; reconcile conservatively. */
+  approvalCleanupUncertain?: boolean;
   accounting: {
     reconciled: boolean;
     estimatedCostUsd?: number;

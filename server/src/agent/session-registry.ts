@@ -26,6 +26,8 @@ import { defaultModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
+import { notebookSearchTool } from "../../pi-packages/kady-notebook/memory-tool.ts";
+import { executeMemoryRecall } from "./notebook-memory.ts";
 import { makeScientificResultTool } from "./scientific-result.ts";
 import { clearSessionCompute, makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
 import {
@@ -220,6 +222,7 @@ async function build(
       "subagent_wait",
       "interview",
       "notebook",
+      "notebook_search",
       "scientific_result",
       ...PDF_ANNOTATION_TOOL_NAMES,
       ...WEB_ACCESS_TOOLS,
@@ -229,6 +232,7 @@ async function build(
     customTools: [
       interviewTool,
       notebookTool,
+      notebookSearchTool((params) => executeMemoryRecall(projectId, params)),
       scientificResultTool,
       ...pdfAnnotationTools,
       ...modalTools,

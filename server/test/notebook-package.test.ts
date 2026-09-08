@@ -25,7 +25,8 @@ describe("kady-notebook package", () => {
     process.env.PI_SUBAGENT_CHILD = "1";
     const child = fakePi();
     factory(child.api as never);
-    expect(child.registered).toHaveLength(1);
+    expect(child.registered).toHaveLength(2);
+    expect((child.registered[1] as { name: string }).name).toBe("notebook_search");
     expect((child.registered[0] as { name: string }).name).toBe("notebook");
 
     delete process.env.PI_SUBAGENT_CHILD;
@@ -49,7 +50,7 @@ describe("kady-notebook package", () => {
     const props = propsOf(notebookChildTool.parameters);
     for (const k of [
       "type", "title", "body", "artifacts", "code", "confidence", "tags",
-      "relatesTo", "stance", "supersedes",
+      "relatesTo", "stance", "supersedes", "evidence", "limitations", "outcome", "analysisPlan", "results", "robustness", "scope", "revisitWhen", "nextExperiments",
     ]) {
       expect(k in props).toBe(true);
     }
@@ -59,6 +60,14 @@ describe("kady-notebook package", () => {
     const lead = Object.keys(propsOf(LeadParams)).sort();
     const child = Object.keys(propsOf(ChildParams)).sort();
     expect(child).toEqual(lead);
+  });
+
+  it("keeps complete evidence schema parity and excludes server verification fields", () => {
+    for (const field of ["evidence", "limitations", "outcome", "analysisPlan", "results", "robustness", "scope", "revisitWhen", "nextExperiments"]) expect(JSON.parse(JSON.stringify(propsOf(ChildParams)[field]))).toEqual(JSON.parse(JSON.stringify(propsOf(LeadParams)[field])));
+    for (const field of ["artifactSnapshots", "artifactHealth", "sessionId", "resultSnapshots", "planHistory", "proposalOnly", "nextExperimentBinding", "nextExperimentDecision"]) {
+      expect(field in propsOf(LeadParams)).toBe(false);
+      expect(field in propsOf(ChildParams)).toBe(false);
+    }
   });
 
   it("neither schema exposes a runId property (it is server-stamped)", () => {
