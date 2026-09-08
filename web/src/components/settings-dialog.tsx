@@ -45,6 +45,8 @@ import {
   type StoredFusionConfig,
 } from "@/lib/fusion-presets";
 import dynamic from "next/dynamic";
+
+import { notifyCapabilitiesChanged } from "@/lib/capability-events";
 const panelLoading = () => <div className="p-4 text-xs text-muted-foreground" role="status">Loading settings…</div>;
 const SkillsPanel = dynamic(() => import("./skills-panel").then((m) => m.SkillsPanel), { loading: panelLoading });
 const PromptsPanel = dynamic(() => import("./prompts-panel").then((m) => m.PromptsPanel), { loading: panelLoading });
@@ -843,8 +845,17 @@ export function SettingsDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  // Skills / prompt templates edited here feed the composer's pickers, which
+  // fetch once per project — announce a change when the dialog closes.
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) notifyCapabilitiesChanged();
+      onOpenChange(next);
+    },
+    [onOpenChange],
+  );
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         className={cn(
           "sm:max-w-2xl h-[min(560px,80dvh)] flex flex-col gap-0 p-0 overflow-hidden"
@@ -924,28 +935,28 @@ export function SettingsDialog({
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="model-providers" className="flex-1 min-h-0 p-5">
+          <TabsContent value="model-providers" className="min-w-0 flex-1 min-h-0 p-5">
             <ProviderAuthPanel />
           </TabsContent>
-          <TabsContent value="api-keys" className="flex-1 min-h-0 p-5">
+          <TabsContent value="api-keys" className="min-w-0 flex-1 min-h-0 p-5">
             <ApiKeysPanel />
           </TabsContent>
-          <TabsContent value="skills" className="flex-1 min-h-0 p-5 overflow-y-auto">
+          <TabsContent value="skills" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
             <SkillsPanel />
           </TabsContent>
-          <TabsContent value="prompts" className="flex-1 min-h-0 p-5 overflow-y-auto">
+          <TabsContent value="prompts" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
             <PromptsPanel />
           </TabsContent>
-          <TabsContent value="specialists" className="flex-1 min-h-0 p-5 overflow-y-auto">
+          <TabsContent value="specialists" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
             <SubagentsPanel />
           </TabsContent>
-          <TabsContent value="connectors" className="flex-1 min-h-0 p-5 overflow-y-auto">
+          <TabsContent value="connectors" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
             <ConnectorsPanel />
           </TabsContent>
-          <TabsContent value="appearance" className="flex-1 min-h-0 p-5">
+          <TabsContent value="appearance" className="min-w-0 flex-1 min-h-0 p-5">
             <AppearancePanel />
           </TabsContent>
-          <TabsContent value="fusion" className="flex-1 min-h-0 p-5 overflow-y-auto">
+          <TabsContent value="fusion" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
             <FusionPanel />
           </TabsContent>
         </Tabs>

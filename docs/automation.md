@@ -42,6 +42,20 @@ runs. Kady therefore:
   its spend limit and marks it **Held: spend limit** in the panel; when the
   limit is raised (or spend drops), those schedules resume automatically.
 
+Resuming a held schedule by hand while the project is still over the cap is
+allowed, but a due fire (including a `catchUp: latest` slot) can run once
+before the next hold tick pauses it again.
+
+### Which model a scheduled run uses
+
+A fire happens inside the project's resident automation session, and a child
+inherits that session's model unless its `runs.run(...)` options pin `model:`.
+The resident session follows the model most recently used in a chat of the
+project (Pi's default model would otherwise apply, which is the most expensive
+one in the picker); completion notices that trigger a turn on that session use
+the same model. Ask Kady to pin a specific model in the script when a
+schedule must not follow later chat-model changes.
+
 ## Missions
 
 Multi-step delegations create a **mission**: a durable record of why the work

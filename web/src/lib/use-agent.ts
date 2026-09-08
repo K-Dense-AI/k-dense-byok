@@ -1180,7 +1180,7 @@ export function useAgent(projectId?: string) {
       instructions?: string,
     ): Promise<
       | { ok: true; tokensBefore: number; estimatedTokensAfter: number | null; costUsd: number }
-      | { ok: false; reason: "streaming" | "budget" | "no_session" | "error"; detail?: string }
+      | { ok: false; reason: "streaming" | "budget" | "no_session" | "too_small" | "error"; detail?: string }
     > => {
       const id = sessionIdRef.current;
       if (!id) return { ok: false, reason: "no_session" };
@@ -1198,7 +1198,13 @@ export function useAgent(projectId?: string) {
         const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
         if (!response.ok) {
           const reason =
-            response.status === 409 ? "streaming" : response.status === 402 ? "budget" : "error";
+            response.status === 409
+              ? data.reason === "too_small"
+                ? "too_small"
+                : "streaming"
+              : response.status === 402
+                ? "budget"
+                : "error";
           return { ok: false, reason, detail: typeof data.detail === "string" ? data.detail : undefined };
         }
         setContextUsage(parseContextUsage(data.contextUsage));
@@ -1331,6 +1337,28 @@ export function useAgent(projectId?: string) {
           await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
           response = await startRun();
         }
+        if (response.status === 409) {
+          // The session is busy with a turn this tab did not start (a system
+          // run: supervisor request, scheduled-run notice). Adopt that run so
+          // it streams here and queue the message as a follow-up instead of
+          // failing the send.
+          const busy = (await response.json().catch(() => ({}))) as { runId?: unknown };
+          if (typeof busy.runId === "string" && mountedRef.current) {
+            setMessages(messages);
+            sendClaimRef.current = false;
+            if (clientFetchRef.current === controller) clientFetchRef.current = null;
+            void adoptRun(id, busy.runId);
+            const queued = await followUp(text, images);
+            if (queued === "ok") return userMsgId;
+            if (queued === "not_streaming") {
+              // The system run ended in between: send normally on the next tick.
+              setStatus("ready");
+              setRunState("idle");
+              return undefined;
+            }
+            throw new Error("run failed: 409");
+          }
+        }
         if (!response.ok) throw new Error(`run failed: ${response.status}`);
         setStatus("streaming");
         await consumeRunResponse(response, consumer);
@@ -1350,10 +1378,12 @@ export function useAgent(projectId?: string) {
       return userMsgId;
     },
     [
+      adoptRun,
       consumeRunResponse,
       ensureSession,
       failRun,
       finalizeRun,
+      followUp,
       messages,
       nextId,
       scopedProjectId,

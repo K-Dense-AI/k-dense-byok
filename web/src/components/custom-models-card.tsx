@@ -52,8 +52,8 @@ const emptyModel = (): ModelRow => ({
   maxTokens: "",
   reasoning: false,
   image: false,
-  costInput: "0",
-  costOutput: "0",
+  costInput: "",
+  costOutput: "",
 });
 
 const emptyProvider = (): ProviderDraft => ({
@@ -201,7 +201,7 @@ export function CustomModelsCard() {
   const canSave = useMemo(() => dirty && !saving, [dirty, saving]);
 
   return (
-    <section className="rounded-lg border p-3" aria-label="Custom model servers" data-testid="custom-models-card">
+    <section className="min-w-0 max-w-full rounded-lg border p-3" aria-label="Custom model servers" data-testid="custom-models-card">
       <div className="flex items-start gap-2">
         <ServerIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0 flex-1">
@@ -303,58 +303,54 @@ export function CustomModelsCard() {
               </label>
             </div>
 
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full text-[11px]">
-                <thead className="text-left text-muted-foreground">
-                  <tr>
-                    <th className="pb-1 pr-2 font-medium">Model id</th>
-                    <th className="pb-1 pr-2 font-medium">Name</th>
-                    <th className="pb-1 pr-2 font-medium">Context</th>
-                    <th className="pb-1 pr-2 font-medium">Max out</th>
-                    <th className="pb-1 pr-2 font-medium">$/M in</th>
-                    <th className="pb-1 pr-2 font-medium">$/M out</th>
-                    <th className="pb-1 pr-2 font-medium">Reasons</th>
-                    <th className="pb-1 pr-2 font-medium">Images</th>
-                    <th className="pb-1" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {d.models.map((m, mi) => (
-                    <tr key={mi}>
-                      <td className="pr-2 py-0.5">
-                        <Input value={m.id} placeholder="llama-3.3-70b" className="h-7 font-mono text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} id`} onChange={(e) => editModel(pi, mi, { id: e.target.value })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Input value={m.name} className="h-7 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} name`} onChange={(e) => editModel(pi, mi, { name: e.target.value })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Input value={m.contextWindow} inputMode="numeric" placeholder="128000" className="h-7 w-20 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} context`} onChange={(e) => editModel(pi, mi, { contextWindow: e.target.value })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Input value={m.maxTokens} inputMode="numeric" placeholder="16384" className="h-7 w-20 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} max tokens`} onChange={(e) => editModel(pi, mi, { maxTokens: e.target.value })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Input value={m.costInput} inputMode="decimal" className="h-7 w-16 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} input cost`} onChange={(e) => editModel(pi, mi, { costInput: e.target.value })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Input value={m.costOutput} inputMode="decimal" className="h-7 w-16 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} output cost`} onChange={(e) => editModel(pi, mi, { costOutput: e.target.value })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Switch checked={m.reasoning} aria-label={`Server ${pi + 1} model ${mi + 1} reasoning`} onCheckedChange={(v) => editModel(pi, mi, { reasoning: v })} />
-                      </td>
-                      <td className="pr-2 py-0.5">
-                        <Switch checked={m.image} aria-label={`Server ${pi + 1} model ${mi + 1} images`} onCheckedChange={(v) => editModel(pi, mi, { image: v })} />
-                      </td>
-                      <td className="py-0.5">
-                        <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={`Remove server ${pi + 1} model ${mi + 1}`} onClick={() => edit(pi, { models: d.models.filter((_, j) => j !== mi) })}>
-                          <Trash2Icon className="size-3.5" />
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ul className="mt-3 flex flex-col gap-2" aria-label={`Server ${pi + 1} models`}>
+              {d.models.map((m, mi) => (
+                <li key={mi} className="rounded-md border border-dashed p-2">
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <label className="text-[11px] text-muted-foreground">
+                      Model id
+                      <Input value={m.id} placeholder="llama-3.3-70b" className="mt-1 h-7 font-mono text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} id`} onChange={(e) => editModel(pi, mi, { id: e.target.value })} />
+                    </label>
+                    <label className="text-[11px] text-muted-foreground">
+                      Display name
+                      <Input value={m.name} className="mt-1 h-7 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} name`} onChange={(e) => editModel(pi, mi, { name: e.target.value })} />
+                    </label>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <label className="text-[11px] text-muted-foreground">
+                      Context
+                      <Input value={m.contextWindow} inputMode="numeric" placeholder="128000" className="mt-1 h-7 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} context`} onChange={(e) => editModel(pi, mi, { contextWindow: e.target.value })} />
+                    </label>
+                    <label className="text-[11px] text-muted-foreground">
+                      Max output
+                      <Input value={m.maxTokens} inputMode="numeric" placeholder="16384" className="mt-1 h-7 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} max tokens`} onChange={(e) => editModel(pi, mi, { maxTokens: e.target.value })} />
+                    </label>
+                    <label className="text-[11px] text-muted-foreground">
+                      $/M input
+                      <Input value={m.costInput} inputMode="decimal" placeholder="0" className="mt-1 h-7 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} input cost`} onChange={(e) => editModel(pi, mi, { costInput: e.target.value })} />
+                    </label>
+                    <label className="text-[11px] text-muted-foreground">
+                      $/M output
+                      <Input value={m.costOutput} inputMode="decimal" placeholder="0" className="mt-1 h-7 text-[11px]" aria-label={`Server ${pi + 1} model ${mi + 1} output cost`} onChange={(e) => editModel(pi, mi, { costOutput: e.target.value })} />
+                    </label>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
+                    <label className="flex items-center gap-2">
+                      <Switch checked={m.reasoning} aria-label={`Server ${pi + 1} model ${mi + 1} reasoning`} onCheckedChange={(v) => editModel(pi, mi, { reasoning: v })} />
+                      Reasoning model
+                    </label>
+                    <label className="flex items-center gap-2">
+                      <Switch checked={m.image} aria-label={`Server ${pi + 1} model ${mi + 1} images`} onCheckedChange={(v) => editModel(pi, mi, { image: v })} />
+                      Accepts images
+                    </label>
+                    <Button type="button" size="sm" variant="ghost" className="ml-auto h-7 text-[11px]" aria-label={`Remove server ${pi + 1} model ${mi + 1}`} onClick={() => edit(pi, { models: d.models.filter((_, j) => j !== mi) })}>
+                      <Trash2Icon className="size-3.5" />
+                      Remove model
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
             <div className="mt-2 flex items-center gap-2">
               <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]" onClick={() => edit(pi, { models: [...d.models, emptyModel()] })}>
                 <PlusIcon className="size-3.5" />

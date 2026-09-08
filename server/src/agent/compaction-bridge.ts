@@ -180,21 +180,30 @@ export function makeScientificCompactionExtension(
         const instructions = [SCIENCE_COMPACTION_INSTRUCTIONS, event.customInstructions?.trim()]
           .filter(Boolean)
           .join("\n\n");
-        const main = await generate(
-          prep.messagesToSummarize,
-          model,
-          prep.settings.reserveTokens,
-          auth.apiKey,
-          headers,
-          event.signal,
-          instructions,
-          prep.previousSummary,
-          ctx.thinkingLevel,
-          undefined,
-          auth.env,
-        );
-        let summary = `${preamble.text}\n\n## Conversation summary\n${main.text}`;
-        let usage = main.usage;
+        // Mirror Pi: when the cut point falls inside the only turn there is
+        // nothing before it to summarize — asking the model to summarize an
+        // empty conversation yields a "no messages provided" narrative.
+        let summary = preamble.text;
+        let usage: Usage | undefined;
+        if (prep.messagesToSummarize.length > 0) {
+          const main = await generate(
+            prep.messagesToSummarize,
+            model,
+            prep.settings.reserveTokens,
+            auth.apiKey,
+            headers,
+            event.signal,
+            instructions,
+            prep.previousSummary,
+            ctx.thinkingLevel,
+            undefined,
+            auth.env,
+          );
+          summary += `\n\n## Conversation summary\n${main.text}`;
+          usage = main.usage;
+        } else if (prep.previousSummary) {
+          summary += `\n\n## Conversation summary\n${prep.previousSummary}`;
+        }
         if (prep.isSplitTurn && prep.turnPrefixMessages.length > 0) {
           // Mirror Pi: the cut point fell inside a turn, so the turn's earlier
           // part is summarized separately and appended.
@@ -212,7 +221,7 @@ export function makeScientificCompactionExtension(
             auth.env,
           );
           summary += `\n\n## Current turn so far\n${prefix.text}`;
-          usage = addUsage(usage, prefix.usage);
+          usage = usage ? addUsage(usage, prefix.usage) : prefix.usage;
         }
         return {
           compaction: {

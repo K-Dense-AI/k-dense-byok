@@ -189,6 +189,32 @@ describe("makeScientificCompactionExtension", () => {
     expect(result.compaction.usage.totalTokens).toBe(240);
   });
 
+  it("skips the history summary when the cut point leaves nothing before the split turn", async () => {
+    const generate = vi
+      .fn()
+      .mockResolvedValueOnce({ text: "Turn so far.", usage: usage(0.005) }) as unknown as SummaryGenerator;
+    const { handler } = install(generate);
+    const result = (await handler(
+      event({
+        preparation: {
+          ...event().preparation,
+          messagesToSummarize: [],
+          isSplitTurn: true,
+          turnPrefixMessages: [{ role: "assistant", content: "x" }],
+        },
+      }),
+      ctx(),
+    )) as { compaction: { summary: string; usage: { cost: { total: number } } } };
+    // One call: the prefix only. Pi's generator would otherwise be asked to
+    // summarize an empty conversation and answer "no messages provided".
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate.mock.calls[0][0]).toEqual([{ role: "assistant", content: "x" }]);
+    // The earlier summary is carried forward verbatim instead of regenerated.
+    expect(result.compaction.summary).toContain("## Conversation summary\nearlier summary");
+    expect(result.compaction.summary).toContain("## Current turn so far\nTurn so far.");
+    expect(result.compaction.usage.cost.total).toBeCloseTo(0.005);
+  });
+
   it("falls back to Pi's default (undefined) on generator errors, missing credentials or no model", async () => {
     const failing = vi.fn(async () => {
       throw new Error("provider down");

@@ -21,6 +21,18 @@ lines, attached file references) is appended after the expanded text. In the
 transcript the message shows as a compact **Prompt: /qc** (or **Skill: name**)
 chip you can expand to see exactly what the model received.
 
+### Extension commands
+
+A leading `/command` that is neither a template nor a skill is handed to Pi,
+which dispatches the slash commands its extensions register. pi-subagents
+ships several; the useful ones in Kady are read-only status reports that come
+back as a notice card instead of a model turn:
+
+```
+/subagents-watchdog status
+/subagents
+```
+
 ## Shipped templates
 
 | Command | Argument | What it does |

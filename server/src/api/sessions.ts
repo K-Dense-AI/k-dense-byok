@@ -579,8 +579,18 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       try {
         result = await session.compact(instructions);
       } catch (err) {
+        const message = (err as Error).message;
+        // Pi refuses when every message fits inside `keepRecentTokens`; that
+        // is a normal state, not a failure.
+        if (/nothing to compact/i.test(message)) {
+          reply.code(409);
+          return {
+            detail: "Nothing to compact yet: the whole conversation still fits inside the recent-context window.",
+            reason: "too_small",
+          };
+        }
         reply.code(502);
-        return { detail: `Compaction failed: ${(err as Error).message}` };
+        return { detail: `Compaction failed: ${message}` };
       }
       const entry = recordRun({
         sessionId,
@@ -681,7 +691,13 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         (retained && !retained.isComplete)
       ) {
         reply.code(409);
-        return { detail: "Session is already streaming a response" };
+        // The client adopts the live run (usually an extension-initiated
+        // system turn) and queues the message as a follow-up instead.
+        return {
+          detail: "Session is already streaming a response",
+          reason: "streaming",
+          runId: retained && !retained.isComplete ? retained.runId : null,
+        };
       }
 
       const body = req.body ?? {};
@@ -690,8 +706,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         return { detail: "message is required" };
       }
       // Kady expands slash commands itself (see expandChatCommand) and tells Pi
-      // not to, so composer-appended context never becomes `$ARGUMENTS`.
+      // not to, so composer-appended context never becomes `$ARGUMENTS`. A
+      // leading `/command` Kady did not recognize is left for Pi to dispatch:
+      // extension commands such as pi-subagents' `/subagents-watchdog status`
+      // answer with a custom message (a notice card) instead of a model turn.
       const prompt = expandChatCommand(paths, body.message);
+      const dispatchExtensionCommand = prompt === body.message && /^\/[a-z]/i.test(prompt);
       const parsedImages = parseRunImages(body.images);
       if ("error" in parsedImages) {
         reply.code(400);
@@ -845,7 +865,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
           log: req.log,
           run: () =>
             session.prompt(prompt, {
-              expandPromptTemplates: false,
+              expandPromptTemplates: dispatchExtensionCommand,
               ...(parsedImages.images.length > 0 ? { images: parsedImages.images } : {}),
             }),
         });

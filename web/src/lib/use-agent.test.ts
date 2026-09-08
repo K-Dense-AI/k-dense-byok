@@ -832,6 +832,78 @@ describe("useAgent system-initiated runs", () => {
   });
 });
 
+describe("useAgent send() while a system run is live", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("adopts the live run and queues the message as a follow-up instead of failing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let stateCalls = 0;
+    const posts: Array<{ path: string; body: unknown }> = [];
+    vi.spyOn(projects, "apiFetch").mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/sessions/idle/run/state" && ++stateCalls === 1) {
+        return new Response(JSON.stringify({ status: "none" }));
+      }
+      if (path === "/sessions/idle/history") {
+        return new Response(JSON.stringify({ messages: [{ role: "user", content: "stored" }, { role: "assistant", frames: [{ type: "text_delta", delta: "reply" }] }] }));
+      }
+      if (path === "/sessions/idle/run") {
+        posts.push({ path, body: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify({ detail: "busy", reason: "streaming", runId: "sys-7" }), { status: 409 });
+      }
+      if (path === "/sessions/idle/run/state") {
+        return new Response(
+          JSON.stringify({
+            status: "complete",
+            run: {
+              runId: "sys-7",
+              prompt: "",
+              images: [],
+              origin: "system",
+              kind: "turn",
+              baseline: { messages: [], contextUsage: null },
+              frames: [
+                { seq: 1, type: "run_start", runId: "sys-7", origin: "system", kind: "turn" },
+                { seq: 2, type: "text_delta", delta: "Replied to the specialist." },
+                { seq: 3, type: "done" },
+              ],
+              lastSeq: 3,
+            },
+          }),
+        );
+      }
+      if (path === "/sessions/idle/follow-up") {
+        posts.push({ path, body: JSON.parse(String(init?.body)) });
+        return new Response(JSON.stringify({ ok: true, pending: ["and then this"] }));
+      }
+      if (path.startsWith("/sessions/idle/run/state?frames=0")) {
+        return new Response(JSON.stringify({ status: "none" }));
+      }
+      throw new Error(`unexpected apiFetch path: ${path}`);
+    });
+
+    const { result } = renderHook(() => useAgent("p"));
+    await act(async () => {
+      expect(await result.current.loadSession("idle")).toBe("restored");
+    });
+
+    await act(async () => {
+      const sendPromise = result.current.send("and then this");
+      await vi.advanceTimersByTimeAsync(3_000);
+      await sendPromise;
+    });
+
+    // Five attempts at /run, then the follow-up route — never a failed bubble.
+    expect(posts.filter((p) => p.path === "/sessions/idle/run")).toHaveLength(5);
+    expect(posts.at(-1)).toMatchObject({ path: "/sessions/idle/follow-up", body: { message: "and then this" } });
+    await waitFor(() => expect(result.current.pendingFollowUps).toEqual(["and then this"]));
+    await waitFor(() => expect(result.current.messages.map((m) => m.content)).toContain("Replied to the specialist."));
+    expect(result.current.messages.some((m) => m.content.includes("Something went wrong"))).toBe(false);
+  });
+});
+
 describe("useAgent compact()", () => {
   afterEach(() => vi.restoreAllMocks());
 

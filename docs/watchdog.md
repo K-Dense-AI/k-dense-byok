@@ -48,3 +48,20 @@ one extra model call.
 The watchdog reads diffs and the transcript; it does not execute code or
 verify results itself, and it can be wrong in both directions. Treat findings
 as a prompt to check, not a verdict.
+
+Reviews run at turn boundaries (after Kady's reply) unless a tool cadence is
+set, so a finding can appear a few seconds after the reply. A review that
+fails — the configured model is unavailable, credentials are missing, the
+provider errors — is silent: pi-subagents records the failure internally and
+shows nothing in the chat. If findings never appear, check that the watchdog
+model is one the picker lists and that its provider is connected, and try a
+run that clearly matches WATCHDOG.md (an unexplained row exclusion, a claim
+that tests passed without running them). `/subagents-watchdog status` in the
+composer prints pi-subagents' own view: runtime state, model, review trigger
+and any last error.
+
+When `projects/` lives inside a git checkout (the default install layout), the
+"changed paths" the watchdog reports come from that checkout's `git status`,
+not from the sandbox, because the sandbox is an ignored directory of the same
+repository. Sandbox edits still trigger reviews through the observed-edit
+path; only the listed paths are misleading.

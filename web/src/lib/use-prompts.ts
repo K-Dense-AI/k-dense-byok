@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { listPromptTemplates, type PromptTemplateInfo } from "@/lib/capabilities";
+import { useCapabilitiesRevision } from "@/lib/capability-events";
 import { useProjectScopeId } from "@/lib/projects";
 
 /** Merged prompt templates (project wins) for the composer's `/` menu. */
@@ -15,6 +16,7 @@ export function usePromptTemplates(projectId?: string): {
   const scopedProjectId = projectId ?? contextProjectId;
   const [templates, setTemplates] = useState<PromptTemplateInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const globalRevision = useCapabilitiesRevision();
   const [revision, setRevision] = useState(0);
   const refresh = useCallback(() => setRevision((r) => r + 1), []);
 
@@ -32,7 +34,7 @@ export function usePromptTemplates(projectId?: string): {
     return () => {
       cancelled = true;
     };
-  }, [scopedProjectId, revision]);
+  }, [scopedProjectId, revision, globalRevision]);
 
   return { templates, loading, refresh };
 }

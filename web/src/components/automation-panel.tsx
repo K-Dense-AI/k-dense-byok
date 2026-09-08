@@ -48,6 +48,14 @@ const RUN_STATE_LABEL: Record<ScheduleView["runs"][number]["state"], string> = {
   failed_run: "failed",
 };
 
+/** pi-subagents redacts prompt-derived titles; name the run by its specialists instead. */
+const REDACTED = "[prompt redacted]";
+function missionLabel(m: MissionView): string {
+  if (m.title && m.title !== REDACTED) return m.title;
+  const agents = [...new Set(m.runs.map((r) => r.agent).filter((a): a is string => Boolean(a)))];
+  return agents.length > 0 ? `${agents.join(", ")} run` : "Delegated run";
+}
+
 export function AutomationPanel({ projectId }: { projectId: string }) {
   const [schedules, setSchedules] = useState<ScheduleView[]>([]);
   const [missions, setMissions] = useState<MissionView[]>([]);
@@ -59,17 +67,19 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
   const { confirm, dialog } = useConfirm();
 
   const refresh = useCallback(async () => {
-    try {
-      const [s, m] = await Promise.all([getSchedules(projectId), getMissions(projectId)]);
-      setSchedules(s.schedules);
-      setHeldByBudget(s.heldByBudget);
-      setMissions(m);
-      setError(null);
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Failed to load automation");
-    } finally {
-      setLoaded(true);
+    // Schedules and missions come from different stores; one failing must not
+    // hide the other.
+    const [s, m] = await Promise.allSettled([getSchedules(projectId), getMissions(projectId)]);
+    if (s.status === "fulfilled") {
+      setSchedules(s.value.schedules);
+      setHeldByBudget(s.value.heldByBudget);
     }
+    if (m.status === "fulfilled") setMissions(m.value);
+    const failures = [s, m].flatMap((r) =>
+      r.status === "rejected" ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : [],
+    );
+    setError(failures.length > 0 ? failures.join(" · ") : null);
+    setLoaded(true);
   }, [projectId]);
 
   useEffect(() => {
@@ -255,11 +265,11 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
             <div className="flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium">
-                  <span>{m.title}</span>
+                  <span>{missionLabel(m)}</span>
                   <Badge variant={m.status === "needs_decision" ? "destructive" : "outline"} className="h-5 text-[10px]">{m.status.replace("_", " ")}</Badge>
                   {m.goal && <Badge variant="secondary" className="h-5 text-[10px]">goal · {m.goal.status}</Badge>}
                 </div>
-                {m.objective && <div className="truncate text-[11px] text-muted-foreground">{m.objective}</div>}
+                {m.objective && m.objective !== REDACTED && <div className="truncate text-[11px] text-muted-foreground">{m.objective}</div>}
                 <div className="text-[10px] text-muted-foreground">
                   {m.runs.length} run{m.runs.length === 1 ? "" : "s"}
                   {m.decisions.some((d) => d.status === "open") ? ` · ${m.decisions.filter((d) => d.status === "open").length} open decision(s)` : ""}

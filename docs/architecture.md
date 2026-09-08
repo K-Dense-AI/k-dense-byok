@@ -79,6 +79,18 @@ a turn is published as a short `kind: "notice"` run. Idle chat tabs probe
 they did not start appears; those messages render as cards between the
 bubbles (and as `role: "system"` items in `GET /sessions/:id/history`).
 
+Two details keep system runs affordable and possible at all. Pi emits
+`session_start` only from `AgentSession.bindExtensions()`, so Kady calls it
+(headless `mode: "print"`) right after creating every session; without it
+pi-subagents never starts its supervisor channel, never registers the
+parent-side `subagent_supervisor` tool, and never resets per-session state.
+And a session that is cold-opened after a restart starts on the model it last
+ran with (a brand-new one on the model most recently used in a chat of the
+project) rather than the global default — user runs set the model per request
+anyway, but a system run uses whatever the session holds. A send that lands
+while a system run is streaming is not rejected: the tab adopts the live run
+and queues the message as a follow-up.
+
 Switching tabs in the UI is purely client-side; the backend doesn't need to
 know which tab is "active" because each request already carries its own
 session id. Inactive tabs stay mounted in the DOM (hidden with CSS) so a

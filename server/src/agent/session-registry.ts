@@ -19,6 +19,7 @@ import {
   type AgentSession,
   type SessionInfo,
 } from "@earendil-works/pi-coding-agent";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import { getMcpTools } from "./mcp.ts";
@@ -38,6 +39,7 @@ import {
 import { makeFusionRequestExtension } from "./fusion-bridge.ts";
 import { makeScientificCompactionExtension } from "./compaction-bridge.ts";
 import { makeDataGuardExtension } from "./data-guard.ts";
+import { readSchedulerState } from "./scheduler-state.ts";
 import { seedGuardPackage } from "./guard-bridge.ts";
 import { seedPromptTemplates } from "./prompts.ts";
 import { seedWatchdogGuidance } from "./watchdog-settings.ts";
@@ -174,6 +176,12 @@ function release(projectId: string, key: string, session: AgentSession): void {
       /* an observer failure must not block disposal */
     }
   }
+  // Pi's dispose() does not tell extensions the session is going away;
+  // pi-subagents releases its supervisor-channel watchers and pollers on
+  // `session_shutdown`, so emit it the way Pi's own quit path does.
+  void session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {
+    /* best effort: a failing shutdown handler must not block disposal */
+  });
   session.dispose();
   live.delete(key);
   pinned.delete(key);
@@ -181,12 +189,103 @@ function release(projectId: string, key: string, session: AgentSession): void {
   clearSessionCompute(projectId, key.slice(projectId.length + 1));
 }
 
+export interface OpenSessionOptions {
+  /**
+   * Which model a cold-opened or brand-new session starts on. `"session"`
+   * (default) restores the session's own last model; `"project"` uses the
+   * model most recently used by any *chat* session of the project, which is
+   * what the resident automation session wants: its own history is only
+   * notices, and the default model is the most expensive one in the picker.
+   */
+  modelPolicy?: "session" | "project";
+}
+
+/** Last `{provider, modelId}` a session JSONL recorded (model change or assistant reply). */
+export function lastModelInSessionFile(file: string): { provider: string; modelId: string } | undefined {
+  let lines: string[];
+  try {
+    lines = fs.readFileSync(file, "utf-8").split("\n");
+  } catch {
+    return undefined;
+  }
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    let entry: Record<string, unknown>;
+    try {
+      entry = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (entry.type === "model_change" && typeof entry.provider === "string" && typeof entry.modelId === "string") {
+      return { provider: entry.provider, modelId: entry.modelId };
+    }
+    const message = entry.message as Record<string, unknown> | undefined;
+    if (
+      entry.type === "message" &&
+      message?.role === "assistant" &&
+      typeof message.provider === "string" &&
+      typeof message.model === "string"
+    ) {
+      return { provider: message.provider, modelId: message.model };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The model most recently used by a chat session of this project (system
+ * sessions excluded), when the runtime still knows it and has credentials.
+ */
+async function latestProjectModel(
+  paths: ProjectPaths,
+  runtime: ModelRuntime,
+  exclude: ReadonlySet<string>,
+): Promise<Model<Api> | undefined> {
+  let infos: SessionInfo[];
+  try {
+    infos = await SessionManager.list(paths.sandbox, paths.sessionsDir);
+  } catch {
+    return undefined;
+  }
+  const schedulerSessionId = readSchedulerState(paths).sessionId;
+  const candidates = infos
+    .filter((info) => !exclude.has(info.id) && info.id !== schedulerSessionId && info.messageCount > 0)
+    .sort((a, b) => b.modified.getTime() - a.modified.getTime());
+  for (const info of candidates) {
+    const last = lastModelInSessionFile(info.path);
+    if (!last) continue;
+    const model = runtime.getModel(last.provider, last.modelId);
+    if (model && runtime.hasConfiguredAuth(model.provider)) return model;
+  }
+  return undefined;
+}
+
+/**
+ * The model a persisted session last ran with, when Pi's registry still knows
+ * it and its provider has credentials. Mirrors the restore Pi's SDK performs
+ * when no explicit `model` is passed.
+ */
+function restoredSessionModel(sessionManager: SessionManager, runtime: ModelRuntime): Model<Api> | undefined {
+  const context = sessionManager.buildSessionContext();
+  if (context.messages.length === 0 || !context.model) return undefined;
+  const model = runtime.getModel(context.model.provider, context.model.modelId);
+  if (!model || !runtime.hasConfiguredAuth(model.provider)) return undefined;
+  return model;
+}
+
 async function build(
   projectId: string,
   paths: ProjectPaths,
   sessionManager: SessionManager,
+  options: OpenSessionOptions = {},
 ): Promise<AgentSession> {
   const fallbackModel = defaultModel(modelRegistry);
+  const ownId = sessionManager.getSessionId();
+  const initialModel =
+    (options.modelPolicy === "project" ? undefined : restoredSessionModel(sessionManager, modelRuntime)) ??
+    (await latestProjectModel(paths, modelRuntime, new Set(ownId ? [ownId] : []))) ??
+    fallbackModel;
   const mcpTools = await getMcpTools(projectId, paths);
   // Make the scientific agent roster visible to pi-subagents' project-agent
   // discovery (sandbox/.pi/agents/) before the session starts.
@@ -279,7 +378,12 @@ async function build(
   const modalTools = makeModalTools(projectId, () => holder.session?.sessionId ?? "");
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
-    model: fallbackModel,
+    // A cold-opened session starts on the model it last ran with (or the
+    // project's latest chat model), not the global default: user runs set the
+    // model per request anyway, but extension-initiated system runs
+    // (supervisor replies, scheduled-run notices) use whatever the session
+    // holds, and the default is the most expensive model in the picker.
+    model: initialModel,
     modelRuntime,
     sessionManager,
     resourceLoader,
@@ -317,6 +421,17 @@ async function build(
       ...mcpTools,
     ],
   });
+  // Pi emits `session_start` only from bindExtensions(); without it the
+  // extensions never see a live session: pi-subagents never starts its
+  // supervisor channel (so the `subagent_supervisor` tool in the allowlist
+  // above is never registered), never resets per-session state, and skips
+  // `resources_discover`. Headless mode mirrors `pi -p`.
+  await session.bindExtensions({
+    mode: "print",
+    onError: (error) => {
+      console.warn(`[session-registry] extension error in ${session.sessionId}:`, error);
+    },
+  });
   holder.session = session;
   if (observerFactory) {
     observers.set(keyFor(projectId, session.sessionId), observerFactory({ projectId, paths, session }));
@@ -328,10 +443,11 @@ async function build(
 export async function createSession(
   projectId: string,
   paths: ProjectPaths,
+  options: OpenSessionOptions = {},
 ): Promise<AgentSession> {
   fs.mkdirSync(paths.sessionsDir, { recursive: true });
   const sm = SessionManager.create(paths.sandbox, paths.sessionsDir);
-  const session = await build(projectId, paths, sm);
+  const session = await build(projectId, paths, sm, options);
   live.set(keyFor(projectId, session.sessionId), session);
   evictOverCap(projectId);
   return session;
@@ -342,6 +458,7 @@ export async function getSession(
   projectId: string,
   paths: ProjectPaths,
   sessionId: string,
+  options: OpenSessionOptions = {},
 ): Promise<AgentSession | null> {
   const k = keyFor(projectId, sessionId);
   const existing = live.get(k);
@@ -355,7 +472,7 @@ export async function getSession(
   const info = infos.find((i) => i.id === sessionId);
   if (!info) return null;
   const sm = SessionManager.open(info.path, paths.sessionsDir, paths.sandbox);
-  const session = await build(projectId, paths, sm);
+  const session = await build(projectId, paths, sm, options);
   live.set(k, session);
   evictOverCap(projectId);
   return session;

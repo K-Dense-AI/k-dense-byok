@@ -23,7 +23,7 @@
  * Reads of pi-subagents' store (`sandbox/.pi/subagents/schedules/<id>/`) are
  * read-only and follow the documented file shapes.
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
@@ -152,7 +152,6 @@ export function listSchedules(projectId: string): ScheduleView[] {
 
 /** pi-subagents stores missions under `<agentDir>/missions/projects/<sha256(cwd)>/<id>.json`. */
 export function missionsDir(paths: ProjectPaths, agentDir = KADY_PI_AGENT_DIR): string {
-  const { createHash } = require("node:crypto") as typeof import("node:crypto");
   const hash = createHash("sha256").update(path.resolve(paths.sandbox)).digest("hex");
   return path.join(agentDir, "missions", "projects", hash);
 }
@@ -217,11 +216,15 @@ export function configureScheduler(overrides: SchedulerDeps): void {
 }
 
 async function defaultOpenSession(projectId: string, paths: ProjectPaths, sessionId: string | null): Promise<AgentSession | null> {
+  // The resident session fires schedules (children inherit its model unless
+  // the script pins one) and answers completion notices, so it follows the
+  // model the user most recently chose in a chat of this project.
+  const options = { modelPolicy: "project" as const };
   if (sessionId) {
-    const existing = await getSession(projectId, paths, sessionId);
+    const existing = await getSession(projectId, paths, sessionId, options);
     if (existing) return existing;
   }
-  return createSession(projectId, paths);
+  return createSession(projectId, paths, options);
 }
 
 const ensuring = new Map<string, Promise<AgentSession | null>>();

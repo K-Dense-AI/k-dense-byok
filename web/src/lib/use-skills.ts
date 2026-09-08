@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { useCapabilitiesRevision } from "@/lib/capability-events";
 import { apiFetch, useProjectScopeId } from "@/lib/projects";
 
 export interface Skill {
@@ -19,6 +20,7 @@ export interface Skill {
 export function useSkills(projectId?: string): { skills: Skill[]; loading: boolean } {
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
+  const revision = useCapabilitiesRevision();
   const [skills, setSkills] = useState<Skill[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,7 +41,7 @@ export function useSkills(projectId?: string): { skills: Skill[]; loading: boole
     return () => {
       cancelled = true;
     };
-  }, [scopedProjectId]);
+  }, [scopedProjectId, revision]);
 
   return { skills, loading };
 }

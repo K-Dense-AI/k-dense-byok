@@ -643,7 +643,20 @@ describe("slash-command expansion on the way into Pi", () => {
       payload: { message: "/nothing-here please" },
     });
     expect(res.statusCode).toBe(200);
-    expect(s.promptCalls[1]).toEqual({ text: "/nothing-here please", options: { expandPromptTemplates: false } });
+    // Unmatched: left for Pi to dispatch as an extension command (e.g.
+    // pi-subagents' `/subagents-watchdog status`), so Pi's expansion stays on.
+    expect(s.promptCalls[1]).toEqual({ text: "/nothing-here please", options: { expandPromptTemplates: true } });
+
+    // Plain text never asks Pi to expand.
+    s.isStreaming = false;
+    res = await app.inject({
+      method: "POST",
+      url: "/sessions/s1/run",
+      headers: { "x-project-id": "default", "content-type": "application/json" },
+      payload: { message: "hello there" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(s.promptCalls[2]).toEqual({ text: "hello there", options: { expandPromptTemplates: false } });
 
     // Steering expands too.
     s.isStreaming = true;

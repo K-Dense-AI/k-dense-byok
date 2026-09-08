@@ -454,7 +454,7 @@ export function ProjectSwitcher({ onOpenProjectView }: ProjectSwitcherProps) {
         open={form.open}
         onOpenChange={(open) => (open ? null : setForm(EMPTY_FORM))}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {form.mode === "create" ? "New project" : "Edit project"}

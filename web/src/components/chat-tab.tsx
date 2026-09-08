@@ -2043,7 +2043,9 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     }
     if (result.reason === "streaming") toast.error("Wait for the current run to finish before compacting.");
     else if (result.reason === "budget") toast.error(result.detail ?? "Project spend limit reached.");
-    else if (result.reason === "no_session") toast.error("Nothing to compact yet.");
+    else if (result.reason === "no_session") toast.info("Nothing to compact yet.");
+    else if (result.reason === "too_small")
+      toast.info(result.detail ?? "Nothing to compact yet: the conversation still fits in the recent-context window.");
     else toast.error(result.detail ?? "Compaction failed.");
   }, [compact]);
 
