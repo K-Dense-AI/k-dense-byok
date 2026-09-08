@@ -37,6 +37,17 @@ import { EvidencePackageDialog } from "./evidence-package-dialog";
 
 const VIEW_MODE_KEY = "kady:notebook:view:v2";
 const FOCUS_DEADLINE_MS = 4000;
+/** Delays at which a focus jump re-asserts its target (see `tryFocus`). */
+const FOCUS_REASSERT_MS = [120, 400, 1000];
+
+/** True when `el` overlaps the viewport of its nearest scrollable ancestor. */
+function inScrollView(el: Element): boolean {
+  let parent = el.parentElement;
+  while (parent && !/(auto|scroll)/.test(getComputedStyle(parent).overflowY)) parent = parent.parentElement;
+  const bounds = parent?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+  const rect = el.getBoundingClientRect();
+  return rect.bottom > bounds.top && rect.top < bounds.bottom;
+}
 
 interface SessionInfo {
   id?: string;
@@ -251,7 +262,19 @@ export function LabNotebookView({
       clearTimeout(focusTimerRef.current);
       focusTimerRef.current = null;
     }
-    el.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    const scroll = (behavior: ScrollBehavior) => el.scrollIntoView({ block: "center", behavior });
+    scroll(reduced ? "auto" : "smooth");
+    // The timeline scrolls inside a stick-to-bottom container (Conversation,
+    // resize="smooth"). When the jump had to reset an active filter the visible
+    // set grows in the same commit, and that container's ResizeObserver then
+    // animates to the bottom and overrides this scroll, leaving the reader at
+    // the wrong end of the list. Re-assert the target once the observer has had
+    // its turn; skip when the entry is already in view so the common case stays
+    // a single smooth scroll. The last pass also catches lazily loaded artifact
+    // thumbnails above the target reflowing the list after the first scroll.
+    for (const delay of FOCUS_REASSERT_MS) {
+      setTimeout(() => { if (el.isConnected && !inScrollView(el)) scroll("auto"); }, delay);
+    }
     el.classList.add("kady-flash");
     setTimeout(() => el.classList.remove("kady-flash"), 1800);
   }, [reduced]);
