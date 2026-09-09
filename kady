@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Memorable launcher alias. start.sh remains supported for compatibility.
+set -e
+cd "$(dirname "$0")"
+exec ./start.sh "$@"

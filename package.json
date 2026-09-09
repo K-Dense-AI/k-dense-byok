@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "start": "node start.mjs",
-    "check": "node start.mjs --check"
+    "check": "node start.mjs --check",
+    "test:launcher": "node --test scripts/update-checkout.test.mjs"
   },
   "engines": {
     "node": ">=22"
