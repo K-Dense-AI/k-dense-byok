@@ -33,6 +33,23 @@ Three things to know up front:
 
 > 🎬 **Prefer to watch first?** [The Future of Research is Open: Introducing K-Dense BYOK](https://youtu.be/wsG3yVV4P5Q) walks through what the app does and how to get set up. More walkthroughs in [Tutorial videos](#tutorial-videos).
 
+## CompBioBench
+
+As of September 11, 2026, K-Dense BYOK holds **#2** on the public [CompBioBench v1 leaderboard](https://huggingface.co/spaces/Genentech/compbiobench-leaderboard-v1).
+
+CompBioBench is a Genentech benchmark of 100 computational-biology tasks. Each task has one exact-match answer. The gold answers stay on the leaderboard, so an independent grader scores every run.
+
+We ran the same K-Dense BYOK harness four times through OpenRouter. Each run used one model and one isolated project per question.
+
+| Run | Model | Reasoning | Accuracy | Rank (Sept 11, 2026) |
+|-----|-------|-----------|----------|----------------------|
+| r4 | GPT-6 Astra | xhigh | 98% | #2 |
+| r3 | Gemini 3.8 Flash | xhigh | 94% | #7 |
+| r2 | GPT-5.6 SOL | xhigh | 92% | #11 |
+| r1 | DeepSeek V4 Pro | high | 81% | — |
+
+Ranks will move as new submissions arrive. For agreement, failures, and cost on the first three runs, see [K-Dense BYOK on CompBioBench](https://www.k-dense.ai/blog/compbiobench-three-runs).
+
 ## Internal benchmark
 
 ![Internal benchmark comparing K-Dense BYOK with Claude Science and Biomni Lab across scientific quality and research execution](docs/07_platform_performance_summary.png)
@@ -173,6 +190,7 @@ Background reading on the research and evaluation work behind Kady, from the [K-
 
 | Post | What it covers |
 |------|----------------|
+| [K-Dense BYOK on CompBioBench](https://www.k-dense.ai/blog/compbiobench-three-runs) | Three models on the same harness: Gemini 3.8 Flash 94%, GPT-5.6 SOL 92%, DeepSeek V4 Pro 81% |
 | [Introducing K-Bench 01](https://www.k-dense.ai/blog/introducing-k-bench-01-internal-benchmark) | Our internal benchmark of nine frontier models across 178 real scientific tasks, and how often confident answers are wrong |
 | [K-Dense Web vs. Claude Science](https://www.k-dense.ai/blog/k-dense-web-vs-claude-science) | A 20-task comparison focused on execution and auditable research output |
 | [AI Scientists Need Lab Escape Rooms, Not More Exams](https://www.k-dense.ai/blog/science-needs-better-black-boxes) | Why hidden lab environments test AI scientists better than exam-style benchmarks |
