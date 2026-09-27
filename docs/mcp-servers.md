@@ -26,6 +26,18 @@ To add optional web search and URL fetching through Parallel Search MCP, use:
 
 The default endpoint requires no account or API key. After you test and save it, its `web_search` and `web_fetch` tools are available in new chat tabs.
 
+#### Example: You.com Search
+
+To add optional web search and URL content extraction through You.com's MCP server, use:
+
+- **Name**: `youcom-search`
+- **Server URL**: `https://api.you.com/mcp?profile=free`
+- **Bearer token**: leave blank for the keyless free tier (basic `you-search` tool), or paste a [You.com API key](https://you.com/platform/api-keys) for authenticated access with higher rate limits
+
+The keyless profile requires no account or API key. After you test and save it, the `you-search` and `you-contents` tools are available in new chat tabs — Kady can search the web, read page content, and synthesize cited answers.
+
+For authenticated access with all tools, use `https://api.you.com/mcp` as the server URL and set the bearer token to your API key. See the [You.com Agent Skills](https://github.com/youdotcom-oss/agent-skills) repo for additional skill and platform install options.
+
 ### Local (command)
 
 A small program that runs on your own computer when needed. These are typically published as npm packages and need no hosting.
