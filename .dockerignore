@@ -1,0 +1,24 @@
+# Node / build artifacts
+**/node_modules
+**/.next
+**/dist
+**/out
+**/coverage
+
+# Local data & env — must never enter the image
+/.env
+/projects
+**/.venv
+**/uv.lock
+
+# Git / CI / tooling
+.git
+.github
+.dockerignore
+
+# Logs
+**/*.log
+
+# OS cruft
+.DS_Store
+**/*.swp
