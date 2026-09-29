@@ -106,7 +106,7 @@ Click the gear icon in the top-right to:
 - manage your **API keys** (OpenRouter, every direct Pi model provider, Modal, and optional search keys),
 - browse, enable, install, write, and edit **[Skills](./skill-management.md)**,
 - view, edit, enable, and create **[Specialists](./sub-agents.md)** (sub-agents),
-- connect external tools under **Connectors** — **[MCP servers](./mcp-servers.md)** for GitHub, reference managers, databases, and hundreds more, with a built-in connection tester,
+- connect external tools under **Connectors** — **[MCP servers](./mcp-servers.md)** for GitHub, reference managers, databases, and hundreds more, per project or for all projects, with a connection tester, live status and browser sign-in,
 - manage **[Fusion](./openrouter-fusion.md)** presets,
 - change the **Appearance**.
 

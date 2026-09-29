@@ -14,7 +14,11 @@ import {
   ModelRegistry,
   ModelRuntime,
   SessionManager,
+  SettingsManager,
   createAgentSession,
+  createCodemodeExtension,
+  createMcpExtension,
+  createToolSearchExtension,
   getAgentDir,
   type AgentSession,
   type SessionInfo,
@@ -22,7 +26,7 @@ import {
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
-import { getMcpTools } from "./mcp.ts";
+import { migrateDisabledMcpServers } from "./mcp.ts";
 import { defaultModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
@@ -30,7 +34,7 @@ import { makeNotebookTool } from "./notebook.ts";
 import { notebookSearchTool } from "../../pi-packages/kady-notebook/memory-tool.ts";
 import { executeMemoryRecall } from "./notebook-memory.ts";
 import { makeScientificResultTool } from "./scientific-result.ts";
-import { clearSessionCompute, makeModalTools, MODAL_TOOL_NAMES } from "./modal-tool.ts";
+import { clearSessionCompute, makeModalTools } from "./modal-tool.ts";
 import {
   makeSubagentLedgerExtension,
   makeSubagentRefusalExtension,
@@ -43,7 +47,7 @@ import { readSchedulerState } from "./scheduler-state.ts";
 import { seedGuardPackage } from "./guard-bridge.ts";
 import { seedPromptTemplates } from "./prompts.ts";
 import { seedWatchdogGuidance } from "./watchdog-settings.ts";
-import { WEB_ACCESS_TOOLS, ensureWebAccess } from "./web-access-bridge.ts";
+import { ensureWebAccess } from "./web-access-bridge.ts";
 import {
   seedNotebookPackage,
   seedBuiltinAgentNotebookTools,
@@ -55,15 +59,12 @@ import {
   seedBuiltinAgentModalTools,
   seedModalPackage,
 } from "./modal-bridge.ts";
-import {
-  makePdfAnnotationTools,
-  PDF_ANNOTATION_TOOL_NAMES,
-} from "./pdf-annotation-tool.ts";
+import { makePdfAnnotationTools } from "./pdf-annotation-tool.ts";
 import {
   seedBuiltinAgentPdfAnnotationTools,
   seedPdfAnnotationPackage,
 } from "./pdf-annotation-bridge.ts";
-import { BUILTIN_TOOLS } from "./tools.ts";
+import { LEAD_DEFAULT_TOOLS, LEAD_EXCLUDED_TOOLS } from "./tools.ts";
 import { seedSubagentRuntimeSettings } from "./subagent-runtime-settings.ts";
 
 // Entry points normally establish this in env.ts. Keep the registry safe when
@@ -286,7 +287,9 @@ async function build(
     (options.modelPolicy === "project" ? undefined : restoredSessionModel(sessionManager, modelRuntime)) ??
     (await latestProjectModel(paths, modelRuntime, new Set(ownId ? [ownId] : []))) ??
     fallbackModel;
-  const mcpTools = await getMcpTools(projectId, paths);
+  // Pi's MCP extension reads only mcp.json (`enabled: false` marks a disabled
+  // server); fold in the separate disabled-servers file older Kady wrote.
+  migrateDisabledMcpServers(paths);
   // Make the scientific agent roster visible to pi-subagents' project-agent
   // discovery (sandbox/.pi/agents/) before the session starts.
   seedAgentFiles(paths);
@@ -324,9 +327,13 @@ async function build(
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
+  // One settings manager for the loader and the session, so the lead's
+  // default-tool additions apply on top of the user's own `defaultTools`.
+  const settingsManager = SettingsManager.create(paths.sandbox, getAgentDir());
   const resourceLoader = new DefaultResourceLoader({
     cwd: paths.sandbox,
     agentDir: getAgentDir(),
+    settingsManager,
     additionalExtensionPaths: [subagentsExtensionPath()],
     extensionFactories: [
       makeSubagentLedgerExtension(
@@ -361,9 +368,21 @@ async function build(
       // before destructive shell commands. Registered after the subagent
       // bridge so budget gates run first.
       makeDataGuardExtension(projectId, () => holder.session?.sessionId ?? "", paths.sandbox),
+      // Pi's MCP support (the CLI loads these three as built-ins; SDK sessions
+      // must add them). The MCP extension connects the servers in the global
+      // `<agentDir>/mcp.json` and the project's `.pi/mcp.json` on
+      // session_start and registers their tools as `mcp__<server>__<tool>`;
+      // codemode and tool_search are registered inactive and switched on by
+      // it for servers whose exposure needs them. Every MCP call runs through
+      // Pi's tool pipeline, so the data guard and provenance see it too.
+      createCodemodeExtension(),
+      createToolSearchExtension(),
+      createMcpExtension(),
     ],
   });
   await resourceLoader.reload();
+  // After reload(): it re-reads the settings files, which drops overrides.
+  settingsManager.applyOverrides({ defaultTools: LEAD_DEFAULT_TOOLS });
   // The interview tool blocks mid-run on answers posted to the HTTP API; it
   // reads the live sessionId through the same holder as the ledger extension.
   const interviewTool = makeInterviewTool(projectId, () => holder.session?.sessionId ?? "");
@@ -387,30 +406,13 @@ async function build(
     modelRuntime,
     sessionManager,
     resourceLoader,
-    tools: [
-      ...BUILTIN_TOOLS,
-      "subagent",
-      // pi-subagents registers the wait tool alongside `subagent` and enables it
-      // by default. Since 0.47 a workflowScript launch is async by default and
-      // returns a receipt, so without it in this allowlist Pi filters out the
-      // lead's only way to block on the children it just started. 0.61 renamed
-      // it `subagent_wait` → `bg_wait`; the old name is harmless here (unknown
-      // names are ignored) and covers a deliberate pin rollback.
-      "bg_wait",
-      "subagent_wait",
-      "interview",
-      // pi-subagents' parent side of the supervisor channel: reply to a
-      // background specialist that called `contact_supervisor` (the request
-      // arrives as a custom message and starts a system run; see AGENTS.md).
-      "subagent_supervisor",
-      "notebook",
-      "notebook_search",
-      "scientific_result",
-      ...PDF_ANNOTATION_TOOL_NAMES,
-      ...WEB_ACCESS_TOOLS,
-      ...MODAL_TOOL_NAMES,
-      ...mcpTools.map((t) => t.name),
-    ],
+    settingsManager,
+    // A denylist, not an allowlist: an allowlist would drop the MCP tools Pi's
+    // extension registers after connecting (their names are unknown here).
+    // Every other tool — built-ins, custom tools below, and the extension
+    // tools (`subagent`, `bg_wait`, `subagent_supervisor`, web access,
+    // codemode/tool_search when MCP needs them) — is active by default.
+    excludeTools: LEAD_EXCLUDED_TOOLS,
     customTools: [
       interviewTool,
       notebookTool,
@@ -418,7 +420,6 @@ async function build(
       scientificResultTool,
       ...pdfAnnotationTools,
       ...modalTools,
-      ...mcpTools,
     ],
   });
   // Pi emits `session_start` only from bindExtensions(); without it the

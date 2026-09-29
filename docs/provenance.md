@@ -145,11 +145,14 @@ How each tool class earns its level:
 - `write` / `edit` name the file they touch, so the write is `observed` and needs
   no scan.
 - `read` names its file, so the input edge is `observed`.
-- `bash`, `subagent`, and unknown tools (including MCP tools) are opaque —
+- `bash`, `subagent`, `codemode`, and unknown tools (including MCP tools) are opaque —
   `python de_analysis.py` is how most real scientific outputs get created, and
   only a before/after scan of the sandbox can see it. Outputs are normally
   `observed`, downgraded to `inferred` when attribution could be off (below);
   inputs, taken from the command line, are always `inferred`.
+- A `codemode` script's own tool calls (MCP tools, `write`, …) are recorded as
+  steps of their own, next to the `codemode` step; Pi's `tool_search` and MCP
+  resource tools are read-only and get no scan.
 - User steps (`upload`, `save`, `move`, `delete`) and Modal `compute` steps
   are `observed`: the server or the transfer layer hashed the bytes as it
   handled them.

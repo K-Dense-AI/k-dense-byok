@@ -139,7 +139,7 @@ k-dense-byok/
         └── sandbox/          ← Workspace (the Pi agent's cwd)
             ├── .pi/skills/        ← Per-project scientific skills (disabled ones sit in .pi/skills-disabled/)
             ├── .pi/agents/        ← Sub-agent definitions (one .md per specialist; disabled ones in .pi/agents-disabled/)
-            ├── .pi/mcp.json       ← MCP server connections for this project
+            ├── .pi/mcp.json       ← MCP servers for this project (Pi's format; all-projects servers live in ~/.kady/pi-agent/mcp.json)
             ├── .pi/sessions/      ← Pi JSONL session files (one per chat tab)
             ├── .kady/runs/<sessionId>/costs.jsonl        ← Per-session cost ledger
             ├── .kady/notebook/<sessionId>.jsonl          ← Living Lab Notebook entries (+ annotation sidecars, plans)

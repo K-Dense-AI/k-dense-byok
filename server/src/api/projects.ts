@@ -21,7 +21,6 @@ import { withNotebookPlanHistory } from "../agent/notebook-research.ts";
 import { readNotebookAnnotations } from "../agent/notebook-annotations.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
 import { buildNotebookZip } from "../agent/notebook-zip.ts";
-import { disposeMcpClients } from "../agent/mcp.ts";
 import { seedProjectSkills } from "../agent/skills.ts";
 import { runBroker } from "../agent/run-broker.ts";
 import {
@@ -304,8 +303,8 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       await modalJobManager.cancelProject(projectId);
       await abortProjectSessions(projectId);
       await Promise.all(activeRuns.map((run) => run.waitForCompletion()));
+      // Releasing a session emits session_shutdown, which closes its MCP connections.
       disposeProjectSessions(projectId);
-      await disposeMcpClients(projectId);
       deleteProject(projectId);
       modalJobManager.resumeProject(projectId);
       reply.code(204);

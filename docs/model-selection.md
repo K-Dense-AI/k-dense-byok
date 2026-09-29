@@ -98,8 +98,8 @@ The picker also has an **Openrouter Fusion** section at the top: named presets w
 
 ## Defaults
 
-- The default model is `openrouter/openai/gpt-6-astra`.
-- Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `openai/gpt-6-astra`, routed by `DEFAULT_MODEL_PROVIDER`).
+- The default model is `openrouter/anthropic/claude-opus-5.5`.
+- Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-5.5`, routed by `DEFAULT_MODEL_PROVIDER`).
 - To default to a connected subscription model, set `DEFAULT_MODEL_PROVIDER` to `openai-codex`, `anthropic`, `github-copilot`, `xai`, or `kimi-coding` and set `DEFAULT_MODEL_ID` to that provider's model id.
 - To default to any other direct provider, set `DEFAULT_MODEL_PROVIDER` to its Pi id (e.g. `groq`, `openai`, `amazon-bedrock`) and `DEFAULT_MODEL_ID` to that provider's model id; the key must be configured or new chats fail with a clear "not configured" error.
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
