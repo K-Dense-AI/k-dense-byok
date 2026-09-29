@@ -12,6 +12,7 @@
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { hasBinary } from "../binaries.ts";
@@ -54,16 +55,38 @@ export function detectBibTool(src: string): "bibtex" | "biber" | null {
   return null;
 }
 
+/**
+ * The user's own latexmk configuration, if any. Compiling runs with `-norc`
+ * because latexmk otherwise executes a `latexmkrc` found in the document's
+ * folder as Perl — and received LaTeX projects (Overleaf exports, a
+ * collaborator's zip) routinely ship one. The user's personal rc file is
+ * theirs, so it is loaded explicitly.
+ */
+export function userLatexmkrc(home = os.homedir(), env = process.env): string | null {
+  const xdg = env.XDG_CONFIG_HOME?.trim() || path.join(home, ".config");
+  for (const candidate of [path.join(xdg, "latexmk", "latexmkrc"), path.join(home, ".latexmkrc")]) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not there
+    }
+  }
+  return null;
+}
+
 /** Ordered list of commands (argv arrays) to run in the target's directory. */
 export function buildCompilePlan(opts: {
   engine: string;
   targetAbs: string;
   hasLatexmk: boolean;
   bibTool: "bibtex" | "biber" | null;
+  userRc?: string | null;
 }): string[][] {
   if (opts.hasLatexmk) {
     return [[
       "latexmk",
+      "-norc",
+      ...(opts.userRc ? ["-r", opts.userRc] : []),
       `-${opts.engine}`,
       "-interaction=nonstopmode",
       "-cd",
@@ -114,12 +137,25 @@ async function doCompile(
   const workDir = path.dirname(targetAbs);
   const stem = path.basename(targetAbs).replace(/\.(tex|latex)$/, "");
   const pdfAbs = path.join(workDir, stem + ".pdf");
+  // The fallback plan passes the bare file name, which an engine would parse
+  // as an option if it began with "-".
+  if (path.basename(targetAbs).startsWith("-")) {
+    return {
+      success: false,
+      pdf_path: null,
+      log: "",
+      errors: ["File names starting with '-' cannot be compiled; rename the file."],
+      synctex: false,
+    };
+  }
   const src = fs.readFileSync(targetAbs, "utf-8");
+  const useLatexmk = opts?.useLatexmk ?? hasBinary("latexmk");
   const plan = buildCompilePlan({
     engine,
     targetAbs,
-    hasLatexmk: opts?.useLatexmk ?? hasBinary("latexmk"),
+    hasLatexmk: useLatexmk,
     bibTool: detectBibTool(src),
+    userRc: useLatexmk ? userLatexmkrc() : null,
   });
 
   let log = "";

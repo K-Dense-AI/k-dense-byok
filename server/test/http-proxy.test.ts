@@ -188,3 +188,12 @@ describe("redactProxyUrl", () => {
     expect(redactProxyUrl("not a url")).toBe("(unparseable proxy URL)");
   });
 });
+
+describe("loopback bypass", () => {
+  it("always exempts loopback from the proxy, keeping the user's entries", async () => {
+    const { withLoopbackNoProxy } = await import("../src/http-proxy.ts");
+    expect(withLoopbackNoProxy(undefined)).toBe("localhost,127.0.0.1,::1");
+    expect(withLoopbackNoProxy("corp.example, localhost")).toBe("corp.example,localhost,127.0.0.1,::1");
+    expect(withLoopbackNoProxy("*")).toBe("*");
+  });
+});

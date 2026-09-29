@@ -205,8 +205,14 @@ function persistEnv(name: string, value: string | null): void {
   // Drop any existing assignment for this key.
   lines = lines.filter((l) => !isAssignment(l, name));
   if (value !== null) {
-    const needsQuote = /[\s#"']/.test(value);
-    const rendered = needsQuote ? `"${value.replace(/"/g, '\\"')}"` : value;
+    // applyKey rejects these first; this is the last line of defence, since a
+    // line break here would let a value write its own NODE_OPTIONS= line.
+    const invalid = invalidEnvValue(value);
+    if (invalid) throw new Error(invalid);
+    // env-file.mjs has no escapes: a quoted value ends at its closing quote,
+    // so pick the quote character the value does not contain.
+    const needsQuote = /[\s#"'\\]/.test(value);
+    const rendered = !needsQuote ? value : value.includes('"') ? `'${value}'` : `"${value}"`;
     // Keep a trailing newline tidy: append before any trailing blank lines.
     while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
     lines.push(`${name}=${rendered}`);
@@ -234,7 +240,42 @@ function status() {
   return out;
 }
 
+/**
+ * Why `value` cannot be stored in `.env`, or null. Control characters would
+ * start a new assignment (a pasted `"sk-…\nNODE_OPTIONS=--import=…"` runs code
+ * on the next launch), and the parser has no escape for a value holding both
+ * quote characters.
+ */
+export function invalidEnvValue(value: string): string | null {
+  if (/[\x00-\x1f\x7f]/.test(value)) {
+    return "That value contains a line break or control character; paste the key on its own.";
+  }
+  if (value.includes('"') && value.includes("'")) {
+    return "That value contains both single and double quotes, which cannot be stored in .env.";
+  }
+  return null;
+}
+
+function validateKey(spec: ManagedKey, raw: unknown): string | null {
+  if (raw !== null && typeof raw !== "string") {
+    return `${spec.bodyField} must be a string, or null to clear it.`;
+  }
+  const key = typeof raw === "string" ? raw.trim() : "";
+  if (key === "") return null;
+  const invalid = invalidEnvValue(key);
+  if (invalid) return invalid;
+  // Basic sanity check — we don't hard-reject on format (providers change
+  // formats), just guard against pasted junk. Configuration values are exempt
+  // (`global`, `us-east-1`, a short resource name).
+  if (spec.secret !== false && key.length < 8) {
+    return "That key looks too short to be valid.";
+  }
+  return null;
+}
+
 async function applyKey(spec: ManagedKey, raw: string | null): Promise<string | null> {
+  const invalid = validateKey(spec, raw);
+  if (invalid) return invalid;
   const key = typeof raw === "string" ? raw.trim() : "";
   if (key === "") {
     // Clear: drop from process.env and .env.
@@ -242,12 +283,6 @@ async function applyKey(spec: ManagedKey, raw: string | null): Promise<string | 
     persistEnv(spec.envVar, null);
     await spec.onChange?.(null);
     return null;
-  }
-  // Basic sanity check — we don't hard-reject on format (providers change
-  // formats), just guard against pasted junk. Configuration values are exempt
-  // (`global`, `us-east-1`, a short resource name).
-  if (spec.secret !== false && key.length < 8) {
-    return "That key looks too short to be valid.";
   }
   process.env[spec.envVar] = key;
   persistEnv(spec.envVar, key);
@@ -266,6 +301,15 @@ export async function registerCredentialRoutes(app: FastifyInstance): Promise<vo
         reply.code(400);
         const fields = MANAGED_KEYS.map((s) => s.bodyField).join(", ");
         return { detail: `Provide at least one of: ${fields} (a string, or null to clear)` };
+      }
+      // Validate everything before changing anything, so one bad field does
+      // not leave the others half-applied.
+      for (const spec of provided) {
+        const error = validateKey(spec, req.body?.[spec.bodyField] ?? null);
+        if (error) {
+          reply.code(400);
+          return { detail: error };
+        }
       }
 
       // Modal is one logical credential represented by two variables. Build

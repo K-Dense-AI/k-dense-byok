@@ -25,11 +25,16 @@ export interface CustomProvider {
   baseUrl: string;
   api: CustomModelApi;
   apiKey?: string;
+  /** Save with the key already stored server-side (the UI only sees a mask). */
+  keepApiKey?: boolean;
   models: CustomModelDefinition[];
 }
 
 export interface CustomProviderListing extends CustomProvider {
   managed: boolean;
+  /** A literal key is saved; GET never returns it, only this mask. */
+  apiKeySaved?: boolean;
+  apiKeyMasked?: string;
 }
 
 export async function getCustomProviders(): Promise<CustomProviderListing[]> {

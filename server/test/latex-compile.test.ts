@@ -30,8 +30,14 @@ describe("buildCompilePlan", () => {
       engine: "pdflatex", targetAbs: "/s/main.tex", hasLatexmk: true, bibTool: "bibtex",
     });
     expect(plan).toEqual([
-      ["latexmk", "-pdflatex", "-interaction=nonstopmode", "-cd", "-file-line-error", "-synctex=1", "/s/main.tex"],
+      ["latexmk", "-norc", "-pdflatex", "-interaction=nonstopmode", "-cd", "-file-line-error", "-synctex=1", "/s/main.tex"],
     ]);
+  });
+  it("never reads a latexmkrc from the document folder, but keeps the user's own", () => {
+    const plan = buildCompilePlan({
+      engine: "pdflatex", targetAbs: "/s/main.tex", hasLatexmk: true, bibTool: null, userRc: "/home/u/.latexmkrc",
+    });
+    expect(plan[0].slice(0, 4)).toEqual(["latexmk", "-norc", "-r", "/home/u/.latexmkrc"]);
   });
   it("without latexmk runs engine, bib tool, then two more engine passes", () => {
     const plan = buildCompilePlan({

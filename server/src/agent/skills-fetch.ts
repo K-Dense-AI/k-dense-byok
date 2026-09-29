@@ -228,7 +228,7 @@ export async function fetchSkills(options: FetchSkillsOptions): Promise<FetchedS
         stdio: ["ignore", "pipe", "pipe"],
         timeout: FETCH_TIMEOUT_MS,
         killSignal: "SIGTERM",
-        env: { ...process.env, NO_COLOR: "1" },
+        env: skillsCliEnv(),
       });
       let combined = "";
       const collect = (chunk: string): void => {
@@ -280,11 +280,35 @@ export interface FetchedCatalogue {
   cleanup: () => void;
 }
 
+/**
+ * Environment for the `skills` CLI and our fallback clone.
+ *
+ * - Telemetry off: by default the CLI reports every install (source, skill
+ *   names, file paths) to a third-party endpoint, including private
+ *   GitLab/GitHub Enterprise sources. Research tooling in a regulated lab
+ *   must not announce what it installs.
+ * - `core.symlinks=false`: the CLI copies a fetched repo with symlinks
+ *   dereferenced, so a skill shipping `notes -> ~/.ssh` would copy the
+ *   target's contents into the sandbox. Checked out as plain files instead,
+ *   a link is just a small text file holding its target path.
+ */
+export function skillsCliEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, NO_COLOR: "1", DISABLE_TELEMETRY: "1", DO_NOT_TRACK: "1" };
+  const count = Number.parseInt(base.GIT_CONFIG_COUNT ?? "0", 10);
+  const index = Number.isFinite(count) && count > 0 ? count : 0;
+  env.GIT_CONFIG_COUNT = String(index + 1);
+  env[`GIT_CONFIG_KEY_${index}`] = "core.symlinks";
+  env[`GIT_CONFIG_VALUE_${index}`] = "false";
+  return env;
+}
+
 function runGitClone(target: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(
       "git",
       [
+        "-c",
+        "core.symlinks=false",
         "clone",
         "--depth",
         "1",
@@ -293,7 +317,7 @@ function runGitClone(target: string): Promise<void> {
         `https://github.com/${SKILLS_REPO}.git`,
         target,
       ],
-      { stdio: ["ignore", "ignore", "pipe"], timeout: FETCH_TIMEOUT_MS },
+      { stdio: ["ignore", "ignore", "pipe"], timeout: FETCH_TIMEOUT_MS, env: skillsCliEnv() },
     );
     let stderr = "";
     child.stderr.setEncoding("utf-8");

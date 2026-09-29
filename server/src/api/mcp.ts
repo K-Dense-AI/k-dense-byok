@@ -152,7 +152,9 @@ export async function registerMcpRoutes(app: FastifyInstance): Promise<void> {
 
   // Connect every server the active project's sessions would see (both
   // scopes) and report state and tools. Slow by nature: it starts stdio servers.
-  app.get("/mcp/status", async (_req, reply) => {
+  // POST, not GET: launching configured commands is not a safe method, and a
+  // GET could be fired by any page's <img> tag.
+  app.post("/mcp/status", async (_req, reply) => {
     try {
       return await getMcpStatus(activePaths());
     } catch (err) {

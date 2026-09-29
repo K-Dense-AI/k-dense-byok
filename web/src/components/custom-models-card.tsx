@@ -42,6 +42,8 @@ interface ProviderDraft {
   baseUrl: string;
   api: CustomModelApi;
   apiKey: string;
+  /** Mask of the key saved server-side; a blank field keeps it. */
+  savedKeyMask?: string;
   models: ModelRow[];
 }
 
@@ -72,6 +74,7 @@ function draftFrom(p: CustomProviderListing): ProviderDraft {
     baseUrl: p.baseUrl,
     api: p.api,
     apiKey: p.apiKey && p.apiKey !== "none" ? p.apiKey : "",
+    ...(p.apiKeySaved ? { savedKeyMask: p.apiKeyMasked || "••••" } : {}),
     models: p.models.map((m) => ({
       id: m.id,
       name: m.name ?? "",
@@ -121,7 +124,7 @@ export function providersFromDrafts(drafts: ProviderDraft[]): CustomProvider[] |
       ...(d.name.trim() ? { name: d.name.trim() } : {}),
       baseUrl: d.baseUrl.trim(),
       api: d.api,
-      ...(d.apiKey.trim() ? { apiKey: d.apiKey.trim() } : {}),
+      ...(d.apiKey.trim() ? { apiKey: d.apiKey.trim() } : d.savedKeyMask ? { keepApiKey: true } : {}),
       models,
     });
   }
@@ -295,11 +298,22 @@ export function CustomModelsCard() {
                 API key (literal, <code>$ENV_VAR</code>, or empty for a keyless server)
                 <Input
                   value={d.apiKey}
-                  placeholder="$LAB_VLLM_KEY"
+                  type={d.apiKey && !d.apiKey.startsWith("$") ? "password" : "text"}
+                  autoComplete="off"
+                  placeholder={d.savedKeyMask ? `Saved key ${d.savedKeyMask} — leave blank to keep it` : "$LAB_VLLM_KEY"}
                   className="mt-1 h-8 font-mono text-xs"
                   aria-label={`Server ${pi + 1} API key`}
                   onChange={(e) => edit(pi, { apiKey: e.target.value })}
                 />
+                {d.savedKeyMask && !d.apiKey && (
+                  <button
+                    type="button"
+                    className="mt-1 underline decoration-dotted"
+                    onClick={() => edit(pi, { savedKeyMask: undefined })}
+                  >
+                    Remove saved key
+                  </button>
+                )}
               </label>
             </div>
 

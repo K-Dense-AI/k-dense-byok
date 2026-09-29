@@ -166,7 +166,7 @@ export interface McpStatusReport {
 
 /** Connect every server this project's chats would see and report its state. Slow. */
 export async function getMcpStatus(): Promise<McpStatusReport> {
-  const res = await apiFetch("/mcp/status");
+  const res = await apiFetch("/mcp/status", { method: "POST" });
   if (!res.ok) throw new Error(await detailOf(res, "getMcpStatus"));
   return (await res.json()) as McpStatusReport;
 }

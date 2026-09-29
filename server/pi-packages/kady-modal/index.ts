@@ -172,10 +172,22 @@ function projectId(): string {
 }
 
 function apiBase(): string {
-  return (
+  const raw = (
     process.env.KADY_INTERNAL_URL ||
     `http://127.0.0.1:${process.env.KADY_PORT || process.env.PORT || "8000"}`
   ).replace(/\/+$/, "");
+  // Requests carry the project id and, when required, the access token:
+  // only ever send them to the local Kady API (same rule as research memory).
+  const url = new URL(raw);
+  if (
+    !["http:", "https:"].includes(url.protocol) ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.username ||
+    url.password
+  ) {
+    throw new ApiError("Modal tools only connect to a loopback Kady API", { code: "BAD_INTERNAL_URL" });
+  }
+  return raw;
 }
 
 async function api<T>(
@@ -188,6 +200,8 @@ async function api<T>(
   // FST_ERR_CTP_EMPTY_JSON_BODY, which is what used to break every cancel.
   const headers: Record<string, string> = {
     "X-Project-Id": projectId(),
+    // Inherited from the backend when it requires an access token (auth.ts).
+    ...(process.env.KADY_AUTH_TOKEN ? { "X-Kady-Token": process.env.KADY_AUTH_TOKEN } : {}),
     ...(init.body !== undefined ? { "Content-Type": "application/json" } : {}),
     ...((init.headers as Record<string, string> | undefined) ?? {}),
   };

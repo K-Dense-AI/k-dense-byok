@@ -33,6 +33,15 @@ describe("providersFromDrafts", () => {
     expect(providersFromDrafts([{ id: "", name: "", baseUrl: "x", api: "openai-completions", apiKey: "", models: [] }])).toMatch(/needs an id/);
     expect(providersFromDrafts([{ id: "a", name: "", baseUrl: "http://x", api: "openai-completions", apiKey: "", models: [] }])).toMatch(/at least one model/);
   });
+
+  it("keeps a saved key it never saw when the field is left blank", () => {
+    const row = { id: "m", name: "", contextWindow: "", maxTokens: "", reasoning: false, image: false, costInput: "0", costOutput: "0" };
+    const kept = providersFromDrafts([{ id: "lab", name: "", baseUrl: "http://x/v1", api: "openai-completions", apiKey: "", savedKeyMask: "sk-l…abcd", models: [row] }]);
+    expect(kept).toEqual([expect.objectContaining({ id: "lab", keepApiKey: true })]);
+    expect((kept as lib.CustomProvider[])[0].apiKey).toBeUndefined();
+    const removed = providersFromDrafts([{ id: "lab", name: "", baseUrl: "http://x/v1", api: "openai-completions", apiKey: "", models: [row] }]);
+    expect((removed as lib.CustomProvider[])[0].keepApiKey).toBeUndefined();
+  });
 });
 
 describe("CustomModelsCard", () => {

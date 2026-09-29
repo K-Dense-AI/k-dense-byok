@@ -238,7 +238,8 @@ export function PdfViewer({
     const isReload = docRef.current !== null && loadedPathRef.current === path;
     const savedScroll = isReload ? (containerRef.current?.scrollTop ?? null) : null;
     const url = rawFileUrl(path, scopedProjectId) + (reloadToken ? `&_r=${reloadToken}` : "");
-    const task = pdfjs.getDocument({ url, withCredentials: true });
+    // No XFA forms: not needed to render, and a script surface in a hostile PDF.
+    const task = pdfjs.getDocument({ url, withCredentials: true, enableXfa: false });
     if (!isReload) {
       Promise.resolve().then(() => {
         if (cancelled) return;

@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/tooltip";
 import { normalizeMarkdown } from "@/lib/markdown-text";
 import { API_BASE } from "@/lib/projects";
+import { withApiToken } from "@/lib/api-auth";
 import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -375,7 +376,7 @@ function resolveImageSrc(src: unknown): string | undefined {
   if (typeof src !== "string" || !src) return undefined;
   if (/^(https?:|data:|blob:|\/\/)/i.test(src) || src.startsWith("/")) return src;
   const clean = src.replace(/^\.\//, "");
-  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(clean)}`;
+  return withApiToken(`${API_BASE}/sandbox/raw?path=${encodeURIComponent(clean)}`);
 }
 
 const SandboxImage = memo(

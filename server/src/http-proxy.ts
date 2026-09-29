@@ -86,6 +86,22 @@ function createOriginDispatcher(origin: string | URL, options: unknown): undici.
 
 let status: HttpProxyStatus | null = null;
 
+const LOOPBACK_NO_PROXY = ["localhost", "127.0.0.1", "::1"];
+
+/**
+ * NO_PROXY plus loopback. undici's EnvHttpProxyAgent does not bypass
+ * loopback on its own, so with a corporate proxy set, calls to a local
+ * Ollama / LM Studio and the child processes' calls back into this API —
+ * which carry the access token — would be sent to the proxy.
+ */
+export function withLoopbackNoProxy(noProxy: string | undefined): string {
+  const entries = (noProxy ?? "").split(/[\s,]+/).filter(Boolean);
+  if (entries.includes("*")) return noProxy!.trim();
+  const have = new Set(entries.map((e) => e.toLowerCase()));
+  for (const host of LOOPBACK_NO_PROXY) if (!have.has(host)) entries.push(host);
+  return entries.join(",");
+}
+
 /**
  * Install a proxy-aware global dispatcher when the environment asks for one.
  * Idempotent; returns what was (or wasn't) configured so the caller can log it.
@@ -102,13 +118,19 @@ export function configureHttpProxy(env: NodeJS.ProcessEnv = process.env): HttpPr
     return status;
   }
 
+  // Children (the pi-subagents runner installs the same agent from env) get
+  // the loopback bypass too.
+  const effectiveNoProxy = withLoopbackNoProxy(noProxy);
+  env.NO_PROXY = effectiveNoProxy;
+  env.no_proxy = effectiveNoProxy;
+
   // Values are passed explicitly rather than left to undici's own process.env
   // read, so the `env` argument is authoritative (and tests are deterministic).
   const dispatcher = withErrorListener(
     new undici.EnvHttpProxyAgent({
       httpProxy,
       httpsProxy,
-      noProxy,
+      noProxy: effectiveNoProxy,
       allowH2: false,
       clientFactory: createClient,
       factory: createOriginDispatcher,

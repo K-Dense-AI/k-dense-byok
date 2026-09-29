@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type { ProjectActivitySummary } from "@/lib/project-activity";
+import { noteAuthFailure, withApiTokenHeader } from "@/lib/api-auth";
 
 /**
  * Project types, storage, and the `apiFetch` wrapper used by every hook.
@@ -75,6 +76,23 @@ function streamApiBase(base: string): string {
 }
 
 export const STREAM_API_BASE = streamApiBase(API_BASE);
+
+function originOf(url: string): string | null {
+  try {
+    return new URL(url).origin;
+  } catch {
+    return null;
+  }
+}
+
+const API_ORIGINS = new Set(
+  [originOf(API_BASE), originOf(STREAM_API_BASE)].filter((o): o is string => Boolean(o)),
+);
+
+export function isApiUrl(url: string): boolean {
+  const origin = originOf(url);
+  return origin !== null && API_ORIGINS.has(origin);
+}
 
 const STORAGE_KEY = "kady:activeProjectId";
 const CHANGE_EVENT = "kady:project-changed";
@@ -178,7 +196,12 @@ export function apiFetch(
   if (!headers.has("X-Project-Id")) {
     headers.set("X-Project-Id", projectId?.trim() || getActiveProjectId());
   }
-  return fetch(url, { ...init, headers });
+  // Only our backend gets the access token, never an absolute third-party URL.
+  if (isApiUrl(url)) withApiTokenHeader(headers);
+  return fetch(url, { ...init, headers }).then((res) => {
+    noteAuthFailure(res);
+    return res;
+  });
 }
 
 // ---------------------------------------------------------------------------

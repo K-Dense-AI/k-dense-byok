@@ -1,7 +1,7 @@
 # K-Dense BYOK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.11.0-blue.svg)](server/package.json)
+[![Version](https://img.shields.io/badge/Version-0.12.0-blue.svg)](server/package.json)
 [![Skills](https://img.shields.io/badge/Skills-149-brightgreen.svg)](#what-can-it-do)
 [![Workflows](https://img.shields.io/badge/Workflows-326-blueviolet.svg)](#what-can-it-do)
 [![Databases](https://img.shields.io/badge/Databases-229-orange.svg)](#what-can-it-do)
@@ -183,6 +183,7 @@ All guides live in the [`docs/`](./docs) folder:
 | [Architecture](./docs/architecture.md) | How the two local services fit together (for the technically curious) |
 | [Contributing workflows](./docs/contributing-workflows.md) | Add new workflow templates to the library |
 | [Known limitations](./docs/limitations.md) | Rough edges to be aware of in the current beta |
+| [Security model](./docs/security.md) | Who can reach the local API, the optional access token, and hardening settings for shared or enterprise machines |
 
 ## From the K-Dense blog
 

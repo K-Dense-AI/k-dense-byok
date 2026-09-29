@@ -12,9 +12,11 @@ import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { NotebookEntry } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
 import {
+  notebookHtmlDocument,
+  notebookSvgDataUrl,
   sanitizeNotebookHtml,
-  sanitizeNotebookSvg,
 } from "@/lib/notebook-output-sanitize";
+import { useTheme } from "next-themes";
 import { getViewerDef } from "@/lib/viewers/registry";
 import {
   fileCategory,
@@ -496,6 +498,38 @@ function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*[mGKHF]/g, "");
 }
 
+/**
+ * An HTML cell output in its own inert document (see notebookHtmlDocument):
+ * `sandbox="allow-same-origin"` without `allow-scripts` runs nothing but lets
+ * us size the frame to its content.
+ */
+function NotebookHtmlFrame({ html }: { html: string }) {
+  const { resolvedTheme } = useTheme();
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(48);
+  const srcDoc = useMemo(
+    () => notebookHtmlDocument(sanitizeNotebookHtml(html), resolvedTheme === "dark"),
+    [html, resolvedTheme],
+  );
+  const measure = useCallback(() => {
+    const doc = frame.current?.contentDocument;
+    if (!doc?.documentElement) return;
+    // +2: scrollHeight rounds fractional layout down, which shows a scrollbar.
+    setHeight(Math.min(Math.max(doc.documentElement.scrollHeight + 2, 24), 4000));
+  }, []);
+  return (
+    <iframe
+      ref={frame}
+      title="Cell output"
+      sandbox="allow-same-origin"
+      srcDoc={srcDoc}
+      onLoad={measure}
+      style={{ height }}
+      className="block w-full border-0"
+    />
+  );
+}
+
 function NotebookOutput({ out }: { out: NbOutput }) {
   if (out.output_type === "stream") {
     const text = nbText(out.text);
@@ -521,17 +555,20 @@ function NotebookOutput({ out }: { out: NbOutput }) {
       );
     }
     if (data["image/svg+xml"]) {
-      const svg = sanitizeNotebookSvg(nbText(data["image/svg+xml"] as string | string[]));
+      // As an image, not inline: see notebookSvgDataUrl.
+      const src = notebookSvgDataUrl(nbText(data["image/svg+xml"] as string | string[]));
       return (
-        <div className="border-t px-4 py-3 overflow-x-auto [&_svg]:max-w-full"
-          dangerouslySetInnerHTML={{ __html: svg }} />
+        <div className="border-t px-4 py-3 overflow-x-auto">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="cell output" className="max-w-full" />
+        </div>
       );
     }
     if (data["text/html"]) {
-      const html = sanitizeNotebookHtml(nbText(data["text/html"] as string | string[]));
       return (
-        <div className="border-t px-4 py-2 text-xs overflow-x-auto [&_table]:text-xs [&_td]:px-2 [&_th]:px-2"
-          dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="border-t px-4 py-2">
+          <NotebookHtmlFrame html={nbText(data["text/html"] as string | string[])} />
+        </div>
       );
     }
     const plain = nbText(data["text/plain"] as string | string[] | undefined);

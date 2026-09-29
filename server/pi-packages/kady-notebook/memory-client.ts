@@ -44,7 +44,7 @@ export async function callMemoryApi(params: unknown, signal?: AbortSignal): Prom
   if (Buffer.byteLength(body) > 16 * 1024) throw new Error("Research memory request is too large");
   return new Promise((resolve, reject) => {
     const request = (base.protocol === "https:" ? https : http).request(base, {
-      method: "POST", signal, headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), "X-Project-Id": projectId },
+      method: "POST", signal, headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), "X-Project-Id": projectId, ...(process.env.KADY_AUTH_TOKEN ? { "X-Kady-Token": process.env.KADY_AUTH_TOKEN } : {}) },
     }, (response) => {
       const chunks: Buffer[] = []; let size = 0;
       response.on("data", (chunk: Buffer) => {

@@ -58,6 +58,8 @@ Kady supports Pi OAuth for ChatGPT (Sign in with ChatGPT on OpenAI, plus the leg
 
 Kady's agent intentionally has a powerful local shell so it can install scientific packages, run analyses, and create artifacts. The shell runs as your operating-system user; it is not an OS-level security boundary. File permissions such as `0600` prevent other users from reading credentials, but cannot prevent a process running as you from reading your own `.env`, `~/.kady`, or other local secrets.
 
+Other accounts and web pages are a different matter; see [Security model](./security.md) for how the local API is protected from them and when to turn on the access token.
+
 Kady instructs newly created project agents never to inspect or transmit credentials, but instructions are not a substitute for isolation against malicious prompt injection. Do not ask Kady to process adversarial files with secrets accessible to the same account. Use an OS sandbox, container, VM, or separate user account when working with untrusted content or when a stronger credential boundary is required.
 
 - **The raw-data guard is heuristic.** It blocks recognizable mutations of protected paths and pauses recognizable destructive shell commands ([details](./data-guard.md)), for Kady and for background specialists. It does not parse shell semantics or inspect what a script does internally, so it reduces ordinary agent mistakes rather than enforcing a boundary. Keep backups of irreplaceable raw data.

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { withApiToken } from "@/lib/api-auth";
 
 import {
   API_BASE,
@@ -90,12 +91,12 @@ export function fileCategory(name: string): FileCategory {
 
 export function rawFileUrl(path: string, projectId = getActiveProjectId()): string {
   const project = encodeURIComponent(projectId);
-  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(path)}&project=${project}`;
+  return withApiToken(`${API_BASE}/sandbox/raw?path=${encodeURIComponent(path)}&project=${project}`);
 }
 
 export function anndataSummaryUrl(path: string, projectId = getActiveProjectId()): string {
   const project = encodeURIComponent(projectId);
-  return `${API_BASE}/sandbox/anndata-summary?path=${encodeURIComponent(path)}&project=${project}`;
+  return withApiToken(`${API_BASE}/sandbox/anndata-summary?path=${encodeURIComponent(path)}&project=${project}`);
 }
 
 export function anndataEmbeddingUrl(
@@ -110,7 +111,7 @@ export function anndataEmbeddingUrl(
     project: projectId,
   });
   if (color) params.set("color", color);
-  return `${API_BASE}/sandbox/anndata-embedding.png?${params.toString()}`;
+  return withApiToken(`${API_BASE}/sandbox/anndata-embedding.png?${params.toString()}`);
 }
 
 export function sciSummaryUrl(
@@ -119,7 +120,7 @@ export function sciSummaryUrl(
   projectId = getActiveProjectId(),
 ): string {
   const params = new URLSearchParams({ path, kind, project: projectId });
-  return `${API_BASE}/sandbox/sci-summary?${params.toString()}`;
+  return withApiToken(`${API_BASE}/sandbox/sci-summary?${params.toString()}`);
 }
 
 export function sciRenderUrl(
@@ -133,7 +134,7 @@ export function sciRenderUrl(
     path, kind, index: String(index), project: projectId,
   });
   if (axis) params.set("axis", axis);
-  return `${API_BASE}/sandbox/sci-render.png?${params.toString()}`;
+  return withApiToken(`${API_BASE}/sandbox/sci-render.png?${params.toString()}`);
 }
 
 /** Last segment of a sandbox-relative path (paths are always `/`-separated). */
@@ -554,7 +555,7 @@ export function useSandbox(
   const downloadDir = useCallback((path: string) => {
     const project = encodeURIComponent(scopedProjectId);
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download-dir?path=${encodeURIComponent(path)}&project=${project}`;
+    a.href = withApiToken(`${API_BASE}/sandbox/download-dir?path=${encodeURIComponent(path)}&project=${project}`);
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -564,7 +565,7 @@ export function useSandbox(
   const downloadFile = useCallback((path: string) => {
     const project = encodeURIComponent(scopedProjectId);
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download?path=${encodeURIComponent(path)}&project=${project}`;
+    a.href = withApiToken(`${API_BASE}/sandbox/download?path=${encodeURIComponent(path)}&project=${project}`);
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -574,7 +575,7 @@ export function useSandbox(
   const downloadAll = useCallback(() => {
     const project = encodeURIComponent(scopedProjectId);
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download-all?project=${project}`;
+    a.href = withApiToken(`${API_BASE}/sandbox/download-all?project=${project}`);
     a.download = "sandbox.zip";
     document.body.appendChild(a);
     a.click();

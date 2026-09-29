@@ -141,5 +141,7 @@ The startup script picks up any new packages and skills automatically.
   NO_PROXY=localhost,127.0.0.1
   ```
 
-  Keep `localhost` in `NO_PROXY` so Ollama and the app's own services stay direct. On restart the backend log confirms it with `routing outbound HTTP through the configured proxy`. To check whether a 403 is really coming from the provider, call it directly from the same machine — `curl -sS https://openrouter.ai/api/v1/models -H "Authorization: Bearer $OPENROUTER_API_KEY"`. An error that isn't shaped like the provider's own JSON is coming from something in between.
+  Loopback (`localhost`, `127.0.0.1`, `::1`) is always added to `NO_PROXY`, so Ollama and the app's own services stay direct. On restart the backend log confirms it with `routing outbound HTTP through the configured proxy`. To check whether a 403 is really coming from the provider, call it directly from the same machine — `curl -sS https://openrouter.ai/api/v1/models -H "Authorization: Bearer $OPENROUTER_API_KEY"`. An error that isn't shaped like the provider's own JSON is coming from something in between.
+- **The UI loads but every request fails, and the backend log says `request refused: origin_not_allowed`** — the page was opened from an address the backend does not treat as the UI (another port, or a hostname). Open [http://localhost:3000](http://localhost:3000), or list the address in `KADY_ALLOWED_ORIGINS` (see [Security model](./security.md)).
+- **"Access token required"** — the backend is exposed beyond this machine (`KADY_HOST`) or `KADY_REQUIRE_AUTH=1` is set. Open the exact link the startup script printed, or paste it into the prompt.
 - **Something else?** — [Open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues); we read every one.

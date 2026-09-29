@@ -18,6 +18,7 @@ import { buildNvidiaModel, nvidiaExtraModelIds } from "../agent/models.ts";
 import {
   customModelForClient,
   listCustomProviders,
+  publicCustomProviders,
   validateCustomProviders,
   writeCustomProviders,
 } from "../agent/custom-models.ts";
@@ -295,7 +296,7 @@ export async function registerModelProviderRoutes(
 
   // Custom model servers (Pi models.json). Kady manages only the providers it
   // wrote; hand-written ones are listed read-only.
-  app.get("/custom-models", async () => ({ providers: listCustomProviders(options.customModelsDir) }));
+  app.get("/custom-models", async () => ({ providers: publicCustomProviders(options.customModelsDir) }));
 
   app.put<{ Body: { providers?: unknown } }>("/custom-models", async (req, reply) => {
     const validated = validateCustomProviders(req.body?.providers ?? []);
@@ -321,7 +322,7 @@ export async function registerModelProviderRoutes(
     for (const provider of written) {
       configured[provider.id] = (await safeCheckAuth(runtime, provider.id)) !== undefined;
     }
-    return { providers: written, configured };
+    return { providers: publicCustomProviders(options.customModelsDir), configured };
   });
 
   // NVIDIA NIM model discovery — kept as an alias of the generic route for
