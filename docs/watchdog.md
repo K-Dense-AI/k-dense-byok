@@ -21,16 +21,18 @@ mid-turn) the watchdog reads the diff, the current request and the project's
 
 A finding appears as a **Watchdog warning** card in the chat with severity,
 evidence and a recommended action; the agent gets one continuation to address
-it. When the same warning repeats several turns in a row the card is marked as
-a stalemate and the turn ends so you can step in. A clean review shows nothing.
+it. When the same warning repeats several turns in a row (the stalemate setting
+below) the card is marked as a stalemate and the turn ends so you can step in. A clean review shows nothing.
 
 ## Turning it on
 
 Settings → **Specialists** → **Watchdog**. Off by default. Options: the model
-to review with (empty inherits the chat's model), its thinking level,
-mid-turn cadence, whether to report concerns or only blockers, whether to
-review background specialists' own turns too, and whether to read
-`WATCHDOG.md`. Changes apply to new chat tabs.
+to review with (picked from the model picker; empty inherits the chat's
+model), its thinking level, mid-turn cadence, whether to report concerns or
+only blockers, how many times the same warning may repeat in a row before the
+turn stops as a stalemate (1–20), whether to review background specialists'
+own turns too, and whether to read `WATCHDOG.md`. Number fields save when you
+press Enter or leave the field. Changes apply to new chat tabs.
 
 Edit `sandbox/.pi/WATCHDOG.md` (visible in the file panel) to change what the
 reviewer looks for in this project; it is seeded once and never overwritten.

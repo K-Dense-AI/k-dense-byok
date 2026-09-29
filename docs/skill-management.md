@@ -6,7 +6,7 @@ that the agent activates when a task matches their description. Kady ships the
 and lets you install skills from anywhere else, write your own, edit them, and
 remove them — per project or for every project at once.
 
-Settings → **Skills** (the gear in the header) is the whole surface.
+Settings → **Skills** (the gear in the header, in the Project group) is the whole surface.
 
 ## Where skills live
 
@@ -29,7 +29,7 @@ leaving you guessing.
 Every skill carries an origin, shown as a badge:
 
 - **K-Dense** — from the shipped catalogue. Synced automatically at launch and
-  daily. Sync is non-destructive: an untouched skill is updated in place, a
+  daily, or on demand with **Sync catalogue** (project scope only). Sync is non-destructive: an untouched skill is updated in place, a
   skill you edited is preserved and flagged for review, and a skill removed
   upstream is archived to `.pi/skills-archived/`.
 - **Installed** — fetched from a source you named. **Never auto-updated.** A

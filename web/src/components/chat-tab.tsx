@@ -126,6 +126,15 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { SettingsLink } from "@/components/settings-link";
+import { ConnectModelCard } from "@/components/connect-model-card";
+import { computeInstanceFromDefault, useAppDefaults } from "@/lib/app-settings";
+import { openSettings } from "@/lib/settings-nav";
+
+/** Toast action for "provider disconnected" errors. */
+const PROVIDERS_TOAST_ACTION = {
+  action: { label: "Open Settings", onClick: () => openSettings({ tab: "providers" }) },
+};
 
 const MAX_QUEUE = 5;
 
@@ -174,7 +183,11 @@ function BudgetBanner({
           <>
             <b>Project spend limit reached</b> ({formatUsd(totalUsd)}
             {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). New runs
-            are blocked. Raise the limit in the project settings to continue.
+            are blocked.{" "}
+            <SettingsLink tab="project" section="budget">
+              Raise the limit in project settings
+            </SettingsLink>{" "}
+            to continue.
           </>
         ) : (
           <>
@@ -803,7 +816,7 @@ function ChatInput({
           setAttachError(
             modelAvailability === "checking"
               ? "Model provider status is still loading. Try again in a moment."
-              : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
+              : "This model provider is disconnected. Reconnect it in Settings → Providers or choose another model.",
           );
         }
         return false;
@@ -1248,7 +1261,7 @@ function ChatInput({
                       <br />
                       {modelAvailability === "checking"
                         ? "Wait a moment for provider status to load."
-                        : "Reconnect it in Settings or choose another model."}
+                        : "Reconnect it in Settings → Providers or choose another model."}
                     </>
                   ) : budgetBlocked ? (
                     <>
@@ -1259,7 +1272,7 @@ function ChatInput({
                       {budgetLimitUsd !== null
                         ? ` / ${formatUsd(budgetLimitUsd)}`
                         : ""}
-                      ). Raise the limit in the project settings to continue.
+                      ). Raise the limit in Settings → Project → General to continue.
                     </>
                   ) : isStreaming ? (
                     <>
@@ -1695,7 +1708,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const [selectedModel, setSelectedModel] = useState<Model>(
     () => initialWorkspaceState?.selectedModel ?? DEFAULT_MODEL,
   );
-  const { isModelAvailable, modelAvailability } = useModels();
+  const { isModelAvailable, modelAvailability, hasAnyModelAccess, models: knownModels } = useModels();
   const selectedModelAvailability = modelAvailability(selectedModel);
   const selectedModelAvailable = selectedModelAvailability === "available";
   const selectedBudgetBlocked =
@@ -1729,6 +1742,41 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     error: modalCatalogError,
     refresh: refreshModalCatalog,
   } = useModalCatalog(projectId);
+
+  // A tab with nothing to copy from (a project's first chat) starts from the
+  // saved Settings → Defaults once they load — unless the user already picked
+  // something on its chips. The model waits until its provider's list lands.
+  const appDefaults = useAppDefaults();
+  const chipsTouched = useRef(false);
+  const defaultsPending = useRef({
+    model: !initialWorkspaceState && !initialSessionId,
+    rest: !initialWorkspaceState && !initialSessionId,
+  });
+  useEffect(() => {
+    const pending = defaultsPending.current;
+    if (!appDefaults || chipsTouched.current) return;
+    if (pending.rest) {
+      pending.rest = false;
+      if (appDefaults.thinkingLevel) setThinkingLevel(appDefaults.thinkingLevel);
+      const compute = computeInstanceFromDefault(appDefaults.compute, modalCatalog?.instances);
+      if (compute) setSelectedComputeTarget(compute);
+    }
+    if (pending.model) {
+      if (!appDefaults.model) {
+        pending.model = false;
+        return;
+      }
+      const model = knownModels.find((candidate) => candidate.id === appDefaults.model);
+      if (model) {
+        pending.model = false;
+        setSelectedModel(model);
+      }
+    }
+  }, [appDefaults, knownModels, modalCatalog]);
+  const markChipsTouched = useCallback(() => {
+    chipsTouched.current = true;
+  }, []);
+
   const [attachedFiles, setAttachedFiles] = useState<string[]>(
     () => initialWorkspaceState?.attachedFiles ?? [],
   );
@@ -1996,6 +2044,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           selectedModelAvailability === "checking"
             ? "Model provider status is still loading. Try again in a moment."
             : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
+          PROVIDERS_TOAST_ACTION,
         );
         return false;
       }
@@ -2056,6 +2105,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           selectedModelAvailability === "checking"
             ? "Model provider status is still loading. Try again in a moment."
             : "This model provider is disconnected. Reconnect it in Settings or choose another model.",
+          PROVIDERS_TOAST_ACTION,
         );
         return false;
       }
@@ -2167,6 +2217,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             selectedModelAvailability === "checking"
               ? "Model provider status is still loading. Try again in a moment."
               : "Reconnect this model provider in Settings before sending.",
+            PROVIDERS_TOAST_ACTION,
           );
           return;
         }
@@ -2188,6 +2239,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             workflowModelAvailability === "checking"
               ? "Model provider status is still loading. Try again in a moment."
               : "Reconnect this model provider in Settings before launching.",
+            PROVIDERS_TOAST_ACTION,
           );
           return;
         }
@@ -2243,10 +2295,16 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       <Conversation className="flex-1">
         <ConversationContent className="mx-auto w-full max-w-full px-4">
           {messages.length === 0 ? (
-            <ConversationEmptyState
-              title="What can I help you with?"
-              description="I can research topics, write code, and analyze data."
-            />
+            hasAnyModelAccess === false ? (
+              <div className="flex size-full items-center justify-center p-8">
+                <ConnectModelCard />
+              </div>
+            ) : (
+              <ConversationEmptyState
+                title="What can I help you with?"
+                description="I can research topics, write code, and analyze data."
+              />
+            )
           ) : (
             messages.map((message, i) => (
               <ChatMessageRow
@@ -2292,13 +2350,22 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             selectedDbs={selectedDbs}
             onDbsChange={setSelectedDbs}
             selectedModel={selectedModel}
-            onModelChange={setSelectedModel}
+            onModelChange={(model) => {
+              markChipsTouched();
+              setSelectedModel(model);
+            }}
             contextUsage={contextUsage}
             onCompact={handleCompact}
             selectedComputeTarget={selectedComputeTarget}
-            onComputeTargetChange={setSelectedComputeTarget}
+            onComputeTargetChange={(target) => {
+              markChipsTouched();
+              setSelectedComputeTarget(target);
+            }}
             thinkingLevel={thinkingLevel}
-            onThinkingLevelChange={setThinkingLevel}
+            onThinkingLevelChange={(level) => {
+              markChipsTouched();
+              setThinkingLevel(level);
+            }}
             thinkingDisabled={thinkingDisabled}
             modalCatalog={modalCatalog}
             modalCatalogLoading={modalCatalogLoading}

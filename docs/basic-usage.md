@@ -32,7 +32,7 @@ Click `+` in the chat tab strip to open a new chat in the same project. Each tab
 
 ### Choosing a model
 
-Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, [any direct Pi provider](./model-selection.md#direct-api-key-providers) you hold a key for (Anthropic, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, Azure, Bedrock, Vertex, Cloudflare, [NVIDIA NIM](./model-selection.md#nvidia-nim-models), and more), or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, xAI, or Kimi Code through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. A **thinking-level** chip next to the model picker sets how much the model reasons on each run (default *High*); it is unavailable for Ollama and Fusion. See [Model selection](./model-selection.md) for model refs and billing behavior.
+Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, [any direct Pi provider](./model-selection.md#direct-api-key-providers) you hold a key for (Anthropic, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, Azure, Bedrock, Vertex, Cloudflare, [NVIDIA NIM](./model-selection.md#nvidia-nim-models), and more), or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Providers** and click **Sign in** for ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, xAI, or Kimi Code, then follow the browser, device-code, or manual flow shown. If no model is connected yet, an empty chat shows a **Connect a model to get started** card that opens the same page, and the picker's **Manage providers** link goes there too. The lead agent and its specialists share that Kady login. Different tabs can use different models. A **thinking-level** chip next to the model picker sets how much the model reasons on each run (default *High*); it is unavailable for Ollama and Fusion. A new tab copies the model, thinking level and compute of the tab it was opened from; a project's first tab starts on the choices in **Settings → Defaults**. See [Model selection](./model-selection.md) for model refs and billing behavior.
 
 ### Files
 
@@ -47,7 +47,7 @@ Open the workflows panel to browse **326 ready-to-run templates across 22 discip
 
 ### Remote compute jobs
 
-After adding a Modal token pair in **Settings → API keys**, use the compute
+After adding a Modal token pair in **Settings → Services**, use the compute
 picker beside the composer to choose a cloud CPU or GPU. Short `modal_run` jobs
 block the current agent turn, while durable jobs can run in the background,
 survive a backend restart, and be inspected or cancelled from the center-panel
@@ -75,7 +75,7 @@ Open any `.tex` file and click **Edit** for a split-pane editor with live PDF co
 
 ## Costs and budgets
 
-The cost pill in the header shows the active tab's session spend (`sess`) and the project total across every tab (`proj`), with token details in its popover. You can set an optional hard spend cap per project in Settings.
+The cost pill in the header shows the active tab's session spend (`sess`) and the project total across every tab (`proj`), with token details in its popover. You can set an optional hard spend cap per project in **Settings → General** (the project's *General & budget* card).
 
 - OpenRouter pay-as-you-go and Anthropic OAuth's Pi-documented metered extra per-token usage count toward the cap.
 - ChatGPT, GitHub Copilot, xAI, Kimi Code, and Meta Muse subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited. NVIDIA NIM and the prepaid Qwen/Xiaomi token plans get the same treatment: they bill provider-managed credits or a plan quota rather than per-token dollars, so Kady records tokens without counting USD spend. Every other direct provider key (Anthropic, OpenAI, Groq, Azure, Bedrock, …) is pay-as-you-go at Pi's list price and counts toward the cap.
@@ -100,15 +100,23 @@ This monitor is **display-only**. Nothing in Kady routes work based on it: local
 
 ## Settings
 
-Click the gear icon in the top-right to:
+Click the gear icon in the top-right. The sidebar has three groups:
 
-- connect supported subscriptions under **Model providers**,
-- manage your **API keys** (OpenRouter, every direct Pi model provider, Modal, and optional search keys),
-- browse, enable, install, write, and edit **[Skills](./skill-management.md)**,
-- view, edit, enable, and create **[Specialists](./sub-agents.md)** (sub-agents),
-- connect external tools under **Connectors** — **[MCP servers](./mcp-servers.md)** for GitHub, reference managers, databases, and hundreds more, per project or for all projects, with a connection tester, live status and browser sign-in,
-- manage **[Fusion](./openrouter-fusion.md)** presets,
-- change the **Appearance**.
+- **Models**
+  - **Providers** — one row per provider showing every way to connect it: **Sign in** for supported subscriptions and/or an API key (OpenRouter and every direct Pi model provider). Connected providers are listed first; *Add a provider* has a search box, an All / Sign in / API key filter and *Show all*. **Local model servers** sets the Ollama and OpenAI-compatible addresses, and **Custom model servers** adds [your own endpoints](./custom-model-servers.md).
+  - **Defaults** — the model, thinking level and compute a project's first chat tab starts on, also used for runs Kady starts itself (scheduled runs, for example).
+  - **[Fusion](./openrouter-fusion.md)** — manage Fusion presets.
+- **Project · *name*** (the current project)
+  - **General** — name, description, tags and spend limit, the project's `AGENTS.md` instructions, the [raw-data guard](./data-guard.md), and [context compaction](./lab-notebook.md#context-compaction-that-keeps-the-science). Each card saves on its own.
+  - **[Skills](./skill-management.md)** — browse, enable, install, write, and edit skills.
+  - **[Prompt templates](./prompt-templates.md)** — reusable `/` commands.
+  - **[Specialists](./sub-agents.md)** — view, edit, enable, and create sub-agents, and pick their default model.
+  - **Connectors** — **[MCP servers](./mcp-servers.md)** for GitHub, reference managers, databases, and hundreds more, per project or for all projects, with a connection tester, live status and browser sign-in.
+- **Workspace**
+  - **Services** — optional web-search keys (Exa, Perplexity, Gemini), the [Modal](./modal-compute.md) token pair, and a *Remote cache* card for clearing the project's Modal cache.
+  - **Appearance**.
+
+Project settings can also be opened from the gear on a project row in the header's project switcher, *Project settings…* in a project card's ⋯ menu on the Projects screen, the links in spend-limit banners, and the sliders button next to a chat's context gauge. Settings reopens on the tab you used last.
 
 Disabling a skill, specialist, or connector is non-destructive; it takes effect in new chat tabs.
 

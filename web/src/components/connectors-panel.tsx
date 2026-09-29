@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings → "Connectors" panel: MCP servers for Pi's built-in MCP support.
+ * Settings → Project → Connectors: MCP servers for Pi's built-in MCP support.
  *
  * Two scopes, like Skills: this project (`sandbox/.pi/mcp.json`) and all
  * projects (`~/.kady/pi-agent/mcp.json`). Servers can be toggled off (Pi's
@@ -9,7 +9,7 @@
  * their tools), checked live, and — for OAuth servers — signed in.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,6 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import {
+  ScopeSwitcher,
+  SettingsError,
+  SettingsHeader,
+  SettingsSearch,
+  matchesQuery,
+} from "@/components/settings/primitives";
 import { cn } from "@/lib/utils";
 import {
   ExternalLinkIcon,
@@ -237,6 +245,9 @@ export function ConnectorsPanel() {
   const [status, setStatus] = useState<McpServerStatus[] | null>(null);
   const [statusNotes, setStatusNotes] = useState<string[]>([]);
   const [checking, setChecking] = useState(false);
+  const [checkedAt, setCheckedAt] = useState<Date | null>(null);
+  const [query, setQuery] = useState("");
+  const { confirm, dialog } = useConfirm();
   const [login, setLogin] = useState<{ name: string; flow: McpLoginFlow } | null>(null);
   const loginPoll = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -286,6 +297,7 @@ export function ConnectorsPanel() {
     try {
       const report = await getMcpStatus();
       setStatus(report.servers);
+      setCheckedAt(new Date());
       setStatusNotes([...report.errors.map((e) => `Config: ${e}`), ...(report.note ? [report.note] : [])]);
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "Status check failed");
@@ -318,7 +330,7 @@ export function ConnectorsPanel() {
     if (!form) return;
     const name = form.name.trim();
     if (!name) {
-      setError("Server name is required");
+      setError("Connector name is required");
       return;
     }
     const next: McpServers = { ...servers };
@@ -331,11 +343,21 @@ export function ConnectorsPanel() {
 
   const handleDelete = useCallback(
     async (name: string) => {
+      const ok = await confirm({
+        title: `Remove the ${name} connector?`,
+        description:
+          scope === "project"
+            ? "Its entry is deleted from this project's .pi/mcp.json. To keep the configuration, switch it off instead."
+            : "Its entry is deleted from the shared mcp.json used by every project. To keep the configuration, switch it off instead.",
+        confirmLabel: "Remove",
+        destructive: true,
+      });
+      if (!ok) return;
       const next = { ...servers };
       delete next[name];
       await persist(next);
     },
-    [servers, persist],
+    [confirm, persist, scope, servers],
   );
 
   const handleTest = useCallback(async () => {
@@ -383,6 +405,7 @@ export function ConnectorsPanel() {
       setError(null);
       try {
         await setConnectorExposure(name, exposure, scope);
+        setStatus(null);
         await load(scope);
       } catch (exc) {
         setError(exc instanceof Error ? exc.message : "Could not change exposure");
@@ -442,46 +465,36 @@ export function ConnectorsPanel() {
     [checkStatus],
   );
 
-  const names = Object.keys(servers).sort();
+  const allNames = useMemo(() => Object.keys(servers).sort(), [servers]);
+  const names = allNames.filter((name) => matchesQuery(query, name, summarizeConfig(servers[name])));
   const statusFor = (name: string) => status?.find((s) => s.name === name && s.scope === scope);
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <div>
-        <h3 className="text-sm font-medium">Connectors</h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Connect Model Context Protocol servers to give the agent extra tools, through
-          Pi&apos;s built-in MCP support. Tokens stay on this machine. Changes apply to
-          new chat tabs.
-        </p>
-      </div>
+    <div className="flex flex-col gap-4">
+      {dialog}
+      <SettingsHeader
+        title="Connectors"
+        description="Connect Model Context Protocol servers to give the agent extra tools, through Pi's built-in MCP support. Tokens stay on this machine."
+        appliesTo="new-chats"
+      />
 
-      {/* Scope */}
-      <div className="flex items-center gap-1 rounded-lg border p-1 text-xs">
-        {(
-          [
-            ["project", `This project (${activeProject?.name ?? activeProjectId})`],
-            ["global", "All projects"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={cn(
-              "flex-1 rounded-md px-2 py-1.5 transition-colors",
-              scope === value ? "bg-muted font-medium" : "text-muted-foreground hover:bg-muted/50",
-            )}
-            aria-pressed={scope === value}
-            onClick={() => {
-              setForm(null);
-              setTestResult(null);
-              setScope(value);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <ScopeSwitcher
+        value={scope}
+        projectName={activeProject?.name ?? activeProjectId}
+        onChange={async (value) => {
+          if (form) {
+            const ok = await confirm({
+              title: "Discard the connector you are editing?",
+              description: "Switching scope closes the form without saving.",
+              confirmLabel: "Discard",
+            });
+            if (!ok) return;
+          }
+          setForm(null);
+          setTestResult(null);
+          setScope(value);
+        }}
+      />
 
       {scope === "global" && (
         <p className="text-[11px] text-muted-foreground -mt-2">
@@ -491,11 +504,7 @@ export function ConnectorsPanel() {
         </p>
       )}
 
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
+      <SettingsError>{error}</SettingsError>
 
       {login && (
         <div
@@ -544,7 +553,7 @@ export function ConnectorsPanel() {
         <p className="text-xs text-muted-foreground">Loading…</p>
       ) : (
         <>
-          {names.length === 0 && !form && (
+          {allNames.length === 0 && !form && (
             <div className="rounded-lg border px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
               {scope === "project"
                 ? "No connectors configured for this project yet."
@@ -552,9 +561,23 @@ export function ConnectorsPanel() {
             </div>
           )}
 
-          {names.length > 0 && (
+          {allNames.length > 0 && (
             <div className="flex flex-col gap-1.5">
-              <div className="flex items-center justify-end">
+              <div className="flex items-center gap-2">
+                {allNames.length > 4 ? (
+                  <SettingsSearch
+                    value={query}
+                    onChange={setQuery}
+                    placeholder="Search connectors…"
+                    label="Search connectors"
+                    className="flex-1"
+                  />
+                ) : (
+                  <span className="flex-1" />
+                )}
+                <span className="text-[10px] text-muted-foreground">
+                  {checkedAt ? `Checked ${checkedAt.toLocaleTimeString()}` : "Starts each server to check it"}
+                </span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -566,6 +589,9 @@ export function ConnectorsPanel() {
                   {checking ? "Connecting…" : "Check status"}
                 </Button>
               </div>
+              {names.length === 0 ? (
+                <p className="px-1 text-[11px] text-muted-foreground">No connector matches.</p>
+              ) : null}
               {names.map((name) => {
                 const config = servers[name];
                 const http = isHttpConfig(config);
@@ -823,7 +849,7 @@ export function ConnectorsPanel() {
                   disabled={saving}
                   onClick={() => void handleSave()}
                 >
-                  {saving ? "Saving…" : form.originalName ? "Save changes" : "Add server"}
+                  {saving ? "Saving…" : form.originalName ? "Save changes" : "Add connector"}
                 </Button>
                 <Button
                   variant="outline"
@@ -858,7 +884,7 @@ export function ConnectorsPanel() {
               }}
             >
               <PlusIcon className="size-3.5" />
-              Add server
+              Add connector
             </Button>
           )}
         </>

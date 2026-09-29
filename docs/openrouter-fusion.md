@@ -74,7 +74,7 @@ Pi computes session cost from the resolved `Model.cost`, so the synthetic `openr
 
 ## Managing presets (Settings → Fusion)
 
-The **Fusion** tab in Settings lists your presets and an **Add Fusion config +** control that expands a form to paste a Fusion request body (see the [OpenRouter Fusion docs](https://openrouter.ai/docs/guides/features/plugins/fusion)). Presets are stored in `localStorage`; built-ins refresh on a version bump while your custom presets are kept.
+The **Fusion** tab (in the Models group of Settings) lists your presets and an **Add Fusion config +** control that expands a form to paste a Fusion request body (see the [OpenRouter Fusion docs](https://openrouter.ai/docs/guides/features/plugins/fusion)). Presets are stored in `localStorage`; built-ins refresh on a version bump while your custom presets are kept.
 
 ## Caveats
 
@@ -88,7 +88,7 @@ The **Fusion** tab in Settings lists your presets and an **Add Fusion config +**
 
 - `web/src/lib/fusion-presets.ts` — preset definitions, versioned migration, pricing helper
 - `web/src/lib/use-models.ts` — synthetic `fusion/*` picker entries + combined pricing
-- `web/src/components/settings-dialog.tsx` — the Settings → Fusion management UI
+- `web/src/components/settings/fusion-panel.tsx` — the Settings → Fusion management UI
 - `server/src/api/sessions.ts` — fusion detection, config stash, tool-registry disable
 - `server/src/agent/fusion-bridge.ts` — the `before_provider_request` body rewrite
 - `server/src/agent/models.ts` — `buildFusionModel` (panel + 2× judge pricing) + `catalogueEntryFor`

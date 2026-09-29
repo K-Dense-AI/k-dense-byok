@@ -73,7 +73,7 @@ describe("CustomModelsCard", () => {
     const save = vi.spyOn(lib, "saveCustomProviders");
     render(<CustomModelsCard />);
     await screen.findByText("Custom model servers");
-    await userEvent.click(screen.getByRole("button", { name: "Add server" }));
+    await userEvent.click(screen.getByRole("button", { name: "Add model server" }));
     await userEvent.click(screen.getByRole("button", { name: "Save servers" }));
     expect(await screen.findByText("Every server needs an id")).toBeInTheDocument();
     expect(save).not.toHaveBeenCalled();

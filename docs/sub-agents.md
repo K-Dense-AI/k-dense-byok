@@ -43,20 +43,21 @@ Sub-agents can run one at a time, several in parallel, or chained (one's output 
 Open **Settings (gear icon) → Specialists**. From there you can:
 
 - **See every agent** available in the current project, with its description.
+- **Set a default model for specialists** - the *Default model for specialists* card applies to every specialist that does not pin its own model. Leave it on *Inherit the chat's model* and each specialist runs on the model of the chat that launched it. It is stored per project as `subagents.defaultModel` in `sandbox/.pi/settings.json`.
 - **Enable or disable an agent** with its toggle. Disabling is non-destructive (the file moves to `sandbox/.pi/agents-disabled/`) and applies to new chat tabs.
 - **Edit an agent** (pencil icon) - change its instructions, give it a different model, restrict its tools, or adjust its thinking depth.
 - **Add your own agent** - click *Add agent*, give it a name like `assay-qc-checker`, write its instructions in plain language, and save. It's immediately available for delegation in new chats.
-- **Delete agents** you don't need. Deletions stick - they won't silently come back.
-- **Restore defaults** - brings back the 21 scientific specialists in their original form (your own custom agents are untouched).
+- **Delete agents** you don't need (Kady asks you to confirm). Deletions stick - they won't silently come back.
+- **Restore defaults** - after a confirmation, brings back the 21 scientific specialists in their original form (your own custom agents are untouched).
 - **Customize a built-in** - the engine's agents are read-only, but clicking *Customize* copies one into your project where your version takes priority.
 
 ### What the settings mean
 
 | Field | What it does |
 |-------|--------------|
-| **Name** | How Kady refers to the agent (lowercase, hyphens allowed, e.g. `code-reviewer`) |
+| **Name** | How Kady refers to the agent (lowercase, hyphens allowed, e.g. `code-reviewer`; `defaults` is reserved) |
 | **Description** | One line telling Kady when this specialist is the right pick |
-| **Model** *(optional)* | Make this agent use a specific model - e.g. a cheaper model for routine checks, a stronger one for hard reviews. Leave empty and the agent inherits the chat's model |
+| **Model** *(optional)* | Make this agent use a specific model - e.g. a cheaper model for routine checks, a stronger one for hard reviews. Pick one from the model picker, or type a model id. Leave empty and the agent uses the project's default model for specialists, or the chat's model if none is set |
 | **Thinking level** | How much the agent "thinks before speaking" - higher levels reason more deeply but cost more |
 | **Tools** *(optional)* | Limit what the agent can do - e.g. `read, grep, find, ls` makes an agent that can inspect files but never modify them. Empty = full toolset |
 | **Inherit project context** | Whether the agent sees your project's `AGENTS.md` instructions |
@@ -100,4 +101,4 @@ Each agent is a plain markdown file in your project at `sandbox/.pi/agents/<name
 
 ## Cost and budgets
 
-Sub-agent work uses your model access like everything else - a specialist inherits the chat's model unless it pins its own. Their spend is recorded in the same project cost ledger you see in the header, and the project's **spend cap applies to them too** - once a project hits its limit, Kady is blocked from starting new sub-agents. The exception is the external-CLI agents above, whose usage is billed by that CLI's own account and never appears in Kady's ledger.
+Sub-agent work uses your model access like everything else - a specialist inherits the chat's model unless it pins its own or the project sets a default model for specialists. Their spend is recorded in the same project cost ledger you see in the header, and the project's **spend cap applies to them too** - once a project hits its limit, Kady is blocked from starting new sub-agents. The exception is the external-CLI agents above, whose usage is billed by that CLI's own account and never appears in Kady's ledger.

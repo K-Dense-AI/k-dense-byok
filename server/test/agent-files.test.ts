@@ -90,6 +90,9 @@ describe("agent files CRUD + seeding", () => {
 
     expect(() => writeProjectAgent(paths, "Bad Name", { description: "", systemPrompt: "x" }))
       .toThrow(/Invalid agent name/);
+    // Shadowed by the static GET/PUT /agents/defaults route.
+    expect(() => writeProjectAgent(paths, "defaults", { description: "", systemPrompt: "x" }))
+      .toThrow(/reserved/);
     expect(() => writeProjectAgent(paths, "ok", { description: "", systemPrompt: "  " }))
       .toThrow(/System prompt/);
     expect(() =>

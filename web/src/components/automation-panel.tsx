@@ -36,6 +36,7 @@ import {
   type ScheduleView,
 } from "@/lib/automation";
 import { cn, formatUsd } from "@/lib/utils";
+import { SettingsLink } from "@/components/settings-link";
 
 const POLL_MS = 10_000;
 
@@ -158,7 +159,11 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
       {heldByBudget.length > 0 && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
           {heldByBudget.length} schedule{heldByBudget.length === 1 ? " is" : "s are"} held because the project
-          reached its spend limit. Raise the limit in project settings and they resume on their own.
+          reached its spend limit.{" "}
+          <SettingsLink tab="project" section="budget">
+            Raise the limit in project settings
+          </SettingsLink>{" "}
+          and they resume on their own.
         </p>
       )}
 

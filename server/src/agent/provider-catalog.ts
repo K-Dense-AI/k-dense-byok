@@ -5,7 +5,7 @@
  * had bespoke wiring for OpenRouter, NVIDIA NIM, the OAuth subscriptions, and
  * the two local servers; this table generalizes the NVIDIA pattern so every
  * remaining Pi provider is reachable with a `<provider>/<model-id>` ref, a key
- * (or cloud credentials) managed under Settings → API keys, and a picker
+ * (or cloud credentials) managed under Settings → Providers, and a picker
  * section that appears once the provider is configured.
  *
  * What lives here and nowhere else:
@@ -76,7 +76,7 @@ export interface DirectProviderDefinition {
    * safe channel, and Pi reads it live.
    */
   runtimeKey: boolean;
-  /** Also connectable as an OAuth subscription under Settings → Model providers. */
+  /** Also connectable as an OAuth subscription (Settings → Providers shows both). */
   oauth: boolean;
 }
 
@@ -127,13 +127,13 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
   simple("anthropic", "Anthropic", "ANTHROPIC_API_KEY", {
     keysUrl: "https://console.anthropic.com/settings/keys",
     keyPlaceholder: "sk-ant-…",
-    hint: "Direct Anthropic API access, billed per token to your Anthropic account. A Claude Pro/Max subscription connects under Model providers instead.",
+    hint: "Direct Anthropic API access, billed per token to your Anthropic account. A Claude Pro/Max subscription signs in instead.",
     oauth: true,
   }),
   simple("openai", "OpenAI", "OPENAI_API_KEY", {
     keysUrl: "https://platform.openai.com/api-keys",
     keyPlaceholder: "sk-…",
-    hint: "Direct OpenAI platform access (Responses API), billed per token to your OpenAI account. A ChatGPT subscription connects with Sign in with ChatGPT under Model providers instead.",
+    hint: "Direct OpenAI platform access (Responses API), billed per token to your OpenAI account. A ChatGPT subscription uses Sign in with ChatGPT instead.",
     oauth: true,
   }),
   simple("google", "Google", "GEMINI_API_KEY", {
@@ -146,13 +146,13 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
   simple("xai", "xAI", "XAI_API_KEY", {
     keysUrl: "https://console.x.ai/",
     keyPlaceholder: "xai-…",
-    hint: "Direct xAI API access for Grok models. A SuperGrok / X Premium subscription connects under Model providers instead.",
+    hint: "Direct xAI API access for Grok models. A SuperGrok / X Premium subscription signs in instead.",
     oauth: true,
   }),
   simple("meta", "Meta", "META_API_KEY", {
     sectionLabel: "Meta Muse",
     keyLabel: "Meta Model API key",
-    hint: "Direct Meta Model API access for Muse Spark models, billed per token. A Meta (Muse) subscription connects under Model providers instead.",
+    hint: "Direct Meta Model API access for Muse Spark models, billed per token. A Meta (Muse) subscription signs in instead.",
     oauth: true,
   }),
   simple("deepseek", "DeepSeek", "DEEPSEEK_API_KEY", {
@@ -218,7 +218,7 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
   simple("kimi-coding", "Kimi For Coding", "KIMI_API_KEY", {
     keysUrl: "https://www.kimi.com/coding",
     keyLabel: "Kimi API key",
-    hint: "Kimi For Coding endpoint (api.kimi.com/coding). Pi prices these models per token, so a key is metered like any other; signing in with Kimi Code under Model providers uses the plan's own limits instead.",
+    hint: "Kimi For Coding endpoint (api.kimi.com/coding). Pi prices these models per token, so a key is metered like any other; signing in with Kimi Code uses the plan's own limits instead.",
     oauth: true,
   }),
   simple("moonshotai", "Moonshot AI", "MOONSHOT_API_KEY", {

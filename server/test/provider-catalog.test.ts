@@ -259,13 +259,13 @@ describe("direct provider authentication", () => {
   it("points at the right Settings tab when unconfigured", async () => {
     await expect(
       assertModelAuthentication(resolveModel("groq/llama-3.3-70b-versatile", registry), none as Runtime),
-    ).rejects.toThrowError(/Groq is not configured\. Add an API key under Settings → API keys/);
+    ).rejects.toThrowError(/Groq is not configured\. Add an API key under Settings → Providers/);
     await expect(
       assertModelAuthentication(resolveModel("anthropic/claude-opus-4-8", registry), none as Runtime),
-    ).rejects.toThrowError(/API keys or connect it under Settings → Model providers/);
+    ).rejects.toThrowError(/Add an API key or sign in under Settings → Providers/);
     await expect(
       assertModelAuthentication(resolveModel("openai-codex/gpt-6-sol", registry), none as Runtime),
-    ).rejects.toThrowError(/Connect it under Settings → Model providers/);
+    ).rejects.toThrowError(/Sign in under Settings → Providers/);
   });
 });
 

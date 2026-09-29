@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings → Prompt templates.
+ * Settings → Project → Prompt templates.
  *
  * Markdown files that expand from `/name args` in the composer. Two scopes,
  * like skills: this project's sandbox or the user-level dir shared by every
@@ -27,12 +27,19 @@ import {
   type PromptTemplateInfo,
 } from "@/lib/capabilities";
 import { useProjects } from "@/lib/use-projects";
-import { cn } from "@/lib/utils";
+import {
+  ScopeSwitcher,
+  SettingsError,
+  SettingsHeader,
+  SettingsNotice,
+  SettingsSearch,
+  matchesQuery,
+} from "@/components/settings/primitives";
 
 type Pane = "none" | "create" | "edit";
 
 export function PromptsPanel() {
-  const { activeProjectId } = useProjects();
+  const { activeProject, activeProjectId } = useProjects();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [scope, setScope] = useState<PromptScope>("project");
   const [rows, setRows] = useState<PromptTemplateInfo[]>([]);
@@ -156,48 +163,68 @@ export function PromptsPanel() {
   );
 
   const doRestore = useCallback(async () => {
+    const confirmed = await confirm({
+      title: "Restore the shipped templates?",
+      description:
+        "Kady's shipped templates are written back to this project. Edited copies with the same names are overwritten; your own templates are untouched.",
+      confirmLabel: "Restore defaults",
+      destructive: true,
+    });
+    if (!confirmed) return;
     await run("restore", async () => {
       const restored = await restoreDefaultPromptTemplates();
       return `Restored ${restored} shipped template${restored === 1 ? "" : "s"}.`;
     });
-  }, [run]);
+  }, [confirm, run]);
 
-  const filtered = useMemo(() => {
-    const q = query.toLowerCase().trim();
-    if (!q) return rows;
-    return rows.filter((r) => r.name.includes(q) || r.description.toLowerCase().includes(q));
-  }, [query, rows]);
+  const filtered = useMemo(
+    () => rows.filter((r) => matchesQuery(query, r.name, r.description)),
+    [query, rows],
+  );
+
+  const switchScope = useCallback(
+    async (next: PromptScope) => {
+      if (pane === "edit" && editing) {
+        const ok = await confirm({
+          title: `Discard unsaved changes to /${editing}?`,
+          description: "Switching scope closes the editor without saving.",
+          confirmLabel: "Discard",
+        });
+        if (!ok) return;
+      }
+      setScope(next);
+      closePanes();
+    },
+    [closePanes, confirm, editing, pane],
+  );
 
   return (
     <div className="flex flex-col gap-3">
       {confirmDialog}
+      <SettingsHeader
+        title="Prompt templates"
+        description={
+          <>
+            Reusable prompts that expand from <code>/name args</code> in the composer. Type{" "}
+            <code>/</code> in the chat to pick one; add arguments after the name (
+            <code>/qc user_data/a.csv</code>) and use <code>$1</code>, <code>$2</code>… or{" "}
+            <code>$ARGUMENTS</code> in the body. A project template shadows a shared one of the same name.
+          </>
+        }
+        appliesTo="immediately"
+      />
+      <ScopeSwitcher
+        value={scope}
+        onChange={(next) => void switchScope(next)}
+        projectName={activeProject?.name ?? activeProjectId}
+      />
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex rounded-md border p-0.5 text-xs" role="tablist" aria-label="Template scope">
-          {(["project", "global"] as PromptScope[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="tab"
-              aria-selected={scope === s}
-              className={cn(
-                "rounded px-2 py-1",
-                scope === s ? "bg-muted font-medium" : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => {
-                setScope(s);
-                closePanes();
-              }}
-            >
-              {s === "project" ? "This project" : "All projects"}
-            </button>
-          ))}
-        </div>
-        <Input
+        <SettingsSearch
           value={query}
+          onChange={setQuery}
           placeholder="Filter templates…"
-          className="h-8 w-48 text-xs"
-          onChange={(e) => setQuery(e.target.value)}
-          aria-label="Filter templates"
+          label="Filter templates"
+          className="w-56"
         />
         <div className="ml-auto flex items-center gap-1.5">
           {scope === "project" && (
@@ -213,13 +240,8 @@ export function PromptsPanel() {
         </div>
       </div>
 
-      <p className="text-[11px] text-muted-foreground">
-        Type <code>/</code> in the chat to pick one; add arguments after the name (<code>/qc user_data/a.csv</code>).
-        Use <code>$1</code>, <code>$2</code>… or <code>$ARGUMENTS</code> in the body.
-      </p>
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
-      {notice && <p className="text-xs text-muted-foreground">{notice}</p>}
+      <SettingsError>{error}</SettingsError>
+      <SettingsNotice>{notice}</SettingsNotice>
 
       {pane === "create" && (
         <div className="flex flex-col gap-2 rounded-lg border p-3">

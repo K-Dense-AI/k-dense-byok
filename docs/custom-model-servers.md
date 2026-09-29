@@ -5,8 +5,8 @@ built-in provider list — a lab's vLLM box, an institutional gateway, a
 self-hosted proxy — with real pricing and context metadata, so the picker,
 the spend cap and the ledger treat it like any other provider.
 
-This is Pi's `models.json` mechanism, managed from Settings → **Model
-providers** → **Custom model servers**. The file lives in Kady's agent
+This is Pi's `models.json` mechanism, managed from Settings → **Providers** →
+**Custom model servers**. The file lives in Kady's agent
 directory (`~/.kady/pi-agent/models.json` unless `KADY_PI_AGENT_DIR` /
 `PI_CODING_AGENT_DIR` moves it). Changes apply immediately; no restart.
 

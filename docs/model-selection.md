@@ -1,6 +1,6 @@
 # Model Selection
 
-Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `subagent` tool inherit the chat's model unless their agent file (`sandbox/.pi/agents/*.md`) pins one, a project-level override names one, or Kady passes a per-run override.
+Each chat tab picks **one model** for Kady. There is a single flat agent — no separate "expert" or orchestrator model. Subagents spawned with the `subagent` tool inherit the chat's model unless their agent file (`sandbox/.pi/agents/*.md`) pins one, a project-level override names one (per agent, or the project's **Default model for specialists** in Settings → Specialists), or Kady passes a per-run override.
 
 The choice is stored per tab, so different chats in the same project can use different models, and you can switch models between messages within a tab.
 
@@ -18,7 +18,7 @@ This distinction matters: `openrouter/anthropic/<model>` is an OpenRouter reques
 
 ## Pi subscription models
 
-Open **Settings → Model providers** to connect a ChatGPT subscription (Sign in with ChatGPT on `openai`; the older OpenAI Codex login, `openai-codex`, is kept as "legacy" for existing tokens), Claude Pro/Max (`anthropic`), GitHub Copilot, xAI, Kimi Code (`kimi-coding`), Meta Muse (`meta`), OpenRouter (as a sign-in alternative to pasting a key), or Radius (a dynamic gateway whose model list is fetched after sign-in). Kady hosts Pi's browser, device-code, and manual-code prompts in one dialog. Once connected, the provider's models are read live from Pi and appear in the model picker. OpenAI Codex, GitHub Copilot, and Radius are OAuth-only; OpenAI, Anthropic, xAI, Kimi, and Meta also accept an API key under **API keys** (see below), in which case they bill pay-as-you-go instead.
+Open **Settings → Providers** and click **Sign in** to connect a ChatGPT subscription (Sign in with ChatGPT on `openai`; the older OpenAI Codex login, `openai-codex`, is kept as "legacy" for existing tokens), Claude Pro/Max (`anthropic`), GitHub Copilot, xAI, Kimi Code (`kimi-coding`), Meta Muse (`meta`), OpenRouter (as a sign-in alternative to pasting a key), or Radius (a dynamic gateway whose model list is fetched after sign-in). Kady hosts Pi's browser, device-code, and manual-code prompts in one dialog. Once connected, the provider's models are read live from Pi and appear in the model picker. OpenAI Codex, GitHub Copilot, and Radius are OAuth-only; OpenAI, Anthropic, xAI, Kimi, and Meta also accept an API key on the same provider row (see below), in which case they bill pay-as-you-go instead.
 
 The lead agent and child subagents share Kady's Pi auth store (`~/.kady/pi-agent/auth.json` by default), so the same login can authenticate either. See [Installation](./installation.md#4-configure-model-access) for `KADY_PI_AGENT_DIR` and the explicit `PI_CODING_AGENT_DIR` sharing option.
 
@@ -30,7 +30,7 @@ Subscription authentication is not a promise of free usage:
 
 ## Direct API-key providers
 
-Every provider Pi supports natively ([pi.dev/docs/latest/providers](https://pi.dev/docs/latest/providers)) is available with your own credentials. Open **Settings → API keys → Direct model providers**, pick a provider, and paste its key; the value is stored in `.env` under the variable Pi reads (for example `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `HF_TOKEN`) and takes effect for new runs immediately, in subagents too. Once a credential resolves, the provider gets its own section in the model picker with Pi's built-in catalogue for it.
+Every provider Pi supports natively ([pi.dev/docs/latest/providers](https://pi.dev/docs/latest/providers)) is available with your own credentials. Open **Settings → Providers**, find the provider under *Add a provider* (search, filter to *API key*, or *Show all*), and paste its key (configured providers are listed first); the value is stored in `.env` under the variable Pi reads (for example `ANTHROPIC_API_KEY`, `GROQ_API_KEY`, `HF_TOKEN`) and takes effect for new runs immediately, in subagents too. Once a credential resolves, the provider gets its own section in the model picker with Pi's built-in catalogue for it.
 
 | Provider | Pi id / ref prefix | Env var(s) | Billing |
 |---|---|---|---|
@@ -79,7 +79,7 @@ Claude Fable 5 refuses requests whose system prompt carries certain seeded scien
 
 ## NVIDIA NIM models
 
-Add an NVIDIA API key (from [build.nvidia.com](https://build.nvidia.com/)) under **Settings → API keys** and an **NVIDIA NIM** section appears in the picker with Pi's built-in NIM catalogue — Nemotron, Llama, GPT-OSS, Kimi, GLM, and others served from `integrate.api.nvidia.com`. The key is stored as `NVIDIA_API_KEY` in `.env`, exactly like the OpenRouter key, and child subagent processes inherit it.
+Add an NVIDIA API key (from [build.nvidia.com](https://build.nvidia.com/)) under **Settings → Providers** and an **NVIDIA NIM** section appears in the picker with Pi's built-in NIM catalogue — Nemotron, Llama, GPT-OSS, Kimi, GLM, and others served from `integrate.api.nvidia.com`. The key is stored as `NVIDIA_API_KEY` in `.env`, exactly like the OpenRouter key, and child subagent processes inherit it.
 
 NIM billing is different from OpenRouter: build.nvidia.com draws on NVIDIA-managed API credits rather than per-token dollar pricing, so Kady records tokens but no USD spend. NIM usage neither counts toward nor is blocked by a project spend cap — the same treatment as the ChatGPT, Copilot, and xAI subscriptions. A model id missing from Pi's catalogue snapshot still runs (the backend synthesizes it), so refs to newly released NIM models keep working.
 
@@ -88,8 +88,8 @@ The picker lists Pi's built-in NIM catalogue, which won't include private or ear
 ## Custom model servers
 
 Any OpenAI- or Anthropic-compatible endpoint can be added as its own provider
-with pricing and context metadata, from Settings → Model providers → Custom
-model servers. References are `<provider id>/<model id>`; billing is
+with pricing and context metadata, from Settings → Providers → Custom model
+servers. References are `<provider id>/<model id>`; billing is
 pay-as-you-go at the declared cost. See [custom model servers](./custom-model-servers.md).
 
 ## OpenRouter Fusion presets
@@ -98,8 +98,9 @@ The picker also has an **Openrouter Fusion** section at the top: named presets w
 
 ## Defaults
 
-- The default model is `openrouter/anthropic/claude-opus-5.5`.
-- Override it with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-5.5`, routed by `DEFAULT_MODEL_PROVIDER`).
+- **Settings → Defaults** sets the model, thinking level and compute a project's *first* chat tab starts on; runs Kady starts itself (scheduled and other system runs) fall back to the same model when the project has no earlier chat model to reuse. A new tab opened next to an existing one copies that tab's choices instead. The defaults are app-wide, stored in `~/.kady/pi-agent/kady-settings.json`, and take precedence over the `.env` variables below. Fusion presets cannot be a default, and a saved model that stops resolving (a removed custom server, a delisted model) is skipped silently in favor of the `.env` or built-in default.
+- The built-in default model is `openrouter/anthropic/claude-opus-5.5`.
+- Override it in `.env` with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-5.5`, routed by `DEFAULT_MODEL_PROVIDER`).
 - To default to a connected subscription model, set `DEFAULT_MODEL_PROVIDER` to `openai-codex`, `anthropic`, `github-copilot`, `xai`, or `kimi-coding` and set `DEFAULT_MODEL_ID` to that provider's model id.
 - To default to any other direct provider, set `DEFAULT_MODEL_PROVIDER` to its Pi id (e.g. `groq`, `openai`, `amazon-bedrock`) and `DEFAULT_MODEL_ID` to that provider's model id; the key must be configured or new chats fail with a clear "not configured" error.
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
@@ -107,7 +108,7 @@ The picker also has an **Openrouter Fusion** section at the top: named presets w
 
 ## Local models
 
-Pulled Ollama models are discovered live: the backend's `/ollama/models` endpoint queries your local daemon (`OLLAMA_BASE_URL/api/tags`), and the results appear under the **Local (Ollama)** section of the picker as `ollama/<name>`. Any other server speaking the OpenAI API (LM Studio, vLLM, …) appears under **Local (OpenAI-compatible)** once `OPENAI_COMPATIBLE_BASE_URL` is set or a server answers on LM Studio's default port. Selecting either makes Pi call your local server directly — no OpenRouter key required, and nothing is counted against the spend cap.
+Pulled Ollama models are discovered live: the backend's `/ollama/models` endpoint queries your local daemon (`OLLAMA_BASE_URL/api/tags`), and the results appear under the **Local (Ollama)** section of the picker as `ollama/<name>`. Any other server speaking the OpenAI API (LM Studio, vLLM, …) appears under **Local (OpenAI-compatible)** once `OPENAI_COMPATIBLE_BASE_URL` is set or a server answers on LM Studio's default port. Both addresses can be changed live in **Settings → Providers → Local model servers**. Selecting either makes Pi call your local server directly — no OpenRouter key required, and nothing is counted against the spend cap.
 
 Local models are useful for privacy and cost control, but tool-calling quality varies widely. For complex, tool-heavy tasks, frontier OpenRouter models are usually more reliable. See [Local models](./local-models-ollama.md).
 

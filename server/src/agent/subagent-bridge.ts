@@ -398,7 +398,10 @@ function unsupportedDirectProviders(
  * Make parent-model inheritance explicit before pi-subagents builds child CLI
  * arguments. Relying only on Pi's asynchronously persisted global default can
  * race immediately after a model switch and could send a child through the
- * wrong provider. A specialist's own pinned model remains authoritative.
+ * wrong provider. A specialist's own pinned model remains authoritative, and
+ * so does one pinned in settings (`agentOverrides.<name>.model` or
+ * `subagents.defaultModel`): the pin is a per-run override, which pi-subagents
+ * ranks above both (see `settingsPinnedModels`).
  */
 export function pinInheritedChildModels(
   projectId: string,
@@ -409,8 +412,9 @@ export function pinInheritedChildModels(
   const inherited = modelReference(parentModel);
   const paths = resolvePaths(projectId);
   const definitions = new Map(listAgents(paths).map((agent) => [agent.name, agent] as const));
+  const pinned = settingsPinnedModels(paths);
   if (typeof input.workflowScript === "string") {
-    pinWorkflowScriptModel(input, inherited, definitions, settingsPinnedModels(paths));
+    pinWorkflowScriptModel(input, inherited, definitions, pinned);
     return;
   }
   const apply = (value: unknown): void => {
@@ -424,7 +428,9 @@ export function pinInheritedChildModels(
     if (
       agent &&
       record.model === undefined &&
-      !definitions.get(agent)?.model
+      !definitions.get(agent)?.model &&
+      !pinned.byAgent.get(agent) &&
+      !pinned.defaultModel
     ) {
       record.model = inherited;
     }

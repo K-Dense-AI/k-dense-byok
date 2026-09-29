@@ -12,7 +12,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { DirectProviderBilling, DirectProviderDefinition } from "./provider-catalog.ts";
 
 /**
- * Pi providers with an OAuth login Kady hosts under Settings → Model providers.
+ * Pi providers with an OAuth login Kady hosts under Settings → Providers.
  * `openai`, `anthropic`, `xai`, `kimi-coding`, `meta` also take an API key
  * (see `provider-catalog.ts`); `openai-codex`, `github-copilot`, `radius` are
  * OAuth-only in Kady. Pi 0.99 superseded `openai-codex` with Sign in with
@@ -124,7 +124,7 @@ export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] =
     accountLabel: "OpenRouter account (OAuth)",
     billingMode: "payg",
     billingNote:
-      "Signing in creates a user-controlled key billed from your OpenRouter credits — an alternative to pasting a key under API keys. Usage is metered and counts toward the project cap exactly like a key.",
+      "Signing in creates a user-controlled key billed from your OpenRouter credits — an alternative to pasting an API key. Usage is metered and counts toward the project cap exactly like a key.",
     listModels: false,
   },
   {

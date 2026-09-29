@@ -28,18 +28,20 @@ Two kinds of local server are supported, and they appear as separate sections in
    ollama pull qwen2.5-coder:7b
    ```
 
-3. **(Optional) Custom Ollama host.** If your Ollama server lives somewhere other than `http://localhost:11434`, set `OLLAMA_BASE_URL` in the repo-root `.env`.
+3. **(Optional) Custom Ollama host.** If your Ollama server lives somewhere other than `http://localhost:11434`, enter its address in **Settings → Providers → Local model servers → Ollama** (or set `OLLAMA_BASE_URL` in the repo-root `.env`). A change made in Settings is saved to `.env` and takes effect immediately; clearing it goes back to the default.
 
 4. **Pick the model in the app.** Open the model dropdown in the chat input. Pulled models appear under the **Local (Ollama)** section at the bottom. Picking one routes Kady - and any subagents it spawns - through your local daemon.
 
 The list is populated live from Ollama's `GET /api/tags` endpoint (via the backend's `/ollama/models` route), so pulling a new model and re-opening the dropdown is enough - no app restart needed.
 
-To make a local model the default for every new chat, set in `.env`:
+To make a local model the default for new chats, pick it in **Settings → Defaults**, or set in `.env`:
 
 ```bash
 DEFAULT_MODEL_PROVIDER="ollama"
 DEFAULT_MODEL_ID="llama3"   # any model you've pulled
 ```
+
+A default saved in Settings takes precedence over the `.env` values.
 
 ## OpenAI-compatible server setup (LM Studio, vLLM, …)
 
@@ -47,17 +49,17 @@ Any local server exposing the standard `GET /v1/models` and `POST /v1/chat/compl
 
 1. **Start your server and load a model.** In LM Studio that's the *Developer* tab → *Start Server*; with vLLM it's `vllm serve <model>`.
 
-2. **Point Kady at it** in the repo-root `.env`:
+2. **Point Kady at it** in **Settings → Providers → Local model servers → OpenAI-compatible server** (no restart needed), or in the repo-root `.env`:
 
    ```bash
    OPENAI_COMPATIBLE_BASE_URL=http://localhost:1234   # LM Studio's default port
    ```
 
-   The default is LM Studio's port, so if that's what you run, setting the variable to any value switches the section on. **vLLM defaults to port 8000, which is Kady's backend port** — move one of the two, e.g. `vllm serve <model> --port 1234`.
+   The default is LM Studio's port, so if that's what you run, setting an address switches the section on. **vLLM defaults to port 8000, which is Kady's backend port** — move one of the two, e.g. `vllm serve <model> --port 1234`.
 
 3. **Pick the model in the app.** Loaded models appear under **Local (OpenAI-compatible)**. The list comes from your server's `/v1/models` (via the backend's `/openai-compatible/models` route), so loading a different model and re-opening the dropdown is enough — no app restart.
 
-To make one the default for every new chat:
+To make one the default for new chats, pick it in **Settings → Defaults**, or:
 
 ```bash
 DEFAULT_MODEL_PROVIDER="openai-compatible"

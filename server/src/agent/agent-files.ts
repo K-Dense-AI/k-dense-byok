@@ -21,7 +21,7 @@ import { createRequire } from "node:module";
 import type { ProjectPaths } from "../projects.ts";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import { SUBAGENT_TYPES } from "./subagents.ts";
-import { readPiSettings, writePiSettings, type ToggleResult } from "./capability-state.ts";
+import { piSettingsPath, readPiSettings, writePiSettings, type ToggleResult } from "./capability-state.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -42,6 +42,9 @@ export function subagentsPackageDir(): string {
 }
 
 export const AGENT_NAME_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/** Names taken by static `/agents/<name>` routes (`GET/PUT /agents/defaults`). */
+export const RESERVED_AGENT_NAMES: ReadonlySet<string> = new Set(["defaults"]);
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 export interface AgentFile {
@@ -169,6 +172,36 @@ export function settingsPinnedModels(paths: ProjectPaths): {
   }
   const fallback = typeof sub.defaultModel === "string" ? sub.defaultModel.trim() : "";
   return { ...(fallback ? { defaultModel: fallback } : {}), byAgent };
+}
+
+/**
+ * Set or clear `subagents.defaultModel` — the model every specialist without
+ * its own frontmatter or `agentOverrides` model runs on — preserving all other
+ * settings keys. `null` or an empty value deletes the key, since pi-subagents
+ * rejects an empty string. Returns false, leaving the file untouched, when
+ * settings.json is malformed: rewriting it from `{}` would destroy it.
+ * Callers validate the ref (`invalidModelRef`).
+ */
+export function setSubagentDefaultModel(paths: ProjectPaths, model: string | null): boolean {
+  let settings: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(piSettingsPath(paths), "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    settings = parsed as Record<string, unknown>;
+  } catch (exc) {
+    if ((exc as NodeJS.ErrnoException).code !== "ENOENT") return false;
+    settings = {};
+  }
+  const sub =
+    settings.subagents && typeof settings.subagents === "object" && !Array.isArray(settings.subagents)
+      ? { ...(settings.subagents as Record<string, unknown>) }
+      : {};
+  const next = model?.trim() ?? "";
+  if (next) sub.defaultModel = next;
+  else if ("defaultModel" in sub) delete sub.defaultModel;
+  else return true; // nothing to clear; don't create the file just to say so
+  writePiSettings(paths, { ...settings, subagents: sub });
+  return true;
 }
 
 /** Set/clear a builtin's disabled override, preserving all other settings keys. */
@@ -363,6 +396,9 @@ export function writeProjectAgent(
 ): AgentFile {
   if (!AGENT_NAME_RE.test(name)) {
     throw new Error(`Invalid agent name "${name}" (lowercase letters, digits, - and _)`);
+  }
+  if (RESERVED_AGENT_NAMES.has(name)) {
+    throw new Error(`"${name}" is reserved; choose another agent name`);
   }
   if (!patch.systemPrompt?.trim()) throw new Error("System prompt must not be empty");
   if (patch.thinking && !THINKING_LEVELS.includes(patch.thinking as never)) {

@@ -6,6 +6,13 @@ import { apiFetch, useProjectScopeId } from "@/lib/projects";
 
 export type BudgetState = "ok" | "warn" | "exceeded";
 
+const BUDGET_CHANGED_EVENT = "kady:project-budget-changed";
+
+/** A spend limit changed: every mounted cost hook refetches its totals. */
+export function notifyProjectBudgetChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(BUDGET_CHANGED_EVENT));
+}
+
 export interface ProjectBudgetStatus {
   /** What the cap is measured against: ledgered + reserved + in-flight. */
   totalUsd: number;
@@ -81,6 +88,13 @@ export function useProjectCost(
     emptySummary(scopedProjectId),
   );
   const [loading, setLoading] = useState(false);
+  const [budgetRevision, setBudgetRevision] = useState(0);
+
+  useEffect(() => {
+    const bump = () => setBudgetRevision((value) => value + 1);
+    window.addEventListener(BUDGET_CHANGED_EVENT, bump);
+    return () => window.removeEventListener(BUDGET_CHANGED_EVENT, bump);
+  }, []);
 
   // Clearing on every refreshKey bump made the header pill blink back to $0.00
   // after each turn; only a project switch invalidates the numbers.
@@ -116,7 +130,7 @@ export function useProjectCost(
     return () => {
       cancelled = true;
     };
-  }, [scopedProjectId, refreshKey]);
+  }, [scopedProjectId, refreshKey, budgetRevision]);
 
   return { summary, loading };
 }

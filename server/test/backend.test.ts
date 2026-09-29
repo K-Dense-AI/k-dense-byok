@@ -29,7 +29,8 @@ import {
   usageFromSessionFile,
   workflowScriptTargets,
 } from "../src/agent/subagent-bridge.ts";
-import { writeProjectAgent } from "../src/agent/agent-files.ts";
+import { setSubagentDefaultModel, writeProjectAgent } from "../src/agent/agent-files.ts";
+import { writePiSettings } from "../src/agent/capability-state.ts";
 import {
   WEB_ACCESS_TOOLS,
   seedWebAccessActivation,
@@ -382,6 +383,47 @@ describe("subagent model inheritance", () => {
       pinInheritedChildModels("pin-guard", input, parent);
       expect(input.model).toBeUndefined();
     }
+  });
+
+  // The pin is a per-run override, which pi-subagents ranks above
+  // `agentOverrides.<name>.model` and `subagents.defaultModel`: pinning over
+  // either would silently discard the model the user chose in Settings.
+  it("does not outrank a model pinned in project settings", () => {
+    ensureProjectExists("pin-settings");
+    const paths = resolvePaths("pin-settings");
+    writePiSettings(paths, {
+      subagents: { agentOverrides: { scout: { model: "openrouter/openai/gpt-5.5" } } },
+    });
+    const tasks = () => [
+      { agent: "scout", task: "a" },
+      { agent: "worker", task: "b" },
+    ];
+
+    const overridden: Record<string, unknown> = { tasks: tasks() };
+    pinInheritedChildModels("pin-settings", overridden, parent);
+    expect(overridden.tasks).toEqual([
+      { agent: "scout", task: "a" },
+      { agent: "worker", task: "b", model: "openai-codex/gpt-5.6-sol" },
+    ]);
+
+    expect(setSubagentDefaultModel(paths, "openrouter/anthropic/claude-sonnet-5")).toBe(true);
+    const defaulted: Record<string, unknown> = { tasks: tasks(), agent: "worker", task: "c" };
+    pinInheritedChildModels("pin-settings", defaulted, parent);
+    expect(defaulted.tasks).toEqual(tasks());
+    expect(defaulted.model).toBeUndefined();
+
+    // The workflowScript path already honoured both; keep it that way.
+    const script: Record<string, unknown> = {
+      workflowScript: `return runs.run("main", { agent: "worker", task: "a" })`,
+    };
+    pinInheritedChildModels("pin-settings", script, parent);
+    expect(script.model).toBeUndefined();
+
+    // Clearing the default restores inheritance for unpinned agents.
+    expect(setSubagentDefaultModel(paths, null)).toBe(true);
+    const cleared: Record<string, unknown> = { agent: "worker", task: "d" };
+    pinInheritedChildModels("pin-settings", cleared, parent);
+    expect(cleared.model).toBe("openai-codex/gpt-5.6-sol");
   });
 
   it("ledgers cross-provider attempts separately and gates resume work", async () => {

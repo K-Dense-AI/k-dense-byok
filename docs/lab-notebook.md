@@ -124,8 +124,9 @@ scientist needs:
 
 Compaction runs automatically near the limit. You can also trigger it from the
 context gauge next to the model picker ("Compact now", scissors icon) while no
-run is streaming — for example before switching to a new sub-question. In the
-project settings (edit project) you can turn automatic compaction off and tune
+run is streaming — for example before switching to a new sub-question. In
+**Settings → General → Context compaction** (the sliders button next to the
+gauge opens it) you can turn automatic compaction off and tune
 how many tokens are reserved for the reply and how many recent tokens stay
 verbatim; these apply to every chat in the project.
 

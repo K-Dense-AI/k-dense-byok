@@ -131,3 +131,20 @@ describe("configFromForm", () => {
     });
   });
 });
+
+describe("ConnectorsPanel removal", () => {
+  it("asks before removing a connector", async () => {
+    vi.spyOn(mcp, "getMcpListing").mockResolvedValue({
+      mcpServers: { linear: { url: "https://mcp.linear.app/mcp" } },
+      shared: [],
+    });
+    const save = vi.spyOn(mcp, "saveMcpServers").mockResolvedValue();
+    render(<ConnectorsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: "Remove linear" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(save).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Remove linear" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Remove" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({}, "project"));
+  });
+});

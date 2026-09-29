@@ -25,10 +25,11 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
-  OLLAMA_BASE_URL,
-  OPENAI_COMPATIBLE_BASE_URL,
   REPO_ROOT,
+  ollamaBaseUrl,
+  openaiCompatibleBaseUrl,
 } from "../config.ts";
+import { readAppDefaults } from "../app-settings.ts";
 import { isSubscriptionProvider, subscriptionProvider } from "./provider-auth.ts";
 import { customProviderName, isCustomProvider } from "./custom-models.ts";
 import { directProvider, isDirectProvider } from "./provider-catalog.ts";
@@ -230,7 +231,7 @@ function buildOllamaModel(name: string): Model<Api> {
     name,
     api: "openai-completions",
     provider: "ollama",
-    baseUrl: `${OLLAMA_BASE_URL.replace(/\/+$/, "")}/v1`,
+    baseUrl: `${ollamaBaseUrl().replace(/\/+$/, "")}/v1`,
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -254,7 +255,7 @@ export function buildOpenAICompatibleModel(name: string): Model<Api> {
     name,
     api: "openai-completions",
     provider: "openai-compatible",
-    baseUrl: `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1`,
+    baseUrl: `${openaiCompatibleBaseUrl().replace(/\/+$/, "")}/v1`,
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -299,11 +300,16 @@ export function nvidiaExtraModelIds(): string[] {
   return [...new Set(raw.split(/[\s,]+/).filter(Boolean))];
 }
 
-/** Configure app-specific providers and runtime credentials. */
-export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
+/**
+ * Register the two local model servers under their current base URLs. Runs at
+ * startup and again whenever Settings changes OLLAMA_BASE_URL /
+ * OPENAI_COMPATIBLE_BASE_URL (api/credentials.ts): Pi merges a re-registration
+ * over the previous one and refreshes itself, so no restart is needed.
+ */
+export function registerLocalProviders(modelRuntime: ModelRuntime): void {
   modelRuntime.registerProvider("ollama", {
     name: "Ollama",
-    baseUrl: `${OLLAMA_BASE_URL.replace(/\/+$/, "")}/v1`,
+    baseUrl: `${ollamaBaseUrl().replace(/\/+$/, "")}/v1`,
     api: "openai-completions",
     apiKey: "ollama",
   });
@@ -312,10 +318,15 @@ export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<voi
   // before it will dispatch — same placeholder arrangement as Ollama.
   modelRuntime.registerProvider("openai-compatible", {
     name: "OpenAI-Compatible",
-    baseUrl: `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1`,
+    baseUrl: `${openaiCompatibleBaseUrl().replace(/\/+$/, "")}/v1`,
     api: "openai-completions",
     apiKey: "openai-compatible",
   });
+}
+
+/** Configure app-specific providers and runtime credentials. */
+export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
+  registerLocalProviders(modelRuntime);
 
   // Pi reads every direct provider's key straight from process.env (loaded
   // from .env by env.ts), so only OpenRouter needs a push here — its legacy
@@ -349,7 +360,17 @@ export function modelReference(model: Model<Api>): string {
   return `${model.provider}/${model.id}`;
 }
 
-function configuredDefaultRef(): string {
+/**
+ * The ref a chat starts on when none was chosen, strongest first: the saved
+ * app default (Settings, `<agentDir>/kady-settings.json`), then
+ * DEFAULT_MODEL_PROVIDER / DEFAULT_MODEL_ID, then the built-in default
+ * (config.ts falls back per variable when they are unset).
+ */
+export function configuredDefaultRef(): string {
+  return readAppDefaults().model ?? environmentDefaultRef();
+}
+
+function environmentDefaultRef(): string {
   const provider = DEFAULT_MODEL_PROVIDER.trim().toLowerCase() || "openrouter";
   const id = DEFAULT_MODEL_ID.trim();
   if (!id) {
@@ -442,10 +463,10 @@ export async function assertModelAuthentication(
     const hasLogin = isSubscriptionProvider(model.provider);
     const how =
       hasKeyRow && hasLogin
-        ? "Add an API key under Settings → API keys or connect it under Settings → Model providers"
+        ? "Add an API key or sign in under Settings → Providers"
         : hasKeyRow
-          ? "Add an API key under Settings → API keys"
-          : "Connect it under Settings → Model providers";
+          ? "Add an API key under Settings → Providers"
+          : "Sign in under Settings → Providers";
     throw new ModelAuthenticationError(
       model.provider,
       `${name} is not configured. ${how}, or choose another model.`,
@@ -468,8 +489,25 @@ export function resolveModel(
   registry: ModelRegistry,
   fusionConfig?: Record<string, unknown>,
 ): Model<Api> {
-  const usingDefault = !ref || !ref.trim();
-  const r = usingDefault ? configuredDefaultRef() : ref.trim();
+  if (ref && ref.trim()) return resolveRef(ref.trim(), registry, fusionConfig);
+  const saved = readAppDefaults().model;
+  if (saved) {
+    try {
+      return resolveRef(saved, registry);
+    } catch {
+      // Every session build resolves the default, so a saved one that went
+      // stale (a removed custom server, a delisted model) must not make chats
+      // unopenable; the environment/built-in default takes over.
+    }
+  }
+  return resolveRef(environmentDefaultRef(), registry, fusionConfig);
+}
+
+function resolveRef(
+  r: string,
+  registry: ModelRegistry,
+  fusionConfig?: Record<string, unknown>,
+): Model<Api> {
   // A "fusion/<id>" ref is the synthetic selector entry; resolve it to the real
   // openrouter/fusion Model, priced by the panel sum. The bare string ref can't
   // carry the panel prices, so the fusionConfig must be threaded in by the

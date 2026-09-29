@@ -25,6 +25,7 @@ import {
   type ProjectActivitySummary,
 } from "@/lib/project-activity";
 import { onChatPrefill } from "@/lib/chat-prefill";
+import { onOpenSettings, type OpenSettingsRequest } from "@/lib/settings-nav";
 import {
   OPEN_MODAL_JOB_EVENT,
   type ModalComputeScope,
@@ -244,6 +245,7 @@ export default function HomePage() {
         aria-hidden={screen !== "projects"}
       >
         <ProjectView
+          isActive={screen === "projects"}
           onOpenProject={openProject}
           projectActivities={displayedProjectActivities}
         />
@@ -319,6 +321,7 @@ function WorkspacePage({
   const toggleSandbox = useCallback(() => setSandboxOpen((value) => !value), []);
   const toggleChat = useCallback(() => setChatOpen((value) => !value), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsRequest, setSettingsRequest] = useState<OpenSettingsRequest | null>(null);
   const [showNotebook, setShowNotebook] = useState(
     () => initialState?.showNotebook ?? false,
   );
@@ -598,6 +601,15 @@ function WorkspacePage({
   useEffect(() => {
     if (!isActive) return;
     return onChatPrefill(() => setView("chat"));
+  }, [isActive]);
+
+  // Deep links into Settings ("raise the limit in project settings", …).
+  useEffect(() => {
+    if (!isActive) return;
+    return onOpenSettings((request) => {
+      setSettingsRequest(request);
+      setSettingsOpen(true);
+    });
   }, [isActive]);
 
   // Flat list of all sandbox file paths for @ mentions (shared across tabs).
@@ -1004,12 +1016,16 @@ function WorkspacePage({
               <>
                 <b>Settings</b>
                 <br />
-                Model providers, API keys, skills, specialists, connectors, and appearance.
+                Model providers and defaults, this project&apos;s budget, skills and
+                specialists, and services like web search and Modal.
               </>
             }
           >
             <button
-              onClick={() => setSettingsOpen(true)}
+              onClick={() => {
+                setSettingsRequest(null);
+                setSettingsOpen(true);
+              }}
               aria-label="Open settings"
               className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
@@ -1195,7 +1211,7 @@ function WorkspacePage({
 
       </div>
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} request={settingsRequest} />
     </div>
   );
 }

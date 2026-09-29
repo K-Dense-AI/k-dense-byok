@@ -41,7 +41,14 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
+import {
+  ScopeSwitcher,
+  SettingsError,
+  SettingsHeader,
+  SettingsNotice,
+  SettingsSearch,
+  matchesQuery,
+} from "@/components/settings/primitives";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   Loader2Icon,
@@ -333,30 +340,37 @@ export function SkillsPanel() {
   );
 
   const filtered = useMemo(
-    () =>
-      rows.filter(
-        (r) =>
-          r.name.toLowerCase().includes(query.toLowerCase()) ||
-          r.description.toLowerCase().includes(query.toLowerCase()),
-      ),
+    () => rows.filter((r) => matchesQuery(query, r.name, r.description)),
     [query, rows],
+  );
+
+  const switchScope = useCallback(
+    async (next: SkillScope) => {
+      if (pane === "edit" && editing) {
+        const ok = await confirm({
+          title: `Discard unsaved changes to ${editing}?`,
+          description: "Switching scope closes the editor without saving.",
+          confirmLabel: "Discard",
+        });
+        if (!ok) return;
+      }
+      closePanes();
+      setScope(next);
+    },
+    [closePanes, confirm, editing, pane],
   );
 
   const shadowedSet = useMemo(() => new Set(shadowed), [shadowed]);
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
+    <div className="flex flex-col gap-4">
       {confirmDialog}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-medium">Skills</h3>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Skills the agent can activate. The K-Dense catalogue syncs daily without
-            overwriting local edits; skills you install or write are left alone until
-            you ask. Disabling one hides it from the agent for new chat tabs.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+      <SettingsHeader
+        title="Skills"
+        description="Skills the agent can activate. The K-Dense catalogue syncs daily without overwriting local edits; skills you install or write are left alone until you ask. Disabling one hides it from the agent."
+        appliesTo="new-chats"
+        actions={
+          <>
           <Button
             type="button"
             size="sm"
@@ -400,38 +414,17 @@ export function SkillsPanel() {
             ) : (
               <RefreshCwIcon className="size-3.5" />
             )}
-            Refresh
+            Sync catalogue
           </Button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {/* Scope */}
-      <div className="flex items-center gap-1 rounded-lg border p-1 text-xs">
-        {(
-          [
-            ["project", `This project (${activeProject?.name ?? activeProjectId})`],
-            ["global", "All projects"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            className={cn(
-              "flex-1 rounded-md px-2 py-1.5 transition-colors",
-              scope === value
-                ? "bg-muted font-medium"
-                : "text-muted-foreground hover:bg-muted/50",
-            )}
-            aria-pressed={scope === value}
-            onClick={() => {
-              closePanes();
-              setScope(value);
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <ScopeSwitcher
+        value={scope}
+        onChange={(next) => void switchScope(next)}
+        projectName={activeProject?.name ?? activeProjectId}
+      />
 
       {scope === "global" && (
         <p className="text-[11px] text-muted-foreground">
@@ -440,14 +433,8 @@ export function SkillsPanel() {
         </p>
       )}
 
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-      {notice && (
-        <div className="rounded-lg border bg-muted/40 px-3 py-2 text-xs">{notice}</div>
-      )}
+      <SettingsError>{error}</SettingsError>
+      <SettingsNotice>{notice}</SettingsNotice>
 
       {/* Install from a source */}
       {pane === "install" && (
@@ -726,23 +713,29 @@ export function SkillsPanel() {
         </div>
       )}
 
-      <Input
-        value={query}
-        placeholder="Search skills…"
-        className="h-8 text-xs"
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <SettingsSearch value={query} onChange={setQuery} placeholder="Search skills…" label="Search skills" />
 
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
       ) : filtered.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          {rows.length === 0
-            ? scope === "global"
+        rows.length === 0 && scope === "project" ? (
+          <div className="flex items-center gap-3 rounded-lg border px-3 py-2.5 text-xs text-muted-foreground">
+            <span className="min-w-0 flex-1">
+              No skills installed for this project yet. The K-Dense catalogue is usually seeded on
+              first launch; sync it now to fetch it.
+            </span>
+            <Button type="button" size="sm" variant="outline" className="h-7 shrink-0 text-xs" disabled={syncing} onClick={() => void refresh()}>
+              {syncing ? <Loader2Icon className="size-3.5 animate-spin" /> : <RefreshCwIcon className="size-3.5" />}
+              Sync now
+            </Button>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {rows.length === 0
               ? "No skills installed for all projects yet. Use Add or New skill above."
-              : "No skills installed for this project yet. They are seeded on first launch — run npm run prep in server/ if this project was created before seeding."
-            : "No skills match."}
-        </p>
+              : "No skills match."}
+          </p>
+        )
       ) : (
         <div className="flex flex-col gap-1.5">
           {filtered.map((r) => {

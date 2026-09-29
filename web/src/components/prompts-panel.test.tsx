@@ -51,7 +51,7 @@ describe("PromptsPanel", () => {
     const create = vi.spyOn(caps, "createPromptTemplate").mockResolvedValue({ name: "lit-scan", scope: "global", content: "body" });
     render(<PromptsPanel />);
     await screen.findByText("No templates in this project.");
-    await userEvent.click(screen.getByRole("tab", { name: "All projects" }));
+    await userEvent.click(screen.getByRole("button", { name: "All projects" }));
     await waitFor(() => expect(list).toHaveBeenLastCalledWith("global"));
     await userEvent.click(screen.getByRole("button", { name: "New template" }));
     await userEvent.type(screen.getByLabelText("Template name"), "Lit-Scan");

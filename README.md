@@ -1,7 +1,7 @@
 # K-Dense BYOK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.12.0-blue.svg)](server/package.json)
+[![Version](https://img.shields.io/badge/Version-0.13.0-blue.svg)](server/package.json)
 [![Skills](https://img.shields.io/badge/Skills-149-brightgreen.svg)](#what-can-it-do)
 [![Workflows](https://img.shields.io/badge/Workflows-326-blueviolet.svg)](#what-can-it-do)
 [![Databases](https://img.shields.io/badge/Databases-229-orange.svg)](#what-can-it-do)
@@ -93,9 +93,9 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 ### Choose the right model and compute for each task
 
-- **Connect supported subscriptions directly through Pi OAuth.** In **Settings → Model providers**, connect a ChatGPT subscription (Sign in with ChatGPT), Claude Pro/Max, GitHub Copilot, xAI (SuperGrok / X Premium), Kimi Code, or Meta Muse. Kady handles the provider's browser, device-code, or manual sign-in flow and makes its available models appear in the picker. An older OpenAI Codex login keeps working as "OpenAI Codex (legacy)".
+- **Connect supported subscriptions directly through Pi OAuth.** In **Settings → Providers**, sign in with a ChatGPT subscription (Sign in with ChatGPT), Claude Pro/Max, GitHub Copilot, xAI (SuperGrok / X Premium), Kimi Code, or Meta Muse. Kady handles the provider's browser, device-code, or manual sign-in flow and makes its available models appear in the picker. An older OpenAI Codex login keeps working as "OpenAI Codex (legacy)".
 - **Use major hosted models** from OpenAI, Anthropic, Google, xAI, Qwen, and others through one [OpenRouter](https://openrouter.ai/) account. Change the model and reasoning level independently in each chat.
-- **Bring a key for any provider Pi supports.** Under **Settings → API keys**, add a key for Anthropic, OpenAI, Google Gemini, xAI, Meta, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, Kimi, Moonshot, MiniMax, Z.AI, Qwen and Xiaomi token plans, or your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, or Cloudflare account — each configured provider gets its own section in the model picker (see [Model selection](./docs/model-selection.md#direct-api-key-providers)).
+- **Bring a key for any provider Pi supports.** Under **Settings → Providers**, add a key for Anthropic, OpenAI, Google Gemini, xAI, Meta, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, Kimi, Moonshot, MiniMax, Z.AI, Qwen and Xiaomi token plans, or your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, or Cloudflare account — each configured provider gets its own section in the model picker (see [Model selection](./docs/model-selection.md#direct-api-key-providers)).
 - **Use NVIDIA NIM models directly** with an API key from [build.nvidia.com](https://build.nvidia.com/) — Nemotron, Llama, GPT-OSS, and more, billed against your NVIDIA API credits rather than per-token dollar pricing.
 - **Run free local models with [Ollama or any OpenAI-compatible server](./docs/local-models-ollama.md)** (LM Studio, vLLM, …) when cost or data locality matters. Local models appear in the same model picker.
 - **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information. Fusion remains OpenRouter-only and requires an OpenRouter API key.
@@ -105,7 +105,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 - **See usage and cost as work happens.** Kady records model tokens, specialist usage, and Modal compute by run and project. OpenRouter, direct API-key providers, and Anthropic OAuth metered usage count toward an optional hard dollar limit; provider-managed ChatGPT, Copilot, xAI, Kimi and Meta Muse subscriptions, NVIDIA NIM credits, and prepaid token plans show token and reference-price information without consuming that cap.
 - **Watch local resource use.** A compact system monitor shows CPU, memory, and GPU activity while analyses are running on your computer.
-- **Manage capabilities without editing configuration files.** Settings lets you connect model providers, add API keys, enable or disable skills, create or customize specialists, manage Fusion presets, and change appearance. Disabling a capability does not delete it.
+- **Manage capabilities without editing configuration files.** Settings lets you connect model providers, pick default models, add service keys, adjust each project's budget and guardrails, enable or disable skills, create or customize specialists, manage Fusion presets, and change appearance. Disabling a capability does not delete it.
 - **Connect your existing research tools** through [MCP](./docs/mcp-servers.md), a plug-in standard for AI assistants, using the MCP support built into Kady's Pi agent engine. Add reference managers, GitHub, databases, and other services for one project or all projects, test the connection, check live status, and sign in through the browser for services that use OAuth. By default Kady calls a server's tools from short scripts (Pi's codemode), so even large servers don't crowd its context; switch a server to direct tools when a smaller model needs it.
 - **Your work is stored in ordinary local files.** Projects can be backed up, moved, inspected with other software, or archived independently of the app.
 
@@ -139,9 +139,9 @@ copy .env.example .env    # optional: add an OpenRouter key or other settings
 .\start.cmd
 ```
 
-In plain terms: the first two lines download the app and step into its folder; the third creates an optional local settings file; the last starts the app. If you use a supported subscription instead of OpenRouter, connect it in **Settings → Model providers** once Kady opens.
+In plain terms: the first two lines download the app and step into its folder; the third creates an optional local settings file; the last starts the app. If you use a supported subscription instead of OpenRouter, connect it in **Settings → Providers** once Kady opens.
 
-The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000** — that address is your own computer, not a website. Press **Ctrl+C** in the terminal to stop the app. You can connect subscriptions under **Model providers** and add or change keys under **API keys** anytime — no restart needed.
+The first start installs everything automatically (it takes a few minutes); then your browser opens to **http://localhost:3000** — that address is your own computer, not a website. Press **Ctrl+C** in the terminal to stop the app. You can connect subscriptions and model keys under **Providers** and add search or Modal keys under **Services** anytime — no restart needed. If no model is connected yet, the empty chat shows a **Connect a model to get started** card that takes you there.
 
 That's it. Create a project, drop in your data, and ask Kady for what you want — for example: *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
 

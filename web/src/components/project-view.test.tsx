@@ -55,8 +55,12 @@ vi.mock("next-themes", () => ({
   }),
 }));
 
+const settingsProps = vi.fn();
 vi.mock("@/components/settings-dialog", () => ({
-  SettingsDialog: () => null,
+  SettingsDialog: (props: unknown) => {
+    settingsProps(props);
+    return null;
+  },
 }));
 
 import { ProjectView, sortProjects } from "@/components/project-view";
@@ -184,5 +188,19 @@ describe("ProjectView", () => {
     const doneCard = screen.getByText("Old study").closest('[data-slot="card"]');
     expect(doneCard).not.toBeNull();
     expect(within(doneCard as HTMLElement).getByText("Done")).toBeInTheDocument();
+  });
+});
+
+describe("ProjectView project settings", () => {
+  it("opens Settings → Project for the card's project", async () => {
+    const user = userEvent.setup();
+    render(<ProjectView onOpenProject={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Project actions for RNA pilot" }));
+    await user.click(await screen.findByRole("menuitem", { name: /project settings/i }));
+    await waitFor(() =>
+      expect(settingsProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({ open: true, request: { tab: "project", projectId: "rna-pilot" } }),
+      ),
+    );
   });
 });

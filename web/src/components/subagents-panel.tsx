@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings → "Sub-agents" panel.
+ * Settings → Project → Specialists.
  *
  * Lists the agents available to the `subagent` delegation tool (pi-subagents):
  * project agents from sandbox/.pi/agents/*.md (editable) and the package's
@@ -10,12 +10,21 @@
  * list + inline-form interaction style.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { useConfirm } from "@/components/ui/confirm-dialog";
+import { ModelField } from "@/components/settings/model-field";
+import {
+  SettingsCard,
+  SettingsError,
+  SettingsHeader,
+  SettingsSearch,
+  matchesQuery,
+} from "@/components/settings/primitives";
 import { cn } from "@/lib/utils";
 import {
   BotIcon,
@@ -33,10 +42,12 @@ import {
   deleteAgent,
   getAgentMemory,
   getAgents,
+  getSpecialistDefaultModel,
   getWatchdogSettings,
   restoreDefaultAgents,
   saveAgent,
   saveAgentMemory,
+  saveSpecialistDefaultModel,
   saveWatchdogSettings,
   setAgentEnabled,
   THINKING_LEVELS,
@@ -103,6 +114,10 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
   const [settings, setSettings] = useState<WatchdogSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // Latest settings for `update`: consecutive edits must not roll back to a
+  // snapshot captured before the previous save landed.
+  const settingsRef = useRef<WatchdogSettings | null>(null);
+  settingsRef.current = settings;
 
   useEffect(() => {
     let cancelled = false;
@@ -119,26 +134,47 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  const update = useCallback(
-    async (patch: Partial<Omit<WatchdogSettings, "metered">>) => {
-      if (!settings) return;
-      const previous = settings;
-      setSettings({ ...settings, ...patch });
-      setSaving(true);
-      setError(null);
-      try {
-        setSettings(await saveWatchdogSettings(patch));
-      } catch (exc) {
-        setSettings(previous);
-        setError(exc instanceof Error ? exc.message : "Save failed");
-      } finally {
-        setSaving(false);
-      }
-    },
-    [settings],
-  );
+  const update = useCallback(async (patch: Partial<Omit<WatchdogSettings, "metered">>) => {
+    const previous = settingsRef.current;
+    if (!previous) return;
+    setSettings({ ...previous, ...patch });
+    setSaving(true);
+    setError(null);
+    try {
+      setSettings(await saveWatchdogSettings(patch));
+    } catch (exc) {
+      setSettings(previous);
+      setError(exc instanceof Error ? exc.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }, []);
 
-  const [modelDraft, setModelDraft] = useState<string | null>(null);
+  // Number fields commit on blur/Enter, never per keystroke (typing "50"
+  // would otherwise send 5 — below the minimum — before 50).
+  const [cadenceDraft, setCadenceDraft] = useState<string | null>(null);
+  const [stalemateDraft, setStalemateDraft] = useState<string | null>(null);
+  const commitCadence = () => {
+    if (cadenceDraft === null || !settings) return;
+    const raw = cadenceDraft.trim();
+    setCadenceDraft(null);
+    const next = raw === "" ? null : Number(raw);
+    if (next !== null && (!Number.isInteger(next) || next < 5 || next > 500)) {
+      setError("Mid-turn review cadence must be a whole number from 5 to 500 (or empty).");
+      return;
+    }
+    if (next !== settings.cadenceEveryNTools) void update({ cadenceEveryNTools: next });
+  };
+  const commitStalemate = () => {
+    if (stalemateDraft === null || !settings) return;
+    const next = Number(stalemateDraft.trim());
+    setStalemateDraft(null);
+    if (!Number.isInteger(next) || next < 1 || next > 20) {
+      setError("Stalemate repeats must be a whole number from 1 to 20.");
+      return;
+    }
+    if (next !== settings.stalemateRepeats) void update({ stalemateRepeats: next });
+  };
 
   return (
     <section className="rounded-lg border p-3" aria-label="Watchdog" data-testid="watchdog-card">
@@ -148,7 +184,8 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
           <div className="text-xs font-medium">Watchdog</div>
           <p className="text-[11px] text-muted-foreground">
             A second model reviews what the agent just did and steers findings into the chat: raw data
-            touched, silent row drops, unlogged parameter changes, claims without evidence. Applies to new chat tabs.
+            touched, silent row drops, unlogged parameter changes, claims without evidence. Per project;
+            applies to new chat tabs.
           </p>
         </div>
         <Switch
@@ -162,23 +199,22 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
         Watchdog model calls are not metered by pi-subagents: they are not ledgered and do not count toward
         the project spend cap. Prefer a subscription or local model.
       </p>
-      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      <SettingsError className="mt-2">{error}</SettingsError>
       {settings?.enabled && (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <label className="text-[11px] text-muted-foreground">
-            Model (empty = the chat&apos;s model)
-            <Input
-              value={modelDraft ?? settings.model}
-              placeholder="provider/model, e.g. openrouter/openai/gpt-5.5"
-              className="mt-1 h-8 font-mono text-xs"
-              aria-label="Watchdog model"
-              onChange={(e) => setModelDraft(e.target.value)}
-              onBlur={() => {
-                if (modelDraft !== null && modelDraft.trim() !== settings.model) void update({ model: modelDraft.trim() });
-                setModelDraft(null);
+          <div className="text-[11px] text-muted-foreground">
+            Model
+            <ModelField
+              className="mt-1"
+              label="Watchdog model"
+              value={settings.model}
+              emptyLabel="Inherit the chat's model"
+              disabled={saving}
+              onChange={(model) => {
+                if (model !== settings.model) void update({ model });
               }}
             />
-          </label>
+          </div>
           <label className="text-[11px] text-muted-foreground">
             Thinking
             <select
@@ -187,7 +223,7 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
               value={settings.thinking}
               onChange={(e) => void update({ thinking: e.target.value })}
             >
-              <option value="">inherit</option>
+              <option value="">inherit from chat</option>
               {THINKING_LEVELS.map((level) => (
                 <option key={level} value={level}>
                   {level}
@@ -203,10 +239,11 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
               max={500}
               className="mt-1 h-8 text-xs"
               aria-label="Watchdog cadence"
-              value={settings.cadenceEveryNTools ?? ""}
-              onChange={(e) => {
-                const raw = e.target.value.trim();
-                void update({ cadenceEveryNTools: raw === "" ? null : Number(raw) });
+              value={cadenceDraft ?? String(settings.cadenceEveryNTools ?? "")}
+              onChange={(e) => setCadenceDraft(e.target.value)}
+              onBlur={commitCadence}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitCadence();
               }}
             />
           </label>
@@ -221,6 +258,22 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
               <option value="concern">concerns and blockers</option>
               <option value="blocker">blockers only</option>
             </select>
+          </label>
+          <label className="text-[11px] text-muted-foreground sm:col-span-2">
+            Stop a turn after the same warning repeats this many times in a row (1–20)
+            <Input
+              type="number"
+              min={1}
+              max={20}
+              className="mt-1 h-8 w-24 text-xs"
+              aria-label="Watchdog stalemate repeats"
+              value={stalemateDraft ?? String(settings.stalemateRepeats)}
+              onChange={(e) => setStalemateDraft(e.target.value)}
+              onBlur={commitStalemate}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitStalemate();
+              }}
+            />
           </label>
           <label className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground sm:col-span-2">
             Also review background specialists&apos; own turns
@@ -246,6 +299,66 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
   );
 }
 
+/** Project `subagents.defaultModel`: the model for specialists that pin none. */
+function SpecialistDefaultModelCard({ projectId }: { projectId: string }) {
+  const [value, setValue] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setValue(null);
+    getSpecialistDefaultModel()
+      .then((model) => {
+        if (!cancelled) setValue(model ?? "");
+      })
+      .catch((exc) => {
+        if (!cancelled) setError(exc instanceof Error ? exc.message : "Failed to load the default model");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const change = async (next: string) => {
+    if (value === null || next === value) return;
+    const previous = value;
+    setValue(next);
+    setSaving(true);
+    setError(null);
+    try {
+      setValue((await saveSpecialistDefaultModel(next || null)) ?? "");
+    } catch (exc) {
+      setValue(previous);
+      setError(exc instanceof Error ? exc.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SettingsCard
+      title="Default model for specialists"
+      description="Used by every specialist that does not pin its own model. Inherit keeps each specialist on the model of the chat that launched it."
+    >
+      {value === null ? (
+        error ? <SettingsError>{error}</SettingsError> : <p className="text-[11px] text-muted-foreground">Loading…</p>
+      ) : (
+        <>
+          <ModelField
+            label="Default specialist model"
+            value={value}
+            emptyLabel="Inherit the chat's model"
+            disabled={saving}
+            onChange={(next) => void change(next)}
+          />
+          <SettingsError className="mt-2">{error}</SettingsError>
+        </>
+      )}
+    </SettingsCard>
+  );
+}
+
 export function SubagentsPanel() {
   const { activeProject, activeProjectId } = useProjects();
   const [agents, setAgents] = useState<AgentFile[]>([]);
@@ -254,13 +367,15 @@ export function SubagentsPanel() {
   const [form, setForm] = useState<AgentFormState | null>(null);
   const [saving, setSaving] = useState(false);
   const [viewing, setViewing] = useState<AgentFile | null>(null);
+  const [query, setQuery] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   const refresh = useCallback(async () => {
     setError(null);
     try {
       setAgents(await getAgents());
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Failed to load agents");
+      setError(exc instanceof Error ? exc.message : "Failed to load specialists");
     }
   }, []);
 
@@ -275,7 +390,7 @@ export function SubagentsPanel() {
       })
       .catch((exc) => {
         if (!cancelled) {
-          setError(exc instanceof Error ? exc.message : "Failed to load agents");
+          setError(exc instanceof Error ? exc.message : "Failed to load specialists");
         }
       })
       .finally(() => {
@@ -303,7 +418,7 @@ export function SubagentsPanel() {
     if (!form) return;
     const name = form.name.trim().toLowerCase();
     if (!name) {
-      setError("Agent name is required");
+      setError("Specialist name is required");
       return;
     }
     if (!form.systemPrompt.trim()) {
@@ -340,6 +455,13 @@ export function SubagentsPanel() {
 
   const handleDelete = useCallback(
     async (name: string) => {
+      const ok = await confirm({
+        title: `Delete ${name}?`,
+        description: "Removes .pi/agents/" + name + ".md from this project. Running chats keep the roster they started with.",
+        confirmLabel: "Delete",
+        destructive: true,
+      });
+      if (!ok) return;
       setSaving(true);
       setError(null);
       try {
@@ -351,10 +473,18 @@ export function SubagentsPanel() {
         setSaving(false);
       }
     },
-    [refresh],
+    [confirm, refresh],
   );
 
   const handleRestore = useCallback(async () => {
+    const ok = await confirm({
+      title: "Restore the default specialists?",
+      description:
+        "Re-seeds the default scientific roster. Project specialists with the same names are overwritten; custom specialists are untouched.",
+      confirmLabel: "Restore defaults",
+      destructive: true,
+    });
+    if (!ok) return;
     setSaving(true);
     setError(null);
     try {
@@ -367,7 +497,7 @@ export function SubagentsPanel() {
     } finally {
       setSaving(false);
     }
-  }, [refresh]);
+  }, [confirm, refresh]);
 
   const [memoryOpen, setMemoryOpen] = useState<{ name: string; file: AgentMemoryFile | null; draft: string } | null>(null);
   const openMemory = useCallback(async (agent: AgentFile) => {
@@ -399,6 +529,13 @@ export function SubagentsPanel() {
   }, [memoryOpen]);
   const clearMemory = useCallback(async () => {
     if (!memoryOpen) return;
+    const ok = await confirm({
+      title: `Clear the memory of ${memoryOpen.name}?`,
+      description: "Deletes its MEMORY.md. The specialist starts its next run without those notes.",
+      confirmLabel: "Clear memory",
+      destructive: true,
+    });
+    if (!ok) return;
     setSaving(true);
     setError(null);
     try {
@@ -409,32 +546,36 @@ export function SubagentsPanel() {
     } finally {
       setSaving(false);
     }
-  }, [memoryOpen]);
+  }, [confirm, memoryOpen]);
 
-  const project = agents.filter((a) => a.source === "project");
-  const builtins = agents.filter((a) => a.source === "builtin");
+  const visible = useMemo(
+    () => agents.filter((a) => matchesQuery(query, a.name, a.description, a.model)),
+    [agents, query],
+  );
+  const project = visible.filter((a) => a.source === "project");
+  const builtins = visible.filter((a) => a.source === "builtin");
 
   return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <WatchdogCard projectId={activeProjectId} />
-      <div>
-        <h3 className="text-sm font-medium">Sub-agents</h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Specialist agents the assistant can delegate to with the{" "}
-          <code className="rounded bg-muted px-1 py-0.5 text-[11px]">subagent</code>{" "}
-          tool. Agents are configured per project (current:{" "}
-          <span className="font-medium">{activeProject?.name ?? activeProjectId}</span>
-          ) as markdown files in{" "}
-          <code className="rounded bg-muted px-1 py-0.5 text-[11px]">.pi/agents/</code>.
-          Changes apply to new chat tabs.
-        </p>
-      </div>
+    <div className="flex flex-col gap-4">
+      {dialog}
+      <SettingsHeader
+        title="Specialists"
+        description={
+          <>
+            Specialist agents Kady can delegate to with the{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-[11px]">subagent</code> tool,
+            configured per project (current:{" "}
+            <span className="font-medium">{activeProject?.name ?? activeProjectId}</span>) as markdown
+            files in <code className="rounded bg-muted px-1 py-0.5 text-[11px]">.pi/agents/</code>.
+          </>
+        }
+        appliesTo="new-chats"
+      />
 
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
+      <SpecialistDefaultModelCard projectId={activeProjectId} />
+      <WatchdogCard projectId={activeProjectId} />
+
+      <SettingsError>{error}</SettingsError>
 
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>
@@ -451,16 +592,15 @@ export function SubagentsPanel() {
               />
             </div>
             <div className="flex flex-1 flex-col gap-1.5">
-              <label className="text-xs font-medium">
+              <span className="text-xs font-medium">
                 Model{" "}
                 <span className="font-normal text-muted-foreground">(optional)</span>
-              </label>
-              <Input
+              </span>
+              <ModelField
+                label="Specialist model"
                 value={form.model}
-                placeholder="inherit, or provider/model"
-                title="Examples: openrouter/anthropic/claude-opus-5, openai-codex/gpt-5.6-sol"
-                className="h-8 text-xs font-mono"
-                onChange={(e) => setForm({ ...form, model: e.target.value })}
+                emptyLabel="Inherit (specialist default or chat model)"
+                onChange={(model) => setForm({ ...form, model })}
               />
             </div>
           </div>
@@ -483,13 +623,13 @@ export function SubagentsPanel() {
             <div className="flex flex-wrap gap-1">
               {["", ...THINKING_LEVELS].map((level) => (
                 <Button
-                  key={level || "default"}
+                  key={level || "inherit"}
                   variant={form.thinking === level ? "default" : "outline"}
                   size="sm"
                   className="h-6 px-2 text-[11px]"
                   onClick={() => setForm({ ...form, thinking: level })}
                 >
-                  {level || "default"}
+                  {level || "inherit"}
                 </Button>
               ))}
             </div>
@@ -582,7 +722,7 @@ export function SubagentsPanel() {
               disabled={saving}
               onClick={() => void handleSave()}
             >
-              {saving ? "Saving…" : form.originalName ? "Save changes" : "Add agent"}
+              {saving ? "Saving…" : form.originalName ? "Save changes" : "Add specialist"}
             </Button>
             <Button
               variant="ghost"
@@ -596,6 +736,12 @@ export function SubagentsPanel() {
         </div>
       ) : (
         <>
+          <SettingsSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Search specialists…"
+            label="Search specialists"
+          />
           <div className="flex flex-col gap-1.5">
             {project.map((agent) => (
               <div key={agent.name} className="flex items-center gap-2 rounded-lg border px-3 py-2">
@@ -651,8 +797,9 @@ export function SubagentsPanel() {
             ))}
             {project.length === 0 && (
               <div className="rounded-lg border px-3 py-2.5 text-xs text-muted-foreground leading-relaxed">
-                No project agents yet. Add one, or restore the default scientific
-                roster below.
+                {query.trim()
+                  ? "No project specialist matches."
+                  : "No project specialists yet. Add one, or restore the default scientific roster below."}
               </div>
             )}
           </div>
@@ -709,7 +856,7 @@ export function SubagentsPanel() {
               onClick={() => setForm({ ...EMPTY_FORM })}
             >
               <PlusIcon className="size-3.5" />
-              Add agent
+              Add specialist
             </Button>
             <Button
               variant="ghost"
@@ -717,7 +864,7 @@ export function SubagentsPanel() {
               className="gap-1.5 text-xs text-muted-foreground"
               disabled={saving}
               onClick={() => void handleRestore()}
-              title="Re-seed the 21 default scientific agents (overwrites same-named project agents; custom agents are untouched)"
+              title="Re-seed the default scientific specialists (overwrites same-named project specialists; custom ones are untouched)"
             >
               <RotateCcwIcon className="size-3.5" />
               Restore defaults
@@ -727,7 +874,7 @@ export function SubagentsPanel() {
           {builtins.length > 0 && (
             <div className="flex flex-col gap-1.5">
               <h4 className="mt-1 text-xs font-medium text-muted-foreground">
-                Built-in agents{" "}
+                Built-in specialists{" "}
                 <span className="font-normal">
                   (from pi-subagents — customize to override)
                 </span>

@@ -34,17 +34,17 @@ Kady can connect these existing subscriptions and accounts directly through Pi:
 - OpenRouter (`openrouter`, a sign-in alternative to pasting a key)
 - Radius (`radius`, a dynamic model gateway)
 
-After Kady starts, open **Settings → Model providers** and click **Connect**. Pi and the provider choose the appropriate browser redirect, device-code, or manual-code flow; Kady displays each step in the dialog.
+After Kady starts, open **Settings → Providers** and click **Sign in** on the provider's row. Pi and the provider choose the appropriate browser redirect, device-code, or manual-code flow; Kady displays each step in the dialog.
 
 A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks ChatGPT, Copilot, xAI, Kimi Code, and Meta Muse subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap. OpenRouter and Radius sign-ins bill like an API key.
 
 ### Any other Pi provider with an API key
 
-Every provider Pi supports natively is available with your own key: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, OpenCode, Kimi, Moonshot, MiniMax, Z.AI, the Qwen and Xiaomi token plans, Ant Ling, and your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, Cloudflare AI Gateway, or Cloudflare Workers AI account. After launch, open **Settings → API keys → Direct model providers**, pick the provider, and paste the key (cloud providers also take their endpoint, account, region, or project fields there). Each configured provider gets its own section in the model picker. Details and billing per provider are in [Model selection](./model-selection.md#direct-api-key-providers).
+Every provider Pi supports natively is available with your own key: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, OpenCode, Kimi, Moonshot, MiniMax, Z.AI, the Qwen and Xiaomi token plans, Ant Ling, and your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, Cloudflare AI Gateway, or Cloudflare Workers AI account. After launch, open **Settings → Providers**, find the provider under *Add a provider* (search, or filter to *API key*), and paste the key (cloud providers also take their endpoint, account, region, or project fields there). Each configured provider gets its own section in the model picker. Details and billing per provider are in [Model selection](./model-selection.md#direct-api-key-providers).
 
 ### NVIDIA NIM
 
-An API key from [build.nvidia.com](https://build.nvidia.com/) gives direct access to NIM-served models — Nemotron, Llama, GPT-OSS, Kimi, GLM, and more. Usage draws on NVIDIA-managed API credits rather than per-token dollar pricing, so Kady records tokens but no USD spend. Add the key as `NVIDIA_API_KEY` in `.env` or under **Settings → API keys**; see [Model selection](./model-selection.md#nvidia-nim-models).
+An API key from [build.nvidia.com](https://build.nvidia.com/) gives direct access to NIM-served models — Nemotron, Llama, GPT-OSS, Kimi, GLM, and more. Usage draws on NVIDIA-managed API credits rather than per-token dollar pricing, so Kady records tokens but no USD spend. Add the key as `NVIDIA_API_KEY` in `.env` or under **Settings → Providers**; see [Model selection](./model-selection.md#nvidia-nim-models).
 
 ### Local Ollama
 
@@ -78,7 +78,7 @@ If you use OpenRouter, open `.env` in any text editor and paste your key:
 OPENROUTER_API_KEY=sk-or-your-key-here
 ```
 
-If you use only a Pi subscription or Ollama, you can leave `OPENROUTER_API_KEY` blank. The startup script creates `.env` if needed, and OpenRouter keys can also be added later under **Settings → API keys**.
+If you use only a Pi subscription or Ollama, you can leave `OPENROUTER_API_KEY` blank. The startup script creates `.env` if needed, and OpenRouter keys can also be added later under **Settings → Providers**.
 
 OAuth tokens are kept outside the repository and all projects. By default Pi stores them in Kady's private `~/.kady/pi-agent/auth.json`; the lead agent and its specialist subagents use that same store. Set `KADY_PI_AGENT_DIR` to relocate Kady's Pi directory. If you explicitly set `PI_CODING_AGENT_DIR`, it takes precedence; point it at your standalone Pi agent directory only when you intentionally want Kady and Pi to share authentication and settings.
 
@@ -104,7 +104,7 @@ To stop the app, go back to the terminal and press **Ctrl+C**.
 
 ## 6. Optional API keys
 
-These unlock extra capabilities. All of them can be added later in **Settings → API keys** — none are required to get started.
+These unlock extra capabilities. All of them can be added later in **Settings → Services** — none are required to get started.
 
 | Key | What it adds | Where to get it |
 |-----|--------------|-----------------|
@@ -131,7 +131,7 @@ The startup script picks up any new packages and skills automatically.
 - **`./start.sh: Permission denied`** (macOS/Linux) — run `chmod +x start.sh` once, then try again.
 - **Windows says "Windows protected your PC"** when double-clicking `start.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\start.cmd`).
 - **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
-- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → API keys** (OpenRouter, or any direct provider under "Direct model providers"), start Ollama, or connect a supported subscription in **Settings → Model providers**.
+- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → Providers** (OpenRouter or any direct provider), start Ollama, or sign in with a supported subscription on the same page.
 - **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
 - **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node ignores system proxy settings, so until these variables are set Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
 

@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import models from "@/data/models.json";
 import { useModels } from "@/lib/use-models";
+import { openSettings } from "@/lib/settings-nav";
 
 export type Model = {
   id: string;
@@ -141,12 +142,22 @@ export { DEFAULT_MODEL };
 // ---------------------------------------------------------------------------
 
 interface ModelPickerListProps {
-  selected: Model;
+  selected: Model | null;
   onSelect: (model: Model) => void;
   compact?: boolean;
+  /** Hide Fusion presets (settings fields the server resolves without one). */
+  excludeFusion?: boolean;
+  /** Called before leaving for Settings, so a popover host can close itself. */
+  onNavigate?: () => void;
 }
 
-function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) {
+export function ModelPickerList({
+  selected,
+  onSelect,
+  compact,
+  excludeFusion,
+  onNavigate,
+}: ModelPickerListProps) {
   const [search, setSearch] = useState("");
   const selectedRowRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -188,6 +199,7 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
 
     const grouped = new Map<string, { label: string; models: Model[] }>();
     for (const m of allModels) {
+      if (excludeFusion && m.isFusion) continue;
       if (!matches(m)) continue;
       const sourceId = m.isFusion
         ? "fusion"
@@ -219,12 +231,12 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
       groups,
       totalCount: groups.reduce((sum, group) => sum + group.models.length, 0),
     };
-  }, [allModels, search]);
+  }, [allModels, excludeFusion, search]);
 
   const isRecommended = (m: Model): boolean => Boolean(m.default);
 
   const renderModelRow = (model: Model) => {
-    const isSelected = selected.id === model.id;
+    const isSelected = selected?.id === model.id;
     const available = model.available !== false;
     const providerColor = PROVIDER_COLORS[model.provider] ?? "text-muted-foreground";
     const local = isLocal(model);
@@ -415,8 +427,8 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
                   <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
                     OPENAI_COMPATIBLE_BASE_URL
                   </code>
-                  . Start LM Studio, vLLM, or another OpenAI-compatible server
-                  and reopen this menu.
+                  (Settings → Providers → Local model servers). Start LM Studio,
+                  vLLM, or another OpenAI-compatible server and reopen this menu.
                 </>
               )}
             </div>
@@ -437,12 +449,22 @@ function ModelPickerList({ selected, onSelect, compact }: ModelPickerListProps) 
             {tier}
           </span>
         ))}
-        {allModels.some(m => m.isFusion) && (
+        {!excludeFusion && allModels.some(m => m.isFusion) && (
           <span className="flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400 font-medium">
             <span className={cn("inline-block size-1.5 rounded-full", FUSION_DOT)} />
             Openrouter Fusion
           </span>
         )}
+        <button
+          type="button"
+          className="ml-auto text-[10px] font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+          onClick={() => {
+            onNavigate?.();
+            openSettings({ tab: "providers" });
+          }}
+        >
+          Manage providers
+        </button>
       </div>
     </div>
   );
@@ -521,7 +543,26 @@ export function ModelSelector({
         className="w-96 p-0 overflow-hidden rounded-xl shadow-xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <ModelPickerList selected={selected} onSelect={handleSelect} />
+        {selectedAvailability === "unavailable" ? (
+          <div className="flex items-center gap-2 border-b bg-destructive/5 px-3 py-2 text-[11px] text-destructive">
+            <span className="min-w-0 flex-1">{selected.label}&apos;s provider is not connected.</span>
+            <button
+              type="button"
+              className="shrink-0 font-medium underline-offset-2 hover:underline"
+              onClick={() => {
+                setOpen(false);
+                openSettings({ tab: "providers" });
+              }}
+            >
+              Connect…
+            </button>
+          </div>
+        ) : null}
+        <ModelPickerList
+          selected={selected}
+          onSelect={handleSelect}
+          onNavigate={() => setOpen(false)}
+        />
       </PopoverContent>
     </Popover>
   );

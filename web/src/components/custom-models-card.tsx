@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings → Model providers → Custom model servers.
+ * Settings → Providers → Custom model servers.
  *
  * Edits Pi's models.json through the backend: one card per provider, a table
  * of models with pricing. Hand-written providers (not created here) are shown
@@ -24,6 +24,8 @@ import {
   type CustomProvider,
   type CustomProviderListing,
 } from "@/lib/custom-models";
+import { notifyProviderAuthChanged } from "@/lib/use-provider-auth";
+import { SettingsError } from "@/components/settings/primitives";
 
 interface ModelRow {
   id: string;
@@ -188,6 +190,8 @@ export function CustomModelsCard() {
       setForeign(result.providers.filter((p) => !p.managed));
       setConfigured(result.configured);
       setDirty(false);
+      // The picker's direct-provider section lists custom servers too.
+      notifyProviderAuthChanged();
       const unreachable = Object.entries(result.configured).filter(([, ok]) => !ok).map(([id]) => id);
       setNotice(
         unreachable.length
@@ -226,11 +230,11 @@ export function CustomModelsCard() {
           }}
         >
           <PlusIcon className="size-3.5" />
-          Add server
+          Add model server
         </Button>
       </div>
 
-      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      <SettingsError className="mt-2">{error}</SettingsError>
       {notice && <p className="mt-2 text-xs text-muted-foreground">{notice}</p>}
       {loading && <p className="mt-2 text-xs text-muted-foreground">Loading…</p>}
 

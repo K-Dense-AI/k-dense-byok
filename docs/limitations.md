@@ -87,7 +87,7 @@ A skill is a procedure the agent follows using that same shell, so installing on
 
 Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access)) gives Kady and the sub-agents `web_search` and `fetch_content` (pages, PDFs, GitHub repos, YouTube). A few edges:
 
-- **No key = shared fallback.** Without an Exa / Perplexity / Gemini key (Settings → API keys), searches go through a free Exa fallback that can rate-limit under heavy use. Adding any one key removes that bottleneck.
+- **No key = shared fallback.** Without an Exa / Perplexity / Gemini key (Settings → Services), searches go through a free Exa fallback that can rate-limit under heavy use. Adding any one key removes that bottleneck.
 - **Video understanding needs a Gemini key.** YouTube and local-video analysis are only available once `GEMINI_API_KEY` is set.
 - **PDF extraction is text-only.** Scanned PDFs without a text layer are not OCRed.
 - **Web access for sub-agents applies to new chat tabs**, same as agent and MCP edits below.
@@ -97,7 +97,7 @@ Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access))
 Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple of edges:
 
 - **Sub-agents can't use MCP tools yet.** Tools from connected [MCP servers](./mcp-servers.md) are available to Kady itself but not to the sub-agents it spawns. Making them available to sub-agents is on the roadmap.
-- **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Specialists, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
+- **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Specialists, pick it from the model picker rather than typing an id by hand; an unrecognized id falls back to the default model rather than failing.
 - **Sub-agents ask through Kady, with a timeout.** A background specialist can pause and ask for a decision (pi-subagents' `contact_supervisor`). The request reaches the chat as a "Subagent needs a decision" card, Kady relays it to you with the interview form and answers the specialist. The specialist waits at most ten minutes, then continues with an error; a closed browser still lets the server adopt the turn, but nobody answers until a tab is open. Specialists do not get the `interview` tool themselves.
 - **Specialist memory is self-written.** Per-agent `MEMORY.md` files are instructions the model wrote for itself, injected into later runs. They are not verified and are a prompt-injection surface; review or clear them from Settings → Specialists.
 - **Watchdog spend is invisible.** pi-subagents does not report the watchdog model's usage, so its calls are not ledgered and do not count toward the spend cap ([details](./watchdog.md)).

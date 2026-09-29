@@ -19,6 +19,7 @@ import {
   parseModalInstance,
 } from "@/lib/modal-jobs";
 import { cn } from "@/lib/utils";
+import { SettingsLink } from "@/components/settings-link";
 
 export type { ModalInstance } from "@/lib/modal-jobs";
 
@@ -126,7 +127,7 @@ function PickerOption({
       aria-selected={selected}
       disabled={!enabled}
       onClick={onSelect}
-      title={!enabled ? "Connect Modal in Settings to enable remote compute" : undefined}
+      title={!enabled ? "Connect Modal in Settings → Services to enable remote compute" : undefined}
       className={cn(
         "flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-xs transition-colors",
         enabled ? "hover:bg-muted/60 focus-visible:bg-muted/60" : "cursor-not-allowed opacity-50",
@@ -272,7 +273,11 @@ export function ComputePickerBody({
           <span className="mt-1 size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
           <div className="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
             <span className="font-medium text-foreground">Modal is not connected.</span>{" "}
-            Save a token ID and secret together in Settings → API keys.
+            Save a token ID and secret together in{" "}
+            <SettingsLink tab="services" section="modal">
+              Settings → Services
+            </SettingsLink>
+            .
             <a
               href="https://modal.com/settings/tokens"
               target="_blank"

@@ -86,7 +86,8 @@ pi-subagents never starts its supervisor channel, never registers the
 parent-side `subagent_supervisor` tool, and never resets per-session state.
 And a session that is cold-opened after a restart starts on the model it last
 ran with (a brand-new one on the model most recently used in a chat of the
-project) rather than the global default — user runs set the model per request
+project) rather than the global default (Settings → Defaults, used only when
+the project has no earlier chat model) — user runs set the model per request
 anyway, but a system run uses whatever the session holds. A send that lands
 while a system run is streaming is not rejected: the tab adopts the live run
 and queues the message as a follow-up.
@@ -153,7 +154,7 @@ The OAuth store intentionally sits outside this tree at `~/.kady/pi-agent/auth.j
 
 ## Provider authentication
 
-**Settings → Model providers** drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry. Providers that also take an API key (OpenAI, Anthropic, xAI, Kimi, Meta) accept either credential; OpenAI Codex (legacy), GitHub Copilot, and Radius are OAuth-only.
+**Settings → Providers** lists one row per provider with every way to connect it (sign-in and/or API key); its **Sign in** button drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry. Providers that also take an API key (OpenAI, Anthropic, xAI, Kimi, Meta) accept either credential; OpenAI Codex (legacy), GitHub Copilot, and Radius are OAuth-only.
 
 The backend creates one process-wide Pi `ModelRuntime` with its auth path set to Kady's store. `server/src/env.ts` defaults `PI_CODING_AGENT_DIR` to `~/.kady/pi-agent`, or to `KADY_PI_AGENT_DIR` when that override is set. An explicitly supplied `PI_CODING_AGENT_DIR` takes precedence and can intentionally point Kady at the same directory as a standalone Pi installation. The subagent runner process inherits it, so lead agents and subagents use the same file-locked `auth.json`.
 
@@ -167,9 +168,9 @@ and so on; the id after the prefix is kept verbatim because many contain slashes
 These canonical `provider/model` refs are also used by ledgers and subagents.
 The backend resolves them to Pi `Model` objects (`server/src/agent/models.ts`):
 OpenRouter uses `OPENROUTER_API_KEY` (or an OpenRouter sign-in), Ollama points at
-`OLLAMA_BASE_URL`, and every other provider uses the credential Pi resolves for it —
+`OLLAMA_BASE_URL` (settable live in Settings → Providers → Local model servers), and every other provider uses the credential Pi resolves for it —
 an API key or cloud configuration from `server/src/agent/provider-catalog.ts`
-(managed in Settings → API keys), or an OAuth login from `provider-auth.ts`.
+(managed in Settings → Providers), or an OAuth login from `provider-auth.ts`.
 There is no proxy — Pi calls the provider directly. OpenRouter
 Fusion and the server-side speech transcription fallback remain OpenRouter-only.
 See

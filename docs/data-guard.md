@@ -25,7 +25,8 @@ background specialists it delegates to.
 
 ## Configuring it
 
-Edit project → **Raw-data guard**:
+Settings → **General** (the Project group) → **Raw-data guard**, saved with
+the card's own *Save* button:
 
 - *Protected paths*: one sandbox-relative glob per line (`user_data/**`,
   `raw/*.csv`, `reference`). A plain path protects its whole subtree. Changes

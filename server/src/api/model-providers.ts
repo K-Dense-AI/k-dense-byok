@@ -71,7 +71,7 @@ export interface DirectProviderStatus {
   keysUrl?: string;
   billingMode: DirectProviderDefinition["billingMode"];
   billingNote: string;
-  /** Also connectable under Settings → Model providers. */
+  /** Also connectable by signing in (Settings → Providers). */
   oauth: boolean;
   fields: DirectProviderField[];
   /** Pi resolved a credential for this provider (key, cloud creds, or OAuth). */
@@ -182,7 +182,7 @@ export async function registerModelProviderRoutes(
             source: status.auth?.source ?? null,
             loginLabel: provider?.auth.oauth?.loginLabel ?? null,
             modelCount,
-            // Lets the UI say "or paste a key under API keys" for dual providers.
+            // Lets Settings → Providers offer both sign-in and a key for dual providers.
             apiKeyAlternative: directProvider(definition.id) !== undefined ||
               definition.id === "openrouter",
           };

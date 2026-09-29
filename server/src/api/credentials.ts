@@ -23,7 +23,8 @@
  * understanding — and GEMINI_API_KEY is the same variable Pi's `google`
  * provider reads, so it also enables Gemini models); and the Modal
  * remote-compute token pair (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables
- * the `modal_run` tool.
+ * the `modal_run` tool; and the local model-server URLs (OLLAMA_BASE_URL,
+ * OPENAI_COMPATIBLE_BASE_URL), which re-register those providers on change.
  *
  * Keys are stored exactly where the app already expects them (repo-root
  * `.env`, plaintext, on the user's own machine) — we are removing friction,
@@ -34,6 +35,7 @@ import path from "node:path";
 import type { FastifyInstance } from "fastify";
 import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
+import { registerLocalProviders } from "../agent/models.ts";
 import {
   DIRECT_PROVIDERS,
   providerKeyBodyField,
@@ -60,6 +62,8 @@ interface ManagedKey {
    * short (`global`, `us-east-1`).
    */
   secret?: boolean;
+  /** Format check for a non-empty value; returns an error message or null. */
+  validate?: (value: string) => string | null;
   /** Hook run after set/clear (e.g. push into ModelRuntime). */
   onChange?: (key: string | null) => Promise<void>;
 }
@@ -78,6 +82,34 @@ function runtimeKeyHook(providerIds: readonly string[]): ManagedKey["onChange"] 
   };
 }
 
+/** Accept only an absolute http(s) URL, so a typo fails here instead of at the first model call. */
+function httpUrl(envVar: string): ManagedKey["validate"] {
+  return (value) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return `${envVar} must be an http(s) URL`;
+    }
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? null
+      : `${envVar} must be an http(s) URL`;
+  };
+}
+
+/**
+ * Re-register the local model servers after their base URL changed (or was
+ * cleared back to the default). config.ts reads both URLs per call, so this
+ * only refreshes Pi's provider registration.
+ */
+async function localProvidersHook(): Promise<void> {
+  try {
+    registerLocalProviders(getModelRuntime());
+  } catch {
+    /* Runtime refresh failure does not undo the persisted environment change. */
+  }
+}
+
 const BASE_MANAGED_KEYS: ManagedKey[] = [
   {
     id: "openrouter",
@@ -93,6 +125,23 @@ const BASE_MANAGED_KEYS: ManagedKey[] = [
   // be set for modalConfigured() to flip true and the modal_run tool to register.
   { id: "modalTokenId", bodyField: "modalTokenId", envVar: "MODAL_TOKEN_ID" },
   { id: "modalTokenSecret", bodyField: "modalTokenSecret", envVar: "MODAL_TOKEN_SECRET" },
+  // Local model servers: configuration, not secrets, so echoed in full.
+  {
+    id: "ollamaBaseUrl",
+    bodyField: "ollamaBaseUrl",
+    envVar: "OLLAMA_BASE_URL",
+    secret: false,
+    validate: httpUrl("OLLAMA_BASE_URL"),
+    onChange: localProvidersHook,
+  },
+  {
+    id: "openaiCompatibleBaseUrl",
+    bodyField: "openaiCompatibleBaseUrl",
+    envVar: "OPENAI_COMPATIBLE_BASE_URL",
+    secret: false,
+    validate: httpUrl("OPENAI_COMPATIBLE_BASE_URL"),
+    onChange: localProvidersHook,
+  },
 ];
 
 /**
@@ -264,6 +313,8 @@ function validateKey(spec: ManagedKey, raw: unknown): string | null {
   if (key === "") return null;
   const invalid = invalidEnvValue(key);
   if (invalid) return invalid;
+  const malformed = spec.validate?.(key);
+  if (malformed) return malformed;
   // Basic sanity check — we don't hard-reject on format (providers change
   // formats), just guard against pasted junk. Configuration values are exempt
   // (`global`, `us-east-1`, a short resource name).

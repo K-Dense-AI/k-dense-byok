@@ -231,6 +231,13 @@ export interface UseModelsReturn {
   modelAvailability: (model: Pick<Model, "id">) => ModelAvailability;
   /** Whether a current or persisted model can accept a new request. */
   isModelAvailable: (model: Pick<Model, "id">) => boolean;
+  /**
+   * Whether any model source is usable: OpenRouter, a connected subscription,
+   * a key-configured direct or custom provider, or a reachable local server.
+   * `null` until every probe has answered, so callers never flash an
+   * onboarding prompt at a user who is merely still loading.
+   */
+  hasAnyModelAccess: boolean | null;
   /** Re-fetch local and authenticated-provider models. */
   refresh: () => void;
 }
@@ -343,16 +350,19 @@ export function useModels(): UseModelsReturn {
   );
 
   useEffect(() => {
-    // Also re-probes the direct providers: Settings fires this event when a
-    // key changes as well as after an OAuth login/logout.
+    // Also re-probes the direct providers and local servers: Settings fires
+    // this event when a key or a local server URL changes as well as after an
+    // OAuth login/logout.
     const refreshProviders = () => {
       fetchProviders(true);
       fetchDirect(true);
+      fetchOllama(true);
+      fetchOpenAICompatible(true);
     };
     window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
     return () =>
       window.removeEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
-  }, [fetchProviders, fetchDirect]);
+  }, [fetchProviders, fetchDirect, fetchOllama, fetchOpenAICompatible]);
 
   // Re-read Fusion configs when Settings saves them (or another tab edits them).
   const [fusionRevision, setFusionRevision] = useState(0);
@@ -592,6 +602,38 @@ export function useModels(): UseModelsReturn {
     [modelAvailability],
   );
 
+  const hasAnyModelAccess = useMemo((): boolean | null => {
+    if (
+      openrouterConfigured === true ||
+      ollamaAvailable ||
+      oaiCompatAvailable ||
+      configuredDirectProviders.length > 0 ||
+      connectedProviders.size > 0
+    ) {
+      return true;
+    }
+    if (
+      openrouterConfigured === null ||
+      !ollamaLoaded ||
+      !oaiCompatLoaded ||
+      !directLoaded ||
+      !providerStatusLoaded
+    ) {
+      return null;
+    }
+    return false;
+  }, [
+    configuredDirectProviders.length,
+    connectedProviders,
+    directLoaded,
+    oaiCompatAvailable,
+    oaiCompatLoaded,
+    ollamaAvailable,
+    ollamaLoaded,
+    openrouterConfigured,
+    providerStatusLoaded,
+  ]);
+
   const refresh = useCallback(() => {
     fetchOllama(true);
     fetchOpenAICompatible(true);
@@ -612,6 +654,7 @@ export function useModels(): UseModelsReturn {
     configuredDirectProviders,
     modelAvailability,
     isModelAvailable,
+    hasAnyModelAccess,
     refresh,
   };
 }

@@ -199,7 +199,7 @@ export async function registerSpeechRoutes(app: FastifyInstance): Promise<void> 
       reply.code(503);
       return {
         detail:
-          "Dictation fallback requires an OpenRouter API key in Settings → API keys.",
+          "Dictation fallback requires an OpenRouter API key in Settings → Providers.",
       };
     }
     if (!req.isMultipart()) {

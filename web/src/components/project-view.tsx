@@ -8,7 +8,6 @@ import {
   FolderIcon,
   MoreHorizontalIcon,
   MoonIcon,
-  PencilIcon,
   PlusIcon,
   SearchIcon,
   SettingsIcon,
@@ -21,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { SettingsDialog } from "@/components/lazy-surfaces";
+import { ProjectCreateDialog } from "@/components/project-create-dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,21 +40,12 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -70,9 +61,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import { DEFAULT_PROJECT_ID, type Project } from "@/lib/projects";
 import type { ProjectActivitySummary } from "@/lib/project-activity";
+import { onOpenSettings, type OpenSettingsRequest } from "@/lib/settings-nav";
 import { useProjects } from "@/lib/use-projects";
 import { cn } from "@/lib/utils";
 import { APP_VERSION, isVersioned } from "@/lib/version";
@@ -80,28 +71,11 @@ import { APP_VERSION, isVersioned } from "@/lib/version";
 interface ProjectViewProps {
   onOpenProject: (projectId: string) => void;
   projectActivities?: Readonly<Record<string, ProjectActivitySummary>>;
-}
-
-interface ProjectFormState {
-  open: boolean;
-  mode: "create" | "edit";
-  id?: string;
-  name: string;
-  description: string;
-  tags: string;
-  spendLimit: string;
+  /** False while hidden behind a workspace; gates the Settings deep-link listener. */
+  isActive?: boolean;
 }
 
 type ProjectSort = "recent" | "name" | "status";
-
-const EMPTY_FORM: ProjectFormState = {
-  open: false,
-  mode: "create",
-  name: "",
-  description: "",
-  tags: "",
-  spendLimit: "",
-};
 
 function projectActivityLabel(project: Project): string {
   const value = project.updatedAt || project.createdAt;
@@ -170,6 +144,7 @@ function projectBudgetLabel(limit: number): string {
 export function ProjectView({
   onOpenProject,
   projectActivities = {},
+  isActive = true,
 }: ProjectViewProps) {
   const {
     projects,
@@ -178,7 +153,6 @@ export function ProjectView({
     error,
     setActive,
     refresh,
-    create,
     update,
     remove,
   } = useProjects();
@@ -186,14 +160,22 @@ export function ProjectView({
   const { confirm, dialog: confirmDialog } = useConfirm();
   const [mounted, setMounted] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsRequest, setSettingsRequest] = useState<OpenSettingsRequest | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<ProjectSort>("recent");
   const [archivedOpen, setArchivedOpen] = useState(false);
-  const [form, setForm] = useState<ProjectFormState>(EMPTY_FORM);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => setMounted(true), []);
+
+  // Deep links into Settings while the Projects view is on screen.
+  useEffect(() => {
+    if (!isActive) return;
+    return onOpenSettings((request) => {
+      setSettingsRequest(request);
+      setSettingsOpen(true);
+    });
+  }, [isActive]);
 
   const { visibleProjects, archivedProjects } = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -222,32 +204,13 @@ export function ProjectView({
   }, [projectActivities, projects, search, sort]);
   const showArchived = archivedOpen || search.trim().length > 0;
 
-  const openCreate = useCallback(() => {
-    setForm({ ...EMPTY_FORM, open: true });
-    setFormError(null);
-  }, []);
+  const openCreate = useCallback(() => setCreateOpen(true), []);
 
+  // Editing lives in Settings → Project, aimed at this card's project.
   const openEdit = useCallback((project: Project) => {
-    setForm({
-      open: true,
-      mode: "edit",
-      id: project.id,
-      name: project.name,
-      description: project.description,
-      tags: project.tags.join(", "),
-      spendLimit:
-        project.spendLimitUsd === null || project.spendLimitUsd === undefined
-          ? ""
-          : String(project.spendLimitUsd),
-    });
-    setFormError(null);
+    setSettingsRequest({ tab: "project", projectId: project.id });
+    setSettingsOpen(true);
   }, []);
-
-  const closeForm = useCallback(() => {
-    if (submitting) return;
-    setForm(EMPTY_FORM);
-    setFormError(null);
-  }, [submitting]);
 
   const handleOpen = useCallback(
     (projectId: string) => {
@@ -256,57 +219,6 @@ export function ProjectView({
     },
     [onOpenProject, setActive],
   );
-
-  const handleSubmit = useCallback(async () => {
-    setFormError(null);
-    const name = form.name.trim();
-    if (!name) {
-      setFormError("Name is required");
-      return;
-    }
-
-    const trimmedLimit = form.spendLimit.trim();
-    let spendLimitUsd: number | null = null;
-    if (trimmedLimit !== "") {
-      const parsed = Number(trimmedLimit);
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        setFormError("Spend limit must be a non-negative number (or empty)");
-        return;
-      }
-      spendLimitUsd = parsed;
-    }
-
-    const tags = form.tags
-      .split(",")
-      .map((tag) => tag.trim())
-      .filter(Boolean);
-
-    setSubmitting(true);
-    try {
-      if (form.mode === "create") {
-        const project = await create({
-          name,
-          description: form.description.trim(),
-          tags,
-          spendLimitUsd,
-        });
-        setForm(EMPTY_FORM);
-        handleOpen(project.id);
-      } else if (form.id) {
-        await update(form.id, {
-          name,
-          description: form.description.trim(),
-          tags,
-          spendLimitUsd,
-        });
-        setForm(EMPTY_FORM);
-      }
-    } catch (exc) {
-      setFormError(exc instanceof Error ? exc.message : "Save failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [create, form, handleOpen, update]);
 
   const handleToggleArchive = useCallback(
     async (project: Project) => {
@@ -374,7 +286,10 @@ export function ProjectView({
             variant="ghost"
             size="icon-sm"
             aria-label="Open settings"
-            onClick={() => setSettingsOpen(true)}
+            onClick={() => {
+              setSettingsRequest(null);
+              setSettingsOpen(true);
+            }}
           >
             <SettingsIcon />
           </Button>
@@ -512,99 +427,13 @@ export function ProjectView({
         All project data stays on this machine.
       </footer>
 
-      <Dialog open={form.open} onOpenChange={(open) => !open && closeForm()}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {form.mode === "create" ? "New project" : "Edit project"}
-            </DialogTitle>
-            <DialogDescription>
-              Each project has its own sandbox and chat history.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-3">
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              Name
-              <Input
-                autoFocus
-                aria-invalid={Boolean(formError && !form.name.trim())}
-                value={form.name}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                placeholder="RNA-seq pilot"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              Description
-              <Textarea
-                rows={3}
-                value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    description: event.target.value,
-                  }))
-                }
-                placeholder="Optional one-line summary."
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              Tags <span className="opacity-60">(comma separated)</span>
-              <Input
-                value={form.tags}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    tags: event.target.value,
-                  }))
-                }
-                placeholder="genomics, proteomics"
-              />
-            </label>
-            <label className="flex flex-col gap-1 text-xs font-medium text-muted-foreground">
-              Spend limit <span className="opacity-60">(USD, optional)</span>
-              <Input
-                type="number"
-                inputMode="decimal"
-                min={0}
-                step="0.01"
-                value={form.spendLimit}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    spendLimit: event.target.value,
-                  }))
-                }
-                placeholder="Leave empty for no limit"
-              />
-            </label>
-            {formError && (
-              <p role="alert" className="text-xs text-destructive">
-                {formError}
-              </p>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={closeForm} disabled={submitting}>
-              Cancel
-            </Button>
-            <Button onClick={() => void handleSubmit()} disabled={submitting}>
-              {submitting && <Spinner data-icon="inline-start" />}
-              {submitting
-                ? "Saving…"
-                : form.mode === "create"
-                  ? "Create project"
-                  : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ProjectCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={(project) => handleOpen(project.id)}
+      />
 
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} request={settingsRequest} />
     </div>
   );
 }
@@ -783,8 +612,8 @@ function ProjectCard({
             <DropdownMenuContent align="end">
               <DropdownMenuGroup>
                 <DropdownMenuItem onSelect={onEdit}>
-                  <PencilIcon />
-                  Edit
+                  <SettingsIcon />
+                  Project settings…
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={onToggleArchive}>
                   {project.archived ? (

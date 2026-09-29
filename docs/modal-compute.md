@@ -7,7 +7,7 @@ on disk, metered against the project budget, and visible in the **Compute** tab.
 
 ## Configure Modal
 
-Open **Settings → API keys** and save the Modal token ID and token secret as a
+Open **Settings → Services** and save the Modal token ID and token secret as a
 pair. K-Dense validates the pair before marking the connection ready. Existing
 chat tabs pick up credential changes without a restart.
 
@@ -130,7 +130,9 @@ I/O errors.
 The local project remains canonical. Modal Volumes are used only for optional
 per-project dependency, model, and reference-data caches. Named environment
 snapshots can reuse an installed environment without turning the remote
-filesystem into a second project workspace.
+filesystem into a second project workspace. **Settings → Services → Remote
+cache** shows the current project's cache Volume and can clear it (the project
+sandbox is not touched; the next job that uses the cache starts cold).
 
 ## Logs and job controls
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIcon,
   AtomIcon,
@@ -107,6 +107,7 @@ import {
 } from "@/components/model-selector";
 import { useModels } from "@/lib/use-models";
 import workflowsData from "@/data/workflows.json";
+import { useAppDefaults } from "@/lib/app-settings";
 
 export type Workflow = {
   id: string;
@@ -300,7 +301,15 @@ function LaunchDialog({
   budgetBlocked?: boolean;
 }) {
   const [model, setModel] = useState<Model>(DEFAULT_MODEL);
-  const { modelAvailability } = useModels();
+  const { modelAvailability, models: knownModels } = useModels();
+  // Start from Settings → Defaults until the user picks a model here.
+  const appDefaults = useAppDefaults();
+  const modelTouched = useRef(false);
+  useEffect(() => {
+    if (modelTouched.current || !appDefaults?.model) return;
+    const preferred = knownModels.find((candidate) => candidate.id === appDefaults.model);
+    if (preferred) setModel(preferred);
+  }, [appDefaults, knownModels]);
   const selectedModelAvailability = modelAvailability(model);
   const modelAvailable = selectedModelAvailability === "available";
   const selectedBudgetBlocked =
@@ -487,7 +496,13 @@ function LaunchDialog({
           </div>
 
           <div className="flex items-center gap-2">
-            <ModelSelector selected={model} onChange={setModel} />
+            <ModelSelector
+              selected={model}
+              onChange={(next) => {
+                modelTouched.current = true;
+                setModel(next);
+              }}
+            />
           </div>
         </div>
 
@@ -502,9 +517,9 @@ function LaunchDialog({
               !modelAvailable
                 ? selectedModelAvailability === "checking"
                   ? "Model provider status is still loading."
-                  : "This model provider is disconnected. Reconnect it in Settings or choose another model."
+                  : "This model provider is disconnected. Reconnect it in Settings → Providers or choose another model."
                 : selectedBudgetBlocked
-                ? "Project spend limit reached. Raise the limit in the project settings to continue."
+                ? "Project spend limit reached. Raise the limit in Settings → Project → General to continue."
                 : undefined
             }
             className="gap-1.5"
