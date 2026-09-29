@@ -32,6 +32,9 @@ function readPolicy(cwd: string): { protectedPaths: string[] } {
 
 export default function (pi: ExtensionAPI): void {
   if (!process.env.PI_SUBAGENT_CHILD) return;
+  registerChildGuard(pi);
+}
+export function registerChildGuard(pi: ExtensionAPI): void {
   pi.on("tool_call", (event, ctx) => {
     const cwd = ctx.cwd;
     const policy = readPolicy(cwd);

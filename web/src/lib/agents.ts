@@ -25,7 +25,7 @@ export interface AgentFile {
   /** pi-subagents per-agent persistent memory (`MEMORY.md` injected each run). */
   memory?: AgentMemory;
   /** Frontmatter keys the UI doesn't model; preserved on save. */
-  extra?: Record<string, string>;
+  extra?: Record<string, unknown>;
   systemPrompt: string;
 }
 
@@ -134,7 +134,7 @@ export interface WatchdogSettings {
   children: boolean;
   watchdogMd: boolean;
   stalemateRepeats: number;
-  /** Always false today: pi-subagents does not report the watchdog model's usage. */
+  /** True when the host meters watchdog model requests. */
   metered: boolean;
 }
 

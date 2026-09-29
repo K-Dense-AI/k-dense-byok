@@ -1,4 +1,5 @@
 "use client";
+import { SubagentFleetPanel } from "./subagent-fleet-panel";
 
 /**
  * Project "Automation" tab: pi-subagents durable schedules (recurring or
@@ -141,6 +142,7 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4" data-testid="automation-panel">
+      <SubagentFleetPanel key={projectId} projectId={projectId} />
       {dialog}
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">

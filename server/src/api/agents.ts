@@ -55,11 +55,11 @@ function patchFromBody(body: Record<string, unknown>): AgentFilePatch | string {
     return `systemPromptMode must be "append" or "replace"`;
   }
   const boolOrUndef = (v: unknown) => (v === undefined || v === null ? undefined : Boolean(v));
-  let extra: Record<string, string> | undefined;
+  let extra: Record<string, unknown> | undefined;
   if (body.extra && typeof body.extra === "object" && !Array.isArray(body.extra)) {
     extra = {};
     for (const [k, v] of Object.entries(body.extra as Record<string, unknown>)) {
-      extra[k] = String(v);
+      extra[k] = v;
     }
     if (Object.keys(extra).length === 0) extra = undefined;
   }
@@ -237,7 +237,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
   app.get("/watchdog", async () => {
     const paths = activePaths();
     seedWatchdogGuidance(paths);
-    return { ...readWatchdogSettings(paths), metered: false };
+    return { ...readWatchdogSettings(paths), metered: true };
   });
 
   app.put<{ Body: WatchdogPatch }>("/watchdog", async (req, reply) => {
@@ -269,7 +269,7 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
       reply.code(409);
       return { detail: "sandbox/.pi/settings.json is not valid JSON; fix it before changing watchdog settings" };
     }
-    return { ...written, metered: false };
+    return { ...written, metered: true };
   });
 
   app.post<{ Params: { name: string } }>("/agents/:name/disable", async (req, reply) => {

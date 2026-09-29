@@ -9,17 +9,17 @@
  *   - the settings API's list/save/delete/restore operations,
  *   - read-only access to the agents bundled inside the pi-subagents package.
  *
- * The frontmatter parser is a deliberate subset of YAML (flat `key: value`
- * lines, optional quotes, true/false booleans) matching how the package's own
- * agent files are authored. Unknown keys round-trip untouched via `extra` so
- * editing an agent in the UI never drops fields we don't model (defaultReads,
- * maxTokens, ...).
+ * Full YAML parsing preserves nested objects, arrays, booleans and numbers in
+ * unknown fields via `extra`. The UI edits modeled fields without flattening
+ * external runners, permission rules, or future plugin settings.
  */
 import fs from "node:fs";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import path from "node:path";
 import { createRequire } from "node:module";
 import type { ProjectPaths } from "../projects.ts";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
+import { seedSubagentResources } from "./subagent-resources.ts";
 import { SUBAGENT_TYPES } from "./subagents.ts";
 import { piSettingsPath, readPiSettings, writePiSettings, type ToggleResult } from "./capability-state.ts";
 
@@ -68,7 +68,7 @@ export interface AgentFile {
    */
   memory?: AgentMemory;
   /** Frontmatter keys we don't model, preserved verbatim on round-trip. */
-  extra?: Record<string, string>;
+  extra?: Record<string, unknown>;
   systemPrompt: string;
 }
 
@@ -83,16 +83,15 @@ export type AgentFilePatch = Omit<AgentFile, "name" | "source">;
 
 export const MEMORY_PATH_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-/**
- * pi-subagents accepts `memory` as a block or inline; our flat parser sees the
- * inline form (`memory: { scope: project, path: x }`) as one value, which is
- * therefore the only form Kady writes.
- */
-export function parseAgentMemory(value: string | undefined): AgentMemory | undefined {
+/** Accept either YAML form without flattening nested frontmatter. */
+export function parseAgentMemory(value: unknown): AgentMemory | undefined {
   if (!value) return undefined;
-  const scope = /scope\s*:\s*["']?(project|user)["']?/.exec(value)?.[1];
-  const memoryPath = /path\s*:\s*["']?([^,}"'\s]+)["']?/.exec(value)?.[1];
-  if ((scope !== "project" && scope !== "user") || !memoryPath || !MEMORY_PATH_RE.test(memoryPath)) return undefined;
+  if (typeof value === "string") {
+    try { value = parseYaml(value, { maxAliasCount: 50 }); } catch { return undefined; }
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const { scope, path: memoryPath } = value as Record<string, unknown>;
+  if ((scope !== "project" && scope !== "user") || typeof memoryPath !== "string" || !MEMORY_PATH_RE.test(memoryPath)) return undefined;
   return { scope, path: memoryPath };
 }
 
@@ -240,53 +239,27 @@ const KNOWN_KEYS = new Set([
   "memory",
 ]);
 
-function unquote(value: string): string {
-  const v = value.trim();
-  if (
-    (v.startsWith('"') && v.endsWith('"') && v.length >= 2) ||
-    (v.startsWith("'") && v.endsWith("'") && v.length >= 2)
-  ) {
-    try {
-      if (v.startsWith('"')) return JSON.parse(v) as string;
-    } catch {
-      /* fall through to manual strip */
-    }
-    return v.slice(1, -1);
-  }
-  return v;
-}
-
 export function parseAgentMarkdown(
   text: string,
   fallbackName: string,
   source: AgentFile["source"],
 ): AgentFile {
   const m = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(text);
-  const fm: Record<string, string> = {};
-  let body = text;
-  if (m) {
-    body = m[2];
-    for (const line of m[1].split(/\r?\n/)) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const idx = trimmed.indexOf(":");
-      if (idx <= 0) continue;
-      fm[trimmed.slice(0, idx).trim()] = unquote(trimmed.slice(idx + 1));
-    }
-  }
-  const bool = (v: string | undefined) => (v === undefined ? undefined : v === "true");
-  const extra: Record<string, string> = {};
-  for (const [k, v] of Object.entries(fm)) {
-    if (!KNOWN_KEYS.has(k)) extra[k] = v;
-  }
+  const parsed: unknown = m ? parseYaml(m[1], { maxAliasCount: 50 }) : {};
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Agent frontmatter must be a mapping");
+  const fm = parsed as Record<string, unknown>;
+  const body = m ? m[2] : text;
+  const scalar = (v: unknown): string | undefined => typeof v === "string" ? v : undefined;
+  const bool = (v: unknown) => typeof v === "boolean" ? v : undefined;
+  const extra = Object.fromEntries(Object.entries(fm).filter(([k]) => !KNOWN_KEYS.has(k)));
   const mode = fm.systemPromptMode;
   return {
-    name: fm.name || fallbackName,
-    description: fm.description ?? "",
+    name: scalar(fm.name) || fallbackName,
+    description: scalar(fm.description) ?? "",
     source,
-    model: fm.model || undefined,
-    thinking: fm.thinking || undefined,
-    tools: fm.tools || undefined,
+    model: scalar(fm.model),
+    thinking: scalar(fm.thinking),
+    tools: Array.isArray(fm.tools) ? fm.tools.join(", ") : scalar(fm.tools),
     systemPromptMode: mode === "append" || mode === "replace" ? mode : undefined,
     inheritProjectContext: bool(fm.inheritProjectContext),
     inheritSkills: bool(fm.inheritSkills),
@@ -296,25 +269,16 @@ export function parseAgentMarkdown(
   };
 }
 
-/** YAML-safe single-line scalar (descriptions often contain colons). */
-function yamlQuote(s: string): string {
-  return JSON.stringify(s.replace(/\s+/g, " ").trim());
-}
-
 export function serializeAgentMarkdown(agent: Omit<AgentFile, "source">): string {
-  const lines = ["---", `name: ${agent.name}`, `description: ${yamlQuote(agent.description)}`];
-  if (agent.model) lines.push(`model: ${agent.model}`);
-  if (agent.thinking) lines.push(`thinking: ${agent.thinking}`);
-  if (agent.tools) lines.push(`tools: ${agent.tools}`);
-  if (agent.systemPromptMode) lines.push(`systemPromptMode: ${agent.systemPromptMode}`);
-  if (agent.inheritProjectContext !== undefined) {
-    lines.push(`inheritProjectContext: ${agent.inheritProjectContext}`);
+  const fm: Record<string, unknown> = { ...agent.extra, name: agent.name, description: agent.description };
+  for (const key of KNOWN_KEYS) {
+    if (key === "name" || key === "description") continue;
+    const value = agent[key as keyof typeof agent];
+    if (value !== undefined && value !== "") fm[key] = value;
+    else delete fm[key];
   }
-  if (agent.inheritSkills !== undefined) lines.push(`inheritSkills: ${agent.inheritSkills}`);
-  if (agent.memory) lines.push(`memory: ${serializeAgentMemory(agent.memory)}`);
-  for (const [k, v] of Object.entries(agent.extra ?? {})) lines.push(`${k}: ${v}`);
-  lines.push("---", "", agent.systemPrompt.trim(), "");
-  return lines.join("\n");
+  return `---\n${stringifyYaml(fm, { lineWidth: 0 })}---\n\n${agent.systemPrompt.trim()}\n`;
+
 }
 
 // --- listing ---------------------------------------------------------------
@@ -349,7 +313,8 @@ export function listProjectAgents(paths: ProjectPaths): AgentFile[] {
  * subset flattens that block, so both keys land in `extra`.
  */
 export function isExternalCliAgent(agent: Pick<AgentFile, "extra">): boolean {
-  return agent.extra?.runner !== undefined && agent.extra?.type === "external-cli";
+  const runner = agent.extra?.runner;
+  return Boolean(runner && typeof runner === "object" && (runner as Record<string, unknown>).type === "external-cli");
 }
 
 /** Agents bundled inside the pi-subagents package (read-only). */
@@ -494,6 +459,7 @@ function rosterMarkdown(type: (typeof SUBAGENT_TYPES)[number]): string {
  * of files written.
  */
 export function seedAgentFiles(paths: ProjectPaths): number {
+  seedSubagentResources(paths);
   const dir = agentsDir(paths);
   if (fs.existsSync(seedMarkerPath(paths))) return 0;
   fs.mkdirSync(dir, { recursive: true });

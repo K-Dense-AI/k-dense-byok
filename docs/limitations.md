@@ -100,14 +100,14 @@ Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple o
 - **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Specialists, pick it from the model picker rather than typing an id by hand; an unrecognized id falls back to the default model rather than failing.
 - **Sub-agents ask through Kady, with a timeout.** A background specialist can pause and ask for a decision (pi-subagents' `contact_supervisor`). The request reaches the chat as a "Subagent needs a decision" card, Kady relays it to you with the interview form and answers the specialist. The specialist waits at most ten minutes, then continues with an error; a closed browser still lets the server adopt the turn, but nobody answers until a tab is open. Specialists do not get the `interview` tool themselves.
 - **Specialist memory is self-written.** Per-agent `MEMORY.md` files are instructions the model wrote for itself, injected into later runs. They are not verified and are a prompt-injection surface; review or clear them from Settings → Specialists.
-- **Watchdog spend is invisible.** pi-subagents does not report the watchdog model's usage, so its calls are not ledgered and do not count toward the spend cap ([details](./watchdog.md)).
+- **Watchdog reviews add usage.** Kady meters the review model and checks paid requests against the cap. Reviews already in flight can still cross it ([details](./watchdog.md)).
 - **External-CLI specialists bypass Kady's accounting.** pi-subagents ships `claude-code`, `codex-exec`, `cursor-agent` and their `-writer` variants, which shell out to a locally installed and authenticated Claude Code, Codex, or Cursor CLI. They run outside Kady's model runtime, cost ledger, and spend cap, so they are disabled by default; enable them in Settings → Specialists only if you understand that their usage is billed by that CLI's own account.
 - **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
 
 ## Schedules
 
 - **Timers live in the server.** A schedule fires only while the Kady server is running; a due slot missed during downtime runs once at the next boot when `catchUp` is `latest`. Runs are skipped, not queued, when the previous one is still going.
-- **The cap acts after the fact.** A schedule fire cannot be gated when it runs. Kady checks the cap when a schedule is created or run by hand, pauses active schedules once a project is over its limit, and resumes them when it clears — but the run that crossed the line is ledgered, not prevented.
+- **The cap is checked before each child model request.** This includes timer-fired schedules and resumed work. In-flight or concurrent requests can still cross the limit; there is no strict model-cost reservation or provider invoice cap.
 - **Panel actions run through the resident session.** Pause, resume, run-now and delete call pi-subagents' own management actions with no model involved; if the resident session cannot be opened (for example no model is configured), those buttons fail with an error while the chat path still works.
 
 ## Modal compute

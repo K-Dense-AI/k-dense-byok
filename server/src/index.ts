@@ -6,6 +6,8 @@
  * ?project query / kady-project cookie), and registers the route plugins.
  */
 import "./env.ts";
+import { registerSubagentRoutes } from "./api/subagents.ts";
+import { registerSubagentMeterRoutes } from "./api/subagent-meter.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +18,8 @@ import { DEFAULT_PROJECT_ID, HOST, PORT, modalConfigured } from "./config.ts";
 import { isCorsOriginAllowed, isExposedBind } from "./cors.ts";
 import { registerRequestGuard } from "./request-guard.ts";
 import { ensureAuthToken, redactAuthFromUrl, registerAuth } from "./auth.ts";
-import { ensureProjectExists, getProject } from "./projects.ts";
+import { ensureProjectExists, getProject, listProjects } from "./projects.ts";
+import { recoverSubagentUsage } from "./agent/subagent-meter.ts";
 import { withActiveProject } from "./scope.ts";
 import { registerProjectRoutes } from "./api/projects.ts";
 import { registerSessionRoutes } from "./api/sessions.ts";
@@ -172,6 +175,8 @@ export async function buildApp() {
   await registerCredentialRoutes(app);
   await registerAppSettingsRoutes(app);
   await registerAgentRoutes(app);
+  await registerSubagentMeterRoutes(app);
+  await registerSubagentRoutes(app);
   await registerSpeechRoutes(app);
   await registerModalRoutes(app);
   await registerModelProviderRoutes(app);
@@ -181,6 +186,10 @@ export async function buildApp() {
   // whose accounting write was interrupted by a prior shutdown.
   await modalJobManager.recoverAllProjects();
   await notebookRobustness.recoverAll();
+  for (const project of listProjects()) {
+    try { recoverSubagentUsage(project.id); }
+    catch (error) { app.log.error({ err: error, projectId: project.id }, "Specialist accounting recovery failed; new child requests remain blocked until repaired"); }
+  }
 
   return app;
 }

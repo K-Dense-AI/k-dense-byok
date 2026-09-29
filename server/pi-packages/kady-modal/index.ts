@@ -588,6 +588,9 @@ export const modalChildTools: ToolDefinition<any>[] = makeModalChildTools();
 
 export default function (pi: ExtensionAPI): void {
   if (!process.env.PI_SUBAGENT_CHILD) return;
+  registerChildModal(pi);
+}
+export function registerChildModal(pi: ExtensionAPI): void {
   const identity = trackSubagentChildIdentity(pi);
   for (const tool of makeModalChildTools(identity)) pi.registerTool(tool);
 }

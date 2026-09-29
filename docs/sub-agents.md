@@ -24,7 +24,7 @@ A few examples of what they do:
 
 The underlying delegation engine ([pi-subagents](https://github.com/nicobailon/pi-subagents)) also ships six general-purpose agents — `reviewer`, `scout`, `worker`, `researcher`, `oracle`, and `delegate` — plus six that shell out to a locally installed and authenticated Claude Code, Codex, or Cursor CLI (`claude-code`, `codex-exec`, `cursor-agent` and their `-writer` variants). The external-CLI agents are **disabled by default** because they run outside Kady's model runtime, cost ledger, and spend cap; the Specialists tab always shows the roster actually installed.
 
-Specialists work in the same project sandbox as Kady with the same file/shell tools, and can search the web, write to the [Lab Notebook](./lab-notebook.md), annotate PDFs, and submit [Modal compute](./modal-compute.md) jobs. They run headless, so they never get the clarifying-questions form, and tools from connected [MCP servers](./mcp-servers.md) are currently available to Kady only.
+Specialists work in the same project sandbox as Kady with the same file/shell tools, and can search the web, write to the [Lab Notebook](./lab-notebook.md), annotate PDFs, and submit [Modal compute](./modal-compute.md) jobs. They run headless, so they never get the clarifying-questions form, and can use tools from connected [MCP servers](./mcp-servers.md) within the parent tool ceiling and their own tool allowlist. Builtin agents with restrictive allowlists may need the MCP tool names added explicitly.
 
 ## Asking for a specialist directly
 
@@ -37,6 +37,14 @@ You can simply name one in your message:
 > "Run **peer-reviewer** and **methodology-reviewer** on my draft in parallel and combine their feedback."
 
 Sub-agents can run one at a time, several in parallel, or chained (one's output feeding the next) - Kady handles the orchestration.
+
+## Following running specialists
+
+Open the project's **Automation** tab and choose a chat in **Specialist fleet**.
+The panel shows active specialists, models, token counts and tool activity.
+Inspect any available run or child to read its live transcript, send guidance,
+stop it, or resume it with instructions. Controls use the plugin's stable run
+and child identities, so reordered rows do not redirect an action.
 
 ## Viewing and customizing sub-agents
 
@@ -102,3 +110,30 @@ Each agent is a plain markdown file in your project at `sandbox/.pi/agents/<name
 ## Cost and budgets
 
 Sub-agent work uses your model access like everything else - a specialist inherits the chat's model unless it pins its own or the project sets a default model for specialists. Their spend is recorded in the same project cost ledger you see in the header, and the project's **spend cap applies to them too** - once a project hits its limit, Kady is blocked from starting new sub-agents. The exception is the external-CLI agents above, whose usage is billed by that CLI's own account and never appears in Kady's ledger.
+
+## Bundled workflows and launch checks
+
+The pinned pi-subagents package's prompt templates and complete skill folders
+are seeded once per project. They appear in Settings and the composer's slash
+menu; existing files and disabled skills win, and deletions remain deleted.
+Specialist YAML supports nested configuration and lists; editing modeled fields
+preserves unknown typed fields such as external runner configuration.
+
+Kady uses the plugin's public launch preflight for static launches, propagates
+a parent tool ceiling, and requires the raw-data guard, notebook, Modal, PDF,
+web and child MCP runtime extensions. An extension load failure stops the
+launch. These packages remain available when ambient extension discovery is
+disabled. Model admission uses the actual resolved provider and authentication,
+so computed workflows, workflow files, schedules and retries receive the same
+budget check. Forked parent history is never charged again as child usage.
+
+For maintainers: `server/scripts/patch-subagents.mjs` installs version-checked
+host seams for pi-subagents 0.73.1. They wrap child and watchdog provider streams
+and add stable control targets to the public fleet snapshot. The installer and
+backend startup fail on upstream drift; review these seams when upgrading.
+Background launches default to `forceTopLevelAsync: true` in
+`<agentDir>/extensions/subagent/config.json`, not the project's Pi settings.
+Usage receipts survive backend unavailability and are recovered before new
+child admission or when completion is processed. The cap admits requests based
+on current committed spend; concurrent or already-running calls may overshoot.
+External-CLI agents remain outside this accounting and are disabled by default.

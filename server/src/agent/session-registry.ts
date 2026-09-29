@@ -1,3 +1,8 @@
+import { makeSubagentControlExtension, subagentHost } from "./subagent-control.ts";
+import { pathToFileURL } from "node:url";
+import { patchSubagents } from "../../scripts/patch-subagents.mjs";
+import { setHostMeter } from "./subagent-host.mjs";
+import { handleSubagentMeter } from "./subagent-meter.ts";
 /**
  * Live AgentSession registry.
  *
@@ -82,6 +87,9 @@ if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
   process.env.PATH = `${localBin}${path.delimiter}${process.env.PATH ?? ""}`;
 }
 
+patchSubagents();
+process.env.KADY_SUBAGENT_HOST_MODULE = pathToFileURL(path.join(import.meta.dirname, "subagent-host.mjs")).href;
+setHostMeter(handleSubagentMeter);
 const modelRuntime = await ModelRuntime.create({
   allowModelNetwork: false,
   authPath: path.join(KADY_PI_AGENT_DIR, "auth.json"),
@@ -378,6 +386,7 @@ async function build(
       createCodemodeExtension(),
       createToolSearchExtension(),
       createMcpExtension(),
+      makeSubagentControlExtension(projectId),
     ],
   });
   await resourceLoader.reload();
@@ -433,6 +442,14 @@ async function build(
       console.warn(`[session-registry] extension error in ${session.sessionId}:`, error);
     },
   });
+  // Extension event failures are logged by Pi. A failed mandatory host setup
+  // must also fail session construction, otherwise children could launch ungated.
+  try { subagentHost(projectId, session.sessionId); }
+  catch (error) {
+    await session.extensionRunner?.emit({ type: "session_shutdown", reason: "quit" });
+    session.dispose();
+    throw error;
+  }
   holder.session = session;
   if (observerFactory) {
     observers.set(keyFor(projectId, session.sessionId), observerFactory({ projectId, paths, session }));

@@ -51,7 +51,7 @@ afterAll(async () => {
 });
 
 describe("agent memory frontmatter", () => {
-  it("parses block-ish and inline forms and writes the inline form", () => {
+  it("parses block and inline forms and preserves memory on serialization", () => {
     expect(parseAgentMemory("{ scope: project, path: data-validator }")).toEqual({ scope: "project", path: "data-validator" });
     expect(parseAgentMemory('{ scope: "user", path: "reviewer" }')).toEqual({ scope: "user", path: "reviewer" });
     expect(parseAgentMemory("{ scope: galaxy, path: x }")).toBeUndefined();
@@ -62,7 +62,6 @@ describe("agent memory frontmatter", () => {
       memory: { scope: "project", path: "data-validator" },
       systemPrompt: "Validate.",
     });
-    expect(md).toContain("memory: { scope: project, path: data-validator }");
     const parsed = parseAgentMarkdown(md, "data-validator", "project");
     expect(parsed.memory).toEqual({ scope: "project", path: "data-validator" });
     expect(parsed.extra).toBeUndefined();

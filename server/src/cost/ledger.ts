@@ -112,8 +112,29 @@ export interface CostEntry {
 }
 
 export interface CostOrigin {
-  schedule: string;
+  schedule?: string;
+  kind?: "watchdog" | "subagent";
+  childSessionId?: string;
+  runId?: string;
   name?: string;
+}
+
+/** Completion adds schedule metadata to already-metered requests, never a second charge. */
+export function annotateSubagentCosts(projectId: string, sessionId: string, childSessionId: string, origin: CostOrigin): void {
+  const entries = readEntries(sessionId, projectId);
+  let changed = false;
+  for (const entry of entries) {
+    if (entry.origin?.childSessionId !== childSessionId) continue;
+    const next = { ...entry.origin, ...origin };
+    if (JSON.stringify(next) === JSON.stringify(entry.origin)) continue;
+    entry.origin = next;
+    changed = true;
+  }
+  if (changed) {
+    const file = costsPath(sessionId, projectId), tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, entries.map((row) => JSON.stringify(row)).join("\n") + "\n");
+    fs.renameSync(tmp, file);
+  }
 }
 
 function inferredBilling(model: string, role?: CostEntry["role"]): BillingContext {
@@ -156,7 +177,12 @@ export function recordRun(args: {
   terminalState?: string;
   billing?: BillingContext;
   origin?: CostOrigin;
+  entryId?: string;
 }): CostEntry | null {
+  if (args.entryId) {
+    const existing = readEntries(args.sessionId, args.projectId).find((row) => row.entryId === args.entryId);
+    if (existing) return existing;
+  }
   const delta = snapshotDelta(args.before, args.after);
   const billing = args.billing ?? inferredBilling(args.model, args.role);
   const normalizedCost = normalizeUsageCost(delta.costUsd, billing);
@@ -171,7 +197,7 @@ export function recordRun(args: {
   if (d.totalTokens === 0 && d.costUsd === 0) return null;
 
   const entry: CostEntry = {
-    entryId: crypto.randomBytes(16).toString("hex"),
+    entryId: args.entryId ?? crypto.randomBytes(16).toString("hex"),
     ts: Date.now() / 1000,
     sessionId: args.sessionId,
     role: args.role ?? "agent",

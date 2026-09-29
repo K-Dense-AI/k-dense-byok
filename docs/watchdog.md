@@ -37,13 +37,14 @@ press Enter or leave the field. Changes apply to new chat tabs.
 Edit `sandbox/.pi/WATCHDOG.md` (visible in the file panel) to change what the
 reviewer looks for in this project; it is seeded once and never overwritten.
 
-## Cost — read this
+## Cost
 
-pi-subagents does not report the watchdog model's token usage anywhere, so its
-calls are **not ledgered and do not count toward the project spend cap**. Kady
-says so in the settings card. Pick a subscription-billed or local model for the
-watchdog if that matters to you, and remember every reviewed turn is at least
-one extra model call.
+Kady records watchdog review and permission-review usage in the project ledger,
+including clean reviews and provider-reported usage on failed or aborted reviews.
+Paid requests are checked against the project spend cap before the provider is
+called. Subscription and local models retain their normal billing treatment.
+Already-admitted requests can still cross the cap; this is not a provider invoice
+limit. Each reviewed turn adds at least one model call.
 
 ## Limits
 

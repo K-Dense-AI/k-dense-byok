@@ -19,7 +19,7 @@ const watchdog = (overrides: Partial<agentsLib.WatchdogSettings> = {}): agentsLi
   children: false,
   watchdogMd: true,
   stalemateRepeats: 3,
-  metered: false,
+  metered: true,
   ...overrides,
 });
 
@@ -43,7 +43,7 @@ describe("SubagentsPanel toggle", () => {
 });
 
 describe("WatchdogCard", () => {
-  it("shows the unmetered warning, enables the watchdog and saves a model", async () => {
+  it("shows the metering explanation, enables the watchdog and saves a model", async () => {
     vi.spyOn(useProjects, "useProjects").mockReturnValue({
       activeProject: { id: "p1", name: "P1" },
       activeProjectId: "p1",
@@ -55,7 +55,7 @@ describe("WatchdogCard", () => {
       .mockImplementation(async (patch) => watchdog({ enabled: true, ...patch }));
 
     render(<SubagentsPanel />);
-    expect(await screen.findByText(/not metered by pi-subagents/)).toBeInTheDocument();
+    expect(await screen.findByText(/Watchdog reviews add model usage/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("switch", { name: "Enable watchdog" }));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ enabled: true }));
     await userEvent.click(await screen.findByRole("button", { name: "Type a model id for Watchdog model" }));

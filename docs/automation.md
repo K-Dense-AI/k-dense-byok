@@ -33,18 +33,16 @@ most recent missed slot runs at the next boot. Overlapping fires are skipped.
 
 ### Spend cap
 
-A schedule fire produces no tool call, so it cannot be gated at the moment it
-runs. Kady therefore:
+Kady checks the resolved model immediately before every child model request,
+including timer-fired schedules and resumed work. Paid requests cannot start
+once the project's committed spend has reached its cap; local and subscription
+models use their normal billing rules. In-flight requests can still cross the
+limit because model costs are known only after the response.
 
-- gates `schedule.create` like a launch (model checks, spend cap) and refuses
-  `schedule.run` over the cap;
-- once a minute, pauses every active schedule of a project that has reached
-  its spend limit and marks it **Held: spend limit** in the panel; when the
-  limit is raised (or spend drops), those schedules resume automatically.
-
-Resuming a held schedule by hand while the project is still over the cap is
-allowed, but a due fire (including a `catchUp: latest` slot) can run once
-before the next hold tick pauses it again.
+The server also pauses active schedules once a minute when the cap is reached,
+showing **Held: spend limit**, and resumes held schedules after the limit clears.
+That timer is a convenience; provider admission enforces the limit even between
+ticks or immediately after a manual resume.
 
 ### Which model a scheduled run uses
 
@@ -71,3 +69,15 @@ Project view → **Automation** (next to Compute): schedules with their trigger,
 next run, last outcome and spend; expand one for its workflow script and run
 history. Buttons: run now, pause/resume, delete. Missions below. Creation stays
 conversational.
+
+## Specialist fleet
+
+The **Automation** tab includes a fleet view. Choose a chat to see active
+specialists, models, token counts, elapsed time, tool activity and background
+compute. Open a run or child to read its live transcript, send guidance, stop
+it, or resume paused/completed work with new instructions. Stop asks for
+confirmation. The view is bounded by the plugin's snapshot limits; omitted
+entries are called out. Use **Refresh chats** to include newly opened chats.
+
+Modal jobs participate in the plugin's background-work protocol: an unfinished
+job owned by a lead or child session keeps its background-work state active.

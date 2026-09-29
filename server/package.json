@@ -1,6 +1,6 @@
 {
   "name": "kady-server",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "prep": "tsx src/prep.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "postinstall": "node scripts/patch-subagents.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.99.1",
@@ -18,6 +19,7 @@
     "@fastify/cors": "^10.0.1",
     "@fastify/multipart": "^9.0.1",
     "@types/adm-zip": "^0.5.8",
+    "acorn": "8.18.0",
     "adm-zip": "^0.5.17",
     "archiver": "^8.0.0",
     "fastify": "^5.2.0",
@@ -26,7 +28,8 @@
     "pi-web-access": "0.33.0",
     "skills": "1.5.24",
     "typebox": "^1.3.7",
-    "undici": "8.5.0"
+    "undici": "8.5.0",
+    "yaml": "2.8.3"
   },
   "devDependencies": {
     "@types/archiver": "^8.0.0",

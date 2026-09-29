@@ -63,7 +63,7 @@ describe("watchdog settings", () => {
       children: false,
       watchdogMd: true,
       stalemateRepeats: 3,
-      metered: false,
+      metered: true,
     });
     // GET seeds the standing instructions.
     expect(fs.readFileSync(path.join(resolvePaths(projectId).sandbox, ".pi", "WATCHDOG.md"), "utf-8")).toBe(WATCHDOG_MD);

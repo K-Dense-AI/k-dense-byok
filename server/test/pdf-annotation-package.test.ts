@@ -44,6 +44,7 @@ describe("kady-pdf-annotations child package", () => {
     process.env.PI_SUBAGENT_CHILD = "1";
     const child: { name: string }[] = [];
     registerPackage({
+      on: () => {},
       registerTool: (tool: { name: string }) => child.push(tool),
     } as never);
     expect(child.map((tool) => tool.name)).toEqual([
@@ -53,6 +54,7 @@ describe("kady-pdf-annotations child package", () => {
     delete process.env.PI_SUBAGENT_CHILD;
     const parent: unknown[] = [];
     registerPackage({
+      on: () => {},
       registerTool: (tool: unknown) => parent.push(tool),
     } as never);
     expect(parent).toEqual([]);

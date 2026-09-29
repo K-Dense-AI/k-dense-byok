@@ -78,3 +78,12 @@ Nothing special required. Once a server is saved, its tools are available to Kad
 - **Sub-agents don't see MCP tools yet.** Tools from MCP servers are currently available to Kady itself but not to the sub-agents it spawns. This is on the roadmap.
 - **Editing the files directly works too.** Both files use the standard `mcpServers` format, with Pi's extra options (`exposure`, per-tool `toolExposure`, `timeout`, `cwd`, `oauth`) described in [Pi's MCP documentation](https://pi.dev/docs/latest/mcp). Kady keeps options it doesn't show when you edit a server in Settings.
 - **Trust matters.** A local (command) server is a program running on your computer with your permissions, and a remote server receives whatever Kady sends it. Only connect servers you trust.
+
+## Specialist access
+
+New specialist runs connect to the same project and global MCP configuration
+through the required child runtime. The parent's tool ceiling and the
+specialist's explicit tool allowlist both apply. Scientific specialists inherit
+tools by default; a restricted builtin may need individual `mcp__…` tool names,
+`codemode` or `tool_search` added to its allowlist. Each child owns its MCP
+connections and closes them with its session.

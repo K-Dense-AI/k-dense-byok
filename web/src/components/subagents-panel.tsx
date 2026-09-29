@@ -69,7 +69,7 @@ interface AgentFormState {
   inheritSkills: boolean;
   memoryEnabled: boolean;
   memoryScope: "project" | "user";
-  extra?: Record<string, string>;
+  extra?: Record<string, unknown>;
   systemPrompt: string;
 }
 
@@ -195,9 +195,9 @@ export function WatchdogCard({ projectId }: { projectId: string }) {
           onCheckedChange={(enabled) => void update({ enabled })}
         />
       </div>
-      <p className="mt-2 rounded bg-amber-500/10 px-2 py-1 text-[11px] text-amber-800 dark:text-amber-300">
-        Watchdog model calls are not metered by pi-subagents: they are not ledgered and do not count toward
-        the project spend cap. Prefer a subscription or local model.
+      <p className="mt-2 rounded bg-muted px-2 py-1 text-[11px] text-muted-foreground">
+        Watchdog reviews add model usage. Kady records it in the project ledger and checks the spend cap
+        before each paid request. Subscription and local models follow their usual billing rules.
       </p>
       <SettingsError className="mt-2">{error}</SettingsError>
       {settings?.enabled && (

@@ -133,6 +133,9 @@ export default function (pi: ExtensionAPI): void {
   // in-process notebook tool — register only in child processes to avoid a
   // duplicate tool name.
   if (!process.env.PI_SUBAGENT_CHILD) return;
+  registerChildNotebook(pi);
+}
+export function registerChildNotebook(pi: ExtensionAPI): void {
   pi.registerTool(notebookChildTool);
   pi.registerTool(notebookSearchTool(callMemoryApi));
 }
