@@ -13,17 +13,21 @@ import type { DirectProviderBilling, DirectProviderDefinition } from "./provider
 
 /**
  * Pi providers with an OAuth login Kady hosts under Settings → Model providers.
- * `anthropic`, `xai`, `kimi-coding` also take an API key (see
- * `provider-catalog.ts`); `openai-codex`, `github-copilot`, `radius` are
- * OAuth-only in Kady. `openrouter` is listed so its OAuth login can replace a
+ * `openai`, `anthropic`, `xai`, `kimi-coding`, `meta` also take an API key
+ * (see `provider-catalog.ts`); `openai-codex`, `github-copilot`, `radius` are
+ * OAuth-only in Kady. Pi 0.99 superseded `openai-codex` with Sign in with
+ * ChatGPT on the `openai` provider; the legacy login stays so existing tokens
+ * and stored `openai-codex/…` refs keep working. `openrouter` is listed so its OAuth login can replace a
  * pasted key, but its models come from the static catalogue, not this route.
  */
 export const SUBSCRIPTION_PROVIDER_IDS = [
+  "openai",
   "openai-codex",
   "anthropic",
   "github-copilot",
   "xai",
   "kimi-coding",
+  "meta",
   "openrouter",
   "radius",
 ] as const;
@@ -52,12 +56,21 @@ export interface SubscriptionProviderDefinition {
 
 export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] = [
   {
-    id: "openai-codex",
-    name: "OpenAI Codex",
-    accountLabel: "ChatGPT Plus/Pro",
+    id: "openai",
+    name: "OpenAI",
+    accountLabel: "ChatGPT subscription",
     billingMode: "subscription",
     billingNote:
       "Uses provider-managed ChatGPT subscription limits. Kady cannot read remaining quota or overages.",
+    listModels: true,
+  },
+  {
+    id: "openai-codex",
+    name: "OpenAI Codex (legacy)",
+    accountLabel: "ChatGPT Plus/Pro",
+    billingMode: "subscription",
+    billingNote:
+      "Uses provider-managed ChatGPT subscription limits. Kady cannot read remaining quota or overages. Superseded by Sign in with ChatGPT on OpenAI; kept for existing logins.",
     listModels: true,
   },
   {
@@ -94,6 +107,15 @@ export const SUBSCRIPTION_PROVIDERS: readonly SubscriptionProviderDefinition[] =
     billingMode: "subscription",
     billingNote:
       "Uses provider-managed Kimi Code plan limits. Kady cannot read remaining quota or overages.",
+    listModels: true,
+  },
+  {
+    id: "meta",
+    name: "Meta",
+    accountLabel: "Meta (Muse subscription)",
+    billingMode: "subscription",
+    billingNote:
+      "Uses provider-managed Muse subscription limits. Kady cannot read remaining quota or overages.",
     listModels: true,
   },
   {

@@ -24,8 +24,9 @@
  * `models.ts`), `ollama` / `openai-compatible` (local, `config.ts`), and the
  * OAuth-only providers `openai-codex`, `github-copilot`, `radius`
  * (`provider-auth.ts`). Providers with both an API key and an OAuth login
- * (`anthropic`, `xai`, `kimi-coding`) appear in both lists; the ref is the
- * same, and billing follows whichever credential Pi resolves at run time.
+ * (`anthropic`, `openai`, `xai`, `kimi-coding`, `meta`) appear in both lists;
+ * the ref is the same, and billing follows whichever credential Pi resolves
+ * at run time.
  */
 
 export type DirectProviderBilling = "payg" | "subscription";
@@ -132,7 +133,8 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
   simple("openai", "OpenAI", "OPENAI_API_KEY", {
     keysUrl: "https://platform.openai.com/api-keys",
     keyPlaceholder: "sk-…",
-    hint: "Direct OpenAI platform access (Responses API). A ChatGPT Plus/Pro subscription connects as OpenAI Codex under Model providers instead.",
+    hint: "Direct OpenAI platform access (Responses API), billed per token to your OpenAI account. A ChatGPT subscription connects with Sign in with ChatGPT under Model providers instead.",
+    oauth: true,
   }),
   simple("google", "Google", "GEMINI_API_KEY", {
     sectionLabel: "Google Gemini",
@@ -145,6 +147,12 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
     keysUrl: "https://console.x.ai/",
     keyPlaceholder: "xai-…",
     hint: "Direct xAI API access for Grok models. A SuperGrok / X Premium subscription connects under Model providers instead.",
+    oauth: true,
+  }),
+  simple("meta", "Meta", "META_API_KEY", {
+    sectionLabel: "Meta Muse",
+    keyLabel: "Meta Model API key",
+    hint: "Direct Meta Model API access for Muse Spark models, billed per token. A Meta (Muse) subscription connects under Model providers instead.",
     oauth: true,
   }),
   simple("deepseek", "DeepSeek", "DEEPSEEK_API_KEY", {

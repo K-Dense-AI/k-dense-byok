@@ -384,7 +384,7 @@ function unsupportedDirectProviders(
       [...refs].flatMap((ref) => {
         const provider = ref.split("/", 1)[0] ?? "";
         // Only OAuth-only providers (openai-codex, github-copilot, radius)
-        // need the login; anthropic/xai/kimi-coding also take an API key,
+        // need the login; openai/anthropic/xai/kimi-coding/meta also take an API key,
         // and the run-time auth check rejects a missing one with a clear error.
         return isOAuthOnlyProvider(provider) && !isProviderUsingOAuth(provider)
           ? [provider]

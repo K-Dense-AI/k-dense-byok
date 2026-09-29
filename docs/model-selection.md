@@ -18,13 +18,13 @@ This distinction matters: `openrouter/anthropic/<model>` is an OpenRouter reques
 
 ## Pi subscription models
 
-Open **Settings → Model providers** to connect ChatGPT Plus/Pro (`openai-codex`), Claude Pro/Max (`anthropic`), GitHub Copilot, xAI, Kimi Code (`kimi-coding`), OpenRouter (as a sign-in alternative to pasting a key), or Radius (a dynamic gateway whose model list is fetched after sign-in). Kady hosts Pi's browser, device-code, and manual-code prompts in one dialog. Once connected, the provider's models are read live from Pi and appear in the model picker. OpenAI Codex, GitHub Copilot, and Radius are OAuth-only; Anthropic, xAI, and Kimi also accept an API key under **API keys** (see below), in which case they bill pay-as-you-go instead.
+Open **Settings → Model providers** to connect a ChatGPT subscription (Sign in with ChatGPT on `openai`; the older OpenAI Codex login, `openai-codex`, is kept as "legacy" for existing tokens), Claude Pro/Max (`anthropic`), GitHub Copilot, xAI, Kimi Code (`kimi-coding`), Meta Muse (`meta`), OpenRouter (as a sign-in alternative to pasting a key), or Radius (a dynamic gateway whose model list is fetched after sign-in). Kady hosts Pi's browser, device-code, and manual-code prompts in one dialog. Once connected, the provider's models are read live from Pi and appear in the model picker. OpenAI Codex, GitHub Copilot, and Radius are OAuth-only; OpenAI, Anthropic, xAI, Kimi, and Meta also accept an API key under **API keys** (see below), in which case they bill pay-as-you-go instead.
 
 The lead agent and child subagents share Kady's Pi auth store (`~/.kady/pi-agent/auth.json` by default), so the same login can authenticate either. See [Installation](./installation.md#4-configure-model-access) for `KADY_PI_AGENT_DIR` and the explicit `PI_CODING_AGENT_DIR` sharing option.
 
 Subscription authentication is not a promise of free usage:
 
-- OpenAI Codex, GitHub Copilot, xAI, and Kimi Code usage records tokens and Pi's list-price reference, but that reference is not project spend and does not count toward a Kady spend cap. The provider manages subscription quotas, premium requests, and overages.
+- ChatGPT (either login), GitHub Copilot, xAI, Kimi Code, and Meta Muse subscription usage records tokens and Pi's list-price reference, but that reference is not project spend and does not count toward a Kady spend cap. The provider manages subscription quotas, premium requests, and overages.
 - Pi documents third-party Anthropic OAuth as metered extra usage billed per token. Kady records that amount as spend and counts it toward the project cap.
 - An OpenRouter or Radius sign-in only replaces an API key: usage is metered and counts toward the cap exactly as with a key.
 
@@ -35,7 +35,8 @@ Every provider Pi supports natively ([pi.dev/docs/latest/providers](https://pi.d
 | Provider | Pi id / ref prefix | Env var(s) | Billing |
 |---|---|---|---|
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | pay-as-you-go (Claude Pro/Max login is metered extra usage) |
-| OpenAI | `openai` | `OPENAI_API_KEY` | pay-as-you-go |
+| OpenAI | `openai` | `OPENAI_API_KEY` | pay-as-you-go (Sign in with ChatGPT is a subscription) |
+| Meta | `meta` | `META_API_KEY` | pay-as-you-go (Muse login is a subscription) |
 | Google Gemini | `google` | `GEMINI_API_KEY` (shared with web-search) | pay-as-you-go |
 | xAI | `xai` | `XAI_API_KEY` | pay-as-you-go (SuperGrok / X Premium login is a subscription) |
 | DeepSeek, Mistral, Groq, Cerebras | `deepseek`, `mistral`, `groq`, `cerebras` | `DEEPSEEK_API_KEY`, `MISTRAL_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY` | pay-as-you-go |

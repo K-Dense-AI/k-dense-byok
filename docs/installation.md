@@ -36,7 +36,7 @@ Kady can connect these existing subscriptions and accounts directly through Pi:
 
 After Kady starts, open **Settings → Model providers** and click **Connect**. Pi and the provider choose the appropriate browser redirect, device-code, or manual-code flow; Kady displays each step in the dialog.
 
-A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks OpenAI Codex, Copilot, xAI, and Kimi Code subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap. OpenRouter and Radius sign-ins bill like an API key.
+A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks ChatGPT, Copilot, xAI, Kimi Code, and Meta Muse subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap. OpenRouter and Radius sign-ins bill like an API key.
 
 ### Any other Pi provider with an API key
 

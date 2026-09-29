@@ -24,11 +24,17 @@
  *     silently skip project resources in untrusted directories. We only
  *     pre-trust sandboxes this app created and seeded; an explicit "false"
  *     a user recorded is never overridden.
+ *  3. default `toolActivation` to "eager" in `<agentDir>/web-search.json`.
+ *     Since 0.31 fresh sessions get a `web_enable` loader in place of the web
+ *     tools. The lead's tool allowlist filters the loader out, which already
+ *     keeps its tools eager, but seeded specialists carry no `tools:` list, so
+ *     a headless child would spend its first turn enabling web access.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { ProjectTrustStore, getAgentDir } from "@earendil-works/pi-coding-agent";
+import { atomicJson } from "../atomic-json.ts";
 import type { ProjectPaths } from "../projects.ts";
 
 const require_ = createRequire(import.meta.url);
@@ -94,8 +100,31 @@ export function trustSandbox(paths: ProjectPaths, agentDir: string = getAgentDir
   if (store.get(paths.sandbox) === null) store.set(paths.sandbox, true);
 }
 
+/**
+ * Write `toolActivation: "eager"` into pi-web-access's config unless the key
+ * is already set (write-if-missing: a user's explicit "dynamic" wins). The
+ * file doubles as pi-web-access's credential store, so an unparseable one is
+ * left untouched and the rewrite keeps owner-only permissions. Returns true
+ * when the file was written.
+ */
+export function seedWebAccessActivation(agentDir: string = getAgentDir()): boolean {
+  const configPath = path.join(agentDir, "web-search.json");
+  let config: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    config = parsed as Record<string, unknown>;
+  } catch (exc) {
+    if ((exc as NodeJS.ErrnoException).code !== "ENOENT") return false;
+  }
+  if ("toolActivation" in config) return false;
+  atomicJson(configPath, { ...config, toolActivation: "eager" });
+  return true;
+}
+
 /** Full per-project wiring; called before each session build (idempotent). */
 export function ensureWebAccess(paths: ProjectPaths, agentDir: string = getAgentDir()): void {
   seedWebAccessPackage(paths);
   trustSandbox(paths, agentDir);
+  seedWebAccessActivation(agentDir);
 }

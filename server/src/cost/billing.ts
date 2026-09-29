@@ -63,7 +63,7 @@ export function billingForProvider(
       billingMode: "subscription",
     };
   }
-  // OAuth subscriptions (ChatGPT, Copilot, xAI, Kimi Code): provider-managed
+  // OAuth subscriptions (ChatGPT, Copilot, xAI, Kimi Code, Meta Muse): provider-managed
   // limits. OpenRouter/Radius OAuth logins are `payg` in provider-auth.ts and
   // fall through to the default — they merely stand in for an API key.
   if (authType === "oauth" && subscriptionProvider(provider)?.billingMode === "subscription") {

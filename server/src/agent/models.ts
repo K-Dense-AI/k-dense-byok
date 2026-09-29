@@ -3,8 +3,8 @@
  *
  * Supported access paths:
  *   - OpenRouter (built-in Pi provider, key via OPENROUTER_API_KEY or OAuth)
- *   - Pi OAuth providers (OpenAI Codex, Anthropic, GitHub Copilot, xAI,
- *     Kimi For Coding, Radius — `provider-auth.ts`)
+ *   - Pi OAuth providers (OpenAI / ChatGPT, OpenAI Codex (legacy), Anthropic,
+ *     GitHub Copilot, xAI, Kimi For Coding, Meta, Radius — `provider-auth.ts`)
  *   - Every other built-in Pi API-key / cloud provider (Anthropic, OpenAI,
  *     Google, Vertex, Azure, Bedrock, Cloudflare, NVIDIA NIM, Groq, Mistral,
  *     DeepSeek, Hugging Face, Fireworks, Together, … — `provider-catalog.ts`)

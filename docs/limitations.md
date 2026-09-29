@@ -46,10 +46,10 @@ If a task loops or ignores its skill, try a **larger local model** (or temporari
 
 ## Pi subscription providers
 
-Kady supports Pi OAuth for OpenAI Codex (ChatGPT Plus/Pro), Anthropic (Claude Pro/Max), GitHub Copilot, and xAI, with these boundaries:
+Kady supports Pi OAuth for ChatGPT (Sign in with ChatGPT on OpenAI, plus the legacy OpenAI Codex login), Anthropic (Claude Pro/Max), GitHub Copilot, xAI, Kimi Code, and Meta (Muse), with these boundaries:
 
 - **Provider limits are external.** Kady cannot read remaining subscription quota, premium requests, overage settings, or plan eligibility. A successful OAuth login does not mean usage is free or unlimited.
-- **Reference price is not an invoice.** For OpenAI Codex, Copilot, and xAI, Kady tracks tokens and Pi's list-price equivalent but excludes it from project spend caps. Check the provider for actual quota or overage status.
+- **Reference price is not an invoice.** For ChatGPT, Copilot, xAI, Kimi Code, and Meta Muse logins, Kady tracks tokens and Pi's list-price equivalent but excludes it from project spend caps. Check the provider for actual quota or overage status.
 - **Anthropic OAuth is different.** Pi documents third-party Claude subscription access as metered extra per-token usage. Kady treats that amount as project spend and applies the cap.
 - **Direct-provider entries require OAuth.** Ambient OpenAI, Anthropic, Copilot, or xAI API keys are not presented as subscription access; use OpenRouter for the supported API-key path.
 - **Some features still require OpenRouter.** Fusion and server-side speech transcription are not authorized by subscription logins.

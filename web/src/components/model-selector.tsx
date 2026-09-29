@@ -71,6 +71,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   Anthropic: "text-orange-600 dark:text-orange-400",
   OpenAI:    "text-emerald-600 dark:text-emerald-400",
   "OpenAI Codex": "text-emerald-600 dark:text-emerald-400",
+  "OpenAI Codex (legacy)": "text-emerald-600 dark:text-emerald-400",
   "Azure OpenAI": "text-sky-600 dark:text-sky-400",
   "GitHub Copilot": "text-violet-600 dark:text-violet-400",
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
@@ -92,11 +93,13 @@ const PROVIDER_COLORS: Record<string, string> = {
 /** Picker section order. OAuth subscriptions first, then OpenRouter, then every
  *  direct API-key provider alphabetically, then the local servers. */
 const OAUTH_SECTION_ORDER = [
+  "openai",
   "openai-codex",
   "anthropic",
   "github-copilot",
   "xai",
   "kimi-coding",
+  "meta",
   "radius",
 ];
 function sectionRank(id: string): number {

@@ -202,7 +202,7 @@ export async function registerModelProviderRoutes(
         if (!definition.listModels) continue;
         const status = await manager.providerStatus(definition.id);
         // Only OAuth-connected providers are listed here. A provider that also
-        // takes an API key (anthropic, xai, kimi-coding) is listed by
+        // takes an API key (openai, anthropic, xai, kimi-coding, meta) is listed by
         // /providers/models instead when it is key-configured, so each model
         // appears once, under the billing its credential implies.
         if (status.auth?.type !== "oauth" || status.needsReauth) continue;
