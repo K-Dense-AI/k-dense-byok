@@ -56,6 +56,7 @@ Everything renders **locally**. Text-based formats load instantly; binary/scient
 ## Notes
 
 - **View-only vs. editable.** Plain text and code are editable in place (⌘S to save); images can be annotated. The rich scientific viewers above are view-only — edit the underlying file with the agent or download it.
+- **Text preview limits.** CSV files up to 8 MB show 250 rows per page with full-file search. Other text previews are limited to 512 KB. Larger files remain downloadable and available to the agent for analysis.
 - **Reveal from chat.** When Kady references a file, line, or notebook cell, clicking it opens the file and jumps to that spot.
 - **Provenance.** The preview header's **Provenance** button shows which tool call produced the file, what it read, its lineage back to uploaded data, and whether notebook citations are still current. See [Provenance](./provenance.md).
 - **Missing dependency?** If the helper environment for a particular format hasn't finished installing, the viewer shows a friendly "preview unavailable" message instead of failing — reopen the file once setup completes.

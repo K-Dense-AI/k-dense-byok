@@ -334,7 +334,9 @@ export function useSandbox(
           headers: etag ? { "If-None-Match": etag } : undefined,
         });
         if (!isCurrent() || controller.signal.aborted || res.status === 304) return;
-        const content = res.ok ? await res.text() : `[Error: ${res.status} ${res.statusText}]`;
+        const content = res.ok ? await res.text() : res.status === 413
+          ? "[Error: This file exceeds the preview size limit (8 MB for CSV, 512 KB for other text). Use Download to access the complete file.]"
+          : `[Error: ${res.status} ${res.statusText}]`;
         if (!isCurrent() || controller.signal.aborted) return;
         const nextEtag = res.ok ? res.headers.get("etag") : null;
         if (nextEtag) fileEtags.current.set(path, nextEtag);

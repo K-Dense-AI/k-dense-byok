@@ -11,6 +11,19 @@ const get = (etag?: string) => app.inject({ method: "GET", url: "/sandbox/file?p
 beforeEach(() => { fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }); ensureProjectExists("default"); });
 afterAll(async () => { await app.close(); fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }); });
 describe("conditional file previews", () => {
+  it("previews paginated research CSVs up to 8 MB while retaining the text limit", async () => {
+    const csv = path.join(resolvePaths("default").sandbox, "research.CSV");
+    const readCsv = () => app.inject({ method: "GET", url: "/sandbox/file?path=research.CSV", headers: { "x-project-id": "default" } });
+    const content = "sample,mass\n" + "penguin,4000\n".repeat(50_000);
+    fs.writeFileSync(csv, content);
+    expect((await readCsv()).body).toBe(content);
+    fs.writeFileSync(csv, Buffer.alloc(8_000_000, 32));
+    expect((await readCsv()).statusCode).toBe(200);
+    fs.appendFileSync(csv, "x");
+    expect((await readCsv()).statusCode).toBe(413);
+    fs.writeFileSync(target(), content);
+    expect((await get()).statusCode).toBe(413);
+  });
   it("bounds the actual read when an external writer grows a file after stat", async () => {
     fs.writeFileSync(target(), "small");
     const open = fs.promises.open;
