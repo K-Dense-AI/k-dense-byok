@@ -1,147 +1,87 @@
-# Installation guide
+# Installation
 
-This guide walks you through installing K-Dense BYOK from scratch. No coding experience is needed — if you can copy and paste commands into a terminal, you can do this.
+## Requirements
 
-## 1. Check your computer
+- macOS, Linux or Windows 10/11; WSL also works.
+- Node.js 22 or newer; **22.19+ recommended**. The macOS/Linux wrapper can install a missing Node through an existing Homebrew installation.
+- Git. On Windows, install Git for Windows with Git Bash, which the agent uses for shell commands.
+- Optional: a TeX distribution with `latexmk` for LaTeX compilation.
 
-| Requirement | Details |
-|-------------|---------|
-| **Operating system** | macOS, Linux, or Windows 10/11. (On Windows, [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) also works if you prefer a Linux environment, but it isn't required.) |
-| **Node.js ≥ 22.19** | The startup script installs it for you via Homebrew on a Mac if it's missing. On Linux, install it from [nodejs.org](https://nodejs.org/). On Windows, install it from [nodejs.org](https://nodejs.org/) or run `winget install OpenJS.NodeJS.LTS`. |
-| **git** | Pre-installed on most macOS/Linux systems (on a Mac, run `xcode-select --install` if it's missing). **Windows: required** — install [Git for Windows](https://git-scm.com/download/win) with its default components; it provides the Git Bash shell Kady's agent uses to run commands. |
-
-Everything else (Python tooling, packages, scientific skills) is installed automatically the first time you start the app.
-
-> **Optional — LaTeX PDF reports:** if you want Kady's LaTeX editor to compile PDFs, install a TeX distribution: [MacTeX](https://www.tug.org/mactex/) (macOS), TeX Live (Linux), or [MiKTeX](https://miktex.org/) / [TeX Live](https://www.tug.org/texlive/) (Windows). Not needed for normal use.
-
-## 2. Choose model access
-
-Kady can use any combination of these model sources:
-
-### OpenRouter
-
-An [OpenRouter](https://openrouter.ai/) API key gives one pay-as-you-go account access to models from OpenAI, Anthropic, Google, xAI, Qwen, and more. Sign up, add credit, and create a key (it looks like `sk-or-...`).
-
-### Pi OAuth subscriptions
-
-Kady can connect these existing subscriptions and accounts directly through Pi:
-
-- ChatGPT Plus/Pro (`openai-codex`)
-- Claude Pro/Max (`anthropic`)
-- GitHub Copilot (`github-copilot`)
-- xAI (`xai`, shown for supported SuperGrok or X Premium access)
-- Kimi Code (`kimi-coding`)
-- OpenRouter (`openrouter`, a sign-in alternative to pasting a key)
-- Radius (`radius`, a dynamic model gateway)
-
-After Kady starts, open **Settings → Providers** and click **Sign in** on the provider's row. Pi and the provider choose the appropriate browser redirect, device-code, or manual-code flow; Kady displays each step in the dialog.
-
-A subscription login does not make provider usage free or unlimited. Quotas, premium requests, overages, and plan eligibility are managed by the provider. Kady tracks ChatGPT, Copilot, xAI, Kimi Code, and Meta Muse subscription tokens plus a list-price reference, but excludes that reference from project spend caps. Pi documents third-party Anthropic OAuth as metered extra per-token usage, so Kady counts it toward the cap. OpenRouter and Radius sign-ins bill like an API key.
-
-### Any other Pi provider with an API key
-
-Every provider Pi supports natively is available with your own key: Anthropic, OpenAI, Google Gemini, xAI, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, OpenCode, Kimi, Moonshot, MiniMax, Z.AI, the Qwen and Xiaomi token plans, Ant Ling, and your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, Cloudflare AI Gateway, or Cloudflare Workers AI account. After launch, open **Settings → Providers**, find the provider under *Add a provider* (search, or filter to *API key*), and paste the key (cloud providers also take their endpoint, account, region, or project fields there). Each configured provider gets its own section in the model picker. Details and billing per provider are in [Model selection](./model-selection.md#direct-api-key-providers).
-
-### NVIDIA NIM
-
-An API key from [build.nvidia.com](https://build.nvidia.com/) gives direct access to NIM-served models — Nemotron, Llama, GPT-OSS, Kimi, GLM, and more. Usage draws on NVIDIA-managed API credits rather than per-token dollar pricing, so Kady records tokens but no USD spend. Add the key as `NVIDIA_API_KEY` in `.env` or under **Settings → Providers**; see [Model selection](./model-selection.md#nvidia-nim-models).
-
-### Local Ollama
-
-You can run entirely on free local models instead — see [Local models with Ollama](./local-models-ollama.md). No hosted-provider credential is needed.
-
-> **OpenRouter-only features:** OpenRouter Fusion and server-side speech transcription for browsers without Web Speech still require an OpenRouter API key. Subscription logins do not authenticate those endpoints.
-
-## 3. Download the project
-
-Open a terminal (on a Mac: press `Cmd+Space`, type "Terminal", press Enter; on Windows: press `Win`, type "PowerShell" or "Terminal", press Enter) and run:
+## Download and start
 
 ```bash
 git clone https://github.com/K-Dense-AI/k-dense-byok.git
 cd k-dense-byok
 ```
 
-This downloads the project into a folder called `k-dense-byok` and moves you into it.
-
-## 4. Configure model access
-
-In the project folder there is a template file called `.env.example`. Copy it to a file called `.env` (note the dot at the start):
+On macOS/Linux:
 
 ```bash
-cp .env.example .env      # macOS / Linux
-copy .env.example .env    # Windows
+./start.sh
 ```
 
-If you use OpenRouter, open `.env` in any text editor and paste your key:
+On Windows:
 
-```
-OPENROUTER_API_KEY=sk-or-your-key-here
-```
-
-If you use only a Pi subscription or Ollama, you can leave `OPENROUTER_API_KEY` blank. The startup script creates `.env` if needed, and OpenRouter keys can also be added later under **Settings → Providers**.
-
-OAuth tokens are kept outside the repository and all projects. By default Pi stores them in Kady's private `~/.kady/pi-agent/auth.json`; the lead agent and its specialist subagents use that same store. Set `KADY_PI_AGENT_DIR` to relocate Kady's Pi directory. If you explicitly set `PI_CODING_AGENT_DIR`, it takes precedence; point it at your standalone Pi agent directory only when you intentionally want Kady and Pi to share authentication and settings.
-
-## 5. Start the app
-
-```bash
-./start.sh     # macOS / Linux
-.\start.cmd    # Windows
+```powershell
+.\start.cmd
 ```
 
-(Both are thin wrappers around the same cross-platform launcher — `node start.mjs` works anywhere too.)
+Both launch `start.mjs`, which installs app dependencies and Python tooling,
+prepares project skills and starts the frontend and backend. It creates `.env`
+from `.env.example` when needed. Open **http://localhost:3000** if the browser
+does not open automatically. Keep the terminal running; **Ctrl+C** stops the app.
 
-The first run takes a few minutes. The script automatically:
+## Connect a model
 
-- checks for and installs anything missing (Node.js on a Mac, the [uv](https://docs.astral.sh/uv/) Python manager that Kady uses to run analyses — on every platform),
-- installs the backend and frontend packages,
-- downloads the catalogue of 149 scientific skills,
-- creates your `.env` file if you haven't, and warns when it cannot immediately detect an OpenRouter key, a direct provider key (Anthropic, OpenAI, NVIDIA, …), stored subscription login, or local Ollama (the UI still opens for provider setup).
+Open **Settings → Providers**. Add a provider API key, use a supported **Sign in**
+flow, or configure a [local model server](local-models-ollama.md). For ChatGPT,
+use **OpenAI → Sign in with ChatGPT**. The provider list shows the available
+methods and cloud configuration fields.
 
-When it finishes, your browser opens to **[http://localhost:3000](http://localhost:3000)** — that's the app. Future starts take only a few seconds.
+An OpenRouter key is optional unless you use Fusion or server-side speech
+transcription. Keys can also be set in the repo-root `.env`; see `.env.example`
+for names. See [Model selection](model-selection.md) for billing and defaults.
 
-To stop the app, go back to the terminal and press **Ctrl+C**.
+OAuth tokens live in `~/.kady/pi-agent/auth.json`, shared by lead and specialist
+agents. `KADY_PI_AGENT_DIR` relocates that directory. An explicit
+`PI_CODING_AGENT_DIR` takes precedence; use it only when you intend to share
+Pi authentication and settings with another installation.
 
-## 6. Optional API keys
+## Optional services
 
-These unlock extra capabilities. All of them can be added later in **Settings → Services** — none are required to get started.
+**Settings → Services** accepts Exa, Perplexity and Gemini search keys and a
+Modal token ID/secret pair. Web search has a shared fallback without a key;
+video understanding requires Gemini. [Modal compute](modal-compute.md) needs
+the token pair. Configure database credentials only when a task needs them.
 
-| Key | What it adds | Where to get it |
-|-----|--------------|-----------------|
-| **Exa** | Direct web search with neural retrieval tuned for scientific content. Web search works without it via a free fallback. | [dashboard.exa.ai/api-keys](https://dashboard.exa.ai/api-keys) |
-| **Perplexity** | Alternative web search with synthesized, cited answers. | [perplexity.ai/settings/api](https://www.perplexity.ai/settings/api) |
-| **Gemini** | Search fallback plus YouTube / video understanding. | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+## Updates
 
-The `.env` file also lists keys for specific scientific databases (NCBI, Materials Project, openFDA, FRED, NASA, and many more). You only need those if a task touches the corresponding database and it asks for one.
-
-## Updating to a new version
-
-From the project folder:
-
-```bash
-git pull
-./start.sh     # macOS / Linux
-.\start.cmd    # Windows
-```
-
-The startup script picks up any new packages and skills automatically.
+Stop the app, run `git pull` from the repository, and start it again with the
+command above. Resolve any local Git changes before updating. The launcher
+installs the dependencies required by the checkout.
 
 ## Troubleshooting
 
-- **`./start.sh: Permission denied`** (macOS/Linux) — run `chmod +x start.sh` once, then try again.
-- **Windows says "Windows protected your PC"** when double-clicking `start.cmd` — click *More info → Run anyway*, or run it from a terminal instead (`.\start.cmd`).
-- **Browser doesn't open** — go to [http://localhost:3000](http://localhost:3000) manually.
-- **"No API key" warning** — make sure your key is in `.env` (the file is `.env`, not `.env.example`), paste it in **Settings → Providers** (OpenRouter or any direct provider), start Ollama, or sign in with a supported subscription on the same page.
-- **Port already in use** — the startup script clears leftover Kady processes automatically and names any other program holding port 3000 or 8000. Quit the program it names (or set `KADY_PORT` in `.env` to move the backend) and start the app again.
-- **Model calls fail with a 403 or a connection error, but the same key works in other apps** — you are probably on a network that only allows outbound traffic through a proxy. Node ignores system proxy settings, so until these variables are set Kady dials providers directly and whatever filters your network answers instead. Set them in `.env`:
+| Symptom | Check |
+|---|---|
+| `start.sh: Permission denied` | Run `chmod +x start.sh`, then retry. |
+| No model access | Open Providers, check the credential or local server, then choose an available model. |
+| Port in use | Read the launcher's message. Stop the named conflicting process or change `KADY_PORT` / `KADY_FRONTEND_PORT`; a changed backend address also needs `NEXT_PUBLIC_ADK_API_URL`. |
+| `origin_not_allowed` | Use the normal UI URL or configure `KADY_ALLOWED_ORIGINS`; see [Security](security.md). |
+| Access token required | Open the launcher's full token link or paste the token into the prompt. |
+| Scientific preview unavailable | Let helper setup finish; reopen the file and inspect the backend error if it persists. |
 
-  ```bash
-  HTTPS_PROXY=http://proxy.example.com:3128
-  HTTP_PROXY=http://proxy.example.com:3128
-  NO_PROXY=localhost,127.0.0.1
-  ```
+On a network requiring an outbound proxy, set `HTTPS_PROXY` and `HTTP_PROXY`
+in `.env` and restart. The launcher adds loopback to `NO_PROXY` so local services
+stay direct. A 403 or connection failure can come from either the provider or
+an intervening proxy; inspect the response before changing credentials.
 
-  Loopback (`localhost`, `127.0.0.1`, `::1`) is always added to `NO_PROXY`, so Ollama and the app's own services stay direct. On restart the backend log confirms it with `routing outbound HTTP through the configured proxy`. To check whether a 403 is really coming from the provider, call it directly from the same machine — `curl -sS https://openrouter.ai/api/v1/models -H "Authorization: Bearer $OPENROUTER_API_KEY"`. An error that isn't shaped like the provider's own JSON is coming from something in between.
-- **The UI loads but every request fails, and the backend log says `request refused: origin_not_allowed`** — the page was opened from an address the backend does not treat as the UI (another port, or a hostname). Open [http://localhost:3000](http://localhost:3000), or list the address in `KADY_ALLOWED_ORIGINS` (see [Security model](./security.md)).
-- **"Access token required"** — the backend is exposed beyond this machine (`KADY_HOST`) or `KADY_REQUIRE_AUTH=1` is set. Open the exact link the startup script printed, or paste it into the prompt.
-- **Something else?** — [Open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues); we read every one.
+For another host, prefer an SSH tunnel forwarding both ports:
+
+```bash
+ssh -L 3000:localhost:3000 -L 8000:localhost:8000 workstation
+```
+
+Direct exposure requires the [security configuration](security.md), including
+a browser-reachable `NEXT_PUBLIC_ADK_API_URL` set before starting/building the
+frontend. Files and tools run on the backend host.

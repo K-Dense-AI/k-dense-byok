@@ -1,141 +1,58 @@
 # Skill management
 
-Skills are markdown instruction sets (`SKILL.md` + optional supporting files)
-that the agent activates when a task matches their description. Kady ships the
-[K-Dense scientific catalogue](https://github.com/K-Dense-AI/scientific-agent-skills)
-and lets you install skills from anywhere else, write your own, edit them, and
-remove them — per project or for every project at once.
+Skills are `SKILL.md` instructions with optional supporting files. Manage them
+in **Settings → Skills**: enable, install, write, edit or remove them.
 
-Settings → **Skills** (the gear in the header, in the Project group) is the whole surface.
+## Scope and updates
 
-## Where skills live
+| Scope | Location |
+|---|---|
+| This project | `projects/<id>/sandbox/.pi/skills/` |
+| All projects | `~/.kady/pi-agent/skills/` |
 
-| Scope | On disk | Who sees it |
-|---|---|---|
-| This project | `projects/<id>/sandbox/.pi/skills/` | chat tabs and subagents in that project |
-| All projects | `~/.kady/pi-agent/skills/` | every project, plus subagent child processes |
+The project copy wins on name collisions. Disable moves a skill to the sibling
+`skills-disabled/` directory. New chat tabs load changes; live sessions keep
+their existing skill set. Global skills also reach specialist processes.
 
-Disabling is non-destructive: the skill moves to a sibling `skills-disabled/`
-directory, so it stays on disk but disappears from agent discovery. Live chat
-tabs keep the skill set they loaded — toggles apply to **new** tabs.
+| Origin | Update policy |
+|---|---|
+| K-Dense catalogue | Sync at launch and daily, or **Sync catalogue**. Untouched skills update; local edits are preserved and flagged; upstream removals are archived. |
+| Installed source | No automatic updates. Check the source with refresh, then choose **Use upstream** to accept changes. |
+| Local | No upstream update. |
 
-If the same name exists in both scopes, the **project** copy wins. Pi resolves
-project skills before user-level ones and skill-name collisions are first-wins,
-so the global copy is simply inert; the Skills tab labels this rather than
-leaving you guessing.
+## Install, write and remove
 
-## Origins, and what "update" means for each
+**Add → Look up** fetches a source into staging. Select skills, review the trust
+acknowledgement and install the exact staged content. Sources can be repository
+shorthand (`owner/repo`), Git URLs, a repository skill URL or a host-local path;
+an optional branch/tag selects the ref. Explicitly selected skills install enabled.
 
-Every skill carries an origin, shown as a badge:
+**New skill** creates a template. Names use lowercase letters, digits and single
+hyphens. Edit any skill's `SKILL.md` with the pencil; catalogue sync preserves
+customizations. The description is what the model uses to decide relevance.
 
-- **K-Dense** — from the shipped catalogue. Synced automatically at launch and
-  daily, or on demand with **Sync catalogue** (project scope only). Sync is non-destructive: an untouched skill is updated in place, a
-  skill you edited is preserved and flagged for review, and a skill removed
-  upstream is archived to `.pi/skills-archived/`.
-- **Installed** — fetched from a source you named. **Never auto-updated.** A
-  third-party skill is instructions the agent will follow, so a new version
-  waits behind a badge until you ask for it. Use the refresh button on the row
-  to check its source, then *Use upstream* to take the change.
-- **Local** — written here. No upstream, nothing to update.
+**User-invoked only** sets `disable-model-invocation: true`, removes the skill
+from automatic discovery and exposes `/skill:<name>` in the slash menu.
+See [Prompt templates](prompt-templates.md).
 
-## Installing from a source
+Removing an installed/local skill deletes it. Catalogue removals are archived
+and recorded so sync does not reinstall them; **Use upstream** restores them.
+Skills are executable instructions for an agent with shell access; installation
+acknowledgement is not a content audit. See [the trust boundary](limitations.md#local-shell-trust-boundary).
 
-**Add** → paste a source → **Look up** → tick the skills you want → confirm the
-trust checkbox → **Install**.
-
-Sources are resolved by the [`skills` CLI](https://github.com/vercel-labs/skills),
-so anything it understands works:
-
-```
-owner/repo                                           GitHub shorthand
-https://github.com/owner/repo                         full URL
-https://github.com/owner/repo/tree/main/skills/one    one skill in a repo
-https://gitlab.com/org/repo                           GitLab
-git@github.com:owner/repo.git                         any git URL
-./my-local-skills                                     a local path
-```
-
-An optional branch/tag field pins a ref.
-
-"Look up" downloads the source to a staging cache and reads the real parsed
-names and descriptions out of it, so the picker shows what you are actually
-getting rather than what a README claims. The install then copies exactly the
-trees you reviewed. Skills you pick install **enabled** — you asked for them by
-name.
-
-The trust checkbox is enforced by the server, not just the dialog: skills run
-with the agent's full permissions, and an install is the moment third-party
-instructions enter the loop. Review a source you do not know before installing
-it, and see [limitations.md](limitations.md) for the local trust boundary.
-
-## Writing and editing
-
-**New skill** creates a `SKILL.md` from a template and opens it for editing. Names
-follow Pi's rule: lowercase letters, digits and single hyphens (`rna-seq-qc`).
-
-The pencil on any row edits its `SKILL.md` in place, whatever the origin. Editing
-a catalogue skill is expected and safe — the daily sync preserves local edits and
-marks the skill *Customized*, offering *Use upstream* if you later want the
-catalogue's version back.
-
-The `description` is what the model matches against when deciding whether to
-activate a skill, so it earns more care than the body.
-
-## User-invoked skills
-
-Toggle **User-invoked only** on a skill (Settings → Skills) to set Pi's
-`disable-model-invocation: true` in its frontmatter. Such a skill is left out of
-the skills index the model sees, so it never activates on its own; you run it
-by typing `/skill:<name> arguments` in the chat (the `/` menu lists them). The
-toggle edits only that one frontmatter line. See
-[prompt templates](./prompt-templates.md) for the slash menu.
-
-## Removing
-
-- **Installed** and **Local** skills are deleted.
-- **K-Dense** skills are moved to `.pi/skills-archived/` and tombstoned in the
-  project manifest, so the next catalogue sync does not reinstall them. Without
-  the tombstone the deletion would silently undo itself the following day. Taking
-  the upstream copy again (*Use upstream*) clears the tombstone.
-
-## How it works
-
-`server/src/agent/skills-fetch.ts` wraps the bundled `skills` CLI as a pure
-**fetcher**: it downloads into a disposable staging cache
-(`~/.kady/skills-cache/`, override with `KADY_SKILLS_CACHE_DIR`) laid out as
-`.pi/skills/<name>/`, which is the directory shape Pi discovers. Nothing else
-about the CLI is trusted — its human-readable output is never parsed; the staged
-directory and its `skills-lock.json` are the record.
-
-`server/src/agent/skills-sync.ts` stays the **only writer** of live skill
-directories, installing from staging with an atomic replace. That split is what
-lets the catalogue and user-installed skills share one fetch mechanism while
-keeping the tested sync semantics: tree hashing to detect local edits, the
-default-disabled policy for package-reference skills, atomic per-skill
-replacement, and archive-on-upstream-removal. Because the CLI only ever writes
-to staging, where nothing is user-edited, its update rules cannot collide with
-ours.
-
-`server/src/agent/skills-install.ts` decides *what* happens — scope, names,
-provenance, tombstones — and `server/src/api/skills.ts` exposes it.
-
-Per-project state lives in `sandbox/.kady/skills-sync.json` (manifest v2:
-per-skill origin and source, the catalogue content digest, and the `removed`
-tombstones); user-level state in `~/.kady/pi-agent/kady-skills/`.
-
-If the CLI is missing or fails, catalogue seeding falls back to a shallow `git
-clone`, so a broken CLI cannot leave a new project with no skills.
-
-## Configuration
+## Configuration and implementation
 
 | Variable | Effect |
 |---|---|
-| `KADY_SKILLS_REPO` | catalogue repo (default `K-Dense-AI/scientific-agent-skills`) |
-| `KADY_SKILLS_BRANCH` | catalogue branch (default `main`) |
-| `KADY_SKILLS_SYNC_INTERVAL_MS` | catalogue sync cadence (default 24h, minimum 60s) |
-| `KADY_SKILLS_CACHE_DIR` | staging cache location |
-| `KADY_PI_AGENT_DIR` | relocates the user-level skill root along with the agent dir |
+| `KADY_SKILLS_AUTO_SYNC` | `0` disables automatic catalogue sync. |
+| `KADY_SKILLS_REPO` / `KADY_SKILLS_BRANCH` | Catalogue source; defaults to `K-Dense-AI/scientific-agent-skills`, `main`. |
+| `KADY_SKILLS_SYNC_INTERVAL_MS` | Default 24 hours; minimum 60 seconds. |
+| `KADY_SKILLS_CACHE_DIR` | Staging cache; default `~/.kady/skills-cache`. |
+| `KADY_PI_AGENT_DIR` | Shared Pi directory, including global skills. |
 
-Download limits come from the CLI: 10 MiB per download, 25 MiB extracted, 1000
-files. Raise them with `SKILLS_DOWNLOAD_MAX_BYTES`, `SKILLS_EXTRACT_MAX_BYTES`
-and `SKILLS_EXTRACT_MAX_FILES` for a source you trust.
+[`skills-fetch.ts`](../server/src/agent/skills-fetch.ts) uses the bundled `skills`
+CLI only for staging; [`skills-sync.ts`](../server/src/agent/skills-sync.ts)
+handles live replacement and local-edit preservation. The staged tree and lock
+metadata, not CLI output, determine installed content. Catalogue seeding can
+fall back to a shallow clone. Origin/removal state lives in
+`.kady/skills-sync.json`; global state in the Pi directory's `kady-skills/`.

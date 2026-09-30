@@ -1,9 +1,8 @@
 # Raw-data guard
 
-Kady runs the agent's tools as your own user, so nothing stops a badly worded
-`rm -rf` from deleting the very data you uploaded. The raw-data guard adds a
-policy layer in front of the file and shell tools, for Kady itself and for the
-background specialists it delegates to.
+The raw-data guard checks file and shell tools before execution for both Kady
+and its background specialists. It reduces accidental destructive changes;
+it does not isolate their processes from the host filesystem.
 
 ## What it does
 

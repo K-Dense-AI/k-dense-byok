@@ -98,7 +98,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 - **Bring a key for any provider Pi supports.** Under **Settings → Providers**, add a key for Anthropic, OpenAI, Google Gemini, xAI, Meta, DeepSeek, Mistral, Groq, Cerebras, Hugging Face, Fireworks, Together, Baseten, Vercel AI Gateway, Kimi, Moonshot, MiniMax, Z.AI, Qwen and Xiaomi token plans, or your own Azure OpenAI, Amazon Bedrock, Google Vertex AI, or Cloudflare account — each configured provider gets its own section in the model picker (see [Model selection](./docs/model-selection.md#direct-api-key-providers)).
 - **Use NVIDIA NIM models directly** with an API key from [build.nvidia.com](https://build.nvidia.com/) — Nemotron, Llama, GPT-OSS, and more, billed against your NVIDIA API credits rather than per-token dollar pricing.
 - **Run free local models with [Ollama or any OpenAI-compatible server](./docs/local-models-ollama.md)** (LM Studio, vLLM, …) when cost or data locality matters. Local models appear in the same model picker.
-- **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined price and benchmark information. Fusion remains OpenRouter-only and requires an OpenRouter API key.
+- **Ask a panel of models with [OpenRouter Fusion](./docs/openrouter-fusion.md).** A preset can send one question to several models and use a judge model to synthesize their perspectives into one response; the picker shows the combined estimated price. Fusion remains OpenRouter-only and requires an OpenRouter API key.
 - **Move demanding computation to [Modal](./docs/modal-compute.md).** Select an on-demand cloud CPU or single-/multi-GPU environment for a chat. Kady persists and monitors the job, stages validated inputs, brings outputs atomically back into the local project, and reserves estimated compute cost against the project budget. Long jobs survive chat turns and backend restarts and remain controllable from the Compute tab.
 
 ### Stay in control
@@ -166,24 +166,9 @@ Recorded walkthroughs of Kady working through real research tasks, from the [K-D
 
 ## Documentation
 
-All guides live in the [`docs/`](./docs) folder:
-
-| Guide | What it covers |
-|-------|----------------|
-| [Codebase summary](./docs/codebase-summary.md) | One-page overview of what K-Dense BYOK is, what it can do, and why it matters |
-| [Installation](./docs/installation.md) | Full setup walkthrough, subscriptions, optional API keys, updating, troubleshooting |
-| [Basic usage](./docs/basic-usage.md) | First session, chat tabs, files, workflows, databases, costs, tips |
-| [File previews](./docs/file-previews.md) | Every scientific format Kady can render — structures, spectra, imaging, arrays, and more |
-| [Living Lab Notebook](./docs/lab-notebook.md) | Real-time record of Kady's work — structured entries, export, and PDF |
-| [Sub-agents](./docs/sub-agents.md) | Kady's team of 21 scientific specialists and how to customize them |
-| [Connecting external tools (MCP)](./docs/mcp-servers.md) | Give Kady extra abilities like GitHub, reference managers, and databases — scopes, exposure, and OAuth sign-in |
-| [Local models](./docs/local-models-ollama.md) | Run everything on free local models (Ollama or any OpenAI-compatible server), no API keys required |
-| [Model selection](./docs/model-selection.md) | OpenRouter, Pi subscriptions, every direct Pi provider (Anthropic, OpenAI, Google, Azure, Bedrock, NVIDIA NIM, …), Ollama, model refs, and billing behavior |
-| [OpenRouter Fusion](./docs/openrouter-fusion.md) | Multi-model deliberation presets — what they are and how the integration works |
-| [Architecture](./docs/architecture.md) | How the two local services fit together (for the technically curious) |
-| [Contributing workflows](./docs/contributing-workflows.md) | Add new workflow templates to the library |
-| [Known limitations](./docs/limitations.md) | Rough edges to be aware of in the current beta |
-| [Security model](./docs/security.md) | Who can reach the local API, the optional access token, and hardening settings for shared or enterprise machines |
+Start with the [documentation index](./docs/README.md), or go directly to
+[Installation](./docs/installation.md), [Basic usage](./docs/basic-usage.md),
+[Model selection](./docs/model-selection.md) or [Security](./docs/security.md).
 
 ## From the K-Dense blog
 

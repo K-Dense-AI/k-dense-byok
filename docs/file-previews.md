@@ -2,7 +2,7 @@
 
 Click any file in the project browser to open it in a built-in viewer — no download, no external app. Kady recognizes a wide range of scientific formats and renders each one appropriately: tables as tables, structures in 3D, spectra as plots, images as slice browsers.
 
-Everything renders **locally**. Text-based formats load instantly; binary/scientific formats are decoded by a bundled Python helper environment that installs automatically on first run. Large files are summarized or streamed slice-by-slice rather than loaded whole, so a multi-hundred-MB volume still previews quickly.
+Previews render in the browser and, for binary/scientific formats, in Python helpers on the BYOK backend host. The helper environment installs during setup. Large formats use bounded summaries or slice views; unsupported or oversized files remain available for download and analysis.
 
 ## What you can preview
 
@@ -66,8 +66,8 @@ after accepting it. Missing-context responses are billed like other AI calls.
 - **Reveal from chat.** When Kady references a file, line, or notebook cell, clicking it opens the file and jumps to that spot.
 - **Provenance.** The preview header's **Provenance** button shows which tool call produced the file, what it read, its lineage back to uploaded data, and whether notebook citations are still current. See [Provenance](./provenance.md).
 - **Missing dependency?** If the helper environment for a particular format hasn't finished installing, the viewer shows a friendly "preview unavailable" message instead of failing — reopen the file once setup completes.
-- **Privacy.** DICOM previews strip patient-identifying fields by default. As always, your files never leave your machine.
+- **Privacy.** DICOM previews omit patient-identifying fields from displayed metadata; this does not anonymize the underlying file. Hosted models, connectors or remote compute can receive data you ask the agent to use.
 
-## Not yet supported
+## Unsupported previews
 
-Whole-slide imaging (`.svs`, `.ndpi`), GenBank/NEXUS annotated records, multi-channel OME-TIFF compositing, and cross-file DICOM series stacking are on the roadmap. Any unrecognized file falls back to the syntax-highlighted text viewer.
+There are no dedicated viewers for whole-slide imaging (`.svs`, `.ndpi`), GenBank/NEXUS annotated records, multi-channel OME-TIFF compositing or cross-file DICOM series stacking. Unrecognized files use the text fallback where possible; download binary formats or process them with the agent.

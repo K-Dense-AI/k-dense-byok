@@ -1,94 +1,51 @@
-# Automation: schedules and missions
+# Automation
 
-Kady's specialists can run on a timer and remember long-running work across
-restarts. Both come from the pi-subagents extension Kady embeds; Kady adds the
-server-side host that makes them fire when no chat is open, the spend-cap
-hold, the ledger attribution and the **Automation** tab in the project view.
+Open the project's **Automation** tab for schedules, missions and the specialist
+fleet. These use pi-subagents with Kady's project policy and accounting.
 
 ## Schedules
 
-Ask Kady in a chat:
+Ask Kady to create a schedule with a task, specialist, interval or one-shot time,
+and model. For example: “Every six hours, have the data validator re-check
+`user_data/` and log changes in the notebook.” Each fire runs with fresh context;
+results and costs are recorded like other specialist work.
 
-> Every 6 hours, have the data validator re-check `user_data/` and log a
-> notebook entry. Only warn me if something changed.
+The panel shows triggers, next run, outcomes and spend. Expand a schedule for
+its script/history; controls run now, pause/resume or delete it. Creation stays
+conversational.
 
-Kady confirms the interval, the specialist and the expected cost, then creates
-a durable schedule (`schedule.create` with `every: "6h"`; one-shot schedules
-use `at: "+30m"` or a timestamp). Each fire launches the workflow as a
-background run with fresh context; completions arrive in the notebook and the
-provenance log like any delegation, and the cost is ledgered with the
-schedule's id so the panel can show what each schedule has spent.
+A resident session keeps timers active without an open chat. **The backend must
+remain running.** With `catchUp: latest`, the latest missed slot runs on next
+boot; overlapping fires are skipped rather than queued.
 
-### How they fire without a tab
+A pinned schedule model survives restart. Without a pin, work can inherit the
+resident session's model, which follows the project's latest chat model. Pin a
+model when later chat changes must not affect a schedule.
 
-pi-subagents arms a schedule's timers inside a live Pi session. Kady keeps one
-**resident session** per project that has active schedules (opened at boot and
-when a schedule is created or resumed, never evicted, hidden from the chat
-list). Completion notices on that session become system runs; their text is in
-that session's history and their entries in the project notebook.
+## Policy and cost
 
-Limits: timers live in the server process. If the server is down when a
-schedule is due, the run is missed; with `catchUp: latest` (the default) the
-most recent missed slot runs at the next boot. Overlapping fires are skipped.
+Schedules retain their creation-time tool ceiling and intersect it with the
+current host policy. Later additions do not grant old schedules extra tools;
+removals take effect. These persisted schedules require Kady's host.
 
-### Spend cap
-
-Kady checks the resolved model immediately before every child model request,
-including timer-fired schedules and resumed work. Paid requests cannot start
-once the project's committed spend has reached its cap; local and subscription
-models use their normal billing rules. In-flight requests can still cross the
-limit because model costs are known only after the response.
-
-The server also pauses active schedules once a minute when the cap is reached,
-showing **Held: spend limit**, and resumes held schedules after the limit clears.
-That timer is a convenience; provider admission enforces the limit even between
-ticks or immediately after a manual resume.
-
-Schedules created under Kady's host tool policy retain that capability ceiling
-on disk. Each fire intersects the saved tools with the resident session's current
-policy, so later additions do not silently grant old schedules new tools, and
-later removals apply immediately. These schedules fail closed outside the Kady
-host. Temporary or third-party capability ceilings still block persistence.
-
-### Which model a scheduled run uses
-
-A schedule retains the top-level `model` supplied at creation, including Kady's
-canonical parent-model pin for literal workflows without a specialist/model
-override. The saved model survives restarts. Explicit `runs.run(...)` model
-options and specialist/provider policies retain Pi's normal precedence.
-
-A fire happens inside the project's resident automation session. When no model
-is pinned (for example, a dynamic workflow), a child inherits that session's model.
-The resident session follows the model most recently used in a chat of the
-project (Pi's default model would otherwise apply, which is the most expensive
-one in the picker); completion notices that trigger a turn on that session use
-the same model. Ask Kady to pin a specific model in the script when a
-schedule must not follow later chat-model changes.
+Each paid child model request checks committed spend before dispatch. Active
+schedules are also periodically marked **Held: spend limit** and resume after
+the limit clears. In-flight calls can still exceed the cap; see
+[billing](model-selection.md#billing-and-budgets).
 
 ## Missions
 
-Multi-step delegations create a **mission**: a durable record of why the work
-exists, its runs, decisions, artifacts and delivery receipts, stored in Kady's
-agent directory. Missions survive restarts and compaction; Kady can resume
-from `mission.show`. Goal missions with a token budget send a reminder after
-each turn until closed or exhausted. The panel lists missions with their
-status and lets you close one.
-
-## The Automation tab
-
-Project view → **Automation** (next to Compute): schedules with their trigger,
-next run, last outcome and spend; expand one for its workflow script and run
-history. Buttons: run now, pause/resume, delete. Missions below. Creation stays
-conversational.
+Missions persist a delegation's purpose, runs, decisions, artifacts and delivery
+receipts in the Pi agent directory. The panel lists status and can close a
+mission; the agent can inspect it with `mission.show` to resume work. Goal
+missions with token budgets remind the agent until closed or exhausted.
 
 ## Specialist fleet
 
-The **Automation** tab includes a fleet view. Choose a chat to see active
-specialists, models, token counts, elapsed time, tool activity and background
-compute. Open a run or child to read its live transcript, send guidance, stop
-it, or resume paused/completed work with new instructions. Stop asks for
-confirmation. The view is bounded by the plugin's snapshot limits; omitted
-entries are called out. Use **Refresh chats** to include newly opened chats.
+Choose a chat to inspect active specialists, models, tokens, elapsed time,
+tool activity and background compute. Open a run/child for its live transcript
+and steer/stop/resume controls. **Refresh chats** includes newly opened chats;
+plugin snapshot omissions are shown. Stop asks for confirmation.
 
-Modal jobs participate in the plugin's background-work protocol: an unfinished
-job owned by a lead or child session keeps its background-work state active.
+An unfinished Modal job keeps its owning session's background-work state active.
+Use the [Compute tab](modal-compute.md) for job-specific cancellation and recovery.

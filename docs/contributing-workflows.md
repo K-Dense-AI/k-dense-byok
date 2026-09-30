@@ -1,6 +1,6 @@
 # Contributing Workflows
 
-The workflow library lives in a single JSON file at `web/src/data/workflows.json`. Adding or improving a workflow is one of the easiest ways to contribute to the project - no backend code required.
+The workflow library lives in a single JSON file at `web/src/data/workflows.json`. Add or edit templates there; the UI renders them without backend changes.
 
 ## Workflow structure
 
@@ -29,7 +29,7 @@ The launcher adds shared data-access guidance from `web/src/lib/workflow-inputs.
 
 1. Open `web/src/data/workflows.json`.
 2. Add your workflow object anywhere in the array (it will be grouped by `category` automatically).
-3. Pick a `category` from the existing 22 disciplines:
+3. Pick an existing `category`:
 
    `paper`, `visual`, `data`, `literature`, `grants`, `scicomm`, `genomics`, `proteomics`, `cellbio`, `chemistry`, `drugdiscovery`, `physics`, `materials`, `clinical`, `neuro`, `ecology`, `finance`, `social`, `math`, `ml`, `engineering`, `astro`
 
@@ -45,4 +45,4 @@ The launcher adds shared data-access guidance from `web/src/lib/workflow-inputs.
 - Say **supplied data/files**, not "uploaded data": BYOK can run on a workstation, server, VM, or container separate from the browser. "Local" compute means the BYOK host; never assume it is the user's laptop. Avoid hard-coded laptop paths or an exclusive `user_data/` lookup.
 - Keep descriptions under ~120 characters so they display well on the card.
 
-Submit your addition as a pull request. We review and merge workflow contributions quickly.
+Check that placeholders match the prompt and launch the workflow with representative inputs before submitting a pull request.
