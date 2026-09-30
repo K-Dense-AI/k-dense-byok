@@ -6,9 +6,11 @@ import type {
   AuthInteraction,
   AuthPrompt,
   CredentialInfo,
+  LoginOptions,
   Model,
 } from "@earendil-works/pi-ai";
-import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { SettingsManager, type ModelRuntime } from "@earendil-works/pi-coding-agent";
+import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { DirectProviderBilling, DirectProviderDefinition } from "./provider-catalog.ts";
 
 /**
@@ -350,10 +352,19 @@ function isTerminal(status: AuthFlowStatus): boolean {
 export class ProviderAuthManager {
   private readonly flows = new Map<string, AuthFlow>();
   private readonly activeByProvider = new Map<SubscriptionProviderId, string>();
+  private authSettings?: SettingsManager;
 
   constructor(
     private readonly runtime: ProviderAuthRuntime,
     private readonly flowTtlMs = DEFAULT_FLOW_TTL_MS,
+    private readonly loginOptions: LoginOptions = {
+      // Match Pi's interactive login: ChatGPT requires a stable, global
+      // installation UUID. A project must never supply the installation ID.
+      getDeviceId: () => {
+        this.authSettings ??= SettingsManager.create(KADY_PI_AGENT_DIR, KADY_PI_AGENT_DIR);
+        return this.authSettings.getOrCreateDeviceId();
+      },
+    },
   ) {}
 
   getRuntime(): ProviderAuthRuntime {
@@ -395,7 +406,8 @@ export class ProviderAuthManager {
         `${subscriptionProvider(providerId)?.name ?? providerId} is already connected`,
       );
     }
-    if (configured.needsReauth) await this.runtime.logout(providerId);
+    // Pi atomically replaces the stored credential on successful login.
+    // Keep the previous credential if a reconnect is cancelled or fails.
     const activeId = this.activeByProvider.get(providerId);
     if (activeId) {
       const active = this.flows.get(activeId);
@@ -497,8 +509,7 @@ export class ProviderAuthManager {
   dispose(): void {
     for (const flow of this.flows.values()) {
       if (!isTerminal(flow.status)) {
-        flow.controller.abort();
-        flow.pending?.reject(new Error("Login cancelled"));
+        this.cancel(flow.id);
       }
       if (flow.expiryTimer) clearTimeout(flow.expiryTimer);
       if (flow.removalTimer) clearTimeout(flow.removalTimer);
@@ -532,7 +543,7 @@ export class ProviderAuthManager {
     };
 
     try {
-      await this.runtime.login(flow.providerId, "oauth", interaction);
+      await this.runtime.login(flow.providerId, "oauth", interaction, this.loginOptions);
       if (!isTerminal(flow.status)) {
         this.finish(flow, "complete");
       } else {
@@ -544,6 +555,7 @@ export class ProviderAuthManager {
     } catch (error) {
       if (!isTerminal(flow.status)) this.fail(flow, error);
     } finally {
+      await this.authSettings?.flush();
       flow.running = false;
       flow.resolveSettled();
       if (this.activeByProvider.get(flow.providerId) === flow.id) {
@@ -583,7 +595,12 @@ export class ProviderAuthManager {
         settled = true;
         cleanup();
         if (flow.pending?.id === promptId) flow.pending = undefined;
-        if (flow.prompt?.id === promptId) flow.prompt = undefined;
+        if (flow.prompt?.id === promptId) {
+          flow.prompt = undefined;
+          // Pi cancels the manual prompt when the browser callback wins.
+          if (!isTerminal(flow.status)) flow.status = "running";
+          flow.updatedAt = Date.now();
+        }
         reject(error);
       };
       const onAbort = () => settleReject(new Error("Login cancelled"));

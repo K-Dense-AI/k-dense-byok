@@ -20,6 +20,8 @@ export interface ModelProviderStatus {
   billingMode: ProviderBillingMode;
   billingNote: string;
   connected: boolean;
+  /** Pi can resolve a key or OAuth credential, including keys in auth.json. */
+  configured?: boolean;
   needsReauth?: boolean;
   credentialType: "oauth" | "api_key" | null;
   source: string | null;

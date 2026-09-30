@@ -109,11 +109,11 @@ export function mergeProviderRows(
     if (oauth?.needsReauth) status = "reauth";
     else if (oauth?.connected || direct?.authType === "oauth") status = "signed-in";
     else if (keySet) status = "api-key";
-    else if (direct?.configured) {
+    else if (direct?.configured || oauth?.configured) {
       // Pi resolved a credential Settings did not write: an env var set in the
       // shell, an AWS profile, gcloud ADC, …
       status = "external";
-      source = direct.source;
+      source = direct?.source ?? oauth?.source ?? null;
     }
 
     return {

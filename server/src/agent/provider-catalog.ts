@@ -70,8 +70,8 @@ export interface DirectProviderDefinition {
   /** Unknown ids resolve to a synthesized $0 model instead of an error. */
   synthesizeUnknownIds: boolean;
   /**
-   * Push the key into Pi's runtime credential on change (`setRuntimeApiKey`),
-   * as the OpenRouter/NVIDIA rows always did. False for providers whose
+   * Select environment-key auth on save by removing the previous stored Pi
+   * credential. Never install a runtime-only override. False for providers whose
    * `resolve()` mixes several ambient sources — there process.env is the only
    * safe channel, and Pi reads it live.
    */

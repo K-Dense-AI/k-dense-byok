@@ -47,6 +47,18 @@ agents. `KADY_PI_AGENT_DIR` relocates that directory. An explicit
 `PI_CODING_AGENT_DIR` takes precedence; use it only when you intend to share
 Pi authentication and settings with another installation.
 
+For providers with both methods, a successful sign-in takes precedence over an
+existing environment API key. Saving a new API key in Settings switches that
+provider back to API-key authentication. Disconnecting a sign-in removes its
+stored Pi credential; an API key still set in the environment remains usable.
+
+Keep the sign-in dialog open while completing the provider's browser flow. If
+the browser runs on another machine, or the callback port is occupied, paste
+the final redirect URL into the dialog. ChatGPT requires the complete URL,
+including its state and issued client ID. Kady supplies Pi with a persistent
+installation ID in the global Pi settings; existing legacy Codex logins remain
+separate from the newer OpenAI sign-in.
+
 ## Optional services
 
 **Settings → Services** accepts Exa, Perplexity and Gemini search keys and a

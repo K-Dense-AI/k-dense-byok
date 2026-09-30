@@ -97,4 +97,12 @@ describe("mergeProviderRows", () => {
     expect(rows.map((row) => row.id)).toEqual(["openrouter", "anthropic", "groq", "zai"]);
     expect(rows.find((row) => row.id === "zai")!.popular).toBe(false);
   });
+
+  it("recognizes an OpenRouter key stored in Pi rather than .env", () => {
+    const rows = mergeProviderRows([
+      oauth("openrouter", { configured: true, credentialType: "api_key", source: "stored credential" }),
+    ], [], { openrouter: { set: false, masked: null } });
+    expect(rows[0].connected).toBe(true);
+    expect(providerStatusLabel(rows[0])).toBe("Configured via stored credential");
+  });
 });

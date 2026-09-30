@@ -68,6 +68,21 @@ let directDiscoveryCache:
   | { value: DirectProvidersResponse; loadedAt: number }
   | undefined;
 let directDiscoveryInFlight: Promise<DirectProvidersResponse> | undefined;
+let lastAuthChangeEvent: Event | undefined;
+
+/** Invalidate once per event, even when several pickers are mounted. */
+function invalidateDiscoveryForAuthChange(event: Event): void {
+  if (lastAuthChangeEvent === event) return;
+  lastAuthChangeEvent = event;
+  providerDiscoveryCache = undefined;
+  providerDiscoveryInFlight = undefined;
+  directDiscoveryCache = undefined;
+  directDiscoveryInFlight = undefined;
+  ollamaDiscoveryCache = undefined;
+  ollamaDiscoveryInFlight = undefined;
+  oaiCompatDiscoveryCache = undefined;
+  oaiCompatDiscoveryInFlight = undefined;
+}
 
 function discoverProviders(force = false): Promise<ProviderDiscovery> {
   if (
@@ -99,18 +114,23 @@ function discoverProviders(force = false): Promise<ProviderDiscovery> {
     const providers = Array.isArray(providerData?.providers)
       ? providerData.providers
       : [];
-    // OpenRouter is usable with a pasted key OR a Pi OAuth sign-in.
-    const openrouterOAuth = providers.some(
-      (provider) => provider.id === "openrouter" && provider.connected,
+    // Pi's effective auth state includes stored API keys, and a broken stored
+    // OAuth credential does not fall back to an ambient key. Keep the older
+    // response fallback for clients talking to a server during an upgrade.
+    const openrouter = providers.find((provider) => provider.id === "openrouter");
+    const openrouterConfigured = openrouter?.configured ?? (
+      openrouter?.needsReauth ? false : credentialData?.openrouter
+        ? Boolean(credentialData.openrouter.set) || Boolean(openrouter?.connected)
+        : openrouter?.connected || null
     );
     const value: ProviderDiscovery = {
       providers,
       models: Array.isArray(modelData?.models) ? modelData.models : [],
-      openrouterConfigured: credentialData?.openrouter
-        ? Boolean(credentialData.openrouter.set) || openrouterOAuth
-        : openrouterOAuth || null,
+      openrouterConfigured,
     };
-    providerDiscoveryCache = { value, loadedAt: Date.now() };
+    if (providerDiscoveryInFlight === inFlight) {
+      providerDiscoveryCache = { value, loadedAt: Date.now() };
+    }
     return value;
   });
   const inFlight = request.finally(() => {
@@ -136,7 +156,9 @@ function discoverOllama(force = false): Promise<OllamaListResponse> {
   );
   const inFlight = request
     .then((value) => {
-      ollamaDiscoveryCache = { value, loadedAt: Date.now() };
+      if (ollamaDiscoveryInFlight === inFlight) {
+        ollamaDiscoveryCache = { value, loadedAt: Date.now() };
+      }
       return value;
     })
     .finally(() => {
@@ -165,7 +187,9 @@ function discoverOpenAICompatible(
   );
   const inFlight = request
     .then((value) => {
-      oaiCompatDiscoveryCache = { value, loadedAt: Date.now() };
+      if (oaiCompatDiscoveryInFlight === inFlight) {
+        oaiCompatDiscoveryCache = { value, loadedAt: Date.now() };
+      }
       return value;
     })
     .finally(() => {
@@ -194,7 +218,9 @@ function discoverDirectProviders(force = false): Promise<DirectProvidersResponse
   );
   const inFlight = request
     .then((value) => {
-      directDiscoveryCache = { value, loadedAt: Date.now() };
+      if (directDiscoveryInFlight === inFlight) {
+        directDiscoveryCache = { value, loadedAt: Date.now() };
+      }
       return value;
     })
     .finally(() => {
@@ -353,11 +379,12 @@ export function useModels(): UseModelsReturn {
     // Also re-probes the direct providers and local servers: Settings fires
     // this event when a key or a local server URL changes as well as after an
     // OAuth login/logout.
-    const refreshProviders = () => {
-      fetchProviders(true);
-      fetchDirect(true);
-      fetchOllama(true);
-      fetchOpenAICompatible(true);
+    const refreshProviders = (event: Event) => {
+      invalidateDiscoveryForAuthChange(event);
+      fetchProviders();
+      fetchDirect();
+      fetchOllama();
+      fetchOpenAICompatible();
     };
     window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, refreshProviders);
     return () =>

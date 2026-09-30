@@ -176,4 +176,30 @@ describe("ProviderAuthManager", () => {
     const restarted = await auth.start("xai");
     expect(restarted.providerId).toBe("xai");
   });
+
+  it("keeps the stored credential when a reconnect is cancelled", async () => {
+    const runtime = fakeRuntime(async (_id, interaction) => interaction.prompt({ type: "manual_code", message: "Paste code" }));
+    runtime.checkAuth = vi.fn(async () => ({ type: "oauth" as const, source: "OAuth" }));
+    runtime.getAuth = vi.fn(async () => { throw new Error("Temporarily unavailable"); });
+    const auth = manager(runtime);
+    const started = await auth.start("openai");
+    auth.cancel(started.id);
+    await tick();
+    expect(runtime.logout).not.toHaveBeenCalled();
+  });
+
+  it("returns to running when a browser callback cancels the manual prompt", async () => {
+    const manual = new AbortController();
+    const runtime = fakeRuntime(async (_id, interaction) => {
+      await interaction.prompt({ type: "manual_code", message: "Paste code", signal: manual.signal }).catch(() => {});
+      await new Promise<void>((resolve) => interaction.signal?.addEventListener("abort", () => resolve(), { once: true }));
+    });
+    const auth = manager(runtime);
+    const flow = await auth.start("openai");
+    manual.abort();
+    expect(auth.get(flow.id).status).toBe("running");
+    expect(auth.get(flow.id).prompt).toBeUndefined();
+    await tick();
+    auth.cancel(flow.id);
+  });
 });

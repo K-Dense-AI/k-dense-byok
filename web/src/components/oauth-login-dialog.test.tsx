@@ -46,6 +46,22 @@ const awaiting: ProviderAuthFlow = {
 };
 
 describe("OAuthLoginDialog", () => {
+  it("shows callback fallback instructions while awaiting manual input", async () => {
+    const flow: ProviderAuthFlow = {
+      ...awaiting,
+      events: [{ type: "info", message: "Callback port is occupied; paste the final redirect URL.", links: [{ url: "https://example.com/help", label: "Sign-in help" }] }],
+      prompt: { id: "manual", type: "manual_code", message: "Paste callback URL" },
+    };
+    render(<OAuthLoginDialog
+      provider={provider} open onOpenChange={vi.fn()}
+      start={vi.fn(async () => flow)} poll={vi.fn(async () => flow)}
+      respond={vi.fn(async () => flow)} cancel={vi.fn(async () => ({ ...flow, status: "cancelled" as const }))}
+    />);
+    expect(await screen.findByText(/Callback port is occupied/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Sign-in help" })).toHaveAttribute("href", "https://example.com/help");
+    expect(screen.getByLabelText("Paste callback URL")).toBeInTheDocument();
+  });
+
   it("renders Pi auth events and submits a selected prompt answer", async () => {
     const user = userEvent.setup();
     const respond = vi.fn(async () => ({

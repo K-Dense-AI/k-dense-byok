@@ -324,15 +324,17 @@ export function registerLocalProviders(modelRuntime: ModelRuntime): void {
   });
 }
 
-/** Configure app-specific providers and runtime credentials. */
+/** Configure app-specific providers and normalize the legacy OpenRouter alias. */
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   registerLocalProviders(modelRuntime);
 
-  // Pi reads every direct provider's key straight from process.env (loaded
-  // from .env by env.ts), so only OpenRouter needs a push here — its legacy
-  // OR_API_KEY alias is unknown to Pi.
-  const orKey = process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY;
-  if (orKey) await modelRuntime.setRuntimeApiKey("openrouter", orKey);
+  // Let Pi resolve stored credentials before ambient keys, consistently in
+  // lead/child runtimes and after restart. A runtime override masks OAuth.
+  // Normalize the legacy alias into the inherited environment for children.
+  if (!process.env.OPENROUTER_API_KEY?.trim() && process.env.OR_API_KEY?.trim()) {
+    process.env.OPENROUTER_API_KEY = process.env.OR_API_KEY.trim();
+    await modelRuntime.refresh({ providers: ["openrouter"], allowNetwork: false });
+  }
 }
 
 export class ModelResolutionError extends Error {

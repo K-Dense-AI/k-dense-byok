@@ -177,6 +177,9 @@ export async function registerModelProviderRoutes(
           return {
             ...definition,
             connected,
+            // `connected` means OAuth specifically. OpenRouter also accepts
+            // API keys stored by Pi, which are absent from GET /credentials.
+            configured: status.auth !== undefined && !status.needsReauth,
             needsReauth: status.needsReauth,
             credentialType: status.stored?.type ?? status.auth?.type ?? null,
             source: status.auth?.source ?? null,
@@ -207,8 +210,12 @@ export async function registerModelProviderRoutes(
         // /providers/models instead when it is key-configured, so each model
         // appears once, under the billing its credential implies.
         if (status.auth?.type !== "oauth" || status.needsReauth) continue;
-        const available = await runtime.getAvailable(definition.id);
-        models.push(...available.map((model) => modelForClient(model, definition)));
+        try {
+          const available = await runtime.getAvailable(definition.id);
+          models.push(...available.map((model) => modelForClient(model, definition)));
+        } catch {
+          // A failed gateway/catalogue must not hide other connected models.
+        }
       }
       return { models };
     } catch (error) {
