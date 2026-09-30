@@ -1431,8 +1431,8 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
         </Shimmer>
       ) : endedWithoutReply ? (
         <p className="text-xs italic text-muted-foreground">
-          The model finished this turn without a closing message. The tool
-          results above are the outcome; ask a follow-up if you want a summary.
+          This turn ended without a closing message. Review the tool results
+          above before continuing, or ask a follow-up for a summary.
         </p>
       ) : null}
       {message.citations && (
