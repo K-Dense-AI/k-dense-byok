@@ -6,8 +6,14 @@ import { registerChildGuard } from "../kady-guard/index.ts";
 import { registerChildNotebook } from "../kady-notebook/index.ts";
 import { registerChildModal } from "../kady-modal/index.ts";
 import { registerChildPdfAnnotations } from "../kady-pdf-annotations/index.ts";
+import { CHILD_OPERATING_GUIDANCE, setSubagentPromptSection } from "../../src/agent/subagent-prompts.ts";
 
 export default function (pi: ExtensionAPI) {
+  // A required runtime section reaches existing/custom personas, including
+  // replace-mode agents and children with project context/skills disabled.
+  pi.on("before_agent_start", (event) => {
+    setSubagentPromptSection(event, "kady_specialist", CHILD_OPERATING_GUIDANCE);
+  });
   // Required extensions also load in foreground children, where the process
   // env is not a reliable identity. This file is never installed in the lead.
   if (!process.env.PI_SUBAGENT_CHILD) {

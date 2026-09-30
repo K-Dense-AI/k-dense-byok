@@ -38,6 +38,34 @@ You can simply name one in your message:
 
 Sub-agents can run one at a time, several in parallel, or chained (one's output feeding the next) - Kady handles the orchestration.
 
+## Assignments and handoffs
+
+Kady gives each specialist a focused brief: the question, relevant input paths,
+scope and allowed edits, deliverables, completion criteria, and effort limits.
+Parallel reviewers receive distinct questions. Domain checklists guide the
+checks that matter to the assignment; a targeted review stays targeted.
+
+Specialists make routine reversible choices within scope and state material
+assumptions. They use `contact_supervisor` for blocking questions, since the
+chat's `interview` tool is available only to the lead. Kady answers from existing
+instructions where possible and asks you only for a still-needed decision or
+authorization. A timeout or dismissed question does not supply approval.
+
+Each specialist reports completed, partial, or blocked, with a conclusion,
+supporting evidence, checks actually performed, artifact paths, and open
+questions. This status describes the assignment: a completed audit can find an
+invalid analysis. Exact requested output formats take precedence over the
+default handoff headings. Kady checks consequential claims and artifacts before
+synthesis and keeps unverified areas and disagreements visible.
+
+The shared guidance is loaded by the native child runtime, including for custom
+specialists and those without inherited project context. Role descriptions and
+domain prompts remain editable project files. Updated roster defaults apply to
+new projects or **Restore defaults**; existing specialist files are not silently
+rewritten. Restore defaults overwrites same-named specialists and re-enables
+disabled defaults, so retain custom instructions/settings you want to keep or
+edit individual specialists instead. Open a new chat after changing definitions.
+
 ## Following running specialists
 
 Open the project's **Automation** tab and choose a chat in **Specialist fleet**.
@@ -91,7 +119,8 @@ content into it) and clear it when it goes stale. It never counts as evidence.
 
 Background specialists cannot show you a form themselves. When one hits a
 decision it cannot make (pi-subagents' `contact_supervisor`), the request
-arrives in the chat as a **Subagent needs a decision** card and Kady relays the
+arrives in the chat as a **Subagent needs a decision** card. Kady resolves it
+from your existing instructions if possible; otherwise it asks the blocking
 question with its interview form, then passes your answer back. Answer
 promptly: the specialist is blocked while it waits, up to ten minutes. If the
 chat tab was closed, the server still adopts the request as a run; reopen the

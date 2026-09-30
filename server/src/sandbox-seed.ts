@@ -150,7 +150,42 @@ const AGENTS_MD_V5 = AGENTS_MD_V4.replace(
   another external service.`,
 );
 
-export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4, AGENTS_MD_V5];
+const AGENTS_MD_V6 = AGENTS_MD_V5.replace(
+  /## Clarifying questions[\s\S]*?(?=\n## )/,
+  `## Clarifying questions
+
+Ask when missing information would materially change the scope, scientific
+validity, or requested deliverable, or when required authorization has not
+already been supplied. Do not reconfirm an authorized task merely because it
+is non-trivial. Make routine reversible choices within scope using available
+evidence, state material assumptions, and honor explicit instructions to
+consult the user. Never guess essential scientific parameters.
+
+The lead can use \`interview\` to show a short form in chat. Delegated specialists
+are headless: route blocking questions through \`contact_supervisor\` instead;
+they cannot use \`interview\`. Bundle related questions and recommend an option
+when justified. Continue useful independent work while an answer is missing;
+an unanswered or dismissed question is not approval.
+`,
+).replace(
+  /## Background specialists that need a decision[\s\S]*?(?=\n## )/,
+  `## Background specialists that need a decision
+
+A specialist may ask the lead a blocking question (a "Subagent needs a decision"
+message with a \`replyTo\` id). The lead should resolve routine questions from
+the user's existing instructions and available evidence. If a user decision
+is still required, relay only that question through \`interview\`, with the
+specialist's options and a recommendation, then send the answer through
+\`subagent_supervisor\` (action \`reply\`, that \`replyTo\`). Reply promptly: the
+specialist waits at most about ten minutes. A \`progress_update\` needs no reply.
+Specialists themselves use \`contact_supervisor\`, not these lead-only tools.
+`,
+).replace(
+  "scheduling anything, confirm the interval, the specialist, and the expected\ncost per run with the user via `interview`; scheduled runs are billed like",
+  "scheduling anything, ensure the user has authorized the interval, specialist,\nand expected cost per run. Ask only for missing authorization via `interview`\n(or `contact_supervisor` for a specialist); scheduled runs are billed like",
+);
+
+export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4, AGENTS_MD_V5, AGENTS_MD_V6];
 export const AGENTS_MD = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 1];
 
 /** Newline-insensitive comparison so a CRLF checkout still counts as unedited. */
