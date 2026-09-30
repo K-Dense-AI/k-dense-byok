@@ -44,7 +44,6 @@ import {
   LeafIcon,
   LineChartIcon,
   ListChecksIcon,
-  LoaderIcon,
   MapIcon,
   MegaphoneIcon,
   MessageCircleIcon,
@@ -79,14 +78,11 @@ import {
   TimerIcon,
   TreePineIcon,
   TrendingUpIcon,
-  UploadIcon,
   UsersIcon,
   WavesIcon,
   WindIcon,
   WrenchIcon,
   ZapIcon,
-  CheckCircle2Icon,
-  FolderUpIcon,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -108,6 +104,8 @@ import {
 import { useModels } from "@/lib/use-models";
 import workflowsData from "@/data/workflows.json";
 import { useAppDefaults } from "@/lib/app-settings";
+import { WorkflowInputs, type WorkflowInputProps } from "@/components/workflow-inputs";
+import { buildWorkflowPrompt } from "@/lib/workflow-inputs";
 
 export type Workflow = {
   id: string;
@@ -285,21 +283,23 @@ function WorkflowIcon({ name, className }: { name: string; className?: string })
   return <Icon className={className} />;
 }
 
-function LaunchDialog({
+export function WorkflowLaunchDialog({
   workflow,
   open,
   onOpenChange,
   onLaunch,
   onUploadFiles,
+  availableFiles,
+  filesReady,
+  onRefreshFiles,
   budgetBlocked = false,
 }: {
   workflow: Workflow;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onLaunch: (prompt: string, model: Model, uploadedFiles: string[]) => void;
-  onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
+  onLaunch: (prompt: string, model: Model, inputFiles: string[]) => void;
   budgetBlocked?: boolean;
-}) {
+} & WorkflowInputProps) {
   const [model, setModel] = useState<Model>(DEFAULT_MODEL);
   const { modelAvailability, models: knownModels } = useModels();
   // Start from Settings → Defaults until the user picks a model here.
@@ -316,28 +316,14 @@ function LaunchDialog({
     budgetBlocked && modelUsesBillableBudget(model);
   const [placeholderValues, setPlaceholderValues] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+  const [inputFiles, setInputFiles] = useState<string[]>([]);
+  const [sources, setSources] = useState("");
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const dirInputRef = useRef<HTMLInputElement>(null);
 
   const updatePlaceholder = useCallback((key: string, value: string) => {
     setPlaceholderValues((prev) => ({ ...prev, [key]: value }));
   }, []);
-
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files?.length || !onUploadFiles) return;
-    setUploading(true);
-    try {
-      const paths = await onUploadFiles(files);
-      setUploadedFiles((prev) => [...prev, ...paths]);
-    } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  }, [onUploadFiles]);
 
   const assembledPrompt = useMemo(() => {
     let prompt = workflow.prompt;
@@ -352,22 +338,24 @@ function LaunchDialog({
     .filter((ph) => ph.required)
     .every((ph) => placeholderValues[ph.key]?.trim());
 
-  const finalPrompt = editedPrompt ?? assembledPrompt;
+  const finalPrompt = buildWorkflowPrompt(editedPrompt ?? assembledPrompt, inputFiles, sources);
 
   const handleLaunch = useCallback(() => {
-    onLaunch(finalPrompt, model, uploadedFiles);
+    if (uploading || !canLaunch || selectedBudgetBlocked || !modelAvailable) return;
+    onLaunch(finalPrompt, model, inputFiles);
     onOpenChange(false);
     setPlaceholderValues({});
-    setUploadedFiles([]);
+    setInputFiles([]);
+    setSources("");
     setEditedPrompt(null);
     setIsEditingPrompt(false);
-  }, [finalPrompt, model, uploadedFiles, onLaunch, onOpenChange]);
+  }, [finalPrompt, model, inputFiles, onLaunch, onOpenChange, uploading, canLaunch, selectedBudgetBlocked, modelAvailable]);
 
   const iconColor = CATEGORY_ICON_COLOR[workflow.category] ?? "text-muted-foreground";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <WorkflowIcon name={workflow.icon} className={cn("size-5", iconColor)} />
@@ -377,71 +365,21 @@ function LaunchDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
-          {workflow.requiresFiles && onUploadFiles && (
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-foreground">
-                Upload files to sandbox
-                <span className="ml-1 text-[10px] font-normal text-amber-600 dark:text-amber-400">(this workflow uses uploaded data)</span>
-              </label>
-              <div className="rounded-lg border border-dashed border-amber-500/30 bg-amber-500/5 p-3">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                {/* @ts-expect-error -- webkitdirectory is non-standard but supported in all major browsers */}
-                <input ref={dirInputRef} type="file" webkitdirectory="" className="hidden" onChange={handleFileUpload} />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md border border-amber-500/20 bg-background px-3 py-2 text-xs font-medium transition-colors hover:bg-amber-500/10 disabled:opacity-50"
-                  >
-                    {uploading ? (
-                      <>
-                        <LoaderIcon className="size-3.5 animate-spin text-amber-500" />
-                        <span className="text-muted-foreground">Uploading...</span>
-                      </>
-                    ) : (
-                      <>
-                        <UploadIcon className="size-3.5 text-amber-500" />
-                        <span className="text-muted-foreground">Files</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => dirInputRef.current?.click()}
-                    disabled={uploading}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-md border border-amber-500/20 bg-background px-3 py-2 text-xs font-medium transition-colors hover:bg-amber-500/10 disabled:opacity-50"
-                  >
-                    {uploading ? (
-                      <>
-                        <LoaderIcon className="size-3.5 animate-spin text-amber-500" />
-                        <span className="text-muted-foreground">Uploading...</span>
-                      </>
-                    ) : (
-                      <>
-                        <FolderUpIcon className="size-3.5 text-amber-500" />
-                        <span className="text-muted-foreground">Folder</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                {uploadedFiles.length > 0 && (
-                  <div className="mt-2 space-y-1">
-                    {uploadedFiles.map((path) => (
-                      <div key={path} className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-                        <CheckCircle2Icon className="size-3 shrink-0" />
-                        <span className="truncate">{path.split("/").pop()}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <div className="space-y-1.5">
+            <p className="text-xs font-medium">{workflow.requiresFiles ? "Workflow data" : "Workflow data (optional)"}</p>
+            <WorkflowInputs
+              availableFiles={availableFiles}
+              filesReady={filesReady}
+              onRefreshFiles={onRefreshFiles}
+              onUploadFiles={onUploadFiles}
+              files={inputFiles}
+              onFilesChange={setInputFiles}
+              sources={sources}
+              onSourcesChange={setSources}
+              uploading={uploading}
+              onUploadingChange={setUploading}
+            />
+          </div>
 
           {workflow.placeholders.length > 0 && (
             <div className="space-y-3">
@@ -512,7 +450,7 @@ function LaunchDialog({
           </Button>
           <Button
             onClick={handleLaunch}
-            disabled={!canLaunch || selectedBudgetBlocked || !modelAvailable}
+            disabled={uploading || !canLaunch || selectedBudgetBlocked || !modelAvailable}
             title={
               !modelAvailable
                 ? selectedModelAvailability === "checking"
@@ -536,12 +474,14 @@ function LaunchDialog({
 export function WorkflowsPanel({
   onLaunch,
   onUploadFiles,
+  availableFiles,
+  filesReady,
+  onRefreshFiles,
   budgetBlocked = false,
 }: {
-  onLaunch: (prompt: string, model: Model, uploadedFiles: string[]) => void;
-  onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
+  onLaunch: (prompt: string, model: Model, inputFiles: string[]) => void;
   budgetBlocked?: boolean;
-}) {
+} & WorkflowInputProps) {
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [search, setSearch] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -644,7 +584,7 @@ export function WorkflowsPanel({
                             <span className="text-sm font-medium text-foreground">{w.name}</span>
                             {w.requiresFiles && (
                               <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-500/10 px-1.5 py-px text-[9px] font-medium text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                                <UploadIcon className="size-2.5" />
+                                <DatabaseIcon className="size-2.5" />
                                 Needs user data
                               </span>
                             )}
@@ -664,7 +604,7 @@ export function WorkflowsPanel({
       </div>
 
       {selectedWorkflow && (
-        <LaunchDialog
+        <WorkflowLaunchDialog
           workflow={selectedWorkflow}
           open={!!selectedWorkflow}
           onOpenChange={(open) => {
@@ -672,6 +612,9 @@ export function WorkflowsPanel({
           }}
           onLaunch={onLaunch}
           onUploadFiles={onUploadFiles}
+          availableFiles={availableFiles}
+          filesReady={filesReady}
+          onRefreshFiles={onRefreshFiles}
           budgetBlocked={budgetBlocked}
         />
       )}

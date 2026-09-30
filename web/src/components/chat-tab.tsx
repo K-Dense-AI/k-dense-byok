@@ -1584,7 +1584,7 @@ export interface ChatTabHandle {
   launchWorkflow: (
     prompt: string,
     model: Model,
-    uploadedFiles: string[],
+    inputFiles: string[],
   ) => Promise<void>;
   /**
    * Send a one-off prompt using the tab's currently selected model.
@@ -2232,7 +2232,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           thinkingDisabled ? undefined : thinkingLevel,
         );
       },
-      launchWorkflow: async (prompt, model, uploadedFiles) => {
+      launchWorkflow: async (prompt, model, inputFiles) => {
         const workflowModelAvailability = modelAvailability(model);
         if (workflowModelAvailability !== "available") {
           toast.error(
@@ -2245,13 +2245,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         }
         if (budgetState === "exceeded" && modelUsesBillableBudget(model)) return;
         setSelectedModel(model);
-        const fileRefs = uploadedFiles.length > 0 ? "\n" + uploadedFiles.join("\n") : "";
-        const fullPrompt = prompt + fileRefs;
         await send(
-          fullPrompt,
+          prompt,
           model.id,
           {
-            attachments: uploadedFiles,
+            attachments: inputFiles,
             skills: [],
             databases: [],
           },

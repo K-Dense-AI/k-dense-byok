@@ -260,7 +260,9 @@ argument-hint: <script>
 
 Replicate \`$1\` independently.
 
-Copy any raw inputs it needs from \`user_data/\` into \`derived/replicate/\` (never modify the originals), run the script there with the same parameters, and compare every output file against the current version byte-for-byte and, for tables and figures, value-by-value with a tolerance you state. Report exact matches, numerical drift, and outright differences with the most likely cause (random seed, environment, data version).
+Identify the script's actual inputs from its configuration and recorded provenance. Verify access on the BYOK host: inputs may be browser uploads in \`user_data/\`, other project files, host/mounted paths, or data locations accessible through configured tools/connectors. Do not require a new upload or assume every input lives in \`user_data/\`. If a source is inaccessible, report it and ask only blocking questions before running.
+
+Use \`derived/replicate/\` as an isolated working directory. Stage only the inputs it needs when necessary, record their sources, and never modify originals. Run the script there with the same parameters, and compare every output file against the current version byte-for-byte and, for tables and figures, value-by-value with a tolerance you state. Report exact matches, numerical drift, and outright differences with the most likely cause (random seed, environment, data version). Save the comparison outputs in the project sandbox for browser preview/download.
 
 Log the outcome in the lab notebook and link the comparison table.
 `,

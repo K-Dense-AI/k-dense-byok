@@ -1,11 +1,11 @@
 # Basic usage
 
-This guide covers everything you need for day-to-day work with Kady, your AI research assistant. It assumes you've already [installed the app](./installation.md) and have it open at [http://localhost:3000](http://localhost:3000).
+This guide covers day-to-day work with Kady, your AI research assistant. Open your BYOK installation in a browser: typically [http://localhost:3000](http://localhost:3000) for a [laptop installation](./installation.md), or the URL/tunnel supplied for an installation on another host. Files, tools, and project state live where the BYOK backend runs.
 
 ## Your first session
 
 1. **Create a project.** Each project is a self-contained workspace with its own files, chat history, and settings. Think of one project per study, paper, or analysis.
-2. **Upload your data** (optional). Drag files into the file browser on the left, or drop them directly onto the message box. CSVs, PDFs, notebooks, genomics tables, molecular structures, mass spectra, imaging volumes — [60+ scientific formats](./file-previews.md) are recognized and previewable.
+2. **Choose your data** (optional). Use existing project files, give Kady a path or data location accessible from the BYOK host, or upload from your browser device by dragging files into the file browser or message box. CSVs, PDFs, notebooks, genomics tables, molecular structures, mass spectra, imaging volumes — [60+ scientific formats](./file-previews.md) are recognized and previewable in the project.
 3. **Ask for what you want in plain language.** For example:
    - *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
    - *"Summarize the methods sections of these three PDFs and compare their statistical approaches."*
@@ -36,14 +36,35 @@ Use the model dropdown in the input bar. Any message can use a tool-capable mode
 
 ### Files
 
-- **Upload:** drag files into the file browser or onto the input bar.
+- **Upload:** drag files into the file browser or onto the input bar. The browser copies them from your device to `user_data/` in the BYOK project's sandbox, whether BYOK runs on that device or another host.
 - **Reference:** type `@filename` in a message to point Kady at a specific file.
 - **Preview:** click any file for a built-in viewer — code, Markdown (with math and diagrams), CSVs, PDFs, images, and Jupyter notebooks, plus a broad set of scientific formats: genomics (FASTA/FASTQ, VCF, BED/GFF/SAM, alignments, phylogenetic trees), chemistry (SMILES/MOL/SDF 2D depictions, interactive 3D PDB/mmCIF structures), mass spectra (mzML/MGF/JCAMP), data arrays (AnnData, HDF5, Parquet, NumPy, NetCDF), and bio-imaging (DICOM, NIfTI, TIFF). See the [full list](./file-previews.md).
 - **Download:** grab any result straight from the file browser.
 
 ### Workflow templates
 
-Open the workflows panel to browse **326 ready-to-run templates across 22 disciplines** — genomics, drug discovery, finance, astrophysics, and more. Pick one, fill in the blanks, and click Launch; it runs in the currently active chat tab. Want to add your own? See [Contributing workflows](./contributing-workflows.md).
+Open the workflows panel to browse **326 ready-to-run templates across 22 disciplines** — genomics, drug discovery, finance, astrophysics, and more. Pick one, fill in the blanks, choose any inputs, and click **Run workflow**; it runs in the currently active chat tab. Want to add your own? See [Contributing workflows](./contributing-workflows.md).
+
+#### Workflow data locations
+
+You can combine these sources in the launch dialog:
+
+| Source | How to use it |
+|---|---|
+| Files on the device running your browser | **Upload files from this device** or **Upload folder**. Folder structure and the existing upload protections are preserved. Wait for the upload to finish before running. |
+| Files already in the current BYOK project | **Choose existing project files**, search, and select the full paths. Use **Refresh** for files added by another chat or directly on the host. No download/re-upload is needed. Removing a selection does not delete the file. |
+| Files elsewhere on the BYOK host or a mounted volume | **Use a host path or data URL** and enter a file or directory path, one per line. For example, `/mnt/study/counts.csv` on a server, or a volume path visible *inside* the BYOK container. Relative paths refer to the project sandbox. |
+| A remote dataset or connected storage | Enter an HTTPS URL, storage URI such as `s3://bucket/study/` or `gs://bucket/study/`, or a location understood by an installed connector. The host needs network access and the relevant tools/connector and credentials already configured. A URI alone does not configure storage access. Do not paste secrets or signed URLs into the workflow; references are saved in chat. |
+
+Kady checks the specified sources when the workflow starts and reports missing access before analysis. If no files are selected, it can use inputs described in the task or relevant project context and asks only for missing information. Host paths and remote locations are passed as references, not automatically copied or labeled as uploaded files. Original inputs should remain unchanged; derived results are saved in the project sandbox and downloaded to the browser device. The raw-data guard's configured paths still determine which writes it actually blocks; an external path is not automatically added to that guard.
+
+For example, on a remote workstation with a mounted study directory, enter `/mnt/study/` and select an existing project metadata CSV. On a laptop, uploading those same inputs remains available exactly as before. A path such as `/Users/me/data.csv` on the laptop will not resolve on a separate Linux host unless the data has been uploaded, copied, or mounted there.
+
+To make host data visible in the project picker and built-in previews, place it in `projects/<projectId>/sandbox/` on that host (or the corresponding directory under `KADY_PROJECTS_ROOT`). A container can mount a dataset into a visible subdirectory there. References outside the sandbox can be read by the agent with its OS permissions, but are not exposed by the sandbox preview/download API; symlinks escaping the sandbox remain refused. Files placed directly on disk do not acquire browser-upload provenance.
+
+For remote browser connectivity, the existing [security configuration](./security.md) applies. An SSH tunnel forwarding both ports preserves the default URLs: `ssh -L 3000:localhost:3000 -L 8000:localhost:8000 workstation`. A directly exposed installation must set `NEXT_PUBLIC_ADK_API_URL` to the backend URL reachable by the browser (before starting/building the frontend), configure its allowed host/origin, and use the access token. The workflow changes do not expose any additional filesystem API.
+
+New projects receive host-aware agent instructions and the `/replicate` template. Unmodified older agent instructions upgrade automatically; edited instructions and existing prompt templates are preserved. Existing projects can update their instructions and replication template in Settings.
 
 ### Remote compute jobs
 

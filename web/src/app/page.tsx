@@ -741,11 +741,11 @@ function WorkspacePage({
   // ------------------------------------------------------------------
 
   const handleWorkflowLaunch = useCallback(
-    async (prompt: string, model: Model, uploadedFiles: string[]) => {
+    async (prompt: string, model: Model, inputFiles: string[]) => {
       const handle = tabHandles.current.get(activeTabId);
       if (!handle) return;
       setView("chat");
-      await handle.launchWorkflow(prompt, model, uploadedFiles);
+      await handle.launchWorkflow(prompt, model, inputFiles);
     },
     [activeTabId],
   );
@@ -1203,6 +1203,9 @@ function WorkspacePage({
               <WorkflowsPanel
                 onLaunch={handleWorkflowLaunch}
                 onUploadFiles={sandbox.uploadFiles}
+                availableFiles={allFiles}
+                filesReady={sandbox.tree !== null}
+                onRefreshFiles={sandbox.fetchTree}
                 budgetBlocked={projectCost.budget.state === "exceeded"}
               />
             </div>

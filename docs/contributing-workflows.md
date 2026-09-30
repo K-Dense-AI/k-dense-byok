@@ -21,7 +21,9 @@ Each workflow is a JSON object with these fields:
 }
 ```
 
-Set `requiresFiles` to `true` when the workflow needs user-uploaded data (datasets, manuscripts, images, etc.). These workflows display a "Files" badge on the card and show an upload button in the launch dialog so users can add files to the sandbox before running.
+Set `requiresFiles` to `true` when the workflow needs user-supplied data (datasets, manuscripts, images, etc.). These workflows display a "Needs user data" badge. This describes the task's inputs, not how they must be transferred. Every launch dialog accepts uploads from the browser device, existing project files, and host paths or data URLs; inputs can be combined. An upload is never a prerequisite when the data is already accessible to BYOK.
+
+The launcher adds shared data-access guidance from `web/src/lib/workflow-inputs.ts`: tools run on the BYOK host, inputs must be checked before analysis, originals stay unchanged, and outputs go into the project sandbox for preview/download. Host paths and URLs are references for the agent to resolve using available tools and configured access; the form does not import or verify them itself. Existing project files are passed as chat attachments without re-uploading their bytes. See [workflow data locations](./basic-usage.md#workflow-data-locations) for deployment examples.
 
 ## How to add a workflow
 
@@ -40,6 +42,7 @@ Set `requiresFiles` to `true` when the workflow needs user-uploaded data (datase
 - Write prompts with **numbered steps** so the agent follows a clear procedure.
 - **Do not name skills.** The agent discovers and loads the skills it needs from what is installed; a hard-coded name can point at a skill the user has disabled or removed.
 - Mark placeholders as `"required": true` only when the workflow genuinely can't run without them.
+- Say **supplied data/files**, not "uploaded data": BYOK can run on a workstation, server, VM, or container separate from the browser. "Local" compute means the BYOK host; never assume it is the user's laptop. Avoid hard-coded laptop paths or an exclusive `user_data/` lookup.
 - Keep descriptions under ~120 characters so they display well on the card.
 
 Submit your addition as a pull request. We review and merge workflow contributions quickly.

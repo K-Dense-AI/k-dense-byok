@@ -132,7 +132,25 @@ explicitly wants recurrence.
 ## Files`,
 );
 
-export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4];
+const AGENTS_MD_V5 = AGENTS_MD_V4.replace(
+  '- **Uploads from the user live in `user_data/`.** When the user refers to\n  "the data I uploaded" / "my file", look there first.',
+  `- **The project sandbox and tools run on the BYOK host.** The browser may
+  be on another device; a path on that device is not automatically accessible.
+- **Browser uploads live in \`user_data/\`.** When the user explicitly refers
+  to an upload without a path, look there first. Other inputs may already be
+  project files, host or mounted paths, or URLs/storage URIs reachable through
+  available tools and configured connectors. Use the user's specified source
+  and verify access before analysis; do not require a fresh browser upload.
+  If access is missing, explain the missing path, mount, or connection and ask
+  only blocking questions; never request credentials in chat.
+- **Treat all original inputs as read-only**, including files outside
+  \`user_data/\`. Stage only needed inputs in the sandbox when necessary,
+  record source locations and staged paths, and work on copies when modifying
+  data. A source reference does not itself authorize an upload to Modal or
+  another external service.`,
+);
+
+export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4, AGENTS_MD_V5];
 export const AGENTS_MD = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 1];
 
 /** Newline-insensitive comparison so a CRLF checkout still counts as unedited. */
