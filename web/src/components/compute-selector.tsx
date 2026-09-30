@@ -104,6 +104,15 @@ function normalizedSelected(selected: ModalInstance | null): ModalInstance | nul
   return parseModalInstance(selected) ?? selected;
 }
 
+/** The server prices host resources once; only the GPU component scales. */
+function withGpuCount(instance: ModalInstance, gpuCount: number): ModalInstance {
+  return {
+    ...instance,
+    gpuCount,
+    pricePerHour: instance.pricePerHour + (gpuCount - instance.gpuCount) * (instance.gpuPricePerHour ?? 0),
+  };
+}
+
 function PickerOption({
   instance,
   selected,
@@ -224,8 +233,7 @@ export function ComputePickerBody({
   const effective =
     catalogSelected && parsedSelected
       ? {
-          ...catalogSelected,
-          gpuCount: parsedSelected.gpuCount,
+          ...withGpuCount(catalogSelected, parsedSelected.gpuCount),
           fallback: parsedSelected.fallback,
           cache: parsedSelected.cache,
         }
@@ -337,10 +345,10 @@ export function ComputePickerBody({
         {catalog?.instances.map((instance) => (
           <PickerOption
             key={instance.id}
-            instance={instance}
+            instance={effective.id === instance.id ? effective : instance}
             selected={effective.id === instance.id}
             enabled={modalConfigured}
-            onSelect={() => handleSelect(instance)}
+            onSelect={() => handleSelect(effective.id === instance.id ? effective : instance)}
           />
         ))}
         {loading && !catalog ? (
@@ -364,10 +372,7 @@ export function ComputePickerBody({
               value={effective.gpuCount}
               disabled={!effective.gpu}
               onChange={(event) =>
-                onChange({
-                  ...effective,
-                  gpuCount: Number(event.target.value),
-                })
+                onChange(withGpuCount(effective, Number(event.target.value)))
               }
               className="h-7 w-full rounded border bg-background px-1.5 text-[11px] text-foreground disabled:opacity-50"
             >
@@ -457,8 +462,7 @@ export function ComputeSelector({
       : null;
     return catalogInstance && parsed
       ? {
-          ...catalogInstance,
-          gpuCount: parsed.gpuCount,
+          ...withGpuCount(catalogInstance, parsed.gpuCount),
           fallback: parsed.fallback,
           cache: parsed.cache,
         }

@@ -354,8 +354,9 @@ export function useModalJob(
         failures = 0;
         setJob(parsed);
         setError(null);
-        if (isModalJobActive(parsed.status) && activePollMs > 0) {
-          timer = setTimeout(() => void poll(false), activePollMs);
+        if (activePollMs > 0 && (isModalJobActive(parsed.status) || parsed.accountingPending || parsed.cleanupPending)) {
+          const delay = isModalJobActive(parsed.status) || parsed.accountingPending ? activePollMs : IDLE_LIST_POLL_MS;
+          timer = setTimeout(() => void poll(false), delay);
         }
       } catch (cause) {
         if (cancelled || controller.signal.aborted) return;

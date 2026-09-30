@@ -214,16 +214,26 @@ export class ModalJobStore {
     jobId: string,
     stream: "stdout" | "stderr",
     chunk: string | Uint8Array,
+    /** Absolute remote offset of this chunk, separate from the local byte cursor. */
+    remoteOffset?: number,
   ): void {
     const files = modalJobFiles(projectId, jobId);
     const file = stream === "stdout" ? files.stdout : files.stderr;
     const bytes = typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk);
     if (bytes.length === 0) return;
-    fs.appendFileSync(file, bytes);
     const job = this.require(projectId, jobId);
     const bytesKey = stream === "stdout" ? "stdoutBytes" : "stderrBytes";
     const baseKey = stream === "stdout" ? "stdoutBaseCursor" : "stderrBaseCursor";
+    const remoteKey = stream === "stdout" ? "stdoutRemoteCursor" : "stderrRemoteCursor";
+    if (remoteOffset !== undefined && job[remoteKey] !== remoteOffset) {
+      // Persist a gap BEFORE the append. Recovery can then advance the remote
+      // cursor by any bytes appended before a crash, without replaying them.
+      job[remoteKey] = remoteOffset;
+      this.write(job);
+    }
+    fs.appendFileSync(file, bytes);
     job[bytesKey] += bytes.length;
+    if (job[remoteKey] !== undefined) job[remoteKey] += bytes.length;
     let size = fs.statSync(file).size;
     if (size > MAX_MODAL_LOG_BYTES) {
       const keep = fs.readFileSync(file).subarray(size - MAX_MODAL_LOG_BYTES);
@@ -258,8 +268,10 @@ export class ModalJobStore {
       }
       const bytesKey = stream === "stdout" ? "stdoutBytes" : "stderrBytes";
       const baseKey = stream === "stdout" ? "stdoutBaseCursor" : "stderrBaseCursor";
+      const remoteKey = stream === "stdout" ? "stdoutRemoteCursor" : "stderrRemoteCursor";
       const expected = job[baseKey] + size;
       if (job[bytesKey] !== expected) {
+        if (job[remoteKey] !== undefined) job[remoteKey] += expected - job[bytesKey];
         job[bytesKey] = expected;
         changed = true;
       }

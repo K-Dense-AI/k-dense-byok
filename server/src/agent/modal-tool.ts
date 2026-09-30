@@ -220,6 +220,8 @@ function publicJob(job: ReturnType<typeof modalJobManager.get>) {
     missing_outputs: job.missingOutputs,
     estimated_cost_usd: job.accounting.estimatedCostUsd,
     cost_usd: job.accounting.estimatedCostUsd,
+    cleanup_pending: Boolean(job.cleanupUncertain || job.approvalCleanupUncertain || job.orphanedSandboxIds?.length),
+    conservative_cost_estimate: job.accounting.conservative ?? false,
     error: job.error,
   };
 }
@@ -281,7 +283,7 @@ export function makeModalTools(
       "Run a command on durable remote Modal CPU/GPU compute and wait for completion.",
       "Backward-compatible blocking tool: required files_in are copied recursively, files_out are installed atomically into the local project sandbox, which remains canonical.",
       "The job is persisted and recoverable. Aborting this blocking call cancels its remote job.",
-      "Cost is an explicit estimate (catalogue rate × elapsed sandbox time) and the worst-case timeout cost is reserved before admission.",
+      "Cost estimates include GPU, CPU and RAM with CPU/RAM limits matching the preset; the full sandbox lifetime is reserved before admission. Build, storage and egress charges are separate.",
     ].join("\n"),
     promptSnippet: "modal_run: run and wait for durable Modal CPU/GPU compute",
     parameters: ModalRunParams,

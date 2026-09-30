@@ -134,6 +134,7 @@ export class FakeSandbox implements ModalRemoteSandbox {
     }
     // The transfer layer's inline verifier / hasher scripts (python3 -I -c ...).
     if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c") {
+      if (command.length === 4) return { wait: async () => 0 }; // runtime preflight
       const listPath = command[4];
       const digest = (rel: string) => {
         const bytes = this.filesystem.files.get(`/workspace/${rel}`);
@@ -206,6 +207,7 @@ export class FakeSandbox implements ModalRemoteSandbox {
 }
 
 export class FakeModal {
+  pythonMissing = false;
   behaviors: Behavior[] = [];
   createErrors: Error[] = [];
   sandboxes = new Map<string, FakeSandbox>();
@@ -246,6 +248,7 @@ export class FakeModal {
           parent.behaviors.shift() ?? { kind: "success" },
         );
         sandbox.tags = { ...params.tags };
+        sandbox.pythonMissing = parent.pythonMissing;
         sandbox.terminateFailures = parent.terminateFailures.shift() ?? 0;
         parent.sandboxes.set(sandbox.id, sandbox);
         return sandbox;

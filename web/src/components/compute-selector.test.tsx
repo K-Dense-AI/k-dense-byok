@@ -2,8 +2,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { ComputePickerBody, type ModalInstance } from "./compute-selector";
-import type { ModalCatalog } from "@/lib/modal-jobs";
+import { ComputePickerBody, ComputeSelector, type ModalInstance } from "./compute-selector";
+import { parseModalCatalog, type ModalCatalog } from "@/lib/modal-jobs";
 
 const catalog: ModalCatalog = {
   modalConfigured: true,
@@ -134,6 +134,22 @@ describe("ComputePickerBody", () => {
     const option = screen.getByRole("option", { name: /A100 40GB/i });
     expect(option).toHaveAttribute("aria-selected", "true");
     expect(option).toHaveTextContent("saved");
+  });
+
+  it("refreshes saved multi-GPU prices and scales only the GPU component", () => {
+    const priced = parseModalCatalog({ modalConfigured: true, instances: [{
+      id: "t4", label: "T4", gpu: "T4", gpuCount: 1, maxGpuCount: 8,
+      cpu: 2, memoryMiB: 8192, pricePerHour: 1.06632,
+      pricing: { gpuPerHour: 0.5904 },
+    }] });
+    const selected = { ...priced.instances[0], gpuCount: 2, pricePerHour: 0.59 };
+    const onChange = vi.fn();
+    const { rerender } = render(<ComputePickerBody selected={selected} catalog={priced} onChange={onChange} />);
+    expect(screen.getByRole("option", { name: /T4/ })).toHaveTextContent("$1.66/hr est.");
+    fireEvent.change(screen.getByRole("combobox", { name: "GPU count" }), { target: { value: "4" } });
+    expect(onChange.mock.calls[0][0].pricePerHour).toBeCloseTo(2.83752, 8);
+    rerender(<ComputeSelector selected={selected} catalog={priced} onChange={onChange} />);
+    expect(screen.getByRole("button", { name: /Compute target/ })).toHaveTextContent("$1.66/hr est.");
   });
 
   it("disables remote options until Modal is configured and surfaces catalog errors", () => {

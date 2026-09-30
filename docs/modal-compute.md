@@ -26,6 +26,22 @@ or actual resources and elapsed time, and does not expose a generally available
 per-sandbox invoice API. The job detail therefore labels compute amounts as
 estimated rather than exact.
 
+The catalogue uses [Modal's published sandbox prices](https://modal.com/pricing)
+(checked September 29, 2026), including CPU and RAM alongside the GPU rate.
+CPU and RAM are counted once per sandbox; only the GPU component scales with GPU
+count. Jobs set CPU and memory limits equal to the selected preset, preventing
+unpriced bursting. Image builds, cache storage, network egress and provider
+adjustments are outside the sandbox estimate, so the project budget is not a
+cap on Modal's final invoice. Queued jobs whose old reservation no longer covers
+the current estimate fail before creating resources and require a fresh submission.
+
+Custom images must include Python 3.8+ and its standard library, plus `sh` and
+`mv`. K-Dense checks Python before uploading inputs; an incompatible image
+fails with the non-retryable `RUNTIME_UNAVAILABLE` error. Use `python:3.13-slim`
+or install Python in the image. Package version constraints such as
+`numpy>=2,<3` are passed literally to the package manager. Named images built
+with the previous package-install recipe are rebuilt on their next use.
+
 ## Agent tools
 
 The lead agent and sub-agents share the same project job service:
@@ -87,13 +103,20 @@ Recovery also cleans up what a crash can leave behind:
   terminated on the next start, and a fallback sandbox whose termination
   failed is retried until it succeeds;
 - cancelling a job while Modal credentials are missing marks it cancelled and
-  releases its hold immediately; the sandbox itself is terminated as soon as
-  credentials are configured again.
+  converts its hold to a conservative full-reservation estimate if a sandbox
+  may still be alive; termination is retried when credentials are restored.
+
+A failed termination never records a successful shutdown. Job details show
+pending cleanup, and uncertain remote lifetimes count the full reservation as
+a conservative cost estimate. That estimate remains in the ledger after later
+cleanup, because the exact remote stop time is unknown; it is not an invoice.
 
 Logs are synchronised by logical byte offset: the wrapper publishes how many
 bytes it has trimmed from each bounded log, so K-Dense appends exactly the
 unseen bytes without scanning for overlaps, and a `log_gap` event records any
 bytes that rolled out of the remote window before they could be retained.
+Remote offsets are persisted separately from locally retained byte counts so
+gaps and backend restarts cannot cause already-seen bytes to be appended again.
 
 ## Files and outputs
 
@@ -104,16 +127,21 @@ Inputs are validated before a remote sandbox is created:
 - directories are enumerated recursively;
 - escaping symlinks and excessive transfer sizes are rejected;
 - `.kady`, `.pi` and the job control directory are reserved and never
-  transferred in either direction.
+  transferred in either direction, including through symlink aliases.
+
+Output installation enforces the project's current raw-data guard for lead,
+child-agent and API jobs. Protected targets (by default `user_data/**`) are
+rejected, including glob discoveries and symlink aliases. The policy is checked
+again after download and before installation; protected files remain readable
+as inputs. Use an unprotected directory for derived results.
 
 Input bytes are hashed when the job starts (streamed, so a large input set does
 not stall the app), uploaded, and then re-hashed inside the sandbox; a mismatch
 fails the job with `INPUT_CHANGED` before the command runs. Outputs are hashed
 inside the sandbox before download and re-hashed after it (`CHECKSUM_MISMATCH`
-on a difference, `TRANSFER_TRUNCATED` on a short download). An image without
-`python3` cannot run these remote checks; ordinary jobs then fall back to size
-checks and record a `verify_skipped` event, while approved robustness jobs fail
-instead.
+on a difference, `TRANSFER_TRUNCATED` on a short download). Every job requires
+remote checksum verification; missing Python cannot silently downgrade it to
+size-only checks.
 
 Output discovery only looks where a pattern can match: a literal path is
 checked directly and a glob walks its literal prefix directory, so a virtual
@@ -152,7 +180,8 @@ back to the complete retained job record.
 
 ## Budgets and reservations
 
-Before creating Modal resources, K-Dense reserves the job's worst-case estimate:
+Before creating Modal resources, K-Dense reserves an estimate for the full
+sandbox lifetime at the most expensive resource choice in its fallback chain:
 
 ```
 estimated hourly rate × (requested timeout + transfer headroom)
@@ -165,12 +194,13 @@ The command itself is limited to exactly the requested timeout. Admission is
 blocked when settled project spend plus open reservations plus the new
 reservation would exceed the hard project cap. On every terminal path—success,
 non-zero exit, failure, cancellation, timeout, or recovery loss—the reservation
-is settled to estimated elapsed spend and unused headroom is released.
+is settled to estimated elapsed spend and unused headroom is released when
+shutdown is confirmed. Uncertain cleanup uses the full reservation instead.
 
 The cost UI distinguishes:
 
 - **spent**: settled model and compute estimates;
-- **reserved**: worst-case holds for active Modal jobs;
+- **reserved**: estimated full-lifetime holds for active Modal jobs;
 - **committed**: spent plus reserved.
 
 Historical compute rows remain valid and require no migration.
@@ -203,4 +233,3 @@ MODAL_LIVE_TEST=1 npm test -- test/modal-live.test.ts
 
 The test creates a short CPU sandbox, transfers one input and output, verifies
 the returned artifact, reconciles estimated cost, and then cleans up.
-

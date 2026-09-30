@@ -334,7 +334,7 @@ describe("Durable Modal manager accounting", () => {
     // Sandbox lifetime carries the headroom; the wrapped command does not.
     expect(fake.createParams.at(-1)?.timeoutMs).toBe(1100 * 1000);
     const sandbox = fake.sandboxes.get(terminal.sandboxId!)!;
-    const wrapper = sandbox.execParams.find((call) => call.command[0] === "python3" && String(call.command[1]).endsWith("wrapper.py"));
+    const wrapper = sandbox.execParams.find((call) => call.command[0] === "python3" && String(call.command.at(-1)).endsWith("wrapper.py"));
     expect(wrapper?.params?.timeoutMs).toBe(1000 * 1000);
     // Settled spend can never exceed the lifetime-based hold.
     expect(terminal.accounting.estimatedCostUsd!).toBeLessThanOrEqual(job.reservationUsd + 1e-12);
@@ -523,8 +523,9 @@ describe("Durable Modal manager recovery cleanup", () => {
     record.sandboxCreatedAt = undefined;
     record.effectiveInstance = undefined;
     record.pricePerHour = undefined;
+    record.reservationUsd = worstCaseReservationUsd(record.request);
     store.create(record);
-    reserveComputeBudget({ projectId: "default", reservationId: record.id, sessionId: "s-orphan", amountUsd: 0.01 });
+    reserveComputeBudget({ projectId: "default", reservationId: record.id, sessionId: "s-orphan", amountUsd: record.reservationUsd });
     const orphan = new FakeSandbox("sb-orphaned", { kind: "hang" });
     orphan.tags = { kady: "true", project: "default", job: record.id };
     fake.sandboxes.set(orphan.id, orphan);
@@ -692,29 +693,23 @@ describe("Durable Modal transfer hardening", () => {
     expect(terminal.inputFiles[0]?.sha256).toHaveLength(64);
   });
 
-  it("degrades to size checks with a visible event when the image has no python3", async () => {
+  it("rejects an image without Python before uploading inputs or running the command", async () => {
     const fake = new FakeModal();
-    fake.behaviors.push({ kind: "success" });
+    fake.pythonMissing = true;
     const manager = new DurableModalJobManager(fake.factory);
-    const job = manager.submit("default", { command: "work", filesIn: ["input.txt"], filesOut: ["result.txt"] }, { sessionId: "s-nopython", submittedBy: "api" });
-    const deadline = Date.now() + 3000;
-    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
-    const sandbox = [...fake.sandboxes.values()][0]!;
-    sandbox.pythonMissing = true;
-    // The wrapper itself is python; let it through so the job can finish.
-    const originalExec = sandbox.exec.bind(sandbox);
-    sandbox.exec = async (command, params) => {
-      if (command[0] === "python3" && String(command[1]).endsWith("wrapper.py")) {
-        sandbox.pythonMissing = false;
-        try { return await originalExec(command, params); } finally { sandbox.pythonMissing = true; }
-      }
-      return originalExec(command, params);
-    };
+    const job = manager.submit("default", {
+      command: "echo hello", image: { base: "ubuntu:24.04" },
+      filesIn: ["input.txt"], filesOut: ["result.txt"],
+    }, { sessionId: "s-nopython", submittedBy: "api" });
     const terminal = await manager.wait("default", job.id, 3000);
-    expect(terminal.state).toBe("succeeded");
-    const skipped = manager.store.events("default", job.id).filter((event) => event.type === "verify_skipped");
-    expect(skipped.map((event) => event.state)).toEqual(["preparing", "collecting"]);
-    expect(fs.existsSync(path.join(root(), "result.txt"))).toBe(true);
+    expect(terminal.state).toBe("failed");
+    expect(terminal.error).toMatchObject({ code: "RUNTIME_UNAVAILABLE", retryable: false });
+    const sandbox = [...fake.sandboxes.values()][0]!;
+    expect(sandbox.filesystem.files.size).toBe(0);
+    expect(sandbox.terminated).toBe(true);
+    expect(sandbox.execParams).toHaveLength(1);
+    expect(manager.store.events("default", job.id).some((event) => event.type === "verify_skipped")).toBe(false);
+    expect(listComputeReservations("default")).toEqual([]);
   });
 
   it("installs nothing when an output's target is an existing directory, and leaves no temp files", async () => {

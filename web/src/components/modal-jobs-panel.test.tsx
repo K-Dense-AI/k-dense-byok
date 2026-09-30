@@ -160,6 +160,21 @@ describe("ModalJobsPanel", () => {
     expect(hooks.cancel).toHaveBeenCalledOnce();
   });
 
+  it("shows cleanup uncertainty even when the remote command succeeded", () => {
+    const pending = parseModalJob({
+      id: "job-123", state: "succeeded", sandboxId: "sb-running",
+      cleanupUncertain: true,
+      accounting: { reconciled: true, conservative: true, estimatedCostUsd: 1.5 },
+    })!;
+    hooks.useModalJob.mockReturnValue({
+      job: pending, loading: false, mutating: null, error: null,
+      refresh: vi.fn(), cancel: hooks.cancel, retry: hooks.retry, results: hooks.results,
+    });
+    render(<ModalJobsPanel projectId="project-a" sessionId="session-1" scope="project" onScopeChange={() => {}} focusJob={{ id: "job-123", token: 1 }} />);
+    expect(screen.getByText(/Remote cleanup is pending/)).toBeInTheDocument();
+    expect(screen.getByText(/full reservation is counted as a conservative cost estimate/)).toBeInTheDocument();
+  });
+
   it("shows failure details and retry controls", () => {
     const failed = { ...job("failed"), error: "CUDA out of memory", exitCode: 137 };
     hooks.useModalJob.mockReturnValue({
