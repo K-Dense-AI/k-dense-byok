@@ -3,10 +3,12 @@ export function buildWorkflowPrompt(
   prompt: string,
   files: string[],
   sourceText: string,
+  folders: string[] = [],
 ): string {
   const sources = [...new Set(sourceText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))];
   const locations = [
     files.length ? `Selected project files (paths relative to the project sandbox):\n${JSON.stringify([...new Set(files)], null, 2)}` : "",
+    folders.length ? `Selected project folders (paths relative to the project sandbox):\n${JSON.stringify([...new Set(folders)], null, 2)}` : "",
     sources.length ? `Other data locations supplied by the user (references, not uploaded attachments):\n${JSON.stringify(sources, null, 2)}` : "",
   ].filter(Boolean).join("\n\n");
 

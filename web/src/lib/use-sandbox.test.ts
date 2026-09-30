@@ -1,10 +1,24 @@
 import { describe, it, expect } from "vitest";
 import {
   fileCategory,
+  flattenFolders,
   rawFileUrl,
   sciSummaryUrl,
   sciRenderUrl,
 } from "./use-sandbox";
+
+describe("sandbox folder choices", () => {
+  it("includes nested and empty folders, excluding the sandbox root and files", () => {
+    expect(flattenFolders({ name: "sandbox", path: "", type: "directory", children: [
+      { name: "study", path: "study", type: "directory", children: [
+        { name: "raw", path: "study/raw", type: "directory", children: [] },
+        { name: "counts.csv", path: "study/counts.csv", type: "file" },
+      ] },
+      { name: "empty", path: "empty", type: "directory" },
+    ] })).toEqual(["study", "study/raw", "empty"]);
+    expect(flattenFolders(null)).toEqual([]);
+  });
+});
 
 describe("fileCategory — chemistry & structures", () => {
   it("classifies 2D molecule formats", () => {

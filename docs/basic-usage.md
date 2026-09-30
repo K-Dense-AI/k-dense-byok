@@ -47,12 +47,12 @@ Open the workflows panel to browse **326 ready-to-run templates across 22 discip
 
 #### Workflow data locations
 
-You can combine these sources in the launch dialog:
+The launch dialog opens with the **Project sandbox** picker, so you can reuse data and results already on the BYOK host. Select individual files or whole folders. You can combine these sources:
 
 | Source | How to use it |
 |---|---|
+| Files or folders already in the current BYOK project | Select their paths in **Project sandbox**, using search to narrow the list. Use **Refresh** for data added by another chat or directly on the host. No download/re-upload is needed. Removing a selection does not delete the data. |
 | Files on the device running your browser | **Upload files from this device** or **Upload folder**. Folder structure and the existing upload protections are preserved. Wait for the upload to finish before running. |
-| Files already in the current BYOK project | **Choose existing project files**, search, and select the full paths. Use **Refresh** for files added by another chat or directly on the host. No download/re-upload is needed. Removing a selection does not delete the file. |
 | Files elsewhere on the BYOK host or a mounted volume | **Use a host path or data URL** and enter a file or directory path, one per line. For example, `/mnt/study/counts.csv` on a server, or a volume path visible *inside* the BYOK container. Relative paths refer to the project sandbox. |
 | A remote dataset or connected storage | Enter an HTTPS URL, storage URI such as `s3://bucket/study/` or `gs://bucket/study/`, or a location understood by an installed connector. The host needs network access and the relevant tools/connector and credentials already configured. A URI alone does not configure storage access. Do not paste secrets or signed URLs into the workflow; references are saved in chat. |
 

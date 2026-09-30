@@ -20,6 +20,15 @@ describe("workflow prompt handoff", () => {
     expect(prompt).toContain(JSON.stringify(source));
   });
 
+  it("passes selected folders as distinct, deduplicated sandbox references", () => {
+    const folder = 'results/a "quoted"\nstudy';
+    const prompt = buildWorkflowPrompt("Analyze.", ["metadata.csv"], "/mnt/raw/", [folder, folder]);
+    expect(prompt.split(JSON.stringify(folder))).toHaveLength(2);
+    expect(prompt).toContain("Selected project folders (paths relative to the project sandbox)");
+    expect(prompt).toContain('"metadata.csv"');
+    expect(prompt).toContain('"/mnt/raw/"');
+  });
+
   it("keeps the complete catalogue valid and independent of upload location", () => {
     expect(workflows.length).toBeGreaterThan(0);
     expect(new Set(workflows.map((w) => w.id)).size).toBe(workflows.length);

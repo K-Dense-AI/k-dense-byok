@@ -29,9 +29,40 @@ function setup(props: WorkflowInputProps & { workflow?: Workflow; budgetBlocked?
 beforeEach(() => { modelState.availability = "available"; modelState.billable = true; });
 
 describe("workflow data sources", () => {
+  it("opens on sandbox files and folders before device uploads", () => {
+    setup({ availableFiles: ["results/counts.csv"], availableFolders: ["results"], onUploadFiles: vi.fn() });
+    const picker = screen.getByRole("group", { name: "Project sandbox" });
+    expect(within(picker).getByRole("checkbox", { name: "results/counts.csv" })).toBeVisible();
+    expect(within(picker).getByRole("checkbox", { name: "results/" })).toBeVisible();
+    expect(picker.compareDocumentPosition(screen.getByRole("button", { name: "Upload files from this device" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("launches with a sandbox folder reference without attaching every file", () => {
+    const onUploadFiles = vi.fn();
+    const onLaunch = setup({ availableFiles: ["study/counts.csv", "metadata.csv"], availableFolders: ["study"], onUploadFiles });
+    fireEvent.click(screen.getByRole("checkbox", { name: "study/" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "metadata.csv" }));
+    fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(onLaunch.mock.calls[0][0]).toContain('"study"');
+    expect(onLaunch.mock.calls[0][0]).toContain("Selected project folders (paths relative to the project sandbox)");
+    expect(onLaunch.mock.calls[0][2]).toEqual(["metadata.csv"]);
+    expect(onUploadFiles).not.toHaveBeenCalled();
+  });
+
+  it("removes a folder selection without removing its separately selected file", () => {
+    const onLaunch = setup({ availableFiles: ["study/counts.csv"], availableFolders: ["study"] });
+    fireEvent.click(screen.getByRole("checkbox", { name: "study/" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "study/counts.csv" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove study/ from workflow" }));
+    expect(screen.getByRole("checkbox", { name: "study/" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "study/counts.csv" })).toBeChecked();
+    fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
+    expect(onLaunch.mock.calls[0][0]).not.toContain("Selected project folders");
+    expect(onLaunch.mock.calls[0][2]).toEqual(["study/counts.csv"]);
+  });
+
   it("launches with existing project files without an upload handler", () => {
     const onLaunch = setup({ availableFiles: ["study/counts.csv", "other/counts.csv"] });
-    fireEvent.click(screen.getByText("Choose existing project files"));
     fireEvent.click(screen.getByRole("checkbox", { name: "study/counts.csv" }));
     fireEvent.click(screen.getByRole("button", { name: "Run workflow" }));
     expect(onLaunch).toHaveBeenCalledWith(expect.stringContaining('"study/counts.csv"'), expect.objectContaining({ id: "test/model" }), ["study/counts.csv"]);
@@ -60,7 +91,6 @@ describe("workflow data sources", () => {
     let finish!: (paths: string[]) => void;
     const onUploadFiles = vi.fn(() => new Promise<string[]>((resolve) => { finish = resolve; }));
     const onLaunch = setup({ onUploadFiles, availableFiles: ["metadata.csv"] });
-    fireEvent.click(screen.getByText("Choose existing project files"));
     fireEvent.click(screen.getByRole("checkbox", { name: "metadata.csv" }));
     const file = new File(["x,y\n1,2"], "counts.csv", { type: "text/csv" });
     Object.defineProperty(file, "webkitRelativePath", { value: "study/counts.csv" });
@@ -91,7 +121,6 @@ describe("workflow data sources", () => {
   it("deduplicates selections and lets users remove files without deleting them", async () => {
     const onUploadFiles = vi.fn().mockResolvedValue(["counts.csv"]);
     const onLaunch = setup({ availableFiles: ["counts.csv"], onUploadFiles });
-    fireEvent.click(screen.getByText("Choose existing project files"));
     fireEvent.click(screen.getByRole("checkbox", { name: "counts.csv" }));
     fireEvent.change(screen.getByLabelText("Upload workflow files"), { target: { files: [new File(["x"], "counts.csv")] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Run workflow" })).toBeEnabled());
@@ -103,12 +132,38 @@ describe("workflow data sources", () => {
   });
 
   it("bounds the project picker and searches full paths in a large tree", () => {
-    setup({ availableFiles: Array.from({ length: 38_000 }, (_, i) => `study-${i}/counts.csv`) });
-    fireEvent.click(screen.getByText("Choose existing project files"));
+    setup({ availableFiles: Array.from({ length: 38_000 }, (_, i) => `study-${i}/counts.csv`), availableFolders: ["study-37000", "empty"] });
     expect(screen.getAllByRole("checkbox")).toHaveLength(100);
-    fireEvent.change(screen.getByRole("textbox", { name: "Search project files" }), { target: { value: "study-37000/" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Search sandbox files and folders" }), { target: { value: "study-37000/" } });
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     expect(screen.getByRole("checkbox", { name: "study-37000/counts.csv" })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search sandbox files and folders" }), { target: { value: "empty" } });
+    expect(screen.getAllByRole("checkbox")).toHaveLength(1);
+    expect(screen.getByRole("checkbox", { name: "empty/" })).toBeVisible();
+  });
+
+  it.each([true, false])("keeps alternative sources available when the sandbox is empty or unavailable (ready=%s)", (filesReady) => {
+    setup({ filesReady, onUploadFiles: vi.fn() });
+    expect(screen.getByText(filesReady ? /No project files or folders yet/ : /Project file list is not available yet/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Upload files from this device" })).toBeEnabled();
+    fireEvent.click(screen.getByText("Use a host path or data URL"));
+    expect(screen.getByRole("textbox", { name: "Data locations (one per line)" })).toBeVisible();
+  });
+
+  it("refreshes sandbox choices without clearing selected files or folders", async () => {
+    const onRefreshFiles = vi.fn().mockResolvedValue(undefined);
+    const props = { workflow, open: true, onOpenChange: vi.fn(), onLaunch: vi.fn(), onRefreshFiles };
+    const { rerender } = render(<WorkflowLaunchDialog {...props} availableFiles={["study/counts.csv"]} availableFolders={["study"]} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "study/" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "study/counts.csv" }));
+    fireEvent.click(screen.getByRole("button", { name: "Refresh sandbox files and folders" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Refresh sandbox files and folders" })).toBeEnabled());
+    expect(onRefreshFiles).toHaveBeenCalledOnce();
+    rerender(<WorkflowLaunchDialog {...props} availableFiles={["study/counts.csv", "results/summary.csv"]} availableFolders={["study", "results"]} />);
+    expect(screen.getByRole("checkbox", { name: "results/" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "results/summary.csv" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "study/" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "study/counts.csv" })).toBeChecked();
   });
 
   it("still supports tasks with no files and retains required-field checks", () => {
@@ -128,14 +183,15 @@ describe("workflow data sources", () => {
 
   it("clears data selections when switching workflows", () => {
     const onLaunch = vi.fn();
-    render(<WorkflowsPanel onLaunch={onLaunch} availableFiles={["study.csv"]} />);
+    render(<WorkflowsPanel onLaunch={onLaunch} availableFiles={["study.csv"]} availableFolders={["results"]} />);
     fireEvent.click(screen.getByRole("button", { name: /^Edit \/ Rewrite Manuscript/ }));
-    fireEvent.click(screen.getByText("Choose existing project files"));
     fireEvent.click(screen.getByRole("checkbox", { name: "study.csv" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "results/" }));
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(screen.getByRole("button", { name: /^Write a Rebuttal/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Run workflow" }));
     expect(onLaunch.mock.calls[0][2]).toEqual([]);
     expect(onLaunch.mock.calls[0][0]).not.toContain("study.csv");
+    expect(onLaunch.mock.calls[0][0]).not.toContain("Selected project folders");
   });
 });

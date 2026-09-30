@@ -21,9 +21,9 @@ Each workflow is a JSON object with these fields:
 }
 ```
 
-Set `requiresFiles` to `true` when the workflow needs user-supplied data (datasets, manuscripts, images, etc.). These workflows display a "Needs user data" badge. This describes the task's inputs, not how they must be transferred. Every launch dialog accepts uploads from the browser device, existing project files, and host paths or data URLs; inputs can be combined. An upload is never a prerequisite when the data is already accessible to BYOK.
+Set `requiresFiles` to `true` when the workflow needs user-supplied data (datasets, manuscripts, images, etc.). These workflows display a "Needs user data" badge. This describes the task's inputs, not how they must be transferred. Every launch dialog defaults to the project sandbox's file and folder picker, with browser uploads and host paths or data URLs also available; inputs can be combined. An upload is never a prerequisite when the data is already accessible to BYOK.
 
-The launcher adds shared data-access guidance from `web/src/lib/workflow-inputs.ts`: tools run on the BYOK host, inputs must be checked before analysis, originals stay unchanged, and outputs go into the project sandbox for preview/download. Host paths and URLs are references for the agent to resolve using available tools and configured access; the form does not import or verify them itself. Existing project files are passed as chat attachments without re-uploading their bytes. See [workflow data locations](./basic-usage.md#workflow-data-locations) for deployment examples.
+The launcher adds shared data-access guidance from `web/src/lib/workflow-inputs.ts`: tools run on the BYOK host, inputs must be checked before analysis, originals stay unchanged, and outputs go into the project sandbox for preview/download. Host paths and URLs are references for the agent to resolve using available tools and configured access; the form does not import or verify them itself. Existing project files are passed as chat attachments without re-uploading their bytes. Selected folders are sandbox-relative references in the prompt, without enumerating their contents as attachments. See [workflow data locations](./basic-usage.md#workflow-data-locations) for deployment examples.
 
 ## How to add a workflow
 

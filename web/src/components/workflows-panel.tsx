@@ -290,6 +290,7 @@ export function WorkflowLaunchDialog({
   onLaunch,
   onUploadFiles,
   availableFiles,
+  availableFolders,
   filesReady,
   onRefreshFiles,
   budgetBlocked = false,
@@ -317,6 +318,7 @@ export function WorkflowLaunchDialog({
   const [placeholderValues, setPlaceholderValues] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [inputFiles, setInputFiles] = useState<string[]>([]);
+  const [inputFolders, setInputFolders] = useState<string[]>([]);
   const [sources, setSources] = useState("");
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState<string | null>(null);
@@ -338,7 +340,7 @@ export function WorkflowLaunchDialog({
     .filter((ph) => ph.required)
     .every((ph) => placeholderValues[ph.key]?.trim());
 
-  const finalPrompt = buildWorkflowPrompt(editedPrompt ?? assembledPrompt, inputFiles, sources);
+  const finalPrompt = buildWorkflowPrompt(editedPrompt ?? assembledPrompt, inputFiles, sources, inputFolders);
 
   const handleLaunch = useCallback(() => {
     if (uploading || !canLaunch || selectedBudgetBlocked || !modelAvailable) return;
@@ -346,6 +348,7 @@ export function WorkflowLaunchDialog({
     onOpenChange(false);
     setPlaceholderValues({});
     setInputFiles([]);
+    setInputFolders([]);
     setSources("");
     setEditedPrompt(null);
     setIsEditingPrompt(false);
@@ -369,11 +372,14 @@ export function WorkflowLaunchDialog({
             <p className="text-xs font-medium">{workflow.requiresFiles ? "Workflow data" : "Workflow data (optional)"}</p>
             <WorkflowInputs
               availableFiles={availableFiles}
+              availableFolders={availableFolders}
               filesReady={filesReady}
               onRefreshFiles={onRefreshFiles}
               onUploadFiles={onUploadFiles}
               files={inputFiles}
               onFilesChange={setInputFiles}
+              folders={inputFolders}
+              onFoldersChange={setInputFolders}
               sources={sources}
               onSourcesChange={setSources}
               uploading={uploading}
@@ -475,6 +481,7 @@ export function WorkflowsPanel({
   onLaunch,
   onUploadFiles,
   availableFiles,
+  availableFolders,
   filesReady,
   onRefreshFiles,
   budgetBlocked = false,
@@ -613,6 +620,7 @@ export function WorkflowsPanel({
           onLaunch={onLaunch}
           onUploadFiles={onUploadFiles}
           availableFiles={availableFiles}
+          availableFolders={availableFolders}
           filesReady={filesReady}
           onRefreshFiles={onRefreshFiles}
           budgetBlocked={budgetBlocked}

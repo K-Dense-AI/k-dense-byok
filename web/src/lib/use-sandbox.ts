@@ -153,6 +153,19 @@ export function flattenFiles(node: TreeNode | null): string[] {
   return paths;
 }
 
+/** Existing sandbox directories, including empty folders but excluding the root. */
+export function flattenFolders(node: TreeNode | null): string[] {
+  if (!node) return [];
+  const paths: string[] = [];
+  function walk(current: TreeNode) {
+    if (current.type !== "directory") return;
+    if (current.path) paths.push(current.path);
+    for (const child of current.children ?? []) walk(child);
+  }
+  walk(node);
+  return paths;
+}
+
 export interface Tab {
   path: string;
   content: string | null;

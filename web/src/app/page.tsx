@@ -16,7 +16,7 @@ import { useModalJobs } from "@/lib/use-modal-jobs";
 import { useProjects } from "@/lib/use-projects";
 import { APP_VERSION, isVersioned, useUpdateCheck } from "@/lib/version";
 import { useSkills } from "@/lib/use-skills";
-import { flattenFiles, useSandbox } from "@/lib/use-sandbox";
+import { flattenFiles, flattenFolders, useSandbox } from "@/lib/use-sandbox";
 import { ProjectScopeProvider } from "@/lib/projects";
 import {
   hasProjectActivity,
@@ -619,6 +619,10 @@ function WorkspacePage({
     () => flattenFiles(sandbox.tree).filter((p) => !isJunkFilePath(p)),
     [sandbox.tree],
   );
+  const allFolders = useMemo(
+    () => flattenFolders(sandbox.tree).filter((p) => !isJunkFilePath(p)),
+    [sandbox.tree],
+  );
 
   // ------------------------------------------------------------------
   // Tab management callbacks
@@ -1211,6 +1215,7 @@ function WorkspacePage({
                 onLaunch={handleWorkflowLaunch}
                 onUploadFiles={sandbox.uploadFiles}
                 availableFiles={allFiles}
+                availableFolders={allFolders}
                 filesReady={sandbox.tree !== null}
                 onRefreshFiles={sandbox.fetchTree}
                 budgetBlocked={projectCost.budget.state === "exceeded"}

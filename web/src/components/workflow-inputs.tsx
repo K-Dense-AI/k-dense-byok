@@ -1,22 +1,25 @@
 "use client";
 
 import { useId, useMemo, useRef, useState } from "react";
-import { FolderUpIcon, LoaderIcon, RefreshCwIcon, UploadIcon, XIcon } from "lucide-react";
+import { FileIcon, FolderIcon, FolderUpIcon, LoaderIcon, RefreshCwIcon, UploadIcon, XIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export interface WorkflowInputProps {
   availableFiles?: string[];
+  availableFolders?: string[];
   filesReady?: boolean;
   onRefreshFiles?: () => Promise<void>;
   onUploadFiles?: (files: FileList | File[], paths?: string[]) => Promise<string[]>;
 }
 
 export function WorkflowInputs({
-  availableFiles = [], filesReady = true, onRefreshFiles, onUploadFiles,
-  files, onFilesChange, sources, onSourcesChange, uploading, onUploadingChange,
+  availableFiles = [], availableFolders = [], filesReady = true, onRefreshFiles, onUploadFiles,
+  files, onFilesChange, folders, onFoldersChange, sources, onSourcesChange, uploading, onUploadingChange,
 }: WorkflowInputProps & {
   files: string[];
   onFilesChange: (files: string[]) => void;
+  folders: string[];
+  onFoldersChange: (folders: string[]) => void;
   sources: string;
   onSourcesChange: (sources: string) => void;
   uploading: boolean;
@@ -28,7 +31,21 @@ export function WorkflowInputs({
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const matches = useMemo(() => availableFiles.filter((path) => path.toLowerCase().includes(query.trim().toLowerCase())), [availableFiles, query]);
+  const entries = useMemo(() => [
+    ...availableFolders.map((path) => ({ path, folder: true })),
+    ...availableFiles.map((path) => ({ path, folder: false })),
+  ], [availableFiles, availableFolders]);
+  const matches = useMemo(() => entries.filter(({ path }) => path.toLowerCase().includes(query.trim().toLowerCase())), [entries, query]);
+  const selected = [
+    ...folders.map((path) => ({ path, folder: true })),
+    ...files.map((path) => ({ path, folder: false })),
+  ];
+
+  function select(path: string, folder: boolean, checked: boolean) {
+    const values = folder ? folders : files;
+    const onChange = folder ? onFoldersChange : onFilesChange;
+    onChange(checked ? [...new Set([...values, path])] : values.filter((value) => value !== path));
+  }
 
   async function upload(event: React.ChangeEvent<HTMLInputElement>) {
     const input = event.currentTarget;
@@ -49,7 +66,39 @@ export function WorkflowInputs({
   }
 
   return <div className="space-y-2 rounded-lg border bg-muted/20 p-3">
-    <p className="text-xs text-muted-foreground">Use data already available to BYOK, or upload from this device. You can combine sources.</p>
+    <fieldset className="min-w-0 space-y-2">
+      <legend className="text-xs font-medium">Project sandbox</legend>
+      <p className="text-xs text-muted-foreground">Choose files or folders already in this project, including results from earlier chats. These are on the machine running BYOK.</p>
+      <div className="flex gap-2">
+        <input aria-label="Search sandbox files and folders" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or path" className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-xs" />
+        {onRefreshFiles && <Button type="button" size="xs" variant="outline" disabled={refreshing} aria-label="Refresh sandbox files and folders" onClick={async () => {
+          setRefreshing(true);
+          setError(null);
+          try { await onRefreshFiles(); }
+          catch { setError("Could not refresh project files. Try again."); }
+          finally { setRefreshing(false); }
+        }}><RefreshCwIcon className={refreshing ? "size-3 animate-spin" : "size-3"} /> Refresh</Button>}
+      </div>
+      {!filesReady ? <p className="text-xs text-muted-foreground">Project file list is not available yet. Refresh to try again, or specify a data location below.</p> : !matches.length ? <p className="text-xs text-muted-foreground">{entries.length ? "No matching files or folders." : "No project files or folders yet. Upload files or specify a data location below."}</p> : <div className="max-h-40 overflow-y-auto rounded border bg-background p-2">
+        {matches.slice(0, 100).map(({ path, folder }) => <label key={`${folder}:${path}`} className="flex items-start gap-2 py-1 text-xs">
+          <input type="checkbox" checked={(folder ? folders : files).includes(path)} disabled={uploading} onChange={(e) => select(path, folder, e.target.checked)} />
+          {folder ? <FolderIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" /> : <FileIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />}
+          <span className="break-all">{path}{folder ? "/" : ""}</span>
+        </label>)}
+      </div>}
+      {matches.length > 100 && <p className="text-xs text-muted-foreground">Showing 100 of {matches.length} files and folders. Search to narrow the list.</p>}
+    </fieldset>
+    {!!selected.length && <div className="space-y-1">
+      <p className="text-xs font-medium">Selected project inputs</p>
+      <ul className="max-h-24 overflow-y-auto">
+        {selected.map(({ path, folder }) => <li key={`${folder}:${path}`} className="flex items-start justify-between gap-2 text-xs">
+          <span className="break-all">{path}{folder ? "/" : ""}</span>
+          <button type="button" disabled={uploading} aria-label={`Remove ${path}${folder ? "/" : ""} from workflow`} onClick={() => select(path, folder, false)} className="shrink-0 p-0.5"><XIcon className="size-3" /></button>
+        </li>)}
+      </ul>
+      <p className="text-[11px] text-muted-foreground">Removing a selection keeps the data in the project.</p>
+    </div>}
+    <p className="text-xs text-muted-foreground">You can also upload from this device or add a host path or data URL. Sources can be combined.</p>
     {onUploadFiles && <div className="flex flex-wrap gap-2">
       <input ref={fileInput} aria-label="Upload workflow files" type="file" multiple className="hidden" onChange={upload} />
       {/* @ts-expect-error -- webkitdirectory is supported in all major browsers */}
@@ -62,28 +111,6 @@ export function WorkflowInputs({
       </Button>
     </div>}
     <details>
-      <summary className="cursor-pointer text-xs font-medium">Choose existing project files</summary>
-      <div className="mt-2 space-y-2">
-        <div className="flex gap-2">
-          <input aria-label="Search project files" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name or path" className="min-w-0 flex-1 rounded-md border bg-background px-2 py-1 text-xs" />
-          {onRefreshFiles && <Button type="button" size="xs" variant="outline" disabled={refreshing} aria-label="Refresh project files" onClick={async () => {
-            setRefreshing(true);
-            setError(null);
-            try { await onRefreshFiles(); }
-            catch { setError("Could not refresh project files. Try again."); }
-            finally { setRefreshing(false); }
-          }}><RefreshCwIcon className={refreshing ? "size-3 animate-spin" : "size-3"} /> Refresh</Button>}
-        </div>
-        {!filesReady ? <p className="text-xs text-muted-foreground">Project file list is not available yet. Refresh to try again, or specify a data location below.</p> : !matches.length ? <p className="text-xs text-muted-foreground">{availableFiles.length ? "No matching files." : "No project files yet. Upload files or specify a data location below."}</p> : <div className="max-h-32 overflow-y-auto rounded border bg-background p-2">
-          {matches.slice(0, 100).map((path) => <label key={path} className="flex items-start gap-2 py-1 text-xs">
-            <input type="checkbox" checked={files.includes(path)} disabled={uploading} onChange={(e) => onFilesChange(e.target.checked ? [...new Set([...files, path])] : files.filter((file) => file !== path))} />
-            <span className="break-all">{path}</span>
-          </label>)}
-        </div>}
-        {matches.length > 100 && <p className="text-xs text-muted-foreground">Showing 100 of {matches.length} files. Search to narrow the list, or enter a folder path below.</p>}
-      </div>
-    </details>
-    <details>
       <summary className="cursor-pointer text-xs font-medium">Use a host path or data URL</summary>
       <label htmlFor={`${id}-sources`} className="mb-1 mt-2 block text-xs font-medium">Data locations (one per line)</label>
       <textarea id={`${id}-sources`} value={sources} onChange={(e) => onSourcesChange(e.target.value)} rows={3}
@@ -91,16 +118,6 @@ export function WorkflowInputs({
         className="w-full resize-y rounded-md border bg-background px-2 py-1 text-xs" aria-describedby={`${id}-help`} />
       <p id={`${id}-help`} className="text-xs text-muted-foreground">Paths must be readable where BYOK runs. URLs and storage locations need a reachable source and any required connector or host credentials already configured. Kady checks access when the workflow starts. Do not paste secrets or signed URLs here.</p>
     </details>
-    {!!files.length && <div className="space-y-1">
-      <p className="text-xs font-medium">Selected project files</p>
-      <ul className="max-h-24 overflow-y-auto">
-        {files.map((path) => <li key={path} className="flex items-start justify-between gap-2 text-xs">
-          <span className="break-all">{path}</span>
-          <button type="button" disabled={uploading} aria-label={`Remove ${path} from workflow`} onClick={() => onFilesChange(files.filter((file) => file !== path))} className="shrink-0 p-0.5"><XIcon className="size-3" /></button>
-        </li>)}
-      </ul>
-      <p className="text-[11px] text-muted-foreground">Removing a selection keeps the file in the project.</p>
-    </div>}
     {uploading && <p role="status" className="text-xs text-muted-foreground">Uploading to the BYOK project…</p>}
     {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
   </div>;
