@@ -63,8 +63,9 @@ that tests passed without running them). `/subagents-watchdog status` in the
 composer prints pi-subagents' own view: runtime state, model, review trigger
 and any last error.
 
-When `projects/` lives inside a git checkout (the default install layout), the
-"changed paths" the watchdog reports come from that checkout's `git status`,
-not from the sandbox, because the sandbox is an ignored directory of the same
-repository. Sandbox edits still trigger reviews through the observed-edit
-path; only the listed paths are misleading.
+Git-based review is scoped to a checkout rooted at the session's working
+directory. A sandbox inside the app's ignored `projects/` directory does not
+inherit the app checkout's status or diff. Without its own Git root, successful
+`write`/`edit` tool events trigger review of the transcript and files; a Git diff
+is unavailable. Changes made only through opaque shell commands are not reliably
+detected in that mode, so use a mid-turn tool cadence when that coverage matters.

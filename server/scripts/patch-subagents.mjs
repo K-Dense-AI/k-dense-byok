@@ -10,6 +10,17 @@ export function patchSubagents() {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   if (version !== '0.73.1') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
   const patches = [
+    ['src/watchdog/change-signature.js', '    const skipUntracked = isHomeRepoRoot(root) || hasTrackedEntries(root) === false;', `    // KADY_HOST_WATCHDOG_SCOPE_V1: a sandbox must not inherit the app checkout.
+    // No sandbox Git root means observed write/edit events trigger review instead.
+    if (process.env.KADY_SUBAGENT_HOST_MODULE && comparablePath(root) !== comparablePath(cwd))
+        return undefined;
+    const skipUntracked = isHomeRepoRoot(root) || hasTrackedEntries(root) === false;`, 'KADY_HOST_WATCHDOG_SCOPE_V1'],
+    ['src/watchdog/diff-tool.js', 'import * as path from "node:path";', `import * as path from "node:path";
+import * as fs from "node:fs"; // KADY_HOST_WATCHDOG_DIFF_IMPORT_V1`, 'KADY_HOST_WATCHDOG_DIFF_IMPORT_V1'],
+    ['src/watchdog/diff-tool.js', '    const ref = head.stdout.trim();', `    // KADY_HOST_WATCHDOG_DIFF_SCOPE_V1: do not expose an ancestor checkout's diff.
+    if (process.env.KADY_SUBAGENT_HOST_MODULE && fs.realpathSync(root) !== fs.realpathSync(cwd))
+        return undefined;
+    const ref = head.stdout.trim();`, 'KADY_HOST_WATCHDOG_DIFF_SCOPE_V1'],
     ['src/runs/background/scheduled-runs.js', 'function sanitizeTarget(params) {', `// KADY_HOST_SCHEDULE_MODEL_V1: schedule targets must retain the host-pinned model.
 function kadyScheduleModel(value) {
     if (!process.env.KADY_SUBAGENT_HOST_MODULE || value === undefined) return {};
