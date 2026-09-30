@@ -1411,7 +1411,7 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
       flushChunk();
       if (segment.content) {
         orderedBlocks.push(
-          <MessageResponse key={`text-${index}`}>{segment.content}</MessageResponse>,
+          <MessageResponse key={`text-${index}`} onOpenFile={onOpenFile}>{segment.content}</MessageResponse>,
         );
       }
       continue;

@@ -15,8 +15,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { normalizeMarkdown } from "@/lib/markdown-text";
-import { API_BASE } from "@/lib/projects";
+import { API_BASE, useProjectScopeId } from "@/lib/projects";
 import { withApiToken } from "@/lib/api-auth";
+import { sandboxMarkdownUrls } from "@/lib/sandbox-markdown";
 import { cn } from "@/lib/utils";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
@@ -35,7 +36,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown } from "streamdown";
+import { Streamdown, defaultRehypePlugins } from "streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -326,7 +327,32 @@ export const MessageBranchPage = ({
   );
 };
 
-export type MessageResponseProps = ComponentProps<typeof Streamdown>;
+export type MessageResponseProps = ComponentProps<typeof Streamdown> & {
+  onOpenFile?: (path: string) => void;
+};
+
+const OpenMarkdownFileContext = createContext<((path: string) => void) | undefined>(undefined);
+
+function SandboxLink({ href, children, node: _node, ...rest }: Record<string, unknown> & { children?: ReactNode; href?: string; node?: unknown }) {
+  const onOpenFile = useContext(OpenMarkdownFileContext);
+  const path = rest["data-kady-file"];
+  return (
+    <a
+      {...(rest as React.AnchorHTMLAttributes<HTMLAnchorElement>)}
+      href={href}
+      className="font-medium text-primary underline underline-offset-4"
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={typeof path === "string" && onOpenFile ? (event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        onOpenFile(path);
+      } : undefined}
+    >
+      {children}
+    </a>
+  );
+}
 
 const math = createMathPlugin({ singleDollarTextMath: true });
 const streamdownPlugins = { cjk, code, math, mermaid };
@@ -399,24 +425,36 @@ SandboxImage.displayName = "SandboxImage";
 const streamdownComponents = {
   p: SafeParagraph,
   img: SandboxImage,
+  a: SandboxLink,
 } as unknown as ComponentProps<typeof Streamdown>["components"];
 
 export const MessageResponse = memo(
-  ({ className, children, ...props }: MessageResponseProps) => (
-    <Streamdown
-      className={cn(
-        "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
-        className
-      )}
-      components={streamdownComponents}
-      linkSafety={linkSafetyOff}
-      plugins={streamdownPlugins}
-      {...props}
-    >
-      {typeof children === "string" ? normalizeMarkdown(children) : children}
-    </Streamdown>
-  ),
-  (prevProps, nextProps) => prevProps.children === nextProps.children
+  ({ className, children, onOpenFile, ...props }: MessageResponseProps) => {
+    const projectId = useProjectScopeId();
+    const rehypePlugins = useMemo(() => [
+      defaultRehypePlugins.raw,
+      defaultRehypePlugins.sanitize,
+      sandboxMarkdownUrls(projectId),
+      defaultRehypePlugins.harden,
+    ], [projectId]);
+    return (
+      <OpenMarkdownFileContext.Provider value={onOpenFile}>
+        <Streamdown
+          className={cn(
+            "size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",
+            className
+          )}
+          components={streamdownComponents}
+          rehypePlugins={rehypePlugins}
+          linkSafety={linkSafetyOff}
+          plugins={streamdownPlugins}
+          {...props}
+        >
+          {typeof children === "string" ? normalizeMarkdown(children) : children}
+        </Streamdown>
+      </OpenMarkdownFileContext.Provider>
+    );
+  },
 );
 
 MessageResponse.displayName = "MessageResponse";
