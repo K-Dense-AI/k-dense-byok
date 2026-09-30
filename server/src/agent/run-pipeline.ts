@@ -81,7 +81,7 @@ export function snapshot(session: Pick<PipelineSession, "getSessionStats">): Cos
 // flips true only after awaits inside prompt(), so concurrent POSTs could
 // otherwise both pass the guard and the loser's close handler would abort the
 // winner's live turn. The key doubles as the in-flight budget tracking key.
-const activeRuns = new Set<string>();
+const activeRuns = new Map<string, Promise<void>>();
 const runKeyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
 export interface RunClaim {
@@ -100,7 +100,8 @@ export interface RunClaim {
 export function claimRun(projectId: string, sessionId: string): RunClaim | null {
   const key = runKeyFor(projectId, sessionId);
   if (activeRuns.has(key)) return null;
-  activeRuns.add(key);
+  let resolveReleased!: () => void;
+  activeRuns.set(key, new Promise<void>((resolve) => { resolveReleased = resolve; }));
   pinSession(projectId, sessionId);
   let released = false;
   return {
@@ -112,12 +113,20 @@ export function claimRun(projectId: string, sessionId: string): RunClaim | null 
       released = true;
       unpinSession(projectId, sessionId);
       activeRuns.delete(key);
+      resolveReleased();
     },
   };
 }
 
 export function isRunClaimed(projectId: string, sessionId: string): boolean {
   return activeRuns.has(runKeyFor(projectId, sessionId));
+}
+
+/** Wait through accounting/cleanup as well as model streaming, without polling. */
+export async function waitForRunRelease(projectId: string, sessionId: string): Promise<void> {
+  const key = runKeyFor(projectId, sessionId);
+  let pending: Promise<void> | undefined;
+  while ((pending = activeRuns.get(key))) await pending;
 }
 
 export interface OpenRunOptions {
@@ -338,10 +347,11 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
       );
     }
 
-    // Explicit POST /abort may have raced with awaited model setup. In that
-    // case abort is authoritative and prompt must never start.
-    let refused = handle.isAbortRequested;
-    if (!refused && billingCountsTowardBudget(billing)) {
+    // A user prompt must not start after Stop during model setup. An adopted
+    // system turn already started, however: still await its settled boundary
+    // and ledger incurred usage even if Stop raced with billing resolution.
+    let refused = handle.isAbortRequested && opts.budgetPolicy === "refuse";
+    if (!handle.isAbortRequested && billingCountsTowardBudget(billing)) {
       // Hard budget cap: refuse to run if the project has reached its limit.
       const budget = isBudgetExceeded(projectId);
       if (budget.exceeded) {

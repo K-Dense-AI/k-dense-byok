@@ -92,18 +92,20 @@ Module.zetajs.then(zeta => {
         // Route file commands through Kady, not the engine's virtual filesystem.
         // Opening a second document internally would leave the host bound to the
         // first model, so those commands are disabled in this single-file workspace.
-        const commands = ['.uno:Save', '.uno:SaveAs', '.uno:SaveACopy', '.uno:Open',
+        const saveCommands = ['.uno:Save', '.uno:SaveAll'];
+        const commands = [...saveCommands, '.uno:SaveAs', '.uno:SaveACopy', '.uno:Open',
+          '.uno:OpenFromCalc', '.uno:OpenFromWriter',
           '.uno:OpenRemote', '.uno:NewDoc', '.uno:AddDirect', '.uno:CloseDoc', '.uno:Quit'];
         const isFileCommand = url => commands.includes(url.Complete) || url.Complete.startsWith('private:factory/');
         let slave = null, master = null;
         const dispatch = zeta.unoObject([css.frame.XDispatch], {
           dispatch(url) {
-            if (url.Complete === '.uno:Save') { if (!message.readOnly) send('save-request'); }
+            if (saveCommands.includes(url.Complete)) { if (!message.readOnly) send('save-request'); }
             else if (['.uno:SaveAs', '.uno:SaveACopy'].includes(url.Complete)) send('download-request');
           },
           addStatusListener(listener, url) {
             listener.statusChanged(new css.frame.FeatureStateEvent({
-              FeatureURL: url, IsEnabled: url.Complete === '.uno:Save' ? !message.readOnly : ['.uno:SaveAs', '.uno:SaveACopy'].includes(url.Complete),
+              FeatureURL: url, IsEnabled: saveCommands.includes(url.Complete) ? !message.readOnly : ['.uno:SaveAs', '.uno:SaveACopy'].includes(url.Complete),
               Requery: false,
             }));
           },

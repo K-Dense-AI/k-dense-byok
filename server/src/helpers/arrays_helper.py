@@ -46,12 +46,12 @@ def plot_array(shape, dtype, read, index):
     import numpy as np
     shape = tuple(shape)
     if np.dtype(dtype).kind not in NUMERIC:
-        return None, "This dataset is not a real-valued numeric array."
+        return None, "This dataset is not a real-valued numeric array.", None
     if not shape or any(n == 0 for n in shape):
-        return None, "Scalar or empty dataset; no curve or heatmap to draw."
+        return None, "Scalar or empty dataset; no curve or heatmap to draw.", None
     slices = math.prod(shape[:-2]) if len(shape) > 2 else 1
     if slices > 2**53 - 1:
-        return None, "This array has too many slices for the preview controls."
+        return None, "This array has too many slices for the preview controls.", None
     if index < 0 or index >= slices:
         raise ValueError(f"Slice must be between 0 and {slices - 1}")
     leading = tuple(int(v) for v in np.unravel_index(index, shape[:-2])) if len(shape) > 2 else ()
@@ -63,8 +63,14 @@ def plot_array(shape, dtype, read, index):
     raw = read(selection)
     if hasattr(raw, "toarray"):
         raw = raw.toarray()
+    sampled = np.ma.asarray(raw)
+    if sampled.dtype.kind in "iu" and np.ma.any((sampled > 2**53 - 1) | (sampled < -(2**53 - 1))):
+        # Converting int64/uint64 to float would alter values before JSON even
+        # reaches the browser. Preserve exact bounded values from this slice.
+        preview = ["—" if np.ma.is_masked(v) else str(v) for v in sampled.reshape(-1)[:100]]
+        return None, "Integer values exceed browser numeric precision. Showing exact values from this slice's preview sample instead of a plot.", preview
     # NetCDF masked fill values must stay gaps, never look like observations.
-    values = np.ma.asarray(raw, dtype=float).filled(np.nan)
+    values = sampled.astype(float).filled(np.nan)
     if line:
         values = values.reshape(1, -1)
         axis = 0 if len(plane) == 1 or plane[-1] == 1 else 1
@@ -83,7 +89,7 @@ def plot_array(shape, dtype, read, index):
         "x": xs, "y": ys, "shape": list(shape), "slice": index, "slices": slices,
         "leading_indices": list(leading), "sampled": any(step > 1 for step in strides),
         "stats": stats, "missing": int(values.size - finite.size),
-    }, None
+    }, None, None
 
 
 def attach(summary, datasets, key, index, opener):
@@ -95,8 +101,10 @@ def attach(summary, datasets, key, index, opener):
             summary["plot_note"] = selected["unavailable"]
         else:
             shape, dtype, read = opener(selected)
-            summary["plot"], summary["plot_note"] = plot_array(shape, dtype, read, index)
-            if not summary["plot"]:
+            summary["plot"], summary["plot_note"], exact_preview = plot_array(shape, dtype, read, index)
+            if exact_preview is not None:
+                summary["value_preview"] = exact_preview
+            elif not summary["plot"]:
                 import numpy as np
                 dt = np.dtype(dtype)
                 # Preserve scalar/text value previews without reading a whole
@@ -106,7 +114,9 @@ def attach(summary, datasets, key, index, opener):
                         raw = np.asarray(read(())).reshape(-1)
                     elif all(shape):
                         count = min(100, max(1, 4096 // max(1, dt.itemsize)))
-                        raw = np.asarray(read((0,) * (len(shape) - 1) + (slice(0, count),))).reshape(-1)
+                        leading = tuple(int(v) for v in np.unravel_index(index, shape[:-2])) if len(shape) > 2 else ()
+                        row = (0,) if len(shape) > 1 else ()
+                        raw = np.asarray(read(leading + row + (slice(0, count),))).reshape(-1)
                     else:
                         raw = []
                     summary["value_preview"] = [str(value)[:512] for value in raw]

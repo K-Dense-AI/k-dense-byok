@@ -26,14 +26,16 @@ import {
   executeRun,
   isRunClaimed,
   openRun,
+  waitForRunRelease,
   type OpenedRun,
   type PipelineSession,
 } from "./run-pipeline.ts";
 import { findSessionFile } from "./session-export.ts";
 import { toHistory } from "./session-history.ts";
 import { getModelRuntime } from "./session-registry.ts";
+import { deferSessionMessages } from "./session-message-gate.ts";
 
-export type ObservedSession = PipelineSession & Pick<AgentSession, "abort">;
+export type ObservedSession = PipelineSession & Pick<AgentSession, "abort" | "sendCustomMessage" | "sendUserMessage">;
 
 export interface SessionObserverContext {
   projectId: string;
@@ -59,6 +61,31 @@ export function attachSessionObserver({
   // Pump(s) of an observer-owned run. Empty while no system run is active.
   const tap = new Set<(ev: AgentSessionEvent) => void>();
   let active: { settle(): void; fail(err: Error): void } | null = null;
+  let detached = false;
+  let resumeMessages: (() => void) | undefined;
+  const customMessage = session.sendCustomMessage;
+  const userMessage = session.sendUserMessage;
+  // Pi marks itself idle before agent_settled handlers run. Our previous run
+  // still owns the claim until its provenance and ledger writes finish. Stop
+  // public extension submissions here, before Pi converts triggerTurn into a
+  // direct _runAgentPrompt continuation that bypasses the next run's observer.
+  const deferWhileFinalizing = () => {
+    if (session.isStreaming || !isRunClaimed(projectId, sessionId)) return false;
+    const resume = deferSessionMessages(session, projectId);
+    resumeMessages = resume;
+    void waitForRunRelease(projectId, sessionId).then(resume);
+    return true;
+  };
+  session.sendCustomMessage = (message, options) => {
+    if (detached) return Promise.reject(new Error("Session closed before the queued message was delivered"));
+    if (deferWhileFinalizing()) return session.sendCustomMessage(message, options);
+    return customMessage.call(session, message, options);
+  };
+  session.sendUserMessage = (content, options) => {
+    if (detached) return Promise.reject(new Error("Session closed before the queued message was delivered"));
+    if (deferWhileFinalizing()) return session.sendUserMessage(content, options);
+    return userMessage.call(session, content, options);
+  };
 
   const publishNotice = (ev: AgentSessionEvent): void => {
     const frame = toClientFrame(ev, paths.sandbox);
@@ -169,6 +196,10 @@ export function attachSessionObserver({
   });
 
   return () => {
+    detached = true;
+    resumeMessages?.();
+    session.sendCustomMessage = customMessage;
+    session.sendUserMessage = userMessage;
     unsubscribe();
     if (active) {
       const current = active;

@@ -97,6 +97,8 @@ while displaying the last two axes. Indices start at zero. Plots use at most
 sampling, missing values, and statistics from the displayed slice/sample;
 these are not full-dataset statistics. Hover over a heatmap cell or plot point
 to inspect its value. Striding can miss isolated features in large arrays.
+Integer samples outside the browser's exact numeric range use exact text
+previews instead of rounded plots; slice navigation remains available.
 
 HDF5/NetCDF and NumPy `.npy` previews read slices; Parquet reads a limited row
 batch. XLSX expanded content, Arrow files/batches, individual NPZ arrays and

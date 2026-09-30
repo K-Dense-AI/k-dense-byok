@@ -54,6 +54,18 @@ describe.runIf(depsOk)("bounded scientific data previews", () => {
     expect(fs.readFileSync(path.join(root, "study.db"))).toEqual(before);
     expect((await runSciHelper("tables", "summarize", [path.join(root, "study.db"), "hidden_view"])).status).toBe(5);
   });
+  it("includes SQLite generated columns and tables whose names start with sqlite without an underscore", async () => {
+    const data = await preview("tables", "generated.db");
+    expect(data.collections).toEqual(["sqliteData"]);
+    expect(data.columns).toEqual([
+      { name: "raw", dtype: "REAL" },
+      { name: "calibrated", dtype: "REAL" },
+      { name: "offset", dtype: "REAL" },
+    ]);
+    expect(data.head).toEqual([[2, 4, 1]]);
+    expect(data.num_columns).toBe(3);
+    expect(data.columns_truncated).toBe(false);
+  });
   it.each(["data.arrow", "data.ipc", "data.feather"])("reads a bounded sample across record batches in %s", async name => {
     const data = await preview("tables", name);
     expect(data.head).toHaveLength(200);
@@ -83,6 +95,18 @@ describe.runIf(depsOk)("bounded scientific data previews", () => {
     const data = await preview("arrays", "archive.npz", "objects");
     expect(data.plot_note).toContain("pickle");
     expect(data.plot).toBeUndefined();
+  });
+  it("preserves exact integers beyond the browser numeric range in the selected slice", async () => {
+    const safe = await preview("arrays", "integers.npz", "safe");
+    expect(safe.plot.values).toEqual([[-9007199254740991, 9007199254740991]]);
+    expect((await preview("arrays", "integers.npz", "signed", 0)).plot.values).toEqual([[1, 2]]);
+    const signed = await preview("arrays", "integers.npz", "signed", 1);
+    expect(signed.plot).toBeNull();
+    expect(signed.plot_note).toContain("precision");
+    expect(signed.value_preview).toEqual(["9007199254740993", "9007199254740995"]);
+    const unsigned = await preview("arrays", "integers.npz", "unsigned");
+    expect(unsigned.plot).toBeNull();
+    expect(unsigned.value_preview).toEqual(["18446744073709551615"]);
   });
   it("retains bounded value previews for scalar and text NumPy arrays", async () => {
     expect((await preview("arrays", "scalar.npy")).value_preview).toEqual(["42"]);

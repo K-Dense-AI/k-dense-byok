@@ -128,6 +128,10 @@ const observers = new Map<string, () => void>();
 // Insertion-ordered Map doubles as an LRU: we delete+re-set an entry on access
 // so the first matching key for a project is always the least-recently-used.
 const live = new Map<string, AgentSession>();
+// History, controls and run requests can cold-open the same session together.
+// Share construction as well as the resulting live object: duplicate builds
+// register conflicting extension hosts and can route Stop to the wrong agent.
+const opening = new Map<string, Promise<AgentSession | null>>();
 const keyFor = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 
 // Sessions with a claimed run. A run holds its claim across async model setup
@@ -488,14 +492,25 @@ export async function getSession(
     return existing;
   }
 
-  const infos = await SessionManager.list(paths.sandbox, paths.sessionsDir);
-  const info = infos.find((i) => i.id === sessionId);
-  if (!info) return null;
-  const sm = SessionManager.open(info.path, paths.sessionsDir, paths.sandbox);
-  const session = await build(projectId, paths, sm, options);
-  live.set(k, session);
-  evictOverCap(projectId);
-  return session;
+  const pending = opening.get(k);
+  if (pending) return pending;
+  const operation = (async () => {
+    const infos = await SessionManager.list(paths.sandbox, paths.sessionsDir);
+    const info = infos.find((i) => i.id === sessionId);
+    if (!info) return null;
+    const sm = SessionManager.open(info.path, paths.sessionsDir, paths.sandbox);
+    const session = await build(projectId, paths, sm, options);
+    live.set(k, session);
+    evictOverCap(projectId);
+    return session;
+  })();
+  opening.set(k, operation);
+  try {
+    return await operation;
+  } finally {
+    // Missing sessions and failed loads must remain retryable.
+    opening.delete(k);
+  }
 }
 
 export async function listSessions(paths: ProjectPaths): Promise<SessionInfo[]> {

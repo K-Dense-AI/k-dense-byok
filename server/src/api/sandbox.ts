@@ -287,7 +287,6 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
 
   app.post("/sandbox/upload", async (req, reply) => {
     const paths = activePaths();
-    fs.mkdirSync(paths.uploadDir, { recursive: true });
     // Files stream straight to a staging dir instead of being buffered: with a
     // 1GB per-file limit, holding a whole multi-file upload in memory is an
     // easy out-of-memory kill for exactly the large datasets this is for.
@@ -319,6 +318,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       const saved: string[] = [];
       const savedAbs: string[] = [];
       const renamed: { from: string; to: string }[] = [];
+      const destinations: { temp: string; dest: string }[] = [];
       for (let i = 0; i < staged.length; i++) {
         const rel = (relPaths[i] ?? "").trim();
         let dest: string;
@@ -333,11 +333,17 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           if (!safeName || safeName.startsWith(".")) continue;
           dest = path.join(paths.uploadDir, safeName);
         }
+        // Folder uploads can encounter existing symlinks, including user_data
+        // itself. Validate the entire batch before installing any files, so a
+        // rejected destination cannot leave an unreported partial upload.
+        destinations.push({ temp: staged[i].temp, dest: safePath(apiRelative(paths.sandbox, dest)) });
+      }
+      for (const { temp, dest } of destinations) {
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         // Re-uploading a name that already exists used to destroy the original
         // with no warning. Park the new copy beside it instead.
-        const finalDest = uniqueDestination(dest);
-        moveFile(staged[i].temp, finalDest);
+        const finalDest = safePath(apiRelative(paths.sandbox, uniqueDestination(dest)));
+        moveFile(temp, finalDest);
         if (finalDest !== dest) {
           renamed.push({
             from: apiRelative(paths.sandbox, dest),
@@ -352,6 +358,11 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       // not read as "no recorded provenance" downstream.
       await recordUpload(currentProjectId(), paths.sandbox, savedAbs, provenanceWarn(req));
       return { uploaded: saved, renamed };
+    } catch (err) {
+      if (err instanceof SandboxError) return handle(reply, err);
+      // Let Fastify retain multipart errors' HTTP status (for example 413
+      // when a folder exceeds its part limit), while finally clears staging.
+      throw err;
     } finally {
       fs.rmSync(stagingRoot, { recursive: true, force: true });
     }
@@ -487,6 +498,16 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       // Stat-only: the bytes do not change in a rename, so the input hashes
       // are taken from the destination afterward instead of hashing twice.
       const priors = await collectPrior(sandboxRoot, srcPath, { hash: false });
+      // Another request can move/create the destination while provenance is
+      // being read. Recheck immediately before the synchronous rename, which
+      // otherwise replaces an existing file on POSIX.
+      safePath(src);
+      safePath(dest);
+      if (!fs.existsSync(srcPath)) throw new SandboxError(404, "Source not found");
+      if (fs.existsSync(destPath)) throw new SandboxError(409, "Destination already exists");
+      if (!fs.existsSync(path.dirname(destPath))) {
+        throw new SandboxError(404, "Destination parent directory not found");
+      }
       fs.renameSync(srcPath, destPath);
       const srcSidecar = srcPath + ".annotations.json";
       if (fs.existsSync(srcSidecar)) {

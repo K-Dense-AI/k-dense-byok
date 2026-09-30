@@ -151,7 +151,7 @@ def sqlite(path, selected):
         connection.set_progress_handler(progress, 1000)
         # Do not execute views or virtual tables defined by an uploaded file.
         entries = connection.execute(
-            "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+            "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*' "
             "AND upper(ltrim(sql)) NOT LIKE 'CREATE VIRTUAL%' ORDER BY name LIMIT ?",
             (MAX_COLLECTIONS + 1,),
         ).fetchall()
@@ -160,7 +160,10 @@ def sqlite(path, selected):
         if not key:
             return table([], [], 0, collections=[], selected="", note="No ordinary tables to preview.")
         quote = lambda s: '"' + s.replace('"', '""') + '"'
-        fields = connection.execute(f"PRAGMA table_info({quote(key)})").fetchall()
+        # table_info omits generated columns. table_xinfo marks generated
+        # columns as 2/3, while 1 denotes hidden virtual-table fields.
+        fields = [field for field in connection.execute(f"PRAGMA table_xinfo({quote(key)})").fetchall()
+                  if field[6] != 1]
         columns = [{"name": field[1], "dtype": field[2] or "dynamic"} for field in fields[:MAX_COLS]]
         expressions = []
         for col in columns:

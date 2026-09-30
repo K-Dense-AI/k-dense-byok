@@ -297,6 +297,19 @@ export function LatexEditor({
     setOutline(parseOutline(next));
   }, []);
 
+  const keepEditorContent = useCallback(() => {
+    const disk = diskContentRef.current;
+    if (disk === null) return;
+    // The retained document must be compared with the actual disk version,
+    // including when undo has restored the editor's old saved text.
+    lastSavedRef.current = disk;
+    const current = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    setIsDirty(current !== disk);
+    setSaved(false);
+    diskContentRef.current = null;
+    setDiskContent(null);
+  }, []);
+
   // The file changed underneath us — usually the agent editing the same .tex.
   // Adopt it silently when there is nothing to lose, otherwise let the user
   // choose rather than deciding for them.
@@ -943,7 +956,7 @@ export function LatexEditor({
                   Load disk version
                 </button>
                 <button
-                  onClick={() => setDiskContent(null)}
+                  onClick={keepEditorContent}
                   className="rounded border px-2 py-0.5 hover:bg-muted"
                 >
                   Keep mine

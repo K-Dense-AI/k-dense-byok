@@ -81,6 +81,23 @@ describe("LatexEditor", () => {
     await waitFor(() => expect(props.onSave).toHaveBeenCalledWith(source + "\nMy edit"));
   });
 
+  it.each(["before", "after"])("saves retained editor text when undo restores the old baseline %s Keep mine", async (undoWhen) => {
+    const onSave = vi.fn().mockResolvedValue(true);
+    const onCompile = vi.fn().mockResolvedValue(success);
+    const { change, props, rerender } = setup({ onSave, onCompile });
+    change(source + "\nMy temporary edit");
+    rerender(<LatexEditor {...props} initialContent={source + "\nAgent edit"} />);
+    await screen.findByText("This file changed on disk while you were editing");
+    if (undoWhen === "before") change(source);
+    fireEvent.click(screen.getByRole("button", { name: "Keep mine" }));
+    if (undoWhen === "after") change(source);
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Compile" }));
+    await waitFor(() => expect(props.onCompile).toHaveBeenCalled());
+    expect(props.onSave).toHaveBeenCalledWith(source);
+    expect(onSave.mock.invocationCallOrder[0]).toBeLessThan(onCompile.mock.invocationCallOrder[0]);
+  });
+
   it("shows failed builds while retaining the last successful preview", async () => {
     const onCompile = vi.fn().mockResolvedValueOnce(success).mockResolvedValueOnce({ ...success, success: false, pdf_path: null, errors: ["bibtex failed"], log: "", synctex: false });
     setup({ onCompile });

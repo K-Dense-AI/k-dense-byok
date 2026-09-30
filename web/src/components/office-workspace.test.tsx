@@ -74,3 +74,25 @@ it("commits the Kady formula bar before a keyboard save and preserves edits made
   message("exported", { id: job.id, bytes: new ArrayBuffer(10) });
   await screen.findByText("Newer changes are not saved yet");
 });
+
+it("commits a formula draft before toolbar formatting can refresh the selected cell", async () => {
+  render(<OfficeWorkspace path="workbook.xlsx" projectId="office-project" />);
+  const send = vi.spyOn((screen.getByTitle("Office editing workspace") as HTMLIFrameElement).contentWindow!, "postMessage");
+  message("ready"); await waitFor(() => expect(send).toHaveBeenCalled()); message("opened");
+  message("selection", { cell: "B2", formula: "12" });
+  const formula = screen.getByRole("textbox", { name: "Cell value or formula" });
+  fireEvent.change(formula, { target: { value: "=SUM(A1:A3)" } });
+  send.mockClear();
+  // Toolbar mousedown deliberately retains the current editing focus, so
+  // clicking Bold does not trigger the formula field's onBlur commit.
+  fireEvent.mouseDown(screen.getByRole("button", { name: "Bold" }));
+  fireEvent.click(screen.getByRole("button", { name: "Bold" }));
+  expect(send.mock.calls.map(call => call[0])).toEqual([
+    expect.objectContaining({ cmd: "command", command: ".uno:EnterString", args: { StringName: "=SUM(A1:A3)" } }),
+    expect.objectContaining({ cmd: "command", command: ".uno:Bold" }),
+  ]);
+  // Both commands refresh the selection; their model value must now include
+  // the draft instead of restoring the cell's previous value of 12.
+  message("selection", { cell: "B2", formula: "=SUM(A1:A3)" });
+  expect(formula).toHaveValue("=SUM(A1:A3)");
+});

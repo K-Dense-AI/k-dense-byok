@@ -148,7 +148,7 @@ describe("runMethodsDraft", () => {
     );
     expect(res.path).toBe("methods_draft_sess-1.md");
     expect(res.markdown).toContain("## Methods");
-    expect(res.costUsd).toBeCloseTo(0.003);
+    expect(res.costUsd).toBeCloseTo(0.003, 6);
     expect(res.inputTokens).toBe(100);
     expect(res.outputTokens).toBe(20);
 
@@ -159,7 +159,7 @@ describe("runMethodsDraft", () => {
     const summary = withActiveProject(p.id, () =>
       sessionCostSummary(METHODS_DRAFT_SESSION_ID, p.id),
     );
-    expect(summary.totalUsd).toBeCloseTo(0.003);
+    expect(summary.totalUsd).toBeCloseTo(0.003, 6);
     expect(summary.entries[0].role).toBe("agent");
   });
 
@@ -239,5 +239,37 @@ describe("runMethodsDraft", () => {
         runMethodsDraft("s", p.id, {}, async () => fakeMessage("   ")),
       ),
     ).rejects.toMatchObject({ status: 502 });
+  });
+
+  it.each(["error", "aborted", "pending", "empty"] as const)(
+    "ledgers a paid %s response and applies its spend to the next request",
+    async (reason) => {
+      const p = createProject({ name: "Paid failed draft", spendLimitUsd: 0.002 });
+      appendNotebookEntry("s", entryOf(), p.id);
+      let calls = 0;
+      const complete = async () => {
+        calls++;
+        return reason === "empty"
+          ? fakeMessage("   ")
+          : fakeMessage("Partial draft", { stopReason: reason });
+      };
+      await expect(runMethodsDraft("s", p.id, {}, complete)).rejects.toMatchObject({ status: 502 });
+      const summary = sessionCostSummary(METHODS_DRAFT_SESSION_ID, p.id);
+      expect(summary.totalUsd).toBeCloseTo(0.003, 6);
+      expect(summary.entries).toHaveLength(1);
+      expect(summary.entries[0]).toMatchObject({ promptTokens: 100, completionTokens: 20 });
+      await expect(runMethodsDraft("s", p.id, {}, complete)).rejects.toMatchObject({ status: 402 });
+      expect(calls).toBe(1);
+    },
+  );
+
+  it("retains incurred usage when saving the draft fails", async () => {
+    const p = createProject({ name: "Unwritable draft" });
+    appendNotebookEntry("s", entryOf(), p.id);
+    fs.mkdirSync(path.join(resolvePaths(p.id).sandbox, "methods_draft_s.md"));
+    await expect(runMethodsDraft("s", p.id, {}, async () => fakeMessage("## Methods\nDraft."))).rejects.toThrow();
+    const summary = sessionCostSummary(METHODS_DRAFT_SESSION_ID, p.id);
+    expect(summary.totalUsd).toBeCloseTo(0.003, 6);
+    expect(summary.entries).toHaveLength(1);
   });
 });

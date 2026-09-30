@@ -39,6 +39,17 @@ describe("ArrayDataViewer", () => {
     expect(screen.getByText(/4\.5/)).toBeInTheDocument();
   });
 
+  it("does not display small nonzero array statistics as zero", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      ...ndarraySummary,
+      arrays: [{ ...ndarraySummary.arrays[0], min: 1e-8, max: 3e-8, mean: 2e-8, preview: [1e-8, 3e-8] }],
+    }))));
+    render(<ArrayDataViewer path="small.npy" name="small.npy" content={null} />);
+    await screen.findByText("0.00000001");
+    expect(screen.getByText("0.00000003")).toBeInTheDocument();
+    expect(screen.getByText("0.00000002")).toBeInTheDocument();
+  });
+
   it("shows a friendly message on a 503 deps-missing response", async () => {
     vi.stubGlobal(
       "fetch",
@@ -94,4 +105,25 @@ it("keeps sheet selection available after a failed request and retries", async (
   fireEvent.click(screen.getByRole("button", { name: "Retry preview" }));
   await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
   expect(fetcher).toHaveBeenCalledTimes(3);
+});
+
+it("keeps slice navigation available for exact integer previews without a plot", async () => {
+  const { fireEvent } = await import("@testing-library/react");
+  const fetcher = vi.fn(async (input: string) => {
+    const slice = new URL(input, "http://localhost").searchParams.get("slice");
+    return new Response(JSON.stringify({
+      ...ndarraySummary, selected: "values",
+      datasets: [{ key: "values", name: "values", shape: [2, 1, 2], dtype: "int64" }],
+      plot: null, plot_note: "Integer values exceed browser numeric precision.",
+      value_preview: slice === "1" ? ["9007199254740995"] : ["9007199254740993"],
+    }));
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<ArrayDataViewer path="integers.npz" name="integers.npz" content={null} />);
+  await screen.findByText("Values: 9007199254740993");
+  fireEvent.click(screen.getByLabelText("Next slice"));
+  await screen.findByText("Values: 9007199254740995");
+  expect(screen.getByLabelText("Previous slice")).toBeEnabled();
+  expect(screen.getByLabelText("Next slice")).toBeDisabled();
+  expect(fetcher).toHaveBeenCalledTimes(2);
 });

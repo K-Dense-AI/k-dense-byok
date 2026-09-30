@@ -22,6 +22,9 @@ np.save(root / 'scalar.npy', np.array(42))
 np.save(root / 'text.npy', np.array(['control', 'treated']))
 np.save(root / 'missing.npy', np.array([1., np.nan, np.inf, -np.inf, 5.]))
 np.save(root / 'huge-values.npy', np.array([1e308, 1e308]))
+np.savez(root / 'integers.npz', safe=np.array([-(2**53 - 1), 2**53 - 1], dtype='int64'),
+         signed=np.array([[[1, 2]], [[2**53 + 1, 2**53 + 3]]], dtype='int64'),
+         unsigned=np.array([2**64 - 1], dtype='uint64'))
 np.savez_compressed(root / 'archive.npz', vector=np.arange(8), objects=np.array([{'secret': 'no pickle'}], dtype=object))
 with h5py.File(root / 'arrays.h5', 'w') as f:
     group = f.create_group('science')
@@ -60,6 +63,10 @@ with sqlite3.connect(root / 'study.db') as conn:
     conn.execute('CREATE TABLE "quoted""table" ("quoted""column" INTEGER)')
     conn.execute('INSERT INTO "quoted""table" VALUES (42)')
     conn.execute('CREATE VIEW hidden_view AS SELECT * FROM measurements')
+with sqlite3.connect(root / 'generated.db') as conn:
+    conn.execute('CREATE TABLE sqliteData (raw REAL, calibrated REAL GENERATED ALWAYS AS (raw * 2) STORED, offset REAL GENERATED ALWAYS AS (raw - 1) VIRTUAL)')
+    conn.execute('INSERT INTO sqliteData (raw) VALUES (2)')
+    conn.execute('CREATE VIEW hidden_view AS SELECT * FROM sqliteData')
 table = pa.table({'sample': list(range(205)), 'value': [i * 0.5 for i in range(205)]})
 for name, factory in [('data.arrow', pa.ipc.new_file), ('data.ipc', pa.ipc.new_stream)]:
     with pa.OSFile(str(root / name), 'wb') as f:

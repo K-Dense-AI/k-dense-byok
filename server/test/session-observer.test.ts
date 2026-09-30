@@ -22,6 +22,7 @@ import { runBroker, type SequencedClientFrame } from "../src/agent/run-broker.ts
 import { claimRun, isRunClaimed } from "../src/agent/run-pipeline.ts";
 import { currentRunId } from "../src/agent/run-ids.ts";
 import { attachSessionObserver } from "../src/agent/session-observer.ts";
+import { getModelRuntime } from "../src/agent/session-registry.ts";
 
 class FakeSession {
   sessionId = "obs-1";
@@ -101,6 +102,29 @@ function attach(session: FakeSession, pid = projectId) {
 }
 
 describe("session observer", () => {
+  it("ledgers a started system turn stopped while billing is still resolving", async () => {
+    let releaseBilling!: () => void;
+    const billing = new Promise<void>((resolve) => { releaseBilling = resolve; });
+    vi.mocked(getModelRuntime).mockReturnValueOnce({ checkAuth: async () => {
+      await billing;
+      return { type: "api_key", source: "test" };
+    } } as never);
+    const session = new FakeSession();
+    attach(session);
+    session.isStreaming = true;
+    session.emit({ type: "agent_start" });
+    const handle = runBroker.get(projectId, session.sessionId)!;
+    session.spend(0.025);
+    handle.requestAbort();
+    await session.abort();
+    session.emit({ type: "agent_settled" });
+    releaseBilling();
+    await handle.waitForCompletion();
+    expect(costRows(projectId, session.sessionId)).toHaveLength(1);
+    expect(costRows(projectId, session.sessionId)[0].costUsd).toBeCloseTo(0.025, 6);
+    expect(isRunClaimed(projectId, session.sessionId)).toBe(false);
+  });
+
   it("adopts an unclaimed agent_start as a streamed, ledgered system run", async () => {
     const session = new FakeSession();
     attach(session);

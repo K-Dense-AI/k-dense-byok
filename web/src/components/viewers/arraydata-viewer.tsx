@@ -4,7 +4,7 @@ import { fileCategory, sciSummaryUrl } from "@/lib/use-sandbox";
 import { fetchSciJson, isAbortError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
 import DataTable, { type TableSummary } from "./data-table";
-import { ArrayVisualization, type ArrayPlot } from "./data-plots";
+import { ArrayVisualization, formatNumber, type ArrayPlot } from "./data-plots";
 
 // ---------------------------------------------------------------------------
 // Shapes (mirrors server/src/helpers/arrays_helper.py's JSON output)
@@ -82,11 +82,6 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function fmtNum(v: number | null): string {
-  if (v == null) return "—";
-  return Number.isInteger(v) ? String(v) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-}
-
 function fmtBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -161,9 +156,9 @@ function NdarrayView({ summary }: { summary: NdarraySummary }) {
             </span>
           </div>
           <div className="mb-2 flex flex-wrap gap-2">
-            <Stat label="min" value={fmtNum(arr.min)} />
-            <Stat label="max" value={fmtNum(arr.max)} />
-            <Stat label="mean" value={fmtNum(arr.mean)} />
+            <Stat label="min" value={formatNumber(arr.min)} />
+            <Stat label="max" value={formatNumber(arr.max)} />
+            <Stat label="mean" value={formatNumber(arr.mean)} />
           </div>
           <div className="overflow-x-auto rounded bg-muted/20 p-2">
             <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -282,6 +277,9 @@ function DataPreview({ path, projectId }: ViewerProps) {
   const collections = summary?.kind === "table" ? summary.collections : undefined;
   const selection = key ?? summary?.selected ?? "";
   const activeDataset = summary?.datasets?.find(dataset => dataset.key === selection);
+  // A slice may use exact text when its integers cannot be plotted safely.
+  // Keep navigation available so the user can still inspect other slices.
+  const sliceCount = summary?.plot?.slices ?? activeDataset?.shape.slice(0, -2).reduce((count, size) => count * size, 1) ?? 1;
   const shownArrays = summary?.kind === "ndarray" && activeDataset
     ? { ...summary, arrays: summary.arrays.filter(array => array.name === activeDataset.name) } : null;
 
@@ -307,17 +305,17 @@ function DataPreview({ path, projectId }: ViewerProps) {
             </option>)}
           </select>
         </label>}
-        {summary.plot && summary.plot.slices > 1 && <div className="flex items-center gap-2">
+        {Number.isSafeInteger(sliceCount) && sliceCount > 1 && <div className="flex items-center gap-2">
           <button aria-label="Previous slice" className="rounded border px-2 py-1 disabled:opacity-40" disabled={loading || slice === 0} onClick={() => setSlice(slice - 1)}>←</button>
           <label className="flex items-center gap-2">Slice
-            <input aria-label="Slice" className="w-20 rounded border bg-background px-2 py-1" type="number" min={0} max={summary.plot.slices - 1}
+            <input aria-label="Slice" className="w-20 rounded border bg-background px-2 py-1" type="number" min={0} max={sliceCount - 1}
               value={slice} disabled={loading} onChange={e => {
                 const value = Number(e.target.value);
-                if (Number.isSafeInteger(value) && value >= 0 && value < summary.plot!.slices) setSlice(value);
+                if (Number.isSafeInteger(value) && value >= 0 && value < sliceCount) setSlice(value);
               }} />
           </label>
-          <span className="text-muted-foreground">of {summary.plot.slices} (zero-based)</span>
-          <button aria-label="Next slice" className="rounded border px-2 py-1 disabled:opacity-40" disabled={loading || slice >= summary.plot.slices - 1} onClick={() => setSlice(slice + 1)}>→</button>
+          <span className="text-muted-foreground">of {sliceCount} (zero-based)</span>
+          <button aria-label="Next slice" className="rounded border px-2 py-1 disabled:opacity-40" disabled={loading || slice >= sliceCount - 1} onClick={() => setSlice(slice + 1)}>→</button>
         </div>}
       </div>
     </>}

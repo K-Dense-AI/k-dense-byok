@@ -236,6 +236,24 @@ export async function runMethodsDraft(
   } catch (err) {
     throw new MethodsDraftError(502, err instanceof Error ? err.message : "model call failed");
   }
+  // Returned usage was incurred even when the answer is unusable or saving
+  // the draft fails. Record it before validation and filesystem operations.
+  const u = msg.usage;
+  const costEntry = recordRun({
+    sessionId: METHODS_DRAFT_SESSION_ID,
+    projectId,
+    model: modelReference(model),
+    role: "agent",
+    before: emptySnapshot(),
+    after: {
+      costUsd: u.cost.total,
+      input: u.input,
+      output: u.output,
+      cacheRead: u.cacheRead,
+      total: u.totalTokens,
+    },
+    billing,
+  });
   if (msg.stopReason === "error" || msg.stopReason === "aborted") {
     throw new MethodsDraftError(502, msg.errorMessage ?? "model call failed");
   }
@@ -257,22 +275,6 @@ export async function runMethodsDraft(
   const fileName = `methods_draft_${sessionId}.md`;
   fs.writeFileSync(path.join(paths.sandbox, fileName), markdown + "\n", "utf-8");
   touchProject(projectId);
-  const u = msg.usage;
-  const costEntry = recordRun({
-    sessionId: METHODS_DRAFT_SESSION_ID,
-    projectId,
-    model: modelReference(model),
-    role: "agent",
-    before: emptySnapshot(),
-    after: {
-      costUsd: u.cost.total,
-      input: u.input,
-      output: u.output,
-      cacheRead: u.cacheRead,
-      total: u.totalTokens,
-    },
-    billing,
-  });
   return {
     path: fileName,
     markdown,

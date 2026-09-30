@@ -120,6 +120,9 @@ export function OfficeWorkspace({ path, projectId }: { path: string; projectId: 
 
   const command: OfficeCommand = (command, args) => {
     if (!documentOpen.current) return;
+    // Formatting buttons keep focus on the current editor, so the formula
+    // input may not blur. Commit it before UNO refreshes the selected cell.
+    commitFormula();
     send({ cmd: "command", command, args });
   };
   useEffect(() => { if (ready.current) send({ cmd: "theme", dark: resolvedTheme === "dark" }); }, [resolvedTheme, send]);
