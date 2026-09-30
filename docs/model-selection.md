@@ -94,7 +94,7 @@ pay-as-you-go at the declared cost. See [custom model servers](./custom-model-se
 
 ## OpenRouter Fusion presets
 
-The picker also has an **Openrouter Fusion** section at the top: named presets where a panel of models deliberates on your prompt and an Opus 4.8 judge synthesizes one answer, with the combined panel price and (where published) the DRACO benchmark score shown on each entry. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.
+The picker also has an **Openrouter Fusion** section at the top: named presets where a panel of models deliberates on your prompt and a GPT-6 Astra judge synthesizes one answer, with the combined price shown on each entry. The current combinations are unbenchmarked. Selecting a Fusion preset rewrites the turn into an `openrouter/fusion` request and disables Kady's local tools for that turn so it returns the fused answer instead of running the agent loop. Fusion remains OpenRouter-only and requires `OPENROUTER_API_KEY`; a Pi subscription login cannot authorize it. See [OpenRouter Fusion](./openrouter-fusion.md) for the presets and how the integration works.
 
 ## Defaults
 

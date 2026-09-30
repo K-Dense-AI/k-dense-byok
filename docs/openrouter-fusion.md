@@ -1,21 +1,23 @@
 # OpenRouter Fusion
 
-**OpenRouter Fusion** presets in the model picker let a *panel* of models deliberate on your prompt in parallel while a *judge* model synthesizes a single answer, instead of one model answering. It's [OpenRouter's Fusion router](https://openrouter.ai/blog/announcements/fusion-beats-frontier/) wired into Kady's single-agent run loop, with combined pricing and benchmark scores shown right in the picker.
+**OpenRouter Fusion** presets in the model picker let a *panel* of models deliberate on your prompt in parallel while a *judge* model synthesizes a single answer, instead of one model answering. It's [OpenRouter's Fusion router](https://openrouter.ai/blog/announcements/fusion-beats-frontier/) wired into Kady's single-agent run loop, with combined pricing shown in the picker.
 
 ## What you get
 
-Open the model picker and you'll see an **Openrouter Fusion** section at the top. Each entry is a named *preset* — a panel of analysis models plus an Opus 4.8 judge — with its combined input/output price and (where OpenRouter published one) its **DRACO** benchmark score:
+Open the model picker and select an **Openrouter Fusion** preset. Models were checked against the [OpenRouter catalog](https://openrouter.ai/api/v1/models) on September 29, 2026. These updated combinations have not been benchmarked; scores from the older panels do not apply.
 
-| Preset | Panel (analysis models) | DRACO |
+| Preset | Panel (analysis models) | Reasoning |
 |---|---|---|
-| Fable 5 + GPT-5.5 | `claude-fable-5`, `gpt-5.5` | **69.0%** |
-| Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro | `claude-opus-4.8`, `gpt-5.5`, `gemini-3.1-pro-preview` | **68.3%** |
-| Opus 4.8 + GPT-5.5 | `claude-opus-4.8`, `gpt-5.5` | **67.6%** |
-| Opus 4.8 + Opus 4.8 | `claude-opus-4.8` ×2 | **65.5%** |
-| Gemini 3.5 Flash + Kimi K2.6 + DeepSeek V4 Pro | `gemini-3.5-flash`, `kimi-k2.6`, `deepseek-v4-pro` | 64.7% (budget; score measured with the predecessor Gemini 3 Flash panel) |
-| Exaflop | `gpt-5.5-pro`, `gemini-3.1-pro-preview`, `claude-fable-5` | custom (not benchmarked) |
+| Fable 5.1 + GPT-6 Astra | `claude-fable-5.1`, `gpt-6-astra` | xhigh |
+| Opus 5.5 + GPT-6 Astra + Gemini 3.1 Pro | `claude-opus-5.5`, `gpt-6-astra`, `gemini-3.1-pro-preview` | high |
+| Opus 5.5 + GPT-6.1 Sol | `claude-opus-5.5`, `gpt-6.1-sol` | xhigh |
+| Opus 5.5 + Opus 5.5 | `claude-opus-5.5` ×2 | xhigh |
+| Gemini 3.8 Flash + Kimi K3 + DeepSeek V4.1 Flash | `gemini-3.8-flash`, `kimi-k3`, `deepseek-v4.1-flash` | high |
+| Exaflop | `gpt-6-astra-pro`, `gemini-3.1-pro-preview`, `claude-fable-5.1` | high |
 
-All presets are judged by **Opus 4.8** at `xhigh` reasoning, temperature 1, `max_tool_calls` 16. Pick one and send a message — every message on a Fusion preset runs the panel and returns the synthesized answer.
+All presets use **GPT-6 Astra** for synthesis and `max_tool_calls: 16`. Temperature is left to the provider; mixed panels use `high`, which every selected model supports. Gemini 3.1 Pro remains the current listed Gemini Pro model. Pick a preset and send a message to run its panel.
+
+Live validation on September 29 found that Opus 5.5 worked as a panel member but returned an OpenRouter HTTP 400 when selected as the Fusion synthesizer. The same panel and settings succeeded with GPT-6 Astra, so the built-ins use Astra. This is an observed provider compatibility limitation, not a general claim about Opus capabilities.
 
 ## When to use it
 
@@ -27,9 +29,9 @@ A Fusion run threads from the picker to a real `openrouter/fusion` request and b
 
 ### 1. Presets (frontend)
 
-Presets are defined in `web/src/lib/fusion-presets.ts` as `DEFAULT_FUSION_CONFIGS` — each a `{ id, name, note, config }` where `config` is the serialized Fusion request body. `loadFusionConfigs()` reads the user's saved presets from `localStorage` (key `fusionConfigs`), falling back to the built-ins; a `FUSION_DEFAULTS_VERSION` bump re-seeds new/updated built-ins while preserving user-added presets.
+Presets are defined in `web/src/lib/fusion-presets.ts` as `DEFAULT_FUSION_CONFIGS` — each a `{ id, name, note, config }` where `config` is the serialized Fusion request body. `loadFusionConfigs()` reads the user's saved presets from `localStorage` (key `fusionConfigs`), falling back to the built-ins; a `FUSION_DEFAULTS_VERSION` bump re-seeds new/updated built-ins while preserving user-added presets and retaining edited built-ins as custom copies.
 
-`web/src/lib/use-models.ts` turns each preset into a synthetic picker entry with id `fusion/<presetId>`, provider `"Openrouter Fusion"`, the preset's DRACO `note`, and a **combined price = each panel model's catalogue price once, plus the judge's twice** (so a two-Opus panel correctly shows double Opus pricing, and the judge is counted for both the analysis call and the final answer).
+`web/src/lib/use-models.ts` turns each preset into a synthetic picker entry with id `fusion/<presetId>`, provider `"Openrouter Fusion"`, the preset's descriptive `note`, and a **combined price = each panel model's catalogue price once, plus the judge's twice** (so a two-Opus panel is priced as two Opus calls plus two Astra calls; the judge is counted for both the analysis call and the final answer).
 
 ### 2. The run request (frontend → server)
 
@@ -60,8 +62,7 @@ That last step is load-bearing: Pi executes a model's returned tool calls by nam
     "analysis_models": ["...panel..."],
     "model": "<judge>",                              // synthesizer
     "max_tool_calls": 16,
-    "reasoning": { "effort": "xhigh" },              // reasoning + temperature live INSIDE the plugin
-    "temperature": 1
+    "reasoning": { "effort": "high" }                // per-preset effort; optional temperature also goes inside
   }]
 }
 ```
@@ -74,7 +75,7 @@ Pi computes session cost from the resolved `Model.cost`, so the synthetic `openr
 
 ## Managing presets (Settings → Fusion)
 
-The **Fusion** tab (in the Models group of Settings) lists your presets and an **Add Fusion config +** control that expands a form to paste a Fusion request body (see the [OpenRouter Fusion docs](https://openrouter.ai/docs/guides/features/plugins/fusion)). Presets are stored in `localStorage`; built-ins refresh on a version bump while your custom presets are kept.
+The **Fusion** tab (in the Models group of Settings) lists your presets and an **Add Fusion config +** control that expands a form to paste a Fusion request body (see the [OpenRouter Fusion docs](https://openrouter.ai/docs/guides/features/plugins/fusion)). Presets are stored in `localStorage`; unchanged built-ins refresh on a version bump while user-added presets and edited built-ins are kept. Edited built-ins receive a separate custom id to avoid overwriting the refreshed preset.
 
 ## Caveats
 
