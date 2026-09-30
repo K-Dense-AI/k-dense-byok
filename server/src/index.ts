@@ -23,6 +23,7 @@ import { recoverSubagentUsage } from "./agent/subagent-meter.ts";
 import { withActiveProject } from "./scope.ts";
 import { registerProjectRoutes } from "./api/projects.ts";
 import { registerSessionRoutes } from "./api/sessions.ts";
+import { registerOfficeRoutes } from "./api/office.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
 import { registerSkillRoutes } from "./api/skills.ts";
 import { registerPromptRoutes } from "./api/prompts.ts";
@@ -108,7 +109,7 @@ export async function buildApp() {
       cb(null, isCorsOriginAllowed(origin));
     },
     credentials: true,
-    exposedHeaders: ["ETag", "X-Project-Fallback", "X-Content-SHA256", "X-Kady-Auth"],
+    exposedHeaders: ["ETag", "X-Project-Fallback", "X-Content-SHA256", "X-Office-Read-Only", "X-Kady-Auth"],
   });
 
   // After CORS so a 401 still carries the headers the UI needs to read it.
@@ -167,6 +168,7 @@ export async function buildApp() {
   await registerNextExperimentRoutes(app);
   await registerNotebookRobustnessRoutes(app);
   await registerSandboxRoutes(app);
+  await registerOfficeRoutes(app);
   await registerSkillRoutes(app);
   await registerPromptRoutes(app);
   await registerAutomationRoutes(app);

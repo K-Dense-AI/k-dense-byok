@@ -87,6 +87,9 @@ export function isUserVisible(absPath: string, sandboxRoot: string): boolean {
 }
 
 const MIME: Record<string, string> = {
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".pdf": "application/pdf",
   ".png": "image/png",
   ".jpg": "image/jpeg",

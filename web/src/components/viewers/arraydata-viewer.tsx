@@ -266,7 +266,7 @@ function DataPreview({ path, projectId }: ViewerProps) {
   const [slice, setSlice] = useState(0);
   const [retry, setRetry] = useState(0);
   const [completedRequest, setCompletedRequest] = useState<string | null>(null);
-  const kind = fileCategory(path) === "datatable" ? "tables" : "arrays";
+  const kind = (fileCategory(path) === "datatable" || /\.xlsx$/i.test(path)) ? "tables" : "arrays";
   const requestId = JSON.stringify([kind, key, slice, retry]);
   const loading = completedRequest !== requestId;
 

@@ -35,6 +35,7 @@ export type FileCategory =
   | "massspec"
   | "arraydata"
   | "datatable"
+  | "office"
   | "phylo"
   | "alignment"
   | "dicom"
@@ -57,7 +58,7 @@ const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "p
 const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
 
 const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf", "mat", "mtx", "fits", "fit", "fts"]);
-const DATATABLE_EXTS = new Set(["xlsx", "arrow", "feather", "ipc", "jsonl", "ndjson", "sqlite", "sqlite3", "db"]);
+const DATATABLE_EXTS = new Set(["arrow", "feather", "ipc", "jsonl", "ndjson", "sqlite", "sqlite3", "db"]);
 
 const PHYLO_EXTS = new Set(["nwk", "newick", "tree", "nhx"]);
 
@@ -75,6 +76,7 @@ export function fileCategory(name: string): FileCategory {
   if (IMAGE_EXTS.has(ext)) return "image";
   if (MICROSCOPY_EXTS.has(ext)) return "microscopy";
   if (ext === "dcm" || ext === "dicom") return "dicom";
+  if (["docx", "pptx", "xlsx"].includes(ext)) return "office";
   if (ext === "pdf") return "pdf";
   if (ext === "md" || ext === "mdx") return "markdown";
   if (ext === "csv") return "csv";

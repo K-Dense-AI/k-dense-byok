@@ -19,6 +19,12 @@ function readAppVersion(): string {
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  async headers() {
+    return [{ source: "/office/:path*", headers: [
+      { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+      { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+    ] }];
+  },
   // Next 16.3 otherwise writes AGENTS.md/CLAUDE.md into web/ on every dev start.
   agentRules: false,
   // The repo-root package.json (npm-start wrapper, no lockfile) makes Turbopack

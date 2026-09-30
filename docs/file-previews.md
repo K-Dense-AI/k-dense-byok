@@ -10,6 +10,8 @@ Previews render in the browser and, for binary/scientific formats, in Python hel
 | Format | Extensions | Viewer |
 |---|---|---|
 | Images | `png` `jpg` `jpeg` `gif` `svg` `webp` `bmp` `ico` `heic` | Click to zoom to actual size; **annotate** with a red marker and save |
+| Word | `docx` | Paged document preview; edit existing text and table cells |
+| PowerPoint | `pptx` | Slide preview; edit existing slide text, table cells and notes |
 | PDF | `pdf` | Paged viewer with selectable user highlights/notes and live expert annotations from lead or delegated AI agents |
 | Markdown | `md` `mdx` | Rendered, with LaTeX math and Mermaid diagrams |
 | Jupyter notebooks | `ipynb` | Cells with rich outputs — images, HTML tables, tracebacks |
@@ -76,12 +78,12 @@ before discarding them.
 ### Data tables & workbooks
 | Format | Extensions | Viewer |
 |---|---|---|
-| Excel | `xlsx` | Sheet selector, table search / sort and numeric scatter plots; first row supplies headers, formulas show saved values |
+| Excel | `xlsx` | Worksheet grid with basic cell/formula editing; Data tools offers sampled search, sort and scatter plots |
 | Arrow IPC / Feather v2 | `arrow` `ipc` `feather` | File or stream schema, row sample and numeric scatter plots |
 | JSON Lines | `jsonl` `ndjson` | Sampled records as columns; nested values shown as JSON, with numeric scatter plots |
 | SQLite | `sqlite` `sqlite3` `db` | Read-only ordinary-table selector, row sample, search / sort and numeric scatter plots |
 
-Tables show up to **200 rows × 50 columns**; search, sorting and plots use only
+The read-only Data tools tables show up to **200 rows × 50 columns**; search, sorting and plots use only
 that sample. Large cell text is capped at 512 characters. Where a format lacks
 a cheap exact row count, the viewer explicitly reports that the total was not
 scanned. SQLite views and virtual tables are excluded. JSON Lines columns are
@@ -115,7 +117,7 @@ HDF5 external links and external/virtual dataset storage are not followed.
 
 ## Notes
 
-- **View-only vs. editable.** Plain text and code are editable in place (⌘S to save); images can be annotated. The rich scientific viewers above are view-only — edit the underlying file with the agent or download it.
+- **View-only vs. editable.** Office documents open in the built-in Office workspace (details below). Plain text and code are editable in place (⌘S to save); images can be annotated. The rich scientific viewers above are view-only — edit the underlying file with the agent or download it.
 - **Text preview limits.** CSV files up to 8 MB show 250 rows per page with full-file search. Other text previews are limited to 512 KB. Larger files remain downloadable and available to the agent for analysis.
 - **Reveal from chat.** When Kady references a file, line, or notebook cell, clicking it opens the file and jumps to that spot.
 - **Provenance.** The preview header's **Provenance** button shows which tool call produced the file, what it read, its lineage back to uploaded data, and whether notebook citations are still current. See [Provenance](./provenance.md).
@@ -125,3 +127,65 @@ HDF5 external links and external/virtual dataset storage are not followed.
 ## Unsupported previews
 
 There are no dedicated viewers for whole-slide imaging (`.svs`, `.ndpi`), GenBank/NEXUS annotated records, multi-channel OME-TIFF compositing or cross-file DICOM series stacking. The new data viewers do not cover legacy Excel `.xls`, ODS, Feather v1, FITS table HDUs, MATLAB cells/structs or nested NetCDF groups. NPZ previews accept NumPy header versions 1 and 2. Unrecognized files use the text fallback where possible; download binary formats or process them with the agent.
+
+## Office documents: previews and the Office workspace
+
+Open a `.docx`, `.pptx`, or `.xlsx` file for a quick preview, then choose
+**Edit in Office** to open the full editor in a separate Kady browser tab.
+The workspace uses Kady's typography, neutral colors and light/dark theme, with
+Home, Insert, Layout and Review tabs. Its controls drive LibreOffice Writer, Calc
+and Impress through ZetaOffice's WebAssembly engine. **All tools** reveals the
+full native menus and toolbars without reopening the document. **Docker, a desktop Office installation, and an Office
+account are not required.** Documents stay in the browser and local backend.
+
+- **Word:** edit directly on the page, add paragraphs, format text and styles,
+  work with tables, and adjust page layout using Writer's menus and toolbars.
+- **Excel:** use the full cell grid, formula bar, worksheet tabs, formatting,
+  row/column operations and chart tools. Calc recalculates supported formulas.
+  The lightweight preview retains Kady's existing table/search/plot tools.
+- **PowerPoint:** work with slide thumbnails, select and edit text and shapes
+  on the canvas, change layouts, and add or rearrange slides in Impress.
+
+Use Kady's **Save** button or **⌘S / Ctrl+S** to save back to the project.
+The native Save toolbar action is also connected to project saves; native
+Save As downloads a copy.
+**Download copy** exports the current document in its original Office format.
+Unsaved work stays in the editor tab; closing/reloading warns before discarding
+it. Save before closing the tab. Kady's preview refreshes after an editor save.
+
+Saves validate the exported package, atomically replace the original, and record
+user provenance. SHA-256 revisions reject writes when another editor or agent
+has changed the file. On conflict, the editor retains your work: download a copy
+before reloading. Writer/Calc/Impress reserialize the document when exporting;
+Microsoft-specific formatting, fonts, formulas, animations and advanced objects
+may change or have limited support. The lightweight previews can also differ
+from the full editor. This is a LibreOffice-based suite, not Microsoft Office.
+Open project files from Kady's file browser and use **Download copy** for local
+exports. Native New/Open/Close commands are disabled to keep the workspace tied
+to its project file. Other native file dialogs (for example Insert Image) address
+the engine's virtual filesystem.
+
+The first editor launch needs internet access to download about **50 MB** of
+compressed runtime assets (about **250 MB** cached on disk). Subsequent launches
+use that local cache. The Next.js server downloads only an allowlisted runtime
+snapshot from the official ZetaOffice CDN and verifies pinned SHA-256 hashes
+before serving it. Cache: `~/.kady/office-assets/zeta-2025-05-13/`, or
+`KADY_OFFICE_ASSETS_DIR`. A changed upstream build fails explicitly rather than
+silently running different code; updating it requires reviewing the manifest
+in `web/src/lib/office-assets.ts`. For offline provisioning, place the exact
+manifest files in that cache directory.
+
+The editor requires a browser with WebAssembly threads and SharedArrayBuffer,
+served through localhost or HTTPS. Only `/office` receives the COOP/COEP headers
+needed for isolation; the rest of Kady keeps its existing browser behavior.
+Macros and automatic external-link updates are disabled. Encrypted files are
+unsupported; signed files and Word documents with enforced protection open
+read-only. Calc honors individual worksheet protection. Files are limited to
+**32 MiB compressed / 64 MiB expanded / 10,000 ZIP entries**. Quick text previews
+add limits of **10,000 text runs / 500 slides**, with a text fallback if visual
+rendering fails. The full editor does not use those quick-preview text limits.
+
+Runtime sources and attribution: [ZetaOffice](https://zetaoffice.net/),
+[ZetaJS (MIT)](https://github.com/allotropia/zetajs), and
+[LibreOffice licensing and source](https://www.libreoffice.org/about-us/licenses/).
+The vendored ZetaJS bridge includes its MIT license in `web/public/office/`.
