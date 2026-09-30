@@ -10,6 +10,16 @@ export function patchSubagents() {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   if (version !== '0.73.1') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
   const patches = [
+    ['src/runs/background/scheduled-runs.js', 'function sanitizeTarget(params) {', `// KADY_HOST_SCHEDULE_MODEL_V1: schedule targets must retain the host-pinned model.
+function kadyScheduleModel(value) {
+    if (!process.env.KADY_SUBAGENT_HOST_MODULE || value === undefined) return {};
+    if (typeof value !== "string" || !value.trim() || value.length > 512)
+        throw new Error("Scheduled model must be a non-empty model reference.");
+    return { model: value.trim() };
+}
+function sanitizeTarget(params) {`, 'KADY_HOST_SCHEDULE_MODEL_V1'],
+    ['src/runs/background/scheduled-runs.js', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }) } };', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...kadyScheduleModel(params.model) } }; // KADY_HOST_SCHEDULE_MODEL_SAVE_V1', 'KADY_HOST_SCHEDULE_MODEL_SAVE_V1'],
+    ['src/runs/background/scheduled-runs.js', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }) };', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...kadyScheduleModel(target.model) }; // KADY_HOST_SCHEDULE_MODEL_READ_V1', 'KADY_HOST_SCHEDULE_MODEL_READ_V1'],
     ['src/runs/background/scheduled-runs.js', 'export const SCHEDULED_RUN_ACTIONS = [', `// KADY_HOST_SCHEDULE_IMPORT_V1
 import { parseSubagentCapabilityCeiling, registerSubagentCapabilityCeiling } from "../shared/capability-ceiling.js";
 export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],

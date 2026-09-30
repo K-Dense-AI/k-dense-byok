@@ -29,6 +29,23 @@ const create = (m: any, id = "qa-check") => m.handleToolCall({ action: "schedule
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), "kady-schedule-")); vi.stubEnv("KADY_SUBAGENT_HOST_MODULE", "test-host"); });
 afterEach(() => { managers.splice(0).forEach(m => m.stop()); policies.splice(0).forEach(p => p.dispose()); vi.unstubAllEnvs(); fs.rmSync(dir, { recursive: true, force: true }); });
 
+it("retains a selected model across persistence and restart", async () => {
+  policy("kady-parent-tools", ["read"]);
+  const first = manager();
+  const model = "openrouter/openai/gpt-6-luna";
+  expect((await first.handleToolCall({ action: "schedule.create", id: "pinned", every: "24h", model,
+    workflowScript: "return runs.run('review', { agent: 'researcher', task: 'Read report' });" }, context())).isError).not.toBe(true);
+  await first.handleToolCall({ action: "schedule.pause", id: "pinned" }, context());
+  first.stop();
+  const launch = vi.fn(async (params: any) => {
+    expect(params.model).toBe(model);
+    return { details: { asyncId: "pinned-run" } };
+  });
+  const restored = manager(launch);
+  expect((await restored.handleToolCall({ action: "schedule.run", id: "pinned" }, context())).isError).not.toBe(true);
+  expect(launch).toHaveBeenCalledOnce();
+});
+
 it("persists the host ceiling and intersects it with current policy after restart", async () => {
   const current = policy("kady-parent-tools", ["read", "grep"]);
   const first = manager();

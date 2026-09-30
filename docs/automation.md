@@ -52,8 +52,13 @@ host. Temporary or third-party capability ceilings still block persistence.
 
 ### Which model a scheduled run uses
 
-A fire happens inside the project's resident automation session, and a child
-inherits that session's model unless its `runs.run(...)` options pin `model:`.
+A schedule retains the top-level `model` supplied at creation, including Kady's
+canonical parent-model pin for literal workflows without a specialist/model
+override. The saved model survives restarts. Explicit `runs.run(...)` model
+options and specialist/provider policies retain Pi's normal precedence.
+
+A fire happens inside the project's resident automation session. When no model
+is pinned (for example, a dynamic workflow), a child inherits that session's model.
 The resident session follows the model most recently used in a chat of the
 project (Pi's default model would otherwise apply, which is the most expensive
 one in the picker); completion notices that trigger a turn on that session use
