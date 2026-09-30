@@ -99,8 +99,8 @@ The picker also has an **Openrouter Fusion** section at the top: named presets w
 ## Defaults
 
 - **Settings → Defaults** sets the model, thinking level and compute a project's *first* chat tab starts on; runs Kady starts itself (scheduled and other system runs) fall back to the same model when the project has no earlier chat model to reuse. A new tab opened next to an existing one copies that tab's choices instead. The defaults are app-wide, stored in `~/.kady/pi-agent/kady-settings.json`, and take precedence over the `.env` variables below. Fusion presets cannot be a default, and a saved model that stops resolving (a removed custom server, a delisted model) is skipped silently in favor of the `.env` or built-in default.
-- The built-in default model is `openrouter/anthropic/claude-opus-5.5`.
-- Override it in `.env` with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `anthropic/claude-opus-5.5`, routed by `DEFAULT_MODEL_PROVIDER`).
+- The built-in default model is `openrouter/openai/gpt-6-astra`.
+- Override it in `.env` with `DEFAULT_MODEL_ID` in `.env` (a bare provider model id like `openai/gpt-6-astra`, routed by `DEFAULT_MODEL_PROVIDER`).
 - To default to a connected subscription model, set `DEFAULT_MODEL_PROVIDER` to `openai-codex`, `anthropic`, `github-copilot`, `xai`, or `kimi-coding` and set `DEFAULT_MODEL_ID` to that provider's model id.
 - To default to any other direct provider, set `DEFAULT_MODEL_PROVIDER` to its Pi id (e.g. `groq`, `openai`, `amazon-bedrock`) and `DEFAULT_MODEL_ID` to that provider's model id; the key must be configured or new chats fail with a clear "not configured" error.
 - To default to a local model, set `DEFAULT_MODEL_PROVIDER=ollama` and `DEFAULT_MODEL_ID` to a pulled model name (e.g. `llama3`).
