@@ -407,8 +407,10 @@ export function LabNotebookView({
           : typeof data.costUsd === "number"
           ? `Methods draft saved ($${data.costUsd.toFixed(4)})`
           : "Methods draft saved",
+        typeof data.path === "string" ? {
+          action: { label: "Open draft", onClick: () => onOpenFile(data.path!) },
+        } : undefined,
       );
-      if (typeof data.path === "string") onOpenFile(data.path);
     } catch {
       toast.error("Methods draft failed.");
     } finally {
