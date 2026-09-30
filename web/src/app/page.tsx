@@ -62,6 +62,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 
 const MAX_CHAT_TABS = 10;
@@ -879,10 +880,10 @@ function WorkspacePage({
   );
 
   return (
-    <div className="flex h-dvh flex-col">
+    <div className="flex h-dvh min-w-0 flex-col">
       {/* Header */}
-      <header className="relative flex items-center justify-between border-b px-6 py-3">
-        <div className="flex items-center gap-2">
+      <header className="relative flex flex-wrap items-center justify-between gap-2 border-b px-3 py-3 sm:px-6">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={onOpenProjectView}
@@ -930,10 +931,10 @@ function WorkspacePage({
           <span className="mx-1 h-4 w-px bg-border/60" aria-hidden />
           <ProjectSwitcher onOpenProjectView={onOpenProjectView} />
         </div>
-        <p className="absolute left-1/2 -translate-x-1/2 text-[11px] text-muted-foreground/60 tracking-wide select-none">
+        <p className="absolute left-1/2 hidden -translate-x-1/2 text-[11px] text-muted-foreground/60 tracking-wide select-none 2xl:block">
           Brought to you by K-Dense, Inc.
         </p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {isActive && <ResourceMonitor />}
           <SessionCostPill
             summary={costSummary}
@@ -1057,11 +1058,17 @@ function WorkspacePage({
       </header>
 
       {/* Main content area — three columns: file tree | preview | chat */}
-      <div className={cn("flex flex-1 overflow-hidden", isResizing && "select-none")}>
+      <div
+        className={cn("grid min-h-0 flex-1 overflow-hidden xl:flex", isResizing && "select-none")}
+        style={{
+          gridTemplateColumns: sandboxOpen ? `min(${treeWidth}px, 30vw) minmax(0, 1fr)` : "minmax(0, 1fr)",
+          gridTemplateRows: chatOpen ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
+        }}
+      >
 
         {/* Left: file tree */}
         {isActive && sandboxOpen && (
-          <div className="shrink-0 overflow-hidden" style={{ width: treeWidth }}>
+          <div className="min-h-0 min-w-0 shrink-0 overflow-hidden xl:w-[var(--tree-width)]" style={{ "--tree-width": `${treeWidth}px` } as CSSProperties}>
             <FileTreePanel
               tree={sandbox.tree}
               selectedPath={sandbox.activeTabPath}
@@ -1084,11 +1091,11 @@ function WorkspacePage({
         )}
 
         {/* Drag handle: tree ↔ preview */}
-        {isActive && sandboxOpen && <ResizeHandle onMouseDown={startDrag("tree")} />}
+        {isActive && sandboxOpen && <div className="hidden xl:flex"><ResizeHandle onMouseDown={startDrag("tree")} /></div>}
 
         {/* Middle: file preview with tabs — always shown; it is the pane the
             side panels make room for (e.g. the LaTeX editor + PDF). */}
-        <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="min-h-0 flex-1 min-w-0 overflow-hidden">
           {isActive && (
             <FilePreviewPanel
               projectId={projectId}
@@ -1138,16 +1145,16 @@ function WorkspacePage({
         </div>
 
         {/* Drag handle: preview ↔ chat */}
-        {isActive && chatOpen && <ResizeHandle onMouseDown={startDrag("chat")} />}
+        {isActive && chatOpen && <div className="hidden xl:flex"><ResizeHandle onMouseDown={startDrag("chat")} /></div>}
 
         {/* Right: chat / workflows. Kept mounted (hidden via CSS when
             collapsed) so background chat streams keep running. */}
         <div
           className={cn(
-            "flex flex-col border-l overflow-hidden shrink-0",
+            "col-span-full flex min-h-0 min-w-0 flex-col border-l overflow-hidden shrink-0 xl:w-[var(--chat-width)]",
             !chatOpen && "hidden",
           )}
-          style={{ width: chatWidth }}
+          style={{ "--chat-width": `${chatWidth}px` } as CSSProperties}
         >
 
           <ChatTabsBar
