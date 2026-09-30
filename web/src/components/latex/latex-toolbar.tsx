@@ -15,10 +15,12 @@ import {
   PlayIcon,
   PlusIcon,
   SpellCheckIcon,
+  SparklesIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 export type Engine = "pdflatex" | "xelatex" | "lualatex";
+export type LatexViewMode = "source" | "split" | "pdf";
 
 export const ENGINES: { id: Engine; label: string }[] = [
   { id: "pdflatex", label: "pdfLaTeX" },
@@ -57,6 +59,12 @@ export interface LatexToolbarProps {
   errorCount: number;
   warningCount: number;
   hasPdf: boolean;
+  previewStale: boolean;
+  compileFailed: boolean;
+  editingLocked: boolean;
+  viewMode: LatexViewMode;
+  onViewModeChange: (mode: LatexViewMode) => void;
+  onAiEdit: () => void;
   hasLog: boolean;
   logOpen: boolean;
   onToggleLog: () => void;
@@ -91,7 +99,8 @@ export function LatexToolbar(p: LatexToolbarProps) {
     <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/30 px-3 py-1.5">
       <button
         onClick={p.onCompile}
-        disabled={p.compiling}
+        disabled={p.compiling || p.editingLocked}
+        title={`${p.modKey}Enter — save and compile`}
         className={cn(
           "flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
           p.compiling
@@ -108,7 +117,9 @@ export function LatexToolbar(p: LatexToolbarProps) {
       </button>
 
       <select
+        aria-label="LaTeX engine"
         value={p.engine}
+        disabled={p.compiling}
         onChange={(e) => p.onEngineChange(e.target.value as Engine)}
         className="rounded-md border bg-background px-2 py-1 text-xs text-foreground outline-none"
       >
@@ -129,7 +140,7 @@ export function LatexToolbar(p: LatexToolbarProps) {
           onChange={p.onToggleAutoCompile}
           className="size-3"
         />
-        auto
+        Compile on save
       </label>
 
       <div className="h-4 w-px bg-border" />
@@ -137,6 +148,7 @@ export function LatexToolbar(p: LatexToolbarProps) {
       {/* Quick inserts */}
       <button
         onClick={() => p.onSnippet({ kind: "wrap", before: "\\textbf{", after: "}" })}
+        disabled={p.editingLocked}
         className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         title="Bold"
       >
@@ -144,6 +156,7 @@ export function LatexToolbar(p: LatexToolbarProps) {
       </button>
       <button
         onClick={() => p.onSnippet({ kind: "wrap", before: "\\emph{", after: "}" })}
+        disabled={p.editingLocked}
         className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
         title="Emphasis"
       >
@@ -151,6 +164,7 @@ export function LatexToolbar(p: LatexToolbarProps) {
       </button>
       <button
         onClick={() => p.onSnippet({ kind: "wrap", before: "$", after: "$" })}
+        disabled={p.editingLocked}
         className="rounded p-1 font-mono text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
         title="Inline math"
       >
@@ -159,6 +173,7 @@ export function LatexToolbar(p: LatexToolbarProps) {
       <div ref={insertRef} className="relative">
         <button
           onClick={() => setInsertOpen((v) => !v)}
+          disabled={p.editingLocked}
           className="flex items-center gap-0.5 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           title="Insert block"
         >
@@ -215,6 +230,15 @@ export function LatexToolbar(p: LatexToolbarProps) {
       </button>
 
       <button
+        onClick={p.onAiEdit}
+        disabled={p.editingLocked || p.compiling || p.saving}
+        title={`Edit selected source (${p.modKey}K)`}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-violet-600 hover:bg-violet-500/10 disabled:opacity-40 dark:text-violet-400"
+      >
+        <SparklesIcon className="size-3.5" /> Edit with AI
+      </button>
+
+      <button
         onClick={p.onAskKady}
         className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-violet-600 transition-colors hover:bg-violet-500/10 dark:text-violet-400"
         title="Ask Kady about this document in chat"
@@ -239,13 +263,21 @@ export function LatexToolbar(p: LatexToolbarProps) {
             : `${p.warningCount} warning${p.warningCount !== 1 ? "s" : ""}`}
         </button>
       )}
-      {p.hasPdf && p.errorCount === 0 && !p.compiling && (
-        <span className="flex items-center gap-1 text-xs text-emerald-600 dark:text-emerald-400">
-          <CheckIcon className="size-3.5" /> PDF ready
+      {p.hasPdf && !p.compiling && (
+        <span className={cn("flex items-center gap-1 text-xs", p.previewStale || p.compileFailed ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400")}>
+          {p.previewStale || p.compileFailed ? <AlertTriangleIcon className="size-3.5" /> : <CheckIcon className="size-3.5" />}
+          {p.compileFailed ? "Last successful PDF" : p.previewStale ? "PDF out of date" : "PDF ready"}
         </span>
       )}
 
       <div className="flex-1" />
+      <div role="group" aria-label="LaTeX view" className="flex overflow-hidden rounded-md border text-[11px]">
+        {(["source", "split", "pdf"] as const).map((mode) => (
+          <button key={mode} aria-pressed={p.viewMode === mode} onClick={() => p.onViewModeChange(mode)} className={cn("px-2 py-1", p.viewMode === mode ? "bg-muted font-medium" : "text-muted-foreground hover:bg-muted/50")}>
+            {mode === "pdf" ? "PDF" : mode === "source" ? "Source" : "Split"}
+          </button>
+        ))}
+      </div>
 
       <span className="text-[10px] tabular-nums text-muted-foreground/70">
         {p.wordCount.toLocaleString()} words
@@ -275,7 +307,7 @@ export function LatexToolbar(p: LatexToolbarProps) {
 
       <button
         onClick={p.onSave}
-        disabled={!p.isDirty || p.saving}
+        disabled={!p.isDirty || p.saving || p.compiling || p.editingLocked}
         className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1 text-xs text-primary-foreground transition-opacity disabled:opacity-40"
       >
         {p.saved ? <CheckIcon className="size-3" /> : null}

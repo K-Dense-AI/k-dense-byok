@@ -34,6 +34,7 @@ export type FileCategory =
   | "structure3d"
   | "massspec"
   | "arraydata"
+  | "datatable"
   | "phylo"
   | "alignment"
   | "dicom"
@@ -55,7 +56,8 @@ const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "p
 
 const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
 
-const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf"]);
+const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf", "mat", "mtx", "fits", "fit", "fts"]);
+const DATATABLE_EXTS = new Set(["xlsx", "arrow", "feather", "ipc", "jsonl", "ndjson", "sqlite", "sqlite3", "db"]);
 
 const PHYLO_EXTS = new Set(["nwk", "newick", "tree", "nhx"]);
 
@@ -84,6 +86,7 @@ export function fileCategory(name: string): FileCategory {
   if (STRUCTURE3D_EXTS.has(ext)) return "structure3d";
   if (MASSSPEC_EXTS.has(ext)) return "massspec";
   if (ARRAYDATA_EXTS.has(ext)) return "arraydata";
+  if (DATATABLE_EXTS.has(ext)) return "datatable";
   if (PHYLO_EXTS.has(ext)) return "phylo";
   if (ALIGNMENT_EXTS.has(ext)) return "alignment";
   return "text";
@@ -118,8 +121,11 @@ export function sciSummaryUrl(
   path: string,
   kind: string,
   projectId = getActiveProjectId(),
+  selection?: { key?: string; slice?: number },
 ): string {
   const params = new URLSearchParams({ path, kind, project: projectId });
+  if (selection?.key !== undefined) params.set("key", selection.key);
+  if (selection?.slice !== undefined) params.set("slice", String(selection.slice));
   return withApiToken(`${API_BASE}/sandbox/sci-summary?${params.toString()}`);
 }
 
@@ -181,6 +187,7 @@ export interface LatexCompileResult {
   success: boolean;
   pdf_path: string | null;
   log: string;
+  diagnostics_log?: string;
   errors: string[];
   synctex: boolean;
 }

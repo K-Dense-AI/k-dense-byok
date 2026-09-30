@@ -103,8 +103,14 @@ function categoryLabel(name: string): string {
   if (cat === "structure3d") return ext || "structure";
   if (cat === "massspec") return ext === "jdx" || ext === "dx" ? "spectrum" : ext;
   if (cat === "arraydata") {
-    return ext === "parquet" ? "parquet" : ext === "npy" || ext === "npz" ? "ndarray" : ext === "nc" || ext === "cdf" ? "netcdf" : "hdf5";
+    if (["npy", "npz"].includes(ext)) return "ndarray";
+    if (["nc", "nc4", "cdf"].includes(ext)) return "netcdf";
+    if (ext === "mat") return "matlab";
+    if (ext === "mtx") return "matrix market";
+    if (["fits", "fit", "fts"].includes(ext)) return "fits";
+    return ext === "parquet" ? "parquet" : "hdf5";
   }
+  if (cat === "datatable") return ["db", "sqlite3"].includes(ext) ? "sqlite" : ext;
   if (cat === "phylo") return "phylo tree";
   if (cat === "alignment") return "alignment";
   if (cat === "dicom") return "dicom";

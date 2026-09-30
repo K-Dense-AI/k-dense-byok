@@ -47,6 +47,7 @@ import { cn } from "@/lib/utils";
 
 import { AnnotationLayer } from "./annotation-layer";
 import { usePdfPageRendering } from "./use-pdf-page-rendering";
+import { usePdfZoom } from "./use-pdf-zoom";
 import { AnnotationSidebar } from "./annotation-sidebar";
 import { NotePopover } from "./note-popover";
 
@@ -163,6 +164,7 @@ export interface PdfViewerProps {
   syncHighlight?: PdfSyncHighlight | null; // scroll to + flash this box (synctex view coords)
   onSyncClick?: (pos: PdfSyncClick) => void; // Cmd/Ctrl+click on a page
   hideAnnotationUi?: boolean; // view-only: hide annotation UI and skip loading/polling the sidecar
+  initialFitWidth?: boolean;
 }
 
 export function PdfViewer({
@@ -173,6 +175,7 @@ export function PdfViewer({
   syncHighlight = null,
   onSyncClick,
   hideAnnotationUi = false,
+  initialFitWidth = false,
 }: PdfViewerProps) {
   const contextProjectId = useProjectScopeId();
   const scopedProjectId = projectId ?? contextProjectId;
@@ -180,7 +183,7 @@ export function PdfViewer({
   const [doc, setDoc] = useState<PdfDoc | null>(null);
   const [numPages, setNumPages] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(1);
+  const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
 
   const [annotations, setAnnotations] =
     useState<AnnotationsDoc>(EMPTY_DOC);
@@ -208,6 +211,7 @@ export function PdfViewer({
   } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const { zoom, setZoom, fitWidth, fitToWidth } = usePdfZoom(containerRef, pageSize?.w ?? 0, initialFitWidth);
   const [currentPage, setCurrentPage] = useState(1);
   const docRef = useRef<PdfDoc | null>(null);
   const loadedPathRef = useRef<string | null>(null);
@@ -594,7 +598,7 @@ export function PdfViewer({
   // off-screen pages can reserve their layout space before they render.
   // --------------------------------------------------------------------
 
-  const [defaultSize, setDefaultSize] = useState<{ w: number; h: number } | null>(null);
+  const defaultSize = useMemo(() => pageSize ? { w: pageSize.w * zoom, h: pageSize.h * zoom } : null, [pageSize, zoom]);
   useEffect(() => {
     if (!doc) return;
     let cancelled = false;
@@ -602,19 +606,19 @@ export function PdfViewer({
       .getPage(1)
       .then((p: PdfPage) => {
         if (cancelled) return;
-        const vp = p.getViewport({ scale: BASE_SCALE * zoom });
-        setDefaultSize({ w: vp.width, h: vp.height });
+        const vp = p.getViewport({ scale: BASE_SCALE });
+        setPageSize({ w: vp.width, h: vp.height });
       })
       .catch(() => {
         // getPage(1) failed — fall back to a US-Letter-shaped size so
         // pages still attempt to render instead of the viewer going
         // permanently blank (defaultSize gates the whole page list).
         if (!cancelled) {
-          setDefaultSize({ w: 612 * BASE_SCALE * zoom, h: 792 * BASE_SCALE * zoom });
+          setPageSize({ w: 612 * BASE_SCALE, h: 792 * BASE_SCALE });
         }
       });
     return () => { cancelled = true; };
-  }, [doc, zoom]);
+  }, [doc]);
 
   // --------------------------------------------------------------------
   // Track current page for the toolbar
@@ -664,6 +668,8 @@ export function PdfViewer({
         numPages={numPages}
         zoom={zoom}
         setZoom={setZoom}
+        fitWidth={fitWidth}
+        onFitWidth={fitToWidth}
         mode={mode}
         setMode={setMode}
         onCommitHighlight={handleHighlightSelection}
@@ -688,7 +694,7 @@ export function PdfViewer({
             mode === "note" && "cursor-crosshair",
           )}
         >
-          <div className="mx-auto flex flex-col items-center gap-3 py-3">
+          <div className="flex w-max min-w-full flex-col items-center gap-3 p-3">
             {doc && defaultSize &&
               Array.from({ length: numPages }, (_, i) => i + 1).map(
                 (pageNumber) => (
@@ -761,6 +767,8 @@ function Toolbar({
   numPages,
   zoom,
   setZoom,
+  fitWidth,
+  onFitWidth,
   mode,
   setMode,
   onCommitHighlight,
@@ -774,6 +782,8 @@ function Toolbar({
   numPages: number;
   zoom: number;
   setZoom: (z: number) => void;
+  fitWidth: boolean;
+  onFitWidth: () => void;
   mode: "none" | "highlight" | "note";
   setMode: (m: "none" | "highlight" | "note") => void;
   onCommitHighlight: () => void;
@@ -788,7 +798,7 @@ function Toolbar({
       <button
         className="rounded px-2 py-1 hover:bg-muted"
         title="Zoom out"
-        onClick={() => setZoom(Math.max(0.4, +(zoom - 0.1).toFixed(2)))}
+        onClick={() => setZoom(Math.max(0.1, +(zoom - 0.1).toFixed(2)))}
       >
         −
       </button>
@@ -808,6 +818,15 @@ function Toolbar({
         title="Fit 100%"
       >
         100%
+      </button>
+
+      <button
+        className={cn("rounded px-2 py-1 hover:bg-muted", fitWidth && "bg-muted")}
+        onClick={onFitWidth}
+        aria-pressed={fitWidth}
+        title="Fit page to pane width"
+      >
+        Fit width
       </button>
 
       <div className="mx-2 h-4 w-px bg-border" />

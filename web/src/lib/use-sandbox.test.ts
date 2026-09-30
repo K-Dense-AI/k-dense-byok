@@ -121,3 +121,24 @@ describe("sci url builders", () => {
     ).toContain("project=project-a");
   });
 });
+
+describe("new scientific data formats", () => {
+  it("dispatches scientific arrays and data tables without loading binary text", async () => {
+    const { getViewerDef } = await import("./viewers/registry");
+    for (const name of ["cube.MAT", "counts.mtx", "sky.fits", "sky.fit", "sky.fts"]) {
+      expect(fileCategory(name)).toBe("arraydata");
+      expect(getViewerDef(fileCategory(name))?.loadMode).toBe("none");
+    }
+    for (const name of ["study.XLSX", "data.arrow", "data.feather", "data.ipc", "data.jsonl", "data.ndjson", "study.sqlite", "study.sqlite3", "study.db"]) {
+      expect(fileCategory(name)).toBe("datatable");
+      expect(getViewerDef(fileCategory(name))?.canEditSource).toBe(false);
+    }
+    expect(fileCategory("config.json")).toBe("text");
+  });
+  it("encodes dataset keys and slice indices with project scope", () => {
+    const url = new URL(sciSummaryUrl("data.h5", "arrays", "owner", { key: "/a/b & c", slice: 3 }), "http://localhost");
+    expect(url.searchParams.get("key")).toBe("/a/b & c");
+    expect(url.searchParams.get("slice")).toBe("3");
+    expect(url.searchParams.get("project")).toBe("owner");
+  });
+});

@@ -48,3 +48,33 @@ describe("versioned scientific summaries", () => {
     expect(run).toHaveBeenCalledTimes(2);
   });
 });
+
+it("forwards selections and isolates cached dataset/slice variants", async () => {
+  const target = path.join(root, "selection.npy");
+  const script = path.join(root, "selection.py");
+  await fs.writeFile(target, "array");
+  await fs.writeFile(script, "script");
+  run.mockReset().mockImplementation(async (_script, args) => ({ status: 0, stdout: JSON.stringify(args), stderr: "", timedOut: false }));
+  const request = { projectId: "one", target, script, command: "summarize" as const, params: ["/group/data", "0"] };
+  expect(JSON.parse((await getPreview(request)).stdout)).toEqual(["summarize", target, "/group/data", "0"]);
+  await getPreview(request);
+  expect(run).toHaveBeenCalledTimes(1);
+  expect(JSON.parse((await getPreview({ ...request, params: ["/group/data", "1"] })).stdout).at(-1)).toBe("1");
+  await getPreview({ ...request, params: ["/other", "0"] });
+  expect(run).toHaveBeenCalledTimes(3);
+});
+
+it("invalidates SQLite previews when the WAL changes without changing the main file", async () => {
+  const target = path.join(root, "wal.sqlite");
+  const script = path.join(root, "wal.py");
+  await fs.writeFile(target, "database");
+  await fs.writeFile(script, "script");
+  run.mockReset().mockResolvedValue({ status: 0, stdout: "{}", stderr: "", timedOut: false });
+  const request = { projectId: "one", target, script, command: "summarize" as const };
+  await getPreview(request);
+  await getPreview(request);
+  expect(run).toHaveBeenCalledTimes(1);
+  await fs.writeFile(`${target}-wal`, "transaction");
+  await getPreview(request);
+  expect(run).toHaveBeenCalledTimes(2);
+});

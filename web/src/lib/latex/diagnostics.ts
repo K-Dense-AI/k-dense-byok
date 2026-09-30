@@ -3,9 +3,10 @@
  * gutter. Errors come from `-file-line-error` output (preferred; filtered to
  * the file being edited) with a classic `! message` / `l.N` fallback.
  * Warnings cover undefined references/citations and over/underfull boxes —
- * these carry no file attribution in the log, so they are attached to the
- * open file (correct for single-file docs; harmless noise otherwise).
+ * Unattributed warnings are only attached when editing the compile target.
  */
+import { resolveRelative } from "./magic-comments";
+
 export interface TexDiagnostic {
   line: number;
   message: string;
@@ -14,25 +15,40 @@ export interface TexDiagnostic {
 
 const MAX_DIAGNOSTICS = 100;
 
-function parseErrors(log: string, fileName: string): TexDiagnostic[] {
+const normalize = (file: string) => file.replace(/\\/g, "/").replace(/^\.\//, "");
+
+/** TeX's file-line format allows spaces and Windows drive letters in paths. */
+export function parseFileLineDiagnostic(raw: string): (TexDiagnostic & { file: string }) | null {
+  const match = /^(.+?):(\d+):\s*(.+)$/.exec(raw);
+  if (!match || Number(match[2]) < 1) return null;
+  return { file: normalize(match[1].trim()), line: Number(match[2]), message: match[3].trim(), severity: "error" };
+}
+
+export function diagnosticMatchesFile(file: string, source: string, target = source): boolean {
+  file = normalize(file);
+  source = normalize(source);
+  // Absolute engine paths may include the sandbox root; relative ones are
+  // relative to the compile target, not to the currently edited chapter.
+  if (file.startsWith("/") || /^[A-Za-z]:\//.test(file)) return file.endsWith("/" + source) || file === source;
+  return resolveRelative(normalize(target), file) === source;
+}
+
+function parseErrors(log: string, fileName: string, target: string): TexDiagnostic[] {
   const out: TexDiagnostic[] = [];
   const seen = new Set<string>();
-  const base = fileName.split("/").pop()?.toLowerCase() ?? "";
-
-  const fileLineRe = /^(?:\.\/)?(\S+?):(\d+):\s*(.+)$/gm;
-  let m: RegExpExecArray | null;
-  while ((m = fileLineRe.exec(log)) !== null) {
-    const file = m[1].split("/").pop()?.toLowerCase() ?? "";
-    if (base && file !== base) continue;
-    const line = parseInt(m[2], 10);
-    const message = m[3].trim();
-    if (!Number.isFinite(line) || !message) continue;
+  let hasAttributedErrors = false;
+  for (const raw of log.split("\n")) {
+    const diagnostic = parseFileLineDiagnostic(raw);
+    if (!diagnostic) continue;
+    hasAttributedErrors = true;
+    if (!diagnosticMatchesFile(diagnostic.file, fileName, target)) continue;
+    const { line, message } = diagnostic;
     const key = `${line}:${message}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ line, message, severity: "error" });
   }
-  if (out.length > 0) return out;
+  if (hasAttributedErrors || fileName !== target) return out;
 
   let lastErr: string | null = null;
   for (const raw of log.split("\n")) {
@@ -85,8 +101,9 @@ function parseWarnings(log: string): TexDiagnostic[] {
 export function parseCompileDiagnostics(
   log: string,
   fileName: string,
+  target = fileName,
 ): TexDiagnostic[] {
-  return [...parseErrors(log, fileName), ...parseWarnings(log)].slice(
+  return [...parseErrors(log, fileName, target), ...(fileName === target ? parseWarnings(log) : [])].slice(
     0,
     MAX_DIAGNOSTICS,
   );

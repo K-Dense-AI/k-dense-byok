@@ -733,11 +733,18 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   );
 
   // --- generic scientific-file previews (chem/structure/...) via Python helper ---
-  app.get<{ Querystring: { path: string; kind: string } }>("/sandbox/sci-summary", async (req, reply) => {
+  app.get<{ Querystring: { path: string; kind: string; key?: string; slice?: string } }>("/sandbox/sci-summary", async (req, reply) => {
     try {
       if (!sciHelperFor(req.query.kind)) {
         reply.code(400);
         return { detail: `Unknown kind: ${req.query.kind}` };
+      }
+      const { key, slice } = req.query;
+      if ((key !== undefined && (typeof key !== "string" || key.length > 1024 || key.includes("\0"))) ||
+          (slice !== undefined && (!/^\d+$/.test(slice) || !Number.isSafeInteger(Number(slice)))) ||
+          ((key !== undefined || slice !== undefined) && !["arrays", "tables"].includes(req.query.kind))) {
+        reply.code(400);
+        return { detail: "Invalid scientific preview selection" };
       }
       const target = safePath(req.query.path);
       if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
@@ -746,6 +753,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       }
       const res = await requestPreview(reply, {
         projectId: currentProjectId(), target, script: sciHelperFor(req.query.kind)!.script, command: "summarize",
+        params: key !== undefined || slice !== undefined ? [key ?? "", slice ?? "0"] : undefined,
       });
       reply.header("Cache-Control", "private, no-cache");
       if (res.timedOut) {

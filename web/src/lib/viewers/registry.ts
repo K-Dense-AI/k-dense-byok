@@ -34,6 +34,7 @@ export const VIEWER_REGISTRY: Partial<Record<FileCategory, ViewerDef>> = {
   structure3d: { loadMode: "raw", Viewer: StructureViewer, canEditSource: false, managesOwnScroll: true },
   massspec: { loadMode: "none", Viewer: SpectrumViewer, canEditSource: false, managesOwnScroll: true },
   arraydata: { loadMode: "none", Viewer: ArrayDataViewer, canEditSource: false, managesOwnScroll: true },
+  datatable: { loadMode: "none", Viewer: ArrayDataViewer, canEditSource: false, managesOwnScroll: true },
   phylo: { loadMode: "text", Viewer: PhyloViewer, canEditSource: false, managesOwnScroll: true },
   alignment: { loadMode: "text", Viewer: AlignmentViewer, canEditSource: false, managesOwnScroll: true },
   dicom: { loadMode: "none", Viewer: ImagingViewer, canEditSource: false, managesOwnScroll: true },

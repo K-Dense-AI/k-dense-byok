@@ -39,6 +39,9 @@ async function version(request: PreviewRequest): Promise<string> {
   return JSON.stringify(await Promise.all([
     fileVersion(request.target),
     fileVersion(request.script),
+    // A live SQLite database may have newer committed data in its WAL.
+    ...(/\.(db|sqlite3?)$/i.test(request.target)
+      ? [fileVersion(`${request.target}-wal`).catch(() => "missing-wal")] : []),
     ...[helperPython(), path.join(HELPERS_DIR, "pyproject.toml"), path.join(HELPERS_DIR, ".venv", "pyvenv.cfg"), path.join(HELPERS_DIR, "uv.lock")]
       .map((file) => fileVersion(file).catch(() => "missing")),
   ]));
@@ -52,7 +55,7 @@ export async function getPreview(request: PreviewRequest, signal?: AbortSignal):
     try {
       const output = dir ? path.join(dir, "image") : "";
       const params = request.params ?? [];
-      const args = request.command === "summarize" ? ["summarize", request.target]
+      const args = request.command === "summarize" ? ["summarize", request.target, ...params]
         : request.command === "render" ? ["render", request.target, params[0] ?? "0", output, params[1] ?? "-"]
         : ["embedding", request.target, params[0], params[1] ?? "-", request.cacheDir!, output];
       const result = await runHelperScript(request.script, args, undefined, workSignal);
