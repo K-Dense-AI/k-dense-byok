@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { isWithin } from "../sandbox-fs.ts";
+import { apiRelative, isWithin } from "../sandbox-fs.ts";
 import { matchProtected } from "../agent/bash-classifier.ts";
 import { readGuardPolicy } from "../agent/guard-policy.ts";
 import type { ModalRemoteSandbox } from "./adapter.ts";
@@ -51,7 +51,7 @@ function assertTransferIdentity(realRoot: string, real: string, rel: string): st
   if (!isWithin(realRoot, real)) {
     throw new ModalTransferError("SYMLINK_ESCAPE", `Path resolves through a symlink outside the project sandbox: ${rel}`, 403);
   }
-  const canonicalRel = path.relative(realRoot, real).split(path.sep).join("/");
+  const canonicalRel = apiRelative(realRoot, real);
   if (canonicalRel) normalizeTransferPath(canonicalRel); // includes reserved roots, even through aliases
   return canonicalRel;
 }
@@ -75,7 +75,7 @@ function safeLocal(sandboxRoot: string, rel: string): { target: string; canonica
   }
   // lstat above deliberately treats a dangling symlink as existing; realpath
   // then rejects it instead of silently checking only its parent directory.
-  const realTarget = path.resolve(fs.realpathSync(existing), path.relative(existing, target));
+  const realTarget = path.resolve(fs.realpathSync(existing), apiRelative(existing, target));
   return { target, canonicalRel: assertTransferIdentity(realRoot, realTarget, rel) };
 }
 
