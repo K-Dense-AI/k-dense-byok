@@ -35,7 +35,11 @@ own turns too, and whether to read `WATCHDOG.md`. Number fields save when you
 press Enter or leave the field. Changes apply to new chat tabs.
 
 Edit `sandbox/.pi/WATCHDOG.md` (visible in the file panel) to change what the
-reviewer looks for in this project; it is seeded once and never overwritten.
+reviewer looks for in this project. Exact unchanged older shipped guidance
+upgrades on the next seed pass; customized or deleted guidance is preserved.
+The reviewer sees a bounded turn delta, so it checks relevant accessible
+records before alleging an omission. Missing evidence remains unverified;
+axis choices and repeated analyses are assessed in scientific context.
 
 ## Cost
 

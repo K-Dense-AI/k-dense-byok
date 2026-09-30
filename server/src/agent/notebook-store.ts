@@ -12,6 +12,7 @@ import type { NotebookResultLink, NotebookResultSnapshot } from "../../../web/sr
 import type { RobustnessDraft } from "../../../web/src/lib/notebook-robustness.ts";
 import type { NextExperimentPlan, NextExperimentBinding, NextExperimentChoice } from "../../../web/src/lib/next-experiments.ts";
 import fs from "node:fs";
+import type { NotebookExecution } from "../../../web/src/lib/notebook-execution.ts";
 import path from "node:path";
 import { activePaths, resolvePaths } from "../projects.ts";
 
@@ -40,6 +41,7 @@ export interface NotebookEntryInput {
   scope?: string;
   revisitWhen?: string;
   outcome?: NotebookOutcome;
+  execution?: NotebookExecution;
   /** Authored proposal only, never a frozen/approved record. */
   analysisPlan?: AnalysisPlanInput;
   robustness?: RobustnessDraft;

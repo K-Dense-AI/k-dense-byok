@@ -40,12 +40,26 @@ back as a notice card instead of a model turn:
 | `/qc` | `<file>` | Quality-control report for a dataset, written to `derived/`. |
 | `/stats-check` | `<file-or-result>` | Audit the statistics behind a result or script. |
 | `/figure-audit` | `<figure>` | Check a figure against the data and code that produced it. |
-| `/methods-review` | – | Review everything so far for reproducibility. |
+| `/methods-review` | – | Review methods for the current deliverable, or the whole project when requested. |
 | `/replicate` | `<script>` | Re-run a script from a copy of its inputs and compare outputs. |
 
-They are seeded once into `sandbox/.pi/prompts/`; deleting one sticks, and
-Settings → Prompt templates → *Restore defaults* brings them back without
-touching your own templates.
+They are seeded into `sandbox/.pi/prompts/`. Exact unchanged older shipped
+versions upgrade on the next seed pass; customized files and deletions stay
+as you left them. Settings → Prompt templates → *Restore defaults* replaces
+the five shipped templates with their current versions (including any edits
+to those five); other templates are untouched.
+
+QC distinguishes sampled checks from full scans and writes uniquely named
+reports. Statistical checks follow the actual study design. Figure audits
+separate visual inspection from verified numerical comparisons. Replication
+checks inspect output destinations and capture baselines before running in a
+fresh directory; a same-data rerun is not independent scientific replication.
+
+The workflow catalog uses the same conditional-method principle: establish
+the question and design before applying a recipe, report omitted or substituted
+steps, and distinguish planned work from observed results. Its statistical,
+ANOVA, meta-analysis, cleaning and time-series templates include specific
+design, applicability and leakage checks.
 
 ## Writing your own
 

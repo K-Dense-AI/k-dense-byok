@@ -4,6 +4,8 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
+import path from "node:path";
+import { modalJobFiles } from "../src/modal/store.ts";
 
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { createProject } from "../src/projects.ts";
@@ -14,6 +16,7 @@ import {
   makeScientificCompactionExtension,
   PREAMBLE_VERSION,
   SCIENCE_COMPACTION_INSTRUCTIONS,
+  childWorkSummary,
   type SummaryGenerator,
 } from "../src/agent/compaction-bridge.ts";
 
@@ -90,6 +93,32 @@ function seedStores(): void {
 }
 
 describe("buildCompactionPreamble", () => {
+  it("retains only pending Modal jobs belonging to this session", () => {
+    for (const job of [
+      { id: "pending-job", owner: { sessionId }, state: "running" },
+      { id: "finished-job", owner: { sessionId }, state: "succeeded" },
+      { id: "foreign-job", owner: { sessionId: "other-session" }, state: "queued" },
+    ]) {
+      const file = modalJobFiles(projectId, job.id).job;
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, JSON.stringify({ ...job, projectId, createdAt: 1, updatedAt: 2 }));
+    }
+    const text = buildCompactionPreamble(projectId, sessionId).text;
+    expect(text).toContain("job pending-job: running");
+    expect(text).not.toContain("finished-job");
+    expect(text).not.toContain("foreign-job");
+  });
+  it("retains corrections, execution uncertainty and conflicting evidence", () => {
+    appendNotebookEntry(sessionId, { id: "old", type: "method", title: "Earlier result", timestamp: 1, role: "agent", execution: { status: "completed" } }, projectId);
+    appendNotebookEntry(sessionId, { id: "fix", type: "observation", title: "Correction", timestamp: 2, role: "agent", supersedes: "old", outcome: "technical-failure", execution: { status: "attempted", evidence: "exit 1; run.log" }, limitations: ["Partial output"] }, projectId);
+    const text = buildCompactionPreamble(projectId, sessionId).text;
+    expect(text).toContain("SUPERSEDED by fix");
+    expect(text).toContain("Execution: unverified");
+    expect(text).toContain("Execution: attempted");
+    expect(text).toContain("exit 1; run.log");
+    expect(text).toContain("outcome: technical-failure");
+    expect(text).toContain("Partial output");
+  });
   it("derives entries, result ids and the environment id from Kady's stores", () => {
     seedStores();
     const preamble = buildCompactionPreamble(projectId, sessionId);
@@ -109,6 +138,20 @@ describe("buildCompactionPreamble", () => {
     expect(preamble.text).toContain("(no notebook entries, plans or results recorded yet)");
     expect(preamble.resultIds).toEqual([]);
   });
+});
+
+it("preserves canonical controls for pending specialists without inventing targets from display order", () => {
+  const text = childWorkSummary({ asyncSnapshot: { runs: [
+    { id: "run-1", state: "running", children: [{ id: "step-x", state: "paused", control: { runId: "run-1", index: 7, childId: "child-x" } }] },
+    { id: "finished", state: "complete" },
+  ] } });
+  expect(text).toContain('"runId":"run-1","index":7,"childId":"child-x"');
+  expect(text).toContain("step-x: paused");
+  expect(text).not.toContain("finished");
+  expect(childWorkSummary(undefined)).toContain("status unavailable");
+  const omitted = childWorkSummary({ asyncSnapshot: { runs: [], omitted: { runs: 1, children: 0, byteLimitExceeded: false } } });
+  expect(omitted).toContain("Snapshot truncated");
+  expect(omitted).not.toContain("No pending children");
 });
 
 type Handler = (event: unknown, ctx: unknown) => Promise<unknown>;

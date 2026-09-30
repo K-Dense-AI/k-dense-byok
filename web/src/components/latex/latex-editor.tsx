@@ -517,11 +517,16 @@ export function LatexEditor({
       const ctrl = new AbortController();
       aiAbortRef.current = ctrl;
       try {
-        return await postLatexAssist(
+        const result = await postLatexAssist(
           model ? { ...payload, model } : payload,
           ctrl.signal,
           projectId,
         );
+        if (result.status === "needs_context") {
+          onError(`More context needed: ${result.message}`);
+          return null;
+        }
+        return result;
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           onError(err instanceof LatexAssistError ? err.message : "AI request failed");
@@ -549,7 +554,7 @@ export function LatexEditor({
         },
         setAiError,
       );
-      if (!res) return;
+      if (!res || res.status !== "replacement") return;
       setAiPopover(null);
       startReview(from, to, selection, res.replacement, res.costUsd);
     },
@@ -572,7 +577,7 @@ export function LatexEditor({
       const doc = view.state.doc.toString();
       const payload = buildFixPayload(doc, name, line, message);
       const res = await requestAssist(payload, showSyncNotice);
-      if (!res) return;
+      if (!res || res.status !== "replacement") return;
       const { from, to } = lineRangeToOffsets(
         doc, payload.context.startLine, payload.context.endLine,
       );

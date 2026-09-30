@@ -32,6 +32,16 @@ function writeSession(name: string, rows: string[]): string {
 }
 
 describe("notebookEntriesFromSessionFile", () => {
+  it("retains child execution reports without treating unsupported completion as verified", () => {
+    const f = writeSession("execution.jsonl", [asstRow([
+      toolCall("planned", "notebook", { type: "method", title: "Plan", execution: { status: "planned" } }),
+      toolCall("bare", "notebook", { type: "method", title: "Claim", execution: { status: "completed" } }),
+      toolCall("done", "notebook", { type: "method", title: "Run", execution: { status: "completed", evidence: "child run 3, exit 0; derived/run3.log" } }),
+    ])]);
+    const entries = notebookEntriesFromSessionFile(f, "worker");
+    expect(entries.map((e) => e.execution?.status)).toEqual(["planned", "unverified", "completed"]);
+    expect(entries[2].execution?.evidence).toBe("child run 3, exit 0; derived/run3.log");
+  });
   it("extracts notebook tool-calls, stamping role and a namespaced id", () => {
     const f = writeSession("s.jsonl", [
       asstRow([

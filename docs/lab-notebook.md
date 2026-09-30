@@ -15,6 +15,7 @@ Kady logs entries through the `notebook` tool when it wants to record its work. 
 - **Artifacts** — sandbox-relative file paths; images render as inline thumbnails, other files as clickable chips that open in the preview panel
 - **Evidence links** — an observation can bear on multiple earlier hypotheses or decisions using `evidence: [{entryId, relation, rationale?, sessionId?}]`. Relations are `supports`, `challenges`, `inconclusive`, and `context`. Omit `sessionId` for local links. The existing `relatesTo` / `stance` pair still works.
 - **Outcome and limitations** — optional `outcome` (`signal`, `null`, `inconclusive`, `technical-failure`) and `limitations` record what an analysis can and cannot establish.
+- **Execution report** — optional `execution: {status, evidence?}` distinguishes `planned`, `attempted`, `completed` and `unverified` procedures. A completed report requires concrete command/output evidence; a bare completion label is stored as unverified. These are authored reports, not independent verification or execution approvals. A failed/partial/cancelled run is an attempt, independently of its scientific outcome. Legacy entries without a state remain unverified until their evidence is inspected.
 - **Applicability and reconsideration** — optional `scope` identifies datasets/cohorts/conditions; `revisitWhen` records what would justify reconsidering a finding or rejected approach. These are authored conditions, not permanent facts or automatic actions.
 - **Amendments** — `supersedes` corrects an earlier entry without deleting history.
 - **Plan proposals** — `analysisPlan` on a hypothesis contains an editable draft, never an approval. The user reviews and freezes it separately.
@@ -193,6 +194,16 @@ Known historical hashes are matched against retained package snapshots, relevant
 Storage controls distinguish removing a package from pruning unreferenced historical snapshots. No original research file is deleted. See [evidence-packages.md](./evidence-packages.md) for limits, integrity, rights/privacy and recovery semantics.
 
 ## Methods draft
+
+Drafting context preserves full artifact paths and execution reports. Completed
+prose requires supporting execution/output evidence; planned work, attempts
+and missing evidence remain explicit. A Verification gaps subsection records
+missing details. Source text is treated as reference material, not instructions.
+
+Scientific context compaction also retains execution uncertainty, corrections,
+limitations and recorded plan deviations. A bounded snapshot carries pending
+Modal job ids and canonical specialist control ids with their last known states;
+the agent must recheck live status before resuming or launching replacement work.
 
 The **Methods draft** button (with a confirm step — it makes one AI call billed to your project budget) summarizes active (not superseded) method, decision, and observation entries into a manuscript-style Methods section. Its context includes frozen-plan history, deviations, scientific-result references, evidence links, limitations, outcomes and artifact-check warnings, and the prompt requests source entry ids and explicit missing information. A plan alone cannot trigger a Methods AI call without a method, observation, decision or recorded deviation; plans describe intentions, not performed methods. Oversized context is explicitly marked partial. These are drafting instructions, not a claim that generated citations have been independently verified. The draft is saved as `methods_draft_<sessionId>.md` in the sandbox and opens in the preview panel. The call is budget-gated and ledgered under the `methods-draft` session id in project costs.
 

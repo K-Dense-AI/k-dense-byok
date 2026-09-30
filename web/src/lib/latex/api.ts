@@ -73,13 +73,12 @@ export class LatexAssistError extends Error {
   }
 }
 
-export interface LatexAssistResult {
-  replacement: string;
+export type LatexAssistResult = import("./assist-result").LatexAssistDecision & {
   model: string;
   costUsd: number;
   billingMode?: string;
   listPriceUsd?: number;
-}
+};
 
 export async function postLatexAssist(
   body: Record<string, unknown>,

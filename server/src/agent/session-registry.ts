@@ -356,7 +356,9 @@ async function build(
       // Science-aware context compaction: a deterministic state preamble (plan,
       // notebook, results, environment) plus a summary generated under
       // science-focused instructions; falls back to Pi's default on error.
-      makeScientificCompactionExtension(projectId, () => holder.session?.sessionId ?? ""),
+      makeScientificCompactionExtension(projectId, () => holder.session?.sessionId ?? "", {
+        readChildStatus: async () => subagentHost(projectId, holder.session?.sessionId ?? "").rpc("status"),
+      }),
       // Harvest notebook entries the roster's subagents logged (child pi
       // processes get the notebook tool via seedNotebookPackage above) into
       // the parent notebook — the parent is the single writer.

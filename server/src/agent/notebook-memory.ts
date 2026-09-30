@@ -5,6 +5,7 @@ import { deriveEvidenceThreads, evidenceLinks, notebookEntryKey, notebookTargetK
 import { normalizeMemoryQuery, normalizeMemorySource, memorySourceKey, memorySearchFields, memoryExcerpt, rankMemory, MEMORY_RULES,
   type MemoryCoverage, type MemoryHit, type MemoryRecordResponse, type MemorySearchResponse, type MemorySource } from "../../../web/src/lib/notebook-memory.ts";
 import type { NotebookEntry } from "./notebook-store.ts";
+import { normalizeNotebookExecution } from "../../../web/src/lib/notebook-execution.ts";
 
 export class NotebookMemoryError extends Error {
   statusCode: number;
@@ -62,6 +63,7 @@ export async function hitsFor(projectId: string, corpus: MemoryCorpus, selected:
     if (status === "historical") qualifiers.push("Historical plan revision; later revisions exist.");
     if (!corpus.coverage.complete) qualifiers.push("Recall coverage is incomplete; currentness and aggregate evidence status cannot be established from this scan.");
     if (!entry.scope && document.type !== "plan" && document.type !== "deviation") qualifiers.push("Applicability scope was not explicitly recorded; verify the dataset/cohort/conditions before generalizing.");
+    if (entry.type === "method" || entry.execution) qualifiers.push(`Execution status is ${normalizeNotebookExecution(entry.execution)?.status ?? "unverified"} (authored report, not independent verification); read the source evidence before claiming completion.`);
     if (entry.outcome === "technical-failure") qualifiers.push("Technical failure is not evidence of no effect or a refuted hypothesis.");
     if (entry.outcome === "null") qualifiers.push("A recorded null result is not automatically evidence of equivalence or absence of an effect.");
     if (entry.outcome === "inconclusive") qualifiers.push("Inconclusive evidence does not establish support or refutation.");

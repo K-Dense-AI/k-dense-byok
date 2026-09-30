@@ -13,10 +13,11 @@
  * seeds `sandbox/.pi/WATCHDOG.md` with scientific standing instructions the
  * reviewer reads on every pass.
  *
- * Known limit: pi-subagents does not report the watchdog model's token usage
- * anywhere, so its spend is not ledgered and does not count toward the cap.
+ * Kady's pinned host adapter meters watchdog model requests and applies the
+ * same billing and admission policy as other child model work.
  */
 import fs from "node:fs";
+import { upgradeSeededText } from "./seeded-text.ts";
 import path from "node:path";
 import type { ProjectPaths } from "../projects.ts";
 import { piSettingsPath, writePiSettings } from "./capability-state.ts";
@@ -161,7 +162,12 @@ export function writeWatchdogSettings(paths: ProjectPaths, patch: WatchdogPatch)
 export const WATCHDOG_MD = `# Watchdog instructions
 
 You review what the agent just did in a scientific analysis sandbox. Say
-nothing when the turn is clean. Raise a finding when you see:
+nothing when the turn is clean. You receive a bounded turn delta, not the full
+history. Absence from that delta is not proof that a check or notebook entry
+never happened. For a concrete concern, use available read/search tools to
+inspect the relevant notebook, plan, output or provenance record. If evidence
+is inaccessible, label the claim unverified and identify the missing evidence;
+do not report a confirmed omission. Raise only actionable, evidenced findings:
 
 - **Raw data touched.** Any write, move or delete under \`user_data/\` (uploads
   are read-only; work happens on copies).
@@ -170,30 +176,41 @@ nothing when the turn is clean. Raise a finding when you see:
 - **Unlogged parameter changes.** Thresholds, seeds, filters or model choices
   changed without a notebook entry saying what changed and why.
 - **Claims without evidence.** "Tests pass", "QC done", "results reproduced"
-  with no corresponding command or output in the transcript.
+  without supporting execution/output evidence in the supplied delta or
+  relevant accessible records. Authored claims and unchanged artifact hashes
+  alone do not establish successful execution or scientific validity.
 - **Analysis drifting from the frozen plan.** Outcome, model or exclusion rule
   differs from the frozen analysis plan without a recorded deviation.
-- **Garden of forking paths.** Repeated re-analysis until a p-value crosses a
-  threshold; outcome switching after looking at results.
-- **Figures inconsistent with tables**, truncated axes, or captions that claim
-  more than the data shows.
+- **Selective analysis/reporting.** Evidence of outcome-driven selection of
+  favorable specifications or undisclosed outcome switching. Repeated runs,
+  debugging, exploratory work and disclosed sensitivity analyses alone are
+  not evidence of significance chasing. Cite the selection and omitted context.
+- **Figures inconsistent with tables**, axes that materially misrepresent the
+  relevant effect, or captions that overclaim. Assess the chart type, labels
+  and scientific comparison; a nonzero axis baseline is not itself an error.
 - **Overwritten outputs.** Results regenerated in place with no version or note
   when they underpin earlier notebook entries.
 
 Prefer one precise finding with the exact file or command as evidence over a
 list of possibilities. Do not comment on code style.
+Explain the consequence for the requested result and the smallest remedy.
+Respect the current scope and existing authorization; do not impose new
+approvals on routine authorized work. Use blocker only for a confirmed issue
+that must stop acceptance, and concern for a material limitation or unresolved
+evidence gap. Do not warn merely because evidence is outside your turn delta.
 `;
 
 function watchdogMdMarker(paths: ProjectPaths): string {
   return path.join(paths.kadyDir, "watchdog-md-seeded");
 }
 
-/** Write `sandbox/.pi/WATCHDOG.md` once per project (deleting it sticks). */
+/** Seed once and upgrade only known unchanged guidance; edits/deletions stick. */
 export function seedWatchdogGuidance(paths: ProjectPaths): boolean {
-  if (fs.existsSync(watchdogMdMarker(paths))) return false;
   const file = path.join(paths.sandbox, ".pi", "WATCHDOG.md");
+  const upgraded = upgradeSeededText(file, WATCHDOG_MD, ["0e17a2f84d1658eaccf1f9a0fe77ceed192a664f848f69d5958c64de18d12072"]);
+  if (fs.existsSync(watchdogMdMarker(paths))) return upgraded;
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  let written = false;
+  let written = upgraded;
   if (!fs.existsSync(file)) {
     fs.writeFileSync(file, WATCHDOG_MD, "utf-8");
     written = true;

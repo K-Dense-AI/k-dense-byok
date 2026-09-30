@@ -17,6 +17,12 @@ Everything renders **locally**. Text-based formats load instantly; binary/scient
 | LaTeX | `tex` `latex` | Split-pane editor with autocomplete, outline & spell check, two-way SyncTeX pdf.js preview, inline compile diagnostics, AI fix/edit, and Ask Kady handoff |
 | Anything else | any text file | Syntax-highlighted, **editable** source |
 
+LaTeX AI assistance preserves scientific content and makes minimal compile
+fixes. When the supplied snippet is insufficient, it explains the missing
+context without changing the document. Proposed replacements still use the
+existing diff review. A suggestion is not a verified compilation; recompile
+after accepting it. Missing-context responses are billed like other AI calls.
+
 ### Genomics & sequences
 | Format | Extensions | Viewer |
 |---|---|---|

@@ -7,6 +7,7 @@
  * from GET /sessions/:id/notebook; mergeNotebookEntries reconciles the two by id.
  */
 import type { AgentFrame } from "./use-agent";
+import { normalizeNotebookExecution, type NotebookExecution } from "./notebook-execution";
 import { readExperimentBinding, readExperimentChoice, normalizeNextExperiments, type NextExperimentPlan, type NextExperimentBinding, type NextExperimentChoice } from "./next-experiments";
 import { normalizeRobustnessDraft, type RobustnessDraft } from "./notebook-robustness";
 import { normalizeAnalysisPlan, type AnalysisPlanInput, type AnalysisPlanHistory } from "./notebook-plans";
@@ -37,6 +38,7 @@ export interface NotebookEntry {
   scope?: string;
   revisitWhen?: string;
   outcome?: NotebookOutcome;
+  execution?: NotebookExecution;
   analysisPlan?: AnalysisPlanInput;
   robustness?: RobustnessDraft;
   nextExperiments?: NextExperimentPlan;
@@ -118,6 +120,7 @@ export function parseNotebookFrame(
     supersedes:
       typeof a.supersedes === "string" && a.supersedes.trim() ? a.supersedes.trim() : undefined,
     evidence: normalizeEvidenceLinks(a.evidence),
+    execution: normalizeNotebookExecution(a.execution),
     analysisPlan: planDraft(a.analysisPlan),
     robustness: robustnessDraft(a.robustness),
     nextExperiments: nextExperimentDraft(a.nextExperiments),
@@ -150,6 +153,7 @@ export function normalizeNotebookEntries(entries: readonly NotebookEntry[]): Not
     title: typeof entry.title === "string" ? entry.title : "Untitled entry",
     artifacts: Array.isArray(entry.artifacts) ? entry.artifacts.filter((p): p is string => typeof p === "string") : undefined,
     evidence: normalizeEvidenceLinks(entry.evidence),
+    execution: normalizeNotebookExecution(entry.execution),
     analysisPlan: planDraft(entry.analysisPlan),
     robustness: robustnessDraft(entry.robustness),
     nextExperiments: nextExperimentDraft(entry.nextExperiments),

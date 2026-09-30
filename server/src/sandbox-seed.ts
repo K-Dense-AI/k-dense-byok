@@ -185,7 +185,36 @@ Specialists themselves use \`contact_supervisor\`, not these lead-only tools.
   "scheduling anything, ensure the user has authorized the interval, specialist,\nand expected cost per run. Ask only for missing authorization via `interview`\n(or `contact_supervisor` for a specialist); scheduled runs are billed like",
 );
 
-export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4, AGENTS_MD_V5, AGENTS_MD_V6];
+const AGENTS_MD_V7 = AGENTS_MD_V6.replace(
+  /## Python — always use uv[\s\S]*?(?=\n## )/,
+  `## Python in the local project sandbox
+
+This local sandbox is a uv project (see \`pyproject.toml\`). Run local project
+scripts with \`uv run python script.py\`; use its \`.venv/\` rather than modifying
+the system Python. \`uv run\` creates/syncs the environment automatically.
+If uv is missing from PATH, check the configured installation (including
+\`~/.local/bin/uv\` on macOS/Linux) before reporting it unavailable.
+
+For an import failure, first inspect the active environment, local modules,
+\`pyproject.toml\` and lockfile. An import name is not necessarily the installable
+distribution name (for example, PIL comes from Pillow). Verify the distribution
+from project requirements or official package documentation; never blindly run
+\`uv add <module>\`. Sync already-declared dependencies first. If a new dependency
+is required within scope, use \`uv add <verified-distribution>\`, respecting
+existing version constraints, and record the environment change.
+
+Retry the failing command once after a diagnosed repair. If it still fails,
+inspect the new error; do not repeat the same install or cycle through guessed
+packages. Report an unresolved blocker with the command and evidence while
+continuing independent work where possible.
+
+These uv instructions apply to the local project. For Modal or another remote
+runtime, follow that runtime's image/dependency configuration and interpreter;
+do not assume the local .venv or host paths exist remotely.
+`,
+);
+
+export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4, AGENTS_MD_V5, AGENTS_MD_V6, AGENTS_MD_V7];
 export const AGENTS_MD = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 1];
 
 /** Newline-insensitive comparison so a CRLF checkout still counts as unedited. */

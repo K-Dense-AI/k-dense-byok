@@ -70,6 +70,10 @@ export function NotebookEvidenceSummary({ entry, thread, entries, onJump, onOpen
       })}
       {Boolean(thread?.unresolvedLinks) && <p>Some references are unavailable in this view or invalid; they are not counted as evidence.</p>}
       {entry.outcome && <p>Outcome: <strong>{entry.outcome.replaceAll("-", " ")}</strong>{entry.outcome === "technical-failure" ? " — not negative scientific evidence" : entry.outcome === "null" ? " — not automatically evidence against a hypothesis" : ""}</p>}
+      {(entry.execution || entry.type === "method") && <div>
+        <p>Execution: <strong>{entry.execution?.status ?? "unverified"}</strong> — reported, not independently verified</p>
+        {entry.execution?.evidence && <p className="whitespace-pre-wrap">Reported evidence: {entry.execution.evidence}</p>}
+      </div>}
       {entry.scope && <p><strong>Applies to:</strong> {entry.scope}</p>}
       {entry.revisitWhen && <p><strong>Revisit when:</strong> {entry.revisitWhen} <span>(recorded condition, not an automatic action)</span></p>}
       {Boolean(entry.limitations?.length) && <div><strong>Limitations</strong><ul className="list-disc pl-4">{entry.limitations!.map((x, i) => <li key={i}>{x}</li>)}</ul></div>}

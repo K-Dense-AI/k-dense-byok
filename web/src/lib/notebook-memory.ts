@@ -1,9 +1,11 @@
 /** Shared, IO-free protocol for source-linked research memory. */
 import type { NotebookArtifactHealth, NotebookOutcome, HypothesisStatus, EvidenceEntry } from "./notebook-evidence-core";
+import type { NotebookExecution } from "./notebook-execution";
 export type MemoryNotebookType = "hypothesis" | "method" | "observation" | "decision" | "note";
 export type MemoryKind = MemoryNotebookType | "user-note" | "plan" | "deviation";
 /** Structural record model kept free of React/chat imports for backend reuse. */
 export interface MemoryNotebookEntry extends EvidenceEntry {
+  execution?: NotebookExecution;
   type: MemoryNotebookType;
   body?: string;
   code?: { source: string; lang?: string };

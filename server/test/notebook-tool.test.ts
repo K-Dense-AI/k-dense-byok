@@ -9,6 +9,13 @@ import { setSessionRunId } from "../src/agent/run-ids.ts";
 const run = (tool: ReturnType<typeof makeNotebookTool>, id: string, params: unknown) =>
   tool.execute(id, params as never, undefined as never);
 
+it("persists execution state while downgrading unsupported completion labels", async () => {
+  const tool = makeNotebookTool("default", () => "execution");
+  await run(tool, "bare", { type: "method", title: "Claim", execution: { status: "completed" } });
+  await run(tool, "done", { type: "method", title: "Run", execution: { status: "completed", evidence: "uv run python a.py; exit 0; derived/run.log" } });
+  expect(readNotebookEntries("execution", "default").map((e) => e.execution?.status)).toEqual(["unverified", "completed"]);
+});
+
 beforeEach(() => {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
