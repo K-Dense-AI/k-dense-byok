@@ -450,7 +450,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
-  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { after?: string; runId?: string } }>(
     "/sessions/:id/run/events",
     async (req, reply) => {
       const rawAfter = req.query.after;
@@ -463,6 +463,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (!handle) {
         reply.code(404);
         return { detail: "No retained run for this session" };
+      }
+      // A new system/user run can replace the retained handle after the client
+      // reads /run/state. Sequence cursors belong to one run, never its successor.
+      if (req.query.runId !== undefined && req.query.runId !== handle.runId) {
+        reply.code(409);
+        return { detail: "The retained run changed; refresh its state before reconnecting", runId: handle.runId };
       }
       streamRun(req, reply, handle, after);
     },

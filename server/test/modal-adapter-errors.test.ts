@@ -28,6 +28,8 @@ describe("classifyModalError", () => {
   it.each([
     [grpc(16, "UNAUTHENTICATED: token invalid"), "AUTH_FAILED", 401, false],
     [grpc(7, "PERMISSION_DENIED"), "AUTH_FAILED", 401, false],
+    [grpc(8, "H100 capacity unavailable"), "CAPACITY_UNAVAILABLE", 503, true],
+    [grpc(14, "server unavailable"), "REMOTE_FAILURE", 502, true],
     [new Error("Token secret is invalid"), "AUTH_FAILED", 401, false],
     [new Error("Image build for im-123 failed with the exception: pip failed"), "IMAGE_BUILD_FAILED", 422, false],
     [new InvalidError("bad gpu string"), "INVALID_REQUEST", 400, false],

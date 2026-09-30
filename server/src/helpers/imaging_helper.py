@@ -3,7 +3,7 @@
 Usage:
   python imaging_helper.py summarize <path>                    -> JSON to stdout
   python imaging_helper.py render <path> <index> <out> <axis>  -> writes a PNG to <out>
-    `axis` selects the NIfTI plane (sagittal|coronal|axial); DICOM/TIFF ignore it
+    `axis` selects a NIfTI plane from its summary; DICOM/TIFF ignore it
     ("-") and `index` selects the frame/page instead.
 
 Exit codes: 0 ok; 3 deps missing; 4 not found (or index out of range); 5 bad
@@ -142,15 +142,58 @@ def _load_nifti(path: Path):
     return img, shape
 
 
+def _nifti_layout(img):
+    """Map anatomical axes to storage axes without materializing the volume.
+
+    https://nipy.org/nibabel/reference/nibabel.orientations.html
+    Native oblique planes cannot be called exact sagittal/coronal/axial planes
+    without resampling. Keep them available with explicit voxel-axis labels.
+    """
+    import nibabel as nib
+    import numpy as np
+
+    affine = np.asarray(img.affine)
+    spatial = affine[:3, :3]
+    sizes = np.linalg.norm(spatial, axis=0)
+    if not np.isfinite(affine).all() or np.any(sizes <= 0):
+        raise ValueError("NIfTI affine does not define valid spatial axes")
+    orientation = nib.orientations.io_orientation(affine)
+    if not np.isfinite(orientation).all():
+        raise ValueError("NIfTI affine has a missing spatial dimension")
+    cardinal = np.zeros((3, 3))
+    for source, (world, sign) in enumerate(orientation):
+        cardinal[int(world), source] = sign
+    known = int(img.header["qform_code"]) > 0 or int(img.header["sform_code"]) > 0
+    aligned = np.allclose(spatial / sizes, cardinal, rtol=0, atol=1e-5)
+    if not known or not aligned:
+        reason = "Oblique affine" if known else "No anatomical transform in the NIfTI header"
+        return {
+            "axes": [(f"voxel axis {i + 1}", i, 1) for i in range(3)],
+            "anatomical": False,
+            "notice": f"{reason}: showing native voxel planes, not reconstructed anatomical planes.",
+            "voxel_sizes": sizes.tolist(),
+        }
+    axes = []
+    for name, world in _NIFTI_AXES.items():
+        source = int(np.flatnonzero(orientation[:, 0] == world)[0])
+        axes.append((name, source, int(orientation[source, 1])))
+    return {
+        "axes": axes, "anatomical": True,
+        "notice": "Anatomical planes: right is right in axial/coronal views; anterior is right in sagittal views. Superior (or anterior for axial) is up.",
+        "voxel_sizes": [float(sizes[source]) for _, source, _ in axes],
+    }
+
+
 def summarize_nifti(path: Path) -> dict:
     img, shape = _load_nifti(path)
     header = img.header
-    zooms = header.get_zooms()
+    layout = _nifti_layout(img)
     affine = img.affine
 
     meta: dict = {
-        "voxel_sizes": [float(z) for z in zooms[:3]],
+        "voxel_sizes": layout["voxel_sizes"],
         "affine_diagonal": [float(affine[i][i]) for i in range(3)],
+        "orientation": layout["notice"],
     }
     intent = header.get_intent()
     if intent and intent[0] and intent[0] != "none":
@@ -161,12 +204,8 @@ def summarize_nifti(path: Path) -> dict:
         "file_size": path.stat().st_size,
         "shape": [int(s) for s in shape],
         "dtype": str(header.get_data_dtype()),
-        "axes": [
-            {"name": "sagittal", "size": int(shape[0])},
-            {"name": "coronal", "size": int(shape[1])},
-            {"name": "axial", "size": int(shape[2])},
-        ],
-        "default_axis": "axial",
+        "axes": [{"name": name, "size": int(shape[source])} for name, source, _ in layout["axes"]],
+        "default_axis": layout["axes"][2][0],
         "meta": meta,
     }
 
@@ -177,10 +216,12 @@ def render_nifti(path: Path, index: int, out: Path, axis: str) -> None:
     import numpy as np
 
     img, shape = _load_nifti(path)
-    if axis not in _NIFTI_AXES:
+    layout = _nifti_layout(img)
+    selected = next((item for item in layout["axes"] if item[0] == axis), None)
+    if selected is None:
         sys.stderr.write(f"Invalid axis: {axis}\n")
         sys.exit(5)
-    ax = _NIFTI_AXES[axis]
+    _, ax, direction = selected
     size = shape[ax]
     if index < 0 or index >= size:
         sys.stderr.write(f"Slice index out of range: {index}\n")
@@ -190,12 +231,24 @@ def render_nifti(path: Path, index: int, out: Path, axis: str) -> None:
     idx: list = []
     for d in range(len(shape)):
         if d == ax:
-            idx.append(index)
+            idx.append(index if direction > 0 else size - 1 - index)
         elif d < 3:
             idx.append(slice(None))
         else:
             idx.append(0)  # collapse any non-spatial (e.g. time) dimension
     arr = np.asarray(data[tuple(idx)])
+    if layout["anatomical"]:
+        # Read one native slice, then reorder/flip its two axes to positive RAS.
+        # Canonicalizing the entire image here would load large volumes just
+        # to view one plane. NumPy transposes/flips of this slice are views.
+        remaining = [d for d in range(3) if d != ax]
+        plane_axes = [(source, sign) for _, source, sign in layout["axes"] if source != ax]
+        arr = np.transpose(arr, [remaining.index(source) for source, _ in plane_axes])
+        for dimension, (_, sign) in enumerate(plane_axes):
+            if sign < 0:
+                arr = np.flip(arr, dimension)
+        # Raster rows increase downward; put the anatomical vertical axis up.
+        arr = np.flip(arr.T, axis=0)
     _to_png(arr, out)
 
 
@@ -439,6 +492,9 @@ def main() -> None:
             sys.exit(1)
     except SystemExit:
         raise
+    except ValueError as exc:
+        sys.stderr.write(f"{exc}\n")
+        sys.exit(5)
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(f"{type(exc).__name__}: {exc}\n")
         sys.exit(1)

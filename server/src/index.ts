@@ -146,9 +146,26 @@ export async function buildApp() {
         projectId = DEFAULT_PROJECT_ID;
       }
       ensureProjectExists(projectId);
-    } catch {
+    } catch (err) {
+      // Failure to open a known project (permissions, unavailable storage,
+      // malformed paths) must not turn an intended edit into a default-project
+      // edit. The same rule as the unknown-project branch applies here.
+      if ((req.method !== "GET" && req.method !== "HEAD") || projectId === DEFAULT_PROJECT_ID) {
+        req.log.error({ err, projectId }, "could not establish requested project scope");
+        reply.code(503).send({
+          detail: `Could not open project: ${projectId}`,
+          reason: "project_unavailable",
+        });
+        return;
+      }
+      reply.header("X-Project-Fallback", projectId);
       projectId = DEFAULT_PROJECT_ID;
-      ensureProjectExists(projectId);
+      try {
+        ensureProjectExists(projectId);
+      } catch (fallbackError) {
+        done(fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)));
+        return;
+      }
     }
     withActiveProject(projectId, () => done());
   });

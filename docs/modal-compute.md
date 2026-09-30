@@ -41,6 +41,13 @@ sandboxes. Missing remote sandboxes become visible lost jobs. Failed cleanup
 remains pending and is retried, including after credentials return. Log gaps
 are recorded if remote output rolls out of the retained window.
 
+A lost creation response is treated as an uncertain launch for every job. Kady
+does not launch a fallback or automatically rerun it; it counts the full
+reservation and looks up the sandbox by its job tags for cleanup. The pending
+creation marker survives a restart, so an unknown sandbox ID does not release
+the budget or hide the resource from recovery. Explicit capacity rejections
+can still use the configured fallback chain.
+
 ## Files and cache
 
 - Inputs must be inside the project sandbox. Directories recurse; missing inputs, escaping symlinks and oversized transfers fail validation.

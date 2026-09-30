@@ -32,6 +32,7 @@ import { listProjects, resolvePaths, type ProjectPaths } from "../projects.ts";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import { createSession, getSession, markSystemSession } from "./session-registry.ts";
 import { readSchedulerState, writeSchedulerState } from "./scheduler-state.ts";
+import { subagentHost } from "./subagent-control.ts";
 
 export interface ScheduleView {
   id: string;
@@ -200,18 +201,21 @@ export interface SchedulerDeps {
   /** Injectable for tests: open/create the resident session. */
   openSession?: (projectId: string, paths: ProjectPaths, sessionId: string | null) => Promise<AgentSession | null>;
   invoke?: (projectId: string, params: Record<string, unknown>) => Promise<{ text: string; details: unknown }>;
+  refresh?: (projectId: string, sessionId: string) => void;
   log?: { info(obj: unknown, msg?: string): void; warn(obj: unknown, msg?: string): void; error(obj: unknown, msg?: string): void };
 }
 
-const deps: Required<Pick<SchedulerDeps, "openSession" | "invoke">> & { log: NonNullable<SchedulerDeps["log"]> } = {
+const deps: Required<Pick<SchedulerDeps, "openSession" | "invoke" | "refresh">> & { log: NonNullable<SchedulerDeps["log"]> } = {
   openSession: defaultOpenSession,
   invoke: defaultInvoke,
+  refresh: (projectId, sessionId) => subagentHost(projectId, sessionId).refreshSchedules(),
   log: console,
 };
 
 export function configureScheduler(overrides: SchedulerDeps): void {
   if (overrides.openSession) deps.openSession = overrides.openSession;
   if (overrides.invoke) deps.invoke = overrides.invoke;
+  if (overrides.refresh) deps.refresh = overrides.refresh;
   if (overrides.log) deps.log = overrides.log;
 }
 
@@ -243,6 +247,9 @@ export function ensureSchedulerSession(projectId: string): Promise<AgentSession 
     if (!session) return null;
     markSystemSession(projectId, session.sessionId);
     if (state.sessionId !== session.sessionId) writeSchedulerState(paths, { ...state, sessionId: session.sessionId });
+    // Re-read after the ownership id is durable, including for an already-live
+    // host: another chat may just have created or resumed a schedule.
+    deps.refresh(projectId, session.sessionId);
     return session;
   })().finally(() => ensuring.delete(projectId));
   ensuring.set(projectId, promise);
@@ -351,6 +358,10 @@ export function stopSchedulerTick(): void {
 }
 
 /** Hook for the subagent bridge: creating/resuming/running a schedule needs a host. */
-export function onScheduleActivity(projectId: string): void {
-  void ensureSchedulerSession(projectId).catch((err) => deps.log.warn({ err, projectId }, "could not open the scheduler session"));
+export async function onScheduleActivity(projectId: string): Promise<void> {
+  const session = await ensureSchedulerSession(projectId);
+  if (!session) throw new Error("The scheduler session could not be opened");
+  // A shared ensure may have started before this mutation. Refresh after it
+  // settles so the successful mutation is always included.
+  deps.refresh(projectId, session.sessionId);
 }

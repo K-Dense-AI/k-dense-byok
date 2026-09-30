@@ -10,6 +10,36 @@ export function patchSubagents() {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   if (version !== '0.73.1') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
   const patches = [
+    ['src/runs/background/scheduled-runs.js', 'function scheduleBelongsToSession(schedule, ctx) {', `// KADY_HOST_SCHEDULE_OWNER_V1: project timers belong to the durable resident.
+// Explicit session-only schedules retain Pi's original ownership semantics.
+function kadyScheduleTimerOwner(schedule, ctx) {
+    if (!process.env.KADY_SUBAGENT_HOST_MODULE || schedule.sessionOnly === true) return true;
+    try {
+        const state = JSON.parse(fs.readFileSync(path.join(schedule.cwd, ".kady", "scheduler.json"), "utf8"));
+        return state.sessionId === ctx.sessionManager.getSessionId();
+    } catch { return false; }
+}
+function scheduleBelongsToSession(schedule, ctx) {`, 'KADY_HOST_SCHEDULE_OWNER_V1'],
+    ['src/runs/background/scheduled-runs.js', '    observedCompletionRunIds() {', `    // KADY_HOST_SCHEDULE_REFRESH_V1: called after a host-owned store mutation.
+    kadyRefresh() {
+        this.stopTimers();
+        for (const store of this.stores.values()) this.restore(store);
+    }
+    observedCompletionRunIds() {`, 'KADY_HOST_SCHEDULE_REFRESH_V1'],
+    ['src/runs/background/scheduled-runs.js', '    arm(schedule, store, notBefore) {', `    arm(schedule, store, notBefore) {
+        // KADY_HOST_SCHEDULE_ARM_V1: chats never race the resident's timer.
+        if (!kadyScheduleTimerOwner(schedule, this.requireContext(store))) return;`, 'KADY_HOST_SCHEDULE_ARM_V1'],
+    ['src/runs/background/scheduled-runs.js', '    restoreOne(store, schedule, notBefore, rearm = true) {', `    restoreOne(store, schedule, notBefore, rearm = true) {
+        // KADY_HOST_SCHEDULE_RESTORE_V1: only the owner advances missed runs.
+        if (!kadyScheduleTimerOwner(schedule, this.requireContext(store))) return;`, 'KADY_HOST_SCHEDULE_RESTORE_V1'],
+    ['src/runs/background/scheduled-runs.js', '        if (planned === undefined || schedule.paused)', `        // KADY_HOST_SCHEDULE_FIRE_V1: ownership may have changed since arming.
+        if (planned === undefined || schedule.paused || !kadyScheduleTimerOwner(schedule, this.requireContext(store)))`, 'KADY_HOST_SCHEDULE_FIRE_V1'],
+    ['src/extension/index.js', '    let refreshResultDelivery = () => { };', `    // KADY_HOST_SCHEDULE_EVENT_V1: scoped to this extension/session event bus.
+    if (process.env.KADY_SUBAGENT_HOST_MODULE) {
+        const off = pi.events.on("kady:schedules:refresh", () => scheduledRunManager.kadyRefresh());
+        pi.on("session_shutdown", () => off());
+    }
+    let refreshResultDelivery = () => { };`, 'KADY_HOST_SCHEDULE_EVENT_V1'],
     ['src/watchdog/change-signature.js', '    const skipUntracked = isHomeRepoRoot(root) || hasTrackedEntries(root) === false;', `    // KADY_HOST_WATCHDOG_SCOPE_V1: a sandbox must not inherit the app checkout.
     // No sandbox Git root means observed write/edit events trigger review instead.
     if (process.env.KADY_SUBAGENT_HOST_MODULE && comparablePath(root) !== comparablePath(cwd))

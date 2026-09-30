@@ -544,9 +544,9 @@ function recordModelAttempts(args: {
  * the scheduler (agent/scheduler.ts, registered from index.ts to avoid an
  * import cycle through session-registry) can keep a resident session alive.
  */
-let scheduleActivityListener: ((projectId: string, action: string) => void) | null = null;
+let scheduleActivityListener: ((projectId: string, action: string) => void | Promise<void>) | null = null;
 export function setScheduleActivityListener(
-  listener: ((projectId: string, action: string) => void) | null,
+  listener: ((projectId: string, action: string) => void | Promise<void>) | null,
 ): void {
   scheduleActivityListener = listener;
 }
@@ -598,7 +598,6 @@ export function makeSubagentLedgerExtension(
               `Raise the limit before scheduling recurring work.`,
           };
         }
-        scheduleActivityListener?.(projectId, action);
         return;
       }
       if (action === "schedule.run" || action === "schedule.run-due" || action === "schedule.resume") {
@@ -612,7 +611,6 @@ export function makeSubagentLedgerExtension(
               `($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}).`,
           };
         }
-        scheduleActivityListener?.(projectId, action);
         return;
       }
       if (action && action !== "resume") return;
@@ -666,6 +664,19 @@ export function makeSubagentLedgerExtension(
 
     pi.on("tool_result", async (event) => {
       if (event.toolName !== "subagent") return;
+      const action = event.input?.action;
+      if (!event.isError && typeof action === "string" &&
+          ["schedule.create", "schedule.resume", "schedule.pause", "schedule.delete", "schedule.run", "schedule.run-due"].includes(action)) {
+        try {
+          // The schedule must exist before the resident reads and arms it.
+          await scheduleActivityListener?.(projectId, action);
+        } catch (error) {
+          return {
+            isError: true,
+            content: [...event.content, { type: "text" as const, text: `Schedule saved, but its background host could not be refreshed: ${(error as Error).message}` }],
+          };
+        }
+      }
       recoverSubagentUsage(projectId);
       const details = event.details as SubagentRunDetails | undefined;
       for (const result of details?.results ?? []) {

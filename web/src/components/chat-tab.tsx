@@ -76,7 +76,7 @@ import {
   type ContextUsage,
 } from "@/lib/use-agent";
 import type { NotebookEntry } from "@/lib/notebook";
-import { routeSubmit, steerNotStreamingFallback, type SendIntent } from "@/lib/chat-routing";
+import { routeSubmit, type SendIntent } from "@/lib/chat-routing";
 import {
   moveQueuedMessage,
   updateQueuedMessageText,
@@ -1670,6 +1670,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     messages,
     contextUsage,
     status,
+    reconnecting,
     runState,
     send,
     stop,
@@ -2033,7 +2034,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   /** Returns false when the message could not be queued (caller keeps the draft). */
   const enqueue = useCallback(
     (trimmed: string, images: PromptImage[] = []) => {
-      if (messageQueue.length >= MAX_QUEUE) {
+      if (messageQueueLengthRef.current >= MAX_QUEUE) {
         toast.error(
           `Queue is full (${MAX_QUEUE}/${MAX_QUEUE}). Wait for the agent to work through it.`,
         );
@@ -2048,6 +2049,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         );
         return false;
       }
+      messageQueueLengthRef.current++;
       setMessageQueue((prev) => [
         ...prev,
         {
@@ -2071,7 +2073,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       ]);
       return true;
     },
-    [messageQueue.length, selectedModel, selectedModelAvailability, selectedModelAvailable, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, selectedComputeOptions, thinkingDisabled, thinkingLevel],
+    [selectedModel, selectedModelAvailability, selectedModelAvailable, selectedDbs, selectedSkills, attachedFiles, selectedComputeTarget, selectedComputeOptions, thinkingDisabled, thinkingLevel],
   );
 
   /**
@@ -2100,6 +2102,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
 
   const handleSend = useCallback(
     async (text: string, intent: SendIntent, images: PromptImage[] = []): Promise<boolean> => {
+      if (!initialSessionReady && !getSessionId()) return false;
       if (!selectedModelAvailable) {
         toast.error(
           selectedModelAvailability === "checking"
@@ -2127,18 +2130,15 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
           thinkingDisabled ? undefined : thinkingLevel,
           images.length > 0 ? images : undefined,
         );
-      const route = routeSubmit(isStreaming, intent, images.length > 0);
+      const route = routeSubmit(isStreaming, intent, images.length > 0, reconnecting);
+      if (route === "localQueue") return enqueue(trimmed, images);
       if (route === "followUp") {
         // Pi delivers it inside the live run once the agent is otherwise done.
         // If the run ends first, keep ordering behind any client-side queue.
         const result = await followUp(trimmed, images.length > 0 ? images : undefined);
         if (result === "ok") return true;
         if (result === "not_streaming") {
-          if (steerNotStreamingFallback(messageQueueLengthRef.current) === "queue") {
-            return enqueue(trimmed, images);
-          }
-          void sendNow();
-          return true;
+          return enqueue(trimmed, images);
         }
         // Transport failure: hold it in the client-side queue rather than lose it.
         return enqueue(trimmed, images);
@@ -2148,11 +2148,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         if (result === "ok") return true;
         if (result === "not_streaming") {
           // The run ended while we typed: keep ordering behind any queue.
-          if (steerNotStreamingFallback(messageQueueLengthRef.current) === "queue") {
-            return enqueue(trimmed);
-          }
-          void sendNow();
-          return true;
+          return enqueue(trimmed);
         }
         // Reporting failure keeps the text AND the attachment chips; restoring
         // only the text used to drop the file context silently.
@@ -2167,9 +2163,12 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     },
     [
       selectedBudgetBlocked,
+      initialSessionReady,
+      getSessionId,
       selectedModelAvailability,
       selectedModelAvailable,
       isStreaming,
+      reconnecting,
       steer,
       followUp,
       enqueue,
@@ -2212,6 +2211,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         return true;
       },
       sendQuick: async (prompt: string) => {
+        if (!initialSessionReady && !getSessionId()) return;
         if (!selectedModelAvailable) {
           toast.error(
             selectedModelAvailability === "checking"
@@ -2233,6 +2233,7 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
         );
       },
       launchWorkflow: async (prompt, model, inputFiles) => {
+        if (!initialSessionReady && !getSessionId()) return;
         const workflowModelAvailability = modelAvailability(model);
         if (workflowModelAvailability !== "available") {
           toast.error(
@@ -2263,6 +2264,8 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
     [
       send,
       stop,
+      initialSessionReady,
+      getSessionId,
       budgetState,
       isModelAvailable,
       modelAvailability,
@@ -2325,6 +2328,11 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       </Conversation>
 
       <div className="px-4 pb-6 pt-2">
+        {(reconnecting || (!initialSessionReady && !getSessionId())) && (
+          <p role="status" className="mb-2 text-xs text-muted-foreground">
+            {reconnecting ? "Reconnecting to this run…" : "Restoring this conversation… Retrying if the server is unavailable."}
+          </p>
+        )}
         <PromptInputProvider
           initialInput={initialWorkspaceState?.composer.text}
           initialAttachments={initialWorkspaceState?.composer.attachments}

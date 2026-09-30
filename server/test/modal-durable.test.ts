@@ -296,7 +296,7 @@ describe("Durable Modal manager accounting", () => {
 
   it("falls back to the next validated instance and persists the effective choice", async () => {
     const fake = new FakeModal();
-    fake.createErrors.push(new Error("H100 capacity unavailable"));
+    fake.createErrors.push(new ModalJobError("CAPACITY_UNAVAILABLE", "H100 capacity unavailable", 503, true));
     fake.behaviors.push({ kind: "success" });
     const manager = new DurableModalJobManager(fake.factory);
     const job = manager.submit(
@@ -510,7 +510,7 @@ describe("Durable Modal manager accounting", () => {
 });
 
 describe("Durable Modal manager recovery cleanup", () => {
-  it("terminates a sandbox created just before a crash instead of leaving it to bill until timeout", async () => {
+  it.each([undefined, true])("terminates a sandbox after a crash without relaunching (pending=%s)", async (pending) => {
     // Crash landed between Modal creating the sandbox and us persisting its id:
     // the record is `preparing` with no sandbox id, but a live sandbox tagged
     // with the job id exists remotely.
@@ -520,6 +520,7 @@ describe("Durable Modal manager recovery cleanup", () => {
     record.state = "preparing";
     record.runningAt = undefined;
     record.sandboxId = undefined;
+    record.sandboxCreatePending = pending;
     record.sandboxCreatedAt = undefined;
     record.effectiveInstance = undefined;
     record.pricePerHour = undefined;
@@ -533,11 +534,32 @@ describe("Durable Modal manager recovery cleanup", () => {
     const manager = new DurableModalJobManager(fake.factory, store);
     await manager.recoverProject("default");
     const terminal = await manager.wait("default", record.id, 3000);
-    expect(terminal.state).toBe("succeeded");
+    expect(terminal.state).toBe("lost");
+    expect(terminal.error?.code).toBe("LAUNCH_UNCERTAIN");
     expect(orphan.terminated).toBe(true);
-    expect(terminal.sandboxId).not.toBe(orphan.id);
-    expect(fake.sandboxes.size).toBe(2);
+    expect(terminal.sandboxId).toBe(orphan.id);
+    expect(terminal.accounting).toMatchObject({ conservative: true, estimatedCostUsd: record.reservationUsd });
+    expect(fake.sandboxes.size).toBe(1);
     expect(store.events("default", record.id).some((event) => event.type === "orphan_terminated")).toBe(true);
+    expect(listComputeReservations("default")).toEqual([]);
+  });
+
+  it("can resume preparation when no create request was sent before the crash", async () => {
+    const fake = new FakeModal();
+    const store = new ModalJobStore();
+    const record = persistedRunningJob({ id: "mj_before_create", sandboxId: "unused", sessionId: "s-before-create" });
+    record.state = "preparing";
+    record.sandboxId = undefined;
+    record.sandboxCreatedAt = undefined;
+    record.sandboxCreatePending = false;
+    record.reservationUsd = worstCaseReservationUsd(record.request);
+    store.create(record);
+    reserveComputeBudget({ projectId: "default", reservationId: record.id, sessionId: record.owner.sessionId, amountUsd: record.reservationUsd });
+    const manager = new DurableModalJobManager(fake.factory, store);
+    await manager.recoverProject("default");
+    const terminal = await manager.wait("default", record.id, 3000);
+    expect(terminal.state).toBe("succeeded");
+    expect(fake.createParams).toHaveLength(1);
     expect(listComputeReservations("default")).toEqual([]);
   });
 

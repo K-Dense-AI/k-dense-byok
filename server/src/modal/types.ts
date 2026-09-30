@@ -118,6 +118,8 @@ export interface ModalJob {
   sandboxTags: Record<string, string>;
   sandboxCreatedAt?: number;
   sandboxTerminatedAt?: number;
+  /** A create request may have reached Modal but its sandbox id is not yet known. */
+  sandboxCreatePending?: boolean;
   /** Termination is unconfirmed; recovery must retry even after the job finishes. */
   cleanupUncertain?: boolean;
   /** Sandboxes created for this job whose termination was not confirmed; recovery retries. */

@@ -17,6 +17,7 @@ function sseStream(frames: unknown[]): ReadableStream<Uint8Array> {
       for (const frame of frames) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(frame)}\n\n`));
       }
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`));
       controller.close();
     },
   });
@@ -219,6 +220,7 @@ describe("useAgent notebook accumulation", () => {
     expect(result.current.messages[0]?.content).toBe("keep going");
 
     await act(async () => {
+      streamController.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
       streamController.close();
       await sendPromise;
     });
@@ -310,7 +312,7 @@ describe("useAgent live-run reconnect", () => {
         if (path === "/sessions/live/interview") {
           return new Response(JSON.stringify({ pending: null }));
         }
-        if (path === "/sessions/live/run/events?after=6") {
+        if (path === "/sessions/live/run/events?after=6&runId=run-1") {
           eventsSignal = init?.signal;
           return new Response(
             new ReadableStream<Uint8Array>({
@@ -507,7 +509,7 @@ describe("useAgent live-run reconnect", () => {
           }),
         );
       }
-      if (path === "/sessions/interview/run/events?after=1") {
+      if (path === "/sessions/interview/run/events?after=1&runId=run-interview") {
         return new Response(
           sseStream([
             {
@@ -564,7 +566,7 @@ describe("useAgent live-run reconnect", () => {
         if (path === "/sessions/live/interview") {
           return new Response(JSON.stringify({ pending: null }));
         }
-        if (path === "/sessions/live/run/events?after=1") {
+        if (path === "/sessions/live/run/events?after=1&runId=run-live") {
           eventSignal = init?.signal;
           markAttached();
           return new Response(
@@ -689,7 +691,7 @@ describe("useAgent system-initiated runs", () => {
         );
       }
       if (path === "/sessions/sys/interview") return new Response(JSON.stringify({ pending: null }));
-      if (path === "/sessions/sys/run/events?after=4") {
+      if (path === "/sessions/sys/run/events?after=4&runId=sys-1") {
         return new Response(
           new ReadableStream<Uint8Array>({
             start(controller) {

@@ -1100,9 +1100,9 @@ function WorkspacePage({
         {/* Middle: file preview with tabs — always shown; it is the pane the
             side panels make room for (e.g. the LaTeX editor + PDF). */}
         <div className="min-h-0 flex-1 min-w-0 overflow-hidden">
-          {isActive && (
             <FilePreviewPanel
               projectId={projectId}
+              isActive={isActive}
               activeModelRef={tabWorkspaceStates[activeTabId]?.selectedModel.id}
               tabs={sandbox.tabs}
               activeTabPath={sandbox.activeTabPath}
@@ -1145,7 +1145,6 @@ function WorkspacePage({
               onNotebookJumpToChat={handleNotebookJumpToChat}
               onOpenNotebookEntry={handleViewInNotebook}
             />
-          )}
         </div>
 
         {/* Drag handle: preview ↔ chat */}

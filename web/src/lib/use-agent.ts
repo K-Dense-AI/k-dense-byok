@@ -19,6 +19,7 @@ import { parseNotebookFrame, mergeNotebookEntries, type NotebookEntry } from "./
 const MAX_ACTIVITY_ITEMS = 200;
 /** Idle probe cadence for runs this tab did not start (see the poll effect). */
 export const IDLE_RUN_POLL_MS = 5_000;
+export const RUN_RECONNECT_MS = 1_000;
 
 export interface ActivityItem {
   id: string;
@@ -465,7 +466,7 @@ export interface SequencedAgentFrame extends AgentFrame {
 }
 
 /** Result of reopening a stored session into a tab. */
-export type SessionLoadOutcome = "restored" | "gone" | "superseded";
+export type SessionLoadOutcome = "restored" | "gone" | "superseded" | "retry";
 
 interface RunSnapshot {
   runId: string;
@@ -680,6 +681,21 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+function waitForReconnect(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    }, RUN_RECONNECT_MS);
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
 /** Parse one SSE response and feed each JSON data frame to a shared consumer. */
 async function consumeSse(
   response: Response,
@@ -702,6 +718,7 @@ async function consumeSse(
       return;
     }
     onFrame(frame);
+    return frame.type === "done";
   };
 
   while (true) {
@@ -710,7 +727,12 @@ async function consumeSse(
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
     buffer = lines.pop() ?? "";
-    for (const line of lines) consumeLine(line);
+    for (const line of lines) {
+      if (consumeLine(line)) {
+        await reader.cancel();
+        return;
+      }
+    }
   }
   buffer += decoder.decode();
   if (buffer) consumeLine(buffer);
@@ -725,6 +747,7 @@ export function useAgent(projectId?: string) {
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [subagentCompletions, setSubagentCompletions] = useState(0);
   const [status, setStatus] = useState<Status>("ready");
+  const [reconnecting, setReconnecting] = useState(false);
   const [runState, setRunState] = useState<AgentRunState>("idle");
   const [pendingSteers, setPendingSteers] = useState<string[]>([]);
   const [pendingFollowUps, setPendingFollowUps] = useState<string[]>([]);
@@ -917,7 +940,7 @@ export function useAgent(projectId?: string) {
       const eventsResponse = await apiFetch(
         `/sessions/${encodeURIComponent(id)}/run/events?after=${encodeURIComponent(
           String(Math.max(0, consumer.lastSeq)),
-        )}`,
+        )}${consumer.currentRunId ? `&runId=${encodeURIComponent(consumer.currentRunId)}` : ""}`,
         { signal: controller.signal },
         scopedProjectId,
         "stream",
@@ -930,15 +953,90 @@ export function useAgent(projectId?: string) {
     [consumeRunResponse, restorePendingInterview, restorePendingPermission, scopedProjectId],
   );
 
+  // EOF is not a terminal event. Keep the consumer's sequence cursor while a
+  // connection is down, and recover from the broker before allowing another
+  // prompt or queued message to start. Stop/unmount cancels both fetch and delay.
+  const completeRunResponse = useCallback(
+    async (id: string, consumer: RunConsumer, controller: AbortController, initial?: Response) => {
+      const ensureCurrent = () => {
+        if (controller.signal.aborted || !mountedRef.current || clientFetchRef.current !== controller) {
+          throw new DOMException("aborted", "AbortError");
+        }
+      };
+      try {
+        try {
+          if (initial) await consumeRunResponse(initial, consumer);
+          else await attachToRun(id, consumer, controller);
+        } catch (error) {
+          if (isAbortError(error) || controller.signal.aborted) throw error;
+        }
+        while (!consumer.sawDone) {
+          ensureCurrent();
+          setReconnecting(true);
+          await waitForReconnect(controller.signal);
+          try {
+            const response = await apiFetch(
+              `/sessions/${encodeURIComponent(id)}/run/state`,
+              { signal: controller.signal, cache: "no-store" },
+              scopedProjectId,
+            );
+            if (!response.ok) continue;
+            const state = (await response.json()) as RunStateResponse;
+            ensureCurrent();
+            const snapshot = state.run;
+            if (state.status === "none" || snapshot?.kind === "notice") {
+              // Restart can discard the run; notices have no transcript
+              // baseline. Durable history includes the completed output in both
+              // cases and avoids replacing the conversation with a lone notice.
+              const historyResponse = await apiFetch(
+                `/sessions/${encodeURIComponent(id)}/history`,
+                { signal: controller.signal },
+                scopedProjectId,
+              );
+              if (!historyResponse.ok) continue;
+              const history = (await historyResponse.json()) as { messages?: HistoryItem[]; contextUsage?: unknown };
+              ensureCurrent();
+              consumer.transcript = restoreHistory(history.messages ?? [], nextId);
+              consumer.outcome = "idle";
+              if (snapshot) lastRunIdRef.current = snapshot.runId;
+              setContextUsage(parseContextUsage(history.contextUsage));
+              return;
+            }
+            if (!snapshot) continue;
+            if (snapshot.runId !== consumer.currentRunId) {
+              // A later system turn may have replaced the retained run during
+              // the outage. Its baseline includes the intervening transcript.
+              Object.assign(consumer, buildRunConsumer(
+                restoreHistory(snapshot.baseline.messages ?? [], nextId), snapshot, nextId,
+              ));
+              setContextUsage(parseContextUsage(snapshot.baseline.contextUsage));
+            }
+            lastRunIdRef.current = snapshot.runId;
+            for (const frame of snapshot.frames ?? []) applyRunFrame(consumer, frame);
+            if (state.status === "complete" || consumer.sawDone) return;
+            setReconnecting(false);
+            await attachToRun(id, consumer, controller);
+          } catch (error) {
+            if (isAbortError(error) || controller.signal.aborted) throw error;
+            // Transport/auth failures remain retryable; the server owns work.
+          }
+        }
+      } finally {
+        if (clientFetchRef.current === controller && mountedRef.current) setReconnecting(false);
+      }
+    },
+    [applyRunFrame, attachToRun, consumeRunResponse, nextId, scopedProjectId],
+  );
+
   /**
    * Bind an untouched tab to a stored session. The run snapshot is checked
    * before history so a refresh can rebuild an in-flight transcript from its
    * baseline and attach to the sequenced replay/live stream without duplicates.
    *
    * `"gone"` is reserved for a session the backend no longer serves; every
-   * other unsuccessful outcome is `"superseded"` (another load or a send took
-   * the tab, the consumer went away, the network hiccuped) and must leave the
-   * tab's stored binding alone — dropping it there loses a live transcript.
+   * transient failures return `"retry"` so the mount-time restore retains its
+   * binding and keeps retrying. `"superseded"` means another load/send took
+   * the tab or the consumer went away.
    */
   const loadSession = useCallback(
     async (id: string): Promise<SessionLoadOutcome> => {
@@ -953,7 +1051,7 @@ export function useAgent(projectId?: string) {
           { signal: controller.signal },
           scopedProjectId,
         );
-        if (!historyResponse.ok) return "gone";
+        if (!historyResponse.ok) return historyResponse.status === 404 || historyResponse.status === 410 ? "gone" : "retry";
         const history = (await historyResponse.json()) as {
           messages?: HistoryItem[];
           contextUsage?: unknown;
@@ -974,7 +1072,7 @@ export function useAgent(projectId?: string) {
           { signal: controller.signal },
           scopedProjectId,
         );
-        if (!stateResponse.ok) return "gone";
+        if (!stateResponse.ok) return stateResponse.status === 404 || stateResponse.status === 410 ? "gone" : "retry";
         const state = (await stateResponse.json()) as RunStateResponse;
         if (sessionIdRef.current || sendClaimRef.current || !mountedRef.current) {
           return "superseded";
@@ -983,7 +1081,7 @@ export function useAgent(projectId?: string) {
         if (state.status === "none") return await loadHistory();
 
         const snapshot = state.run;
-        if (!snapshot) return "gone";
+        if (!snapshot) return "retry";
         lastRunIdRef.current = snapshot.runId;
         // A notice run is one custom message that is already in the JSONL:
         // history has it, so there is nothing to replay.
@@ -1007,7 +1105,7 @@ export function useAgent(projectId?: string) {
           return "restored";
         }
 
-        await attachToRun(id, consumer, controller);
+        await completeRunResponse(id, consumer, controller);
         if (clientFetchRef.current === controller && mountedRef.current) finalizeRun(consumer);
         return "restored";
       } catch (error) {
@@ -1020,14 +1118,14 @@ export function useAgent(projectId?: string) {
         }
         // Aborts and transport errors say nothing about whether the session
         // still exists, so the binding stays and the tab can try again.
-        return "superseded";
+        return isAbortError(error) || activeConsumer ? "superseded" : "retry";
       } finally {
         if (clientFetchRef.current === controller) clientFetchRef.current = null;
       }
     },
     [
       applyRunFrame,
-      attachToRun,
+      completeRunResponse,
       bindSession,
       failRun,
       finalizeRun,
@@ -1066,7 +1164,7 @@ export function useAgent(projectId?: string) {
         if (Number.isSafeInteger(snapshot.lastSeq)) {
           consumer.lastSeq = Math.max(consumer.lastSeq, snapshot.lastSeq);
         }
-        if (state.status !== "complete") await attachToRun(id, consumer, controller);
+        if (state.status !== "complete") await completeRunResponse(id, consumer, controller);
         if (clientFetchRef.current === controller && mountedRef.current) {
           finalizeRun(consumer);
           if (snapshot.kind === "notice") {
@@ -1085,7 +1183,7 @@ export function useAgent(projectId?: string) {
         if (clientFetchRef.current === controller) clientFetchRef.current = null;
       }
     },
-    [applyRunFrame, attachToRun, failRun, finalizeRun, messagePublisher, nextId, scopedProjectId],
+    [applyRunFrame, completeRunResponse, failRun, finalizeRun, messagePublisher, nextId, scopedProjectId],
   );
 
   // Idle poll: a Pi extension can start a turn on this session while the tab
@@ -1361,7 +1459,7 @@ export function useAgent(projectId?: string) {
         }
         if (!response.ok) throw new Error(`run failed: ${response.status}`);
         setStatus("streaming");
-        await consumeRunResponse(response, consumer);
+        await completeRunResponse(id, consumer, controller, response);
         if (clientFetchRef.current === controller && mountedRef.current) finalizeRun(consumer);
       } catch (error) {
         if (
@@ -1379,7 +1477,7 @@ export function useAgent(projectId?: string) {
     },
     [
       adoptRun,
-      consumeRunResponse,
+      completeRunResponse,
       ensureSession,
       failRun,
       finalizeRun,
@@ -1414,6 +1512,7 @@ export function useAgent(projectId?: string) {
     setPendingSteers([]);
     setPendingFollowUps([]);
     setStatus("ready");
+    setReconnecting(false);
     setRunState("idle");
     return restored;
   }, [messagePublisher, scopedProjectId]);
@@ -1429,6 +1528,7 @@ export function useAgent(projectId?: string) {
     setPendingSteers([]);
     setPendingFollowUps([]);
     setStatus("ready");
+    setReconnecting(false);
     setRunState("idle");
     lastRunIdRef.current = null;
     bindSession(null);
@@ -1451,6 +1551,7 @@ export function useAgent(projectId?: string) {
     messages,
     contextUsage,
     status,
+    reconnecting,
     runState,
     sessionId,
     send,

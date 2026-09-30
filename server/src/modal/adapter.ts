@@ -130,6 +130,11 @@ export function classifyModalError(error: unknown): ModalJobError {
   if (/Image build .*failed/i.test(message)) {
     return new ModalJobError("IMAGE_BUILD_FAILED", message, 422, false);
   }
+  // An explicit capacity rejection is safe to try on another instance. A
+  // transport UNAVAILABLE/TIMEOUT is not: creation may already have succeeded.
+  if (name === "ClientError" && grpcCode === 8 && /capacity/i.test(message)) {
+    return new ModalJobError("CAPACITY_UNAVAILABLE", message, 503, true);
+  }
   if (error instanceof InvalidError) return new ModalJobError("INVALID_REQUEST", message, 400, false);
   if (error instanceof NotFoundError || error instanceof SandboxFilesystemNotFoundError) {
     return new ModalJobError("REMOTE_NOT_FOUND", message, 404, false);

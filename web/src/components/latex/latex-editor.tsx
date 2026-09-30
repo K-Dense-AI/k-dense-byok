@@ -65,6 +65,7 @@ export interface LatexEditorProps {
   onSave: (content: string) => Promise<boolean>;
   onCompile: (path: string, engine?: string) => Promise<LatexCompileResult>;
   onDiscard: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onOpenFile?: (path: string) => void;
 }
 
@@ -80,6 +81,7 @@ export function LatexEditor({
   onSave,
   onCompile,
   onDiscard,
+  onDirtyChange,
   onOpenFile,
 }: LatexEditorProps) {
   const projectId = useProjectScopeId();
@@ -88,6 +90,7 @@ export function LatexEditor({
   const lastSavedRef = useRef(initialContent);
   const viewRef = useRef<EditorView | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
   // CodeMirror's `value` is controlled: handing it new text replaces the doc.
   // The sandbox poll rewrites `initialContent` every few seconds, so binding
   // the prop directly let a background refresh wipe unsaved edits mid-sentence.

@@ -3,10 +3,12 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { ensureProjectExists, resolvePaths } from "../src/projects.ts";
-import { listComputeReservations, projectCostSummary } from "../src/cost/ledger.ts";
+import { listComputeReservations, projectCostSummary, sessionCostSummary } from "../src/cost/ledger.ts";
 import { writeGuardPolicy } from "../src/agent/guard-policy.ts";
 import { hourlyEstimate, publicInstanceCatalog, resolveInstance, worstCaseReservationUsd } from "../src/modal/catalog.ts";
 import { DurableModalJobManager } from "../src/modal/manager.ts";
+import type { ModalAdapterFactory } from "../src/modal/adapter.ts";
+import { ModalJobError } from "../src/modal/types.ts";
 import { modalJobFiles, ModalJobStore } from "../src/modal/store.ts";
 import { collectOutputs, planInputs } from "../src/modal/transfer.ts";
 import { FakeModal, FakeSandbox, persistedRunningJob } from "./helpers/fake-modal.ts";
@@ -22,6 +24,73 @@ beforeEach(() => {
 afterEach(() => fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }));
 
 describe("Modal cleanup and reservations", () => {
+  it("charges an unconfirmed ordinary launch and discovers its sandbox without launching a fallback", async () => {
+    const fake = new FakeModal();
+    const factory: ModalAdapterFactory = () => {
+      const adapter = fake.factory();
+      return {
+        ...adapter,
+        async createSandbox(environment, params) {
+          await adapter.createSandbox(environment, params);
+          throw new ModalJobError("TIMEOUT", "Creation response was lost", 504, true);
+        },
+      };
+    };
+    const manager = new DurableModalJobManager(factory);
+    const submitted = manager.submit("default", { command: "work", instance: "h100", gpuFallback: ["h200"] }, owner);
+    const terminal = await manager.wait("default", submitted.id, 3000);
+    expect(terminal).toMatchObject({
+      state: "failed", error: { code: "LAUNCH_UNCERTAIN", retryable: false },
+      sandboxId: "sb-1", sandboxCreatePending: false,
+      accounting: { reconciled: true, conservative: true, estimatedCostUsd: submitted.reservationUsd },
+    });
+    expect(fake.createParams).toHaveLength(1);
+    expect(fake.sandboxes.get("sb-1")?.terminated).toBe(true);
+    expect(terminal.sandboxTerminatedAt).toBeTypeOf("number");
+    expect(projectCostSummary("default").spentUsd).toBeCloseTo(submitted.reservationUsd);
+    expect(listComputeReservations("default")).toEqual([]);
+  });
+
+  it("recovers an unknown sandbox after lookup and termination failures without double charging", async () => {
+    const fake = new FakeModal();
+    fake.terminateFailures.push(1);
+    let discoveryFails = true;
+    const factory: ModalAdapterFactory = () => {
+      const adapter = fake.factory();
+      return {
+        ...adapter,
+        async createSandbox(environment, params) {
+          await adapter.createSandbox(environment, params);
+          throw new Error("connection reset after creation");
+        },
+        async findByTags(tags) {
+          if (discoveryFails) throw new Error("discovery temporarily unavailable");
+          return adapter.findByTags(tags);
+        },
+      };
+    };
+    const manager = new DurableModalJobManager(factory);
+    const submitted = manager.submit("default", { command: "work" }, owner);
+    const terminal = await manager.wait("default", submitted.id, 3000);
+    expect(terminal.sandboxCreatePending).toBe(true);
+    expect(terminal.cleanupUncertain).toBe(true);
+    expect(fake.sandboxes.get("sb-1")?.terminated).toBe(false);
+    expect(projectCostSummary("default").spentUsd).toBeCloseTo(submitted.reservationUsd);
+
+    discoveryFails = false;
+    const recovered = new DurableModalJobManager(factory);
+    await recovered.recoverProject("default");
+    expect(recovered.get("default", submitted.id)).toMatchObject({
+      sandboxId: "sb-1", sandboxCreatePending: false, cleanupUncertain: true,
+    });
+    await recovered.recoverProject("default");
+    expect(fake.sandboxes.get("sb-1")?.terminated).toBe(true);
+    expect(recovered.get("default", submitted.id).cleanupUncertain).toBeUndefined();
+    expect(fake.createParams).toHaveLength(1);
+    expect(sessionCostSummary(owner.sessionId, "default").entries).toHaveLength(1);
+    expect(projectCostSummary("default").spentUsd).toBeCloseTo(submitted.reservationUsd);
+  });
+
   it("keeps failed termination recoverable and counts the full hold exactly once", async () => {
     const fake = new FakeModal();
     fake.terminateFailures.push(1);

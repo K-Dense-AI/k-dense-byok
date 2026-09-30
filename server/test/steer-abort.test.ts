@@ -310,6 +310,35 @@ function sseFrames(body: string): Record<string, unknown>[] {
 }
 
 describe("persistent run routes", () => {
+  it("refuses to apply an old run's replay cursor to a newer run", async () => {
+    const old = runBroker.start("default", "s1", {
+      runId: "old-run", prompt: "old", images: [], baseline: { messages: [], contextUsage: null },
+    });
+    old.publish({ type: "done" });
+    old.complete();
+    const current = runBroker.start("default", "s1", {
+      runId: "new-run", prompt: "new", images: [], baseline: { messages: [], contextUsage: null },
+    });
+    current.publish({ type: "run_start", runId: "new-run" });
+    current.publish({ type: "text_delta", delta: "new answer" });
+    current.publish({ type: "done" });
+    current.complete();
+    const stale = await app.inject({
+      method: "GET", url: "/sessions/s1/run/events?runId=old-run&after=10",
+      headers: { "x-project-id": "default" },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toMatchObject({ runId: "new-run" });
+    const fresh = await app.inject({
+      method: "GET", url: "/sessions/s1/run/events?runId=new-run&after=1",
+      headers: { "x-project-id": "default" },
+    });
+    expect(fresh.statusCode).toBe(200);
+    expect(sseFrames(fresh.body)).toMatchObject([
+      { type: "text_delta", delta: "new answer", seq: 2 }, { type: "done", seq: 3 },
+    ]);
+  });
+
   it("reports running state and replays sequenced events through completion", async () => {
     const session = new FakeSession();
     session.isStreaming = false;

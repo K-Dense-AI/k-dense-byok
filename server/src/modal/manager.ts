@@ -79,6 +79,15 @@ const NON_FALLBACK_ERROR_CODES = new Set([
   "NOT_CONFIGURED",
   "PRICE_CHANGED",
 ]);
+const CREATE_REJECTED_CODES = new Set([
+  ...NON_FALLBACK_ERROR_CODES,
+  "REMOTE_NOT_FOUND",
+  "CAPACITY_UNAVAILABLE",
+]);
+
+function uncertainLaunchError(): ModalJobError {
+  return new ModalJobError("LAUNCH_UNCERTAIN", "Remote creation was not confirmed. No automatic re-execution; the full sandbox estimate is counted against the project budget conservatively. Recovery will look up and terminate resources by job tag.", 502, false);
+}
 
 interface ActiveRuntime {
   promise: Promise<void>;
@@ -355,6 +364,7 @@ export class DurableModalJobManager {
       cancelRequested: false,
       reservationUsd,
       sandboxName: name,
+      sandboxCreatePending: false,
       sandboxTags: {
         kady: "true",
         project: projectId,
@@ -427,7 +437,7 @@ export class DurableModalJobManager {
       const now = Date.now();
       return { version: 1, id: item.id, projectId, request, owner: { ...owner }, approval: item.approval,
         state: "queued", createdAt: now, updatedAt: now, queuedAt: now, cancelRequested: false,
-        reservationUsd, sandboxName: sandboxName(projectId, item.id), sandboxTags: { kady: "true", project: projectId, job: item.id, group: batchId },
+        reservationUsd, sandboxName: sandboxName(projectId, item.id), sandboxCreatePending: false, sandboxTags: { kady: "true", project: projectId, job: item.id, group: batchId },
         inputFiles: item.approval.inputs, outputFiles: [], missingOutputs: [], stdoutBytes: 0, stderrBytes: 0, stdoutBaseCursor: 0, stderrBaseCursor: 0, eventSeq: 0, accounting: { reconciled: false } };
     });
     if (batchCommitted(projectId, batchId)) {
@@ -589,7 +599,7 @@ export class DurableModalJobManager {
       });
     }
     let runtime = this.active.get(this.key(projectId, jobId));
-    if (!runtime && job.sandboxId) {
+    if (!runtime && (job.sandboxId || job.sandboxCreatePending)) {
       // No live worker owns this job (for example recovery was deferred
       // because Modal credentials were missing at boot). Reattach solely to
       // honour the cancellation: the recovery worker terminates the remote
@@ -813,6 +823,9 @@ export class DurableModalJobManager {
         // before the cancellation check, so a concurrent abort can always find
         // and terminate the newly-created remote sandbox.
         createAttempted = true;
+        // Record the uncertainty BEFORE sending the request, including across
+        // a process crash between remote creation and the id being persisted.
+        this.store.update(projectId, jobId, (current) => { current.sandboxCreatePending = true; });
         // The sandbox outlives the command by a bounded transfer headroom so
         // staging and collection never eat into the command's own timeout.
         const sandbox = await adapter.createSandbox(environment, {
@@ -827,6 +840,7 @@ export class DurableModalJobManager {
         const createdAt = Date.now();
         this.store.update(projectId, jobId, (current) => {
           current.sandboxId = sandbox.id;
+          current.sandboxCreatePending = false;
           current.sandboxCreatedAt = createdAt;
           current.effectiveInstance = spec.id;
           current.effectiveGpu = spec.gpu;
@@ -845,7 +859,14 @@ export class DurableModalJobManager {
         return sandbox;
       } catch (error) {
         if (error instanceof ModalCancellationError) throw error;
-        if (job.approval && createAttempted && !created) throw new ModalJobError("LAUNCH_UNCERTAIN", "Remote creation was not confirmed. No automatic retry; the full approved sandbox estimate is counted against the project budget conservatively. A remote resource may remain until its timeout.", 502, false);
+        if (createAttempted && !created) {
+          if (CREATE_REJECTED_CODES.has(errorInfo(error).code)) {
+            this.store.update(projectId, jobId, (current) => { current.sandboxCreatePending = false; });
+          } else {
+            this.store.update(projectId, jobId, (current) => { current.cleanupUncertain = true; });
+            throw uncertainLaunchError();
+          }
+        }
         if (job.approval && created) throw error; // retain the known id for final cleanup; never launch a fallback
         // A sandbox created just before this failure would keep billing while
         // we move on to the next instance in the chain. Its identity is also
@@ -1122,8 +1143,9 @@ export class DurableModalJobManager {
       // truth for whether one exists.
       const created = sandbox ?? runtime.sandbox;
       if (created) await this.terminateAndRecord(projectId, jobId, created);
-      if (this.store.read(projectId, jobId)?.orphanedSandboxIds?.length) {
-        await this.terminateOrphans(projectId, jobId, runtime, false);
+      const pendingCleanup = this.store.read(projectId, jobId);
+      if (pendingCleanup?.orphanedSandboxIds?.length || pendingCleanup?.sandboxCreatePending) {
+        await this.terminateOrphans(projectId, jobId, runtime, Boolean(pendingCleanup.sandboxCreatePending));
       }
       // Unconditional: finish() defers reconciliation to here whenever a
       // sandbox was created, so skipping it strands the budget reservation
@@ -1143,8 +1165,15 @@ export class DurableModalJobManager {
       await this.reconcile(projectId, jobId);
       return;
     }
-    if (!existing.sandboxId && existing.approval && existing.state !== "queued") {
-      await this.finish(projectId, jobId, "lost", new ModalJobError("LAUNCH_UNCERTAIN", "Restart interrupted a possible remote launch; no automatic re-execution. Full approved estimate counted against the project budget conservatively.", 502));
+    if (!existing.sandboxId && (existing.sandboxCreatePending ||
+      (existing.state === "preparing" && existing.sandboxCreatePending === undefined) ||
+      (existing.approval && existing.state !== "queued"))) {
+      this.store.update(projectId, jobId, (job) => {
+        job.sandboxCreatePending = true;
+        job.cleanupUncertain = true;
+      });
+      await this.finish(projectId, jobId, existing.cancelRequested ? "cancelled" : "lost", uncertainLaunchError());
+      await this.terminateOrphans(projectId, jobId, runtime, true);
       return;
     }
     if (!existing.sandboxId) {
@@ -1271,16 +1300,34 @@ export class DurableModalJobManager {
         try {
           const found = await adapter.findByTags({ kady: "true", project: projectId, job: jobId });
           if (found) {
-            try {
-              await found.terminate();
-              this.store.appendEvent(projectId, jobId, {
-                type: "orphan_terminated",
-                state: job.state,
-                message: `Terminated sandbox ${found.id} created before the previous shutdown`,
-                data: { sandboxId: found.id },
+            if (job.sandboxCreatePending) {
+              // The id is now known, but the creation time is not. Preserve
+              // the full cost estimate while normal termination recovery owns it.
+              this.store.update(projectId, jobId, (current) => {
+                current.sandboxId = found.id;
+                current.sandboxCreatePending = false;
               });
-            } catch {
-              remaining.push(found.id);
+              await this.terminateAndRecord(projectId, jobId, found);
+              if (this.store.require(projectId, jobId).sandboxTerminatedAt) {
+                this.store.appendEvent(projectId, jobId, {
+                  type: "orphan_terminated",
+                  state: job.state,
+                  message: `Terminated sandbox ${found.id} discovered after an unconfirmed launch`,
+                  data: { sandboxId: found.id },
+                });
+              }
+            } else {
+              try {
+                await found.terminate();
+                this.store.appendEvent(projectId, jobId, {
+                  type: "orphan_terminated",
+                  state: job.state,
+                  message: `Terminated sandbox ${found.id} created before the previous shutdown`,
+                  data: { sandboxId: found.id },
+                });
+              } catch {
+                remaining.push(found.id);
+              }
             }
           }
         } catch (error) {
@@ -1356,8 +1403,9 @@ export class DurableModalJobManager {
     let entryId: string | undefined;
     const conservative = Boolean(
       job.cleanupUncertain || job.approvalCleanupUncertain || job.orphanedSandboxIds?.length ||
+      job.sandboxCreatePending ||
       (job.sandboxId && !job.sandboxTerminatedAt) ||
-      (job.approval && !job.sandboxCreatedAt && job.error?.code === "LAUNCH_UNCERTAIN"),
+      job.error?.code === "LAUNCH_UNCERTAIN",
     );
     if (job.sandboxCreatedAt && job.pricePerHour !== undefined && !conservative) {
       const endedAt = job.sandboxTerminatedAt ?? job.finishedAt ?? Date.now();
@@ -1427,6 +1475,9 @@ export class DurableModalJobManager {
         catch (e) { await this.finish(projectId, job.id, "failed", e); continue; }
       }
       if (isTerminalModalState(job.state)) {
+        if (job.sandboxCreatePending && !(this.requireCredentials && !modalConfigured())) {
+          await this.terminateOrphans(projectId, job.id, undefined, true);
+        }
         // A crash between finish() and terminateAndRecord() — or a cancel that
         // ran while credentials were missing — leaves a terminal record whose
         // sandbox may still be alive and billing. Any job, not only approved.

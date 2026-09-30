@@ -201,6 +201,18 @@ describe("installing skills from a source", () => {
 });
 
 describe("authoring and editing skills", () => {
+  it.each([
+    [undefined, "Custom skill: my workflow"],
+    ["QC: inspect the input", "QC: inspect the input"],
+    ['Use "quoted" paths # and YAML punctuation', 'Use "quoted" paths # and YAML punctuation'],
+    ["First line\nSecond line", "First line\nSecond line"],
+  ])("creates a loadable skill with description %s", (description, expected) => {
+    createSkill(paths, { name: "my-workflow", description });
+    expect(listProjectSkills(paths)).toEqual([
+      expect.objectContaining({ name: "my-workflow", description: expected }),
+    ]);
+  });
+
   it("creates a skill from a template and records it as local", () => {
     const created = createSkill(paths, {
       name: "my-workflow",

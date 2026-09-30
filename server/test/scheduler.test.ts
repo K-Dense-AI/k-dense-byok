@@ -83,7 +83,7 @@ beforeEach(() => {
   projectId = createProject({ name: "Scheduled" }).id;
   registry.markSystemSession.mockClear();
   registry.created.length = 0;
-  configureScheduler({ invoke: async () => ({ text: "ok", details: {} }), log: { info() {}, warn() {}, error() {} } });
+  configureScheduler({ invoke: async () => ({ text: "ok", details: {} }), refresh: () => {}, log: { info() {}, warn() {}, error() {} } });
 });
 afterAll(async () => {
   await app.close();
@@ -205,16 +205,20 @@ describe("subagent bridge schedule handling", () => {
       on: (name: string, h: Handler) => handlers.set(name, h),
       events: { on: (name: string, h: (p: unknown) => void) => events.set(name, h) },
     } as never);
-    return { toolCall: handlers.get("tool_call")!, asyncComplete: events.get("subagent:async-complete")! };
+    return { toolCall: handlers.get("tool_call")!, toolResult: handlers.get("tool_result")!, asyncComplete: events.get("subagent:async-complete")! };
   }
 
   it("gates schedule.create like a launch and notifies the scheduler; blocks runs over the cap", async () => {
     const seen: string[] = [];
     setScheduleActivityListener((pid, action) => seen.push(`${pid}:${action}`));
     try {
-      const { toolCall } = install(projectId);
+      const { toolCall, toolResult } = install(projectId);
       const script = 'return runs.run("main", { agent: "worker", task: "x" })';
       expect(await toolCall({ toolName: "subagent", input: { action: "schedule.create", id: "s", every: "6h", workflowScript: script } })).toBeUndefined();
+      expect(seen).toEqual([]);
+      await toolResult({ toolName: "subagent", input: { action: "schedule.create" }, isError: true, content: [] });
+      expect(seen).toEqual([]);
+      await toolResult({ toolName: "subagent", input: { action: "schedule.create" }, isError: false, content: [] });
       expect(seen).toEqual([`${projectId}:schedule.create`]);
 
       const capped = createProject({ name: "Capped2", spendLimitUsd: 0.01 });

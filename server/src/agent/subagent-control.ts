@@ -14,7 +14,7 @@ import { webAccessPackageDir } from "./web-access-bridge.ts";
 import { LEAD_DELEGATION_GUIDANCE, setSubagentPromptSection } from "./subagent-prompts.ts";
 
 type Rec = Record<string, any>;
-interface Host { rpc(method: string, params?: Rec): Promise<Rec>; preflight(input: Rec): Promise<unknown>; }
+interface Host { rpc(method: string, params?: Rec): Promise<Rec>; preflight(input: Rec): Promise<unknown>; refreshSchedules(): void; }
 const hosts = new Map<string, Host>();
 const key = (projectId: string, sessionId: string) => `${projectId}:${sessionId}`;
 export function subagentHost(projectId: string, sessionId: string): Host {
@@ -82,7 +82,10 @@ export function makeSubagentControlExtension(projectId: string): ExtensionFactor
           return modalJobManager.list(projectId, { sessionId }).filter((job) => !isTerminalModalState(job.state)).map((job) => ({ id: `modal:${job.id}`, sessionId }));
         },
       }));
-      hosts.set(key(projectId, sessionId), { rpc, preflight });
+      hosts.set(key(projectId, sessionId), {
+        rpc, preflight,
+        refreshSchedules: () => pi.events.emit("kady:schedules:refresh", {}),
+      });
     });
     pi.on("before_agent_start", (event) => {
       ceiling?.update(policy());

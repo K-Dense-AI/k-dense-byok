@@ -61,7 +61,7 @@ before discarding them.
 | Format | Extensions | Viewer |
 |---|---|---|
 | Mass-spec runs & spectra | `mzml` `mzxml` `mgf` | Total-ion chromatogram plus a selectable per-scan peak plot |
-| JCAMP-DX (NMR / IR / MS) | `jdx` `dx` | Spectral curve with correct axis units |
+| JCAMP-DX (NMR / IR / MS) | `jdx` `dx` | Single numeric (AFFN) spectral curve with spacing and scale factors applied; compressed and compound encodings are rejected |
 
 ### Omics & data arrays
 | Format | Extensions | Viewer |
@@ -114,7 +114,7 @@ HDF5 external links and external/virtual dataset storage are not followed.
 | Format | Extensions | Viewer |
 |---|---|---|
 | DICOM | `dcm` `dicom` | Slice image with technical metadata — **patient-identifying tags are never shown** |
-| NIfTI | `nii` `nii.gz` | Slice browser with an axis selector (sagittal / coronal / axial) |
+| NIfTI | `nii` `nii.gz` | Affine-aware sagittal / coronal / axial slices, including permuted/flipped storage; oblique or unspecified orientations use explicitly labeled native voxel planes |
 | Microscopy / TIFF | `tif` `tiff` `ome.tif` `ome.tiff` | Page/plane browser (RGB and multi-plane stacks) |
 
 ## Notes

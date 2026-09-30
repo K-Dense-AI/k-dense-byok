@@ -32,7 +32,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import { migrateDisabledMcpServers } from "./mcp.ts";
-import { defaultModel, setupModelRuntime } from "./models.ts";
+import { defaultModel, resolveModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
@@ -268,8 +268,8 @@ async function latestProjectModel(
   for (const info of candidates) {
     const last = lastModelInSessionFile(info.path);
     if (!last) continue;
-    const model = runtime.getModel(last.provider, last.modelId);
-    if (model && runtime.hasConfiguredAuth(model.provider)) return model;
+    const model = resolveStoredModel(last, runtime);
+    if (model) return model;
   }
   return undefined;
 }
@@ -282,9 +282,22 @@ async function latestProjectModel(
 function restoredSessionModel(sessionManager: SessionManager, runtime: ModelRuntime): Model<Api> | undefined {
   const context = sessionManager.buildSessionContext();
   if (context.messages.length === 0 || !context.model) return undefined;
-  const model = runtime.getModel(context.model.provider, context.model.modelId);
-  if (!model || !runtime.hasConfiguredAuth(model.provider)) return undefined;
-  return model;
+  return resolveStoredModel(context.model, runtime);
+}
+
+/** Local and catalogue-only models are synthesized by Kady, outside Pi's registry. */
+function resolveStoredModel(ref: { provider: string; modelId: string }, runtime: ModelRuntime): Model<Api> | undefined {
+  // Fusion's panel/pricing configuration is supplied by the browser per run;
+  // a persisted wire id alone cannot safely restore it.
+  if (ref.provider === "openrouter" && ref.modelId === "openrouter/fusion") return undefined;
+  try {
+    const model = resolveModel(`${ref.provider}/${ref.modelId}`, new ModelRegistry(runtime));
+    // A removed custom provider must not hit the legacy OpenRouter-vendor
+    // fallback and silently change providers when restoring a canonical ref.
+    return model.provider === ref.provider && runtime.hasConfiguredAuth(model.provider) ? model : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function build(
