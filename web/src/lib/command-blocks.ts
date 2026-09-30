@@ -24,6 +24,16 @@ export function parseCommandBlock(text: string): CommandBlock | null {
   return null;
 }
 
+/** Compact session labels, including server-truncated command expansions. */
+export function commandPreview(text: string): string {
+  const prefix = text.match(/^<(skill|prompt-template) name="([^"]+)"/);
+  if (!prefix) return text;
+  const command = prefix[1] === "skill" ? `/skill:${prefix[2]}` : `/${prefix[2]}`;
+  const block = parseCommandBlock(text);
+  const detail = block?.tail || (block?.kind === "template" ? block.body : "");
+  return detail ? `${command} — ${detail}` : command;
+}
+
 export interface SlashMenuItem {
   /** What gets inserted: `/qc` or `/skill:name`. */
   command: string;

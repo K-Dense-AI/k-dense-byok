@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { commandPreview } from "@/lib/command-blocks";
 import { fleetSessions, getFleet, controlSpecialist, type FleetSnapshot, type FleetAction, type FleetNode } from "@/lib/subagent-fleet";
 const active = (state: string) => ["running", "queued", "pending"].includes(state);
 type Target = { runId: string; index?: number; label: string };
@@ -86,7 +87,7 @@ export function SubagentFleetPanel({ projectId }: { projectId: string }) {
       <div className="flex gap-2">
         <select aria-label="Fleet chat" value={sessionId} onChange={(e) => setSessionId(e.target.value)} className="max-w-64 rounded border bg-background px-2 py-1 text-xs">
           {!sessions.length && <option value="">No chats yet</option>}
-          {sessions.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          {sessions.map((s) => <option key={s.id} value={s.id}>{commandPreview(s.name)}</option>)}
         </select>
         <Button size="sm" variant="ghost" onClick={() => setSessionRefresh((n) => n + 1)}>Refresh chats</Button>
       </div>

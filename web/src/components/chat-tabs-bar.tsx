@@ -25,6 +25,7 @@ import {
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { apiFetch } from "@/lib/projects";
 import { cn } from "@/lib/utils";
+import { commandPreview } from "@/lib/command-blocks";
 
 export interface ChatTabDescriptor {
   id: string;
@@ -62,7 +63,7 @@ interface SessionListItem {
 }
 
 function sessionTitle(s: SessionListItem): string {
-  const raw = (s.name ?? s.firstMessage ?? "").replace(/\s+/g, " ").trim();
+  const raw = (s.name ?? commandPreview(s.firstMessage ?? "")).replace(/\s+/g, " ").trim();
   if (!raw) return "Untitled chat";
   return raw.length > 60 ? raw.slice(0, 60) + "…" : raw;
 }

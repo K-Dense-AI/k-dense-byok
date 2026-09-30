@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { parseCommandBlock, slashMenuItems } from "@/lib/command-blocks";
+import { commandPreview, parseCommandBlock, slashMenuItems } from "@/lib/command-blocks";
+
+it("labels full and truncated command expansions without exposing wrapper paths", () => {
+  expect(commandPreview('<skill name="audit" location="/private/path')).toBe('/skill:audit');
+  expect(commandPreview('<prompt-template name="qc">\nRead a.csv\n</prompt-template>')).toBe('/qc — Read a.csv');
+  expect(commandPreview('<skill name="audit" location="/path">\nInstructions\n</skill>\n\na.csv')).toBe('/skill:audit — a.csv');
+  expect(commandPreview('Explain <skill name="audit"')).toBe('Explain <skill name="audit"');
+});
 
 describe("parseCommandBlock", () => {
   it("recognizes Pi's skill block with a trailing user message", () => {
