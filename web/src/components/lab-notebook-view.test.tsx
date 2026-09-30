@@ -526,7 +526,9 @@ describe("LabNotebookView", () => {
     expect(onOpenFile).not.toHaveBeenCalled();
     const options = vi.mocked(toast.success).mock.calls.at(-1)?.[1];
     expect(options?.action).toMatchObject({ label: "Open draft" });
-    act(() => (options?.action as { onClick: () => void }).onClick());
+    const action = options?.action;
+    if (!action || typeof action !== "object" || !("onClick" in action)) throw new Error("Missing draft action");
+    act(() => Reflect.apply(action.onClick, undefined, []));
     expect(onOpenFile).toHaveBeenCalledWith("methods_draft_x.md");
     expect(
       spy.mock.calls.some(
