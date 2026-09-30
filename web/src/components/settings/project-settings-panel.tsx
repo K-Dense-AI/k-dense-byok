@@ -275,7 +275,7 @@ function InstructionsCard({ projectId }: { projectId: string }) {
     <SettingsCard
       id="instructions"
       title="Agent instructions (AGENTS.md)"
-      description="The sandbox's AGENTS.md tells the agent how to work in this project: ask before assuming, respect raw data, confirm costs before scheduling. Edit it from the file browser."
+      description="The sandbox's AGENTS.md tells the agent how to work in this project: ask before assuming, respect raw data, confirm costs before scheduling. To customize it, open this project's sandbox/AGENTS.md in a local text editor. This file is hidden from Kady's file browser."
     >
       {dialog}
       <div className="flex items-center gap-3" data-testid="instructions-status">
