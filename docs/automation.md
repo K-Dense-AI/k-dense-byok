@@ -44,6 +44,12 @@ showing **Held: spend limit**, and resumes held schedules after the limit clears
 That timer is a convenience; provider admission enforces the limit even between
 ticks or immediately after a manual resume.
 
+Schedules created under Kady's host tool policy retain that capability ceiling
+on disk. Each fire intersects the saved tools with the resident session's current
+policy, so later additions do not silently grant old schedules new tools, and
+later removals apply immediately. These schedules fail closed outside the Kady
+host. Temporary or third-party capability ceilings still block persistence.
+
 ### Which model a scheduled run uses
 
 A fire happens inside the project's resident automation session, and a child

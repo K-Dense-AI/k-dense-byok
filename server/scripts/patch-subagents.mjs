@@ -10,6 +10,39 @@ export function patchSubagents() {
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
   if (version !== '0.73.1') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
   const patches = [
+    ['src/runs/background/scheduled-runs.js', 'export const SCHEDULED_RUN_ACTIONS = [', `// KADY_HOST_SCHEDULE_IMPORT_V1
+import { parseSubagentCapabilityCeiling, registerSubagentCapabilityCeiling } from "../shared/capability-ceiling.js";
+export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
+    ['src/runs/background/scheduled-runs.js', `        if (this.deps.resolveCapabilityCeiling?.(sessionId))
+            return textResult("Cannot persist a schedule while a capability ceiling is active.", undefined, undefined, true);`, `        // KADY_HOST_SCHEDULE_CAPTURE_V1: only Kady's persistent host policy is schedulable.
+        // Other hosts and temporary/restricted-session ceilings still fail closed.
+        const activeCeiling = this.deps.resolveCapabilityCeiling?.(sessionId);
+        let kadyCapabilityCeiling;
+        if (activeCeiling) {
+            if (!process.env.KADY_SUBAGENT_HOST_MODULE || activeCeiling.sources.length !== 1 || activeCeiling.sources[0] !== "kady-parent-tools")
+                return textResult("Cannot persist a schedule while a capability ceiling is active.", undefined, undefined, true);
+            kadyCapabilityCeiling = parseSubagentCapabilityCeiling(activeCeiling);
+        }`, 'KADY_HOST_SCHEDULE_CAPTURE_V1'],
+    ['src/runs/background/scheduled-runs.js', '            target: target.target,', `            target: target.target,
+            // KADY_HOST_SCHEDULE_RECORD_V1: retain restrictions across restart.
+            ...(kadyCapabilityCeiling ? { kadyCapabilityCeiling } : {}),`, 'KADY_HOST_SCHEDULE_RECORD_V1'],
+    ['src/runs/background/scheduled-runs.js', '            const result = await this.deps.launch(executionParams(schedule, dueReason === "manual" ? quiet === true : schedule.quiet === true), this.requireContext(store), new AbortController().signal);', `            // KADY_HOST_SCHEDULE_LAUNCH_V1: intersect the saved ceiling with the
+            // resident session policy for every launch; never run outside Kady.
+            const context = this.requireContext(store);
+            const ownerId = context.sessionManager.getSessionId();
+            let savedCeiling;
+            if (schedule.kadyCapabilityCeiling !== undefined) {
+                const current = this.deps.resolveCapabilityCeiling?.(ownerId);
+                if (!process.env.KADY_SUBAGENT_HOST_MODULE || !current?.sources.includes("kady-parent-tools"))
+                    throw new Error("This schedule requires the Kady host capability policy.");
+                savedCeiling = registerSubagentCapabilityCeiling({ sessionId: ownerId, source: "kady-schedule-snapshot", ceiling: parseSubagentCapabilityCeiling(schedule.kadyCapabilityCeiling) });
+            }
+            let result;
+            try {
+                result = await this.deps.launch(executionParams(schedule, dueReason === "manual" ? quiet === true : schedule.quiet === true), context, new AbortController().signal);
+            } finally {
+                savedCeiling?.dispose();
+            }`, 'KADY_HOST_SCHEDULE_LAUNCH_V1'],
     ['src/runs/shared/async-status-projection.js', '        const stepChildren = steps.map((step, index) => projectLane(step, step.index ?? index)).filter((child) => child !== undefined);', `        // KADY_HOST_TARGET_V1: preserve authoritative control targets through bounded/reordered UI projection.
         const stepChildren = steps.map((step, index) => {
             const child = projectLane(step, step.index ?? index);
@@ -45,6 +78,16 @@ export function patchSubagents() {
     if (text.split(before).length !== 2) throw new Error(`Subagent compatibility anchor changed: ${file}`);
     return { target, text: text.replace(before, after) };
   });
-  for (const write of writes) if (write) fs.writeFileSync(write.target, write.text);
+  // Several independent seams can share a file. Compose their replacements
+  // instead of letting the last write discard earlier changes.
+  const composed = new Map();
+  for (let i = 0; i < patches.length; i++) {
+    const write = writes[i];
+    if (!write) continue;
+    const [, before, after] = patches[i];
+    const current = composed.get(write.target) ?? fs.readFileSync(write.target, 'utf8');
+    composed.set(write.target, current.replace(before, after));
+  }
+  for (const [target, text] of composed) fs.writeFileSync(target, text);
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) patchSubagents();
