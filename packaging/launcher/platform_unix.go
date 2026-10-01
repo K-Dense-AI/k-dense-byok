@@ -6,10 +6,10 @@ import (
 	"errors"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func lockInstance(file string) (func(), error) {
@@ -19,7 +19,7 @@ func lockInstance(file string) (func(), error) {
 	}
 	if e = syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); e != nil {
 		f.Close()
-		return nil, errors.New("Kady is already starting or running")
+		return nil, errAlreadyRunning
 	}
 	return func() { syscall.Flock(int(f.Fd()), syscall.LOCK_UN); f.Close() }, nil
 }
@@ -28,40 +28,46 @@ func detach(c *exec.Cmd)                { c.SysProcAttr = &syscall.SysProcAttr{S
 func childProcess(c *exec.Cmd)          { c.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
 func terminateSignal() os.Signal        { return syscall.SIGTERM }
 
-// Pi background runners create their own process groups. Include observed
-// descendants before terminating the parent; never kill unrelated port owners.
-func treeCleanup(c *exec.Cmd) func() {
+// redirectStd sends runtime panics and other direct writes to the log.
+func redirectStd(f *os.File) {
+	_ = unix.Dup2(int(f.Fd()), 1)
+	_ = unix.Dup2(int(f.Fd()), 2)
+}
+
+func processTable() map[int]processInfo {
+	out, _ := exec.Command("ps", "-A", "-o", "pid=,ppid=,lstart=").Output()
+	return parseProcessTable(string(out))
+}
+
+// Pi background runners create their own process groups and outlive their
+// parent, so record the service's tree while it is alive. Signal a PID later
+// only if it is still that recorded process (or descends from one), and the
+// group only while its leader is unreaped and so still owns the group ID.
+func treeCleanup(c *exec.Cmd, exited func() bool) func() {
 	if c.Process == nil {
 		return func() {}
 	}
-	owned := map[int]bool{c.Process.Pid: true}
-	data, _ := exec.Command("ps", "-ax", "-o", "pid=,ppid=").Output()
-	rows := strings.Split(string(data), "\n")
-	for changed := true; changed; {
-		changed = false
-		for _, row := range rows {
-			fields := strings.Fields(row)
-			if len(fields) != 2 {
-				continue
-			}
-			pid, _ := strconv.Atoi(fields[0])
-			ppid, _ := strconv.Atoi(fields[1])
-			if pid > 1 && owned[ppid] && !owned[pid] {
-				owned[pid] = true
-				changed = true
+	leader := c.Process.Pid
+	before := processTable()
+	recorded := map[int]string{}
+	for pid := range descendantsOf(before, map[int]bool{leader: true}) {
+		recorded[pid] = before[pid].start
+	}
+	signal := func(sig syscall.Signal) {
+		if !exited() && c.Process.Signal(sig) == nil {
+			_ = syscall.Kill(-leader, sig)
+		}
+		now := processTable()
+		for pid := range descendantsOf(now, stillRunning(now, recorded)) {
+			if pid != leader {
+				_ = syscall.Kill(pid, sig)
 			}
 		}
 	}
 	return func() {
-		_ = syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
-		for pid := range owned {
-			_ = syscall.Kill(pid, syscall.SIGTERM)
-		}
+		signal(syscall.SIGTERM)
 		time.Sleep(500 * time.Millisecond)
-		_ = syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
-		for pid := range owned {
-			_ = syscall.Kill(pid, syscall.SIGKILL)
-		}
+		signal(syscall.SIGKILL)
 	}
 }
 func openWindowsURL(string) error { return errors.New("Windows only") }

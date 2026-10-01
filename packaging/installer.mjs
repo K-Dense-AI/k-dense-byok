@@ -79,7 +79,7 @@ if (process.platform === "darwin") {
     await run(signtool, ["sign", "/f", cert, "/p", process.env.WINDOWS_CERTIFICATE_PASSWORD, "/fd", "SHA256", "/tr", "http://timestamp.digicert.com", "/td", "SHA256", file]);
     await run(signtool, ["verify", "/pa", file]);
   };
-  await sign(path.join(bundle, "kady.exe"));
+  for (const launcher of ["kady.exe", "kadyw.exe"]) await sign(path.join(bundle, launcher));
   const iscc = process.env.ISCC || path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Inno Setup 6", "ISCC.exe");
   await run(iscc, [`/DAppVersion=${version}`, `/DBundleDir=${bundle}`, `/DOutputDir=${artifacts}`, path.join(repo, "packaging/windows/kady.iss")]);
   await sign(path.join(artifacts, `Kady-${version}-windows-x64.exe`));

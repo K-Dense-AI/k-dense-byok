@@ -120,8 +120,12 @@ await fs.cp(path.join(repo, "web", ".next", "static"), path.join(resources, "fro
 // Next traces an .env if present. Packaging must exclude every such file.
 async function removeEnvs(dir) { for (const item of await fs.readdir(dir, { withFileTypes: true })) { const file = path.join(dir, item.name); if (item.name === ".env" || item.name.startsWith(".env.")) await fs.rm(file, { force: true }); else if (item.isDirectory()) await removeEnvs(file); } }
 await removeEnvs(path.join(resources, "frontend"));
-const binary = path.join(bundle, process.platform === "win32" ? "kady.exe" : "kady");
-await run(process.env.KADY_GO || "go", ["build", "-trimpath", "-ldflags", `-s -w -X main.version=${pkg.version}${process.platform === "win32" ? " -H windowsgui" : ""}`, "-o", binary, "."], { cwd: path.join(repo, "packaging", "launcher"), env: { ...process.env, CGO_ENABLED: "0" } });
+const buildLauncher = (output, gui) => run(process.env.KADY_GO || "go", ["build", "-trimpath", "-ldflags", `-s -w -X main.version=${pkg.version}${gui ? " -H windowsgui" : ""}`, "-o", output, "."], { cwd: path.join(repo, "packaging", "launcher"), env: { ...process.env, CGO_ENABLED: "0" } });
+// Windows ties console use to the binary: kady.exe is the console CLI
+// (`kady status`, `kady logs` print and are waited for), kadyw.exe the
+// windowless build the Start-menu shortcuts open.
+await buildLauncher(path.join(bundle, process.platform === "win32" ? "kady.exe" : "kady"), false);
+if (process.platform === "win32") await buildLauncher(path.join(bundle, "kadyw.exe"), true);
 await fs.writeFile(path.join(resources, "distribution.json"), JSON.stringify({ version: pkg.version, target, node: manifest.nodeVersion, uv: manifest.uvVersion }, null, 2) + "\n");
 await fs.writeFile(path.join(bundle, "README.txt"), "Open Kady to launch the app in your browser. Settings > Services offers setup, logs and shutdown.\nCommand line: kady start | stop | status | logs | import /path/to/checkout\nProjects and credentials are stored separately and survive application upgrades.\n");
 for (const name of ["LICENSE", "NOTICE"]) { try { await fs.copyFile(path.join(repo, name), path.join(bundle, name)); } catch (e) { if (e.code !== "ENOENT") throw e; } }

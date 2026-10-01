@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -26,6 +27,8 @@ import (
 )
 
 var version = "dev"
+
+var errAlreadyRunning = errors.New("Kady is already starting or running")
 
 type paths struct{ Data, Config, Cache, Resources string }
 type instance struct {
@@ -165,20 +168,6 @@ func browser(raw string) error {
 	}
 	return c.Run()
 }
-func pickPort(preferred int) (int, error) {
-	if preferred < 1 || preferred > 65535 {
-		preferred = 0
-	}
-	l, e := net.Listen("tcp4", fmt.Sprintf("127.0.0.1:%d", preferred))
-	if e != nil {
-		l, e = net.Listen("tcp4", "127.0.0.1:0")
-	}
-	if e != nil {
-		return 0, e
-	}
-	defer l.Close()
-	return l.Addr().(*net.TCPAddr).Port, nil
-}
 func waitReady(s instance, timeout time.Duration) error {
 	until := time.Now().Add(timeout)
 	misses := 0
@@ -212,56 +201,59 @@ func waitReady(s instance, timeout time.Duration) error {
 	}
 	return errors.New("Kady did not become ready. Open the startup log for details")
 }
+func logPath(p paths) string { return filepath.Join(p.Data, "logs", "kady.log") }
+
+// lockHeld reports whether a supervisor currently holds the per-user lock.
+func lockHeld(p paths) bool {
+	unlock, e := lockInstance(filepath.Join(p.Data, "instance.lock"))
+	if e == nil {
+		unlock()
+		return false
+	}
+	return errors.Is(e, errAlreadyRunning)
+}
+func openUI(s instance, noBrowser bool) error {
+	if e := waitReady(s, 90*time.Second); e != nil {
+		return e
+	}
+	if !noBrowser {
+		return browser(s.UI + "/#kady-token=" + s.Token)
+	}
+	return nil
+}
 func start(p paths, noBrowser bool) error {
 	if s, e := readInstance(p); e == nil && live(s) {
-		if e = waitReady(s, 90*time.Second); e != nil {
-			return e
-		}
-		if !noBrowser {
-			return browser(s.UI + "/#kady-token=" + s.Token)
-		}
-		return nil
+		return openUI(s, noBrowser)
 	}
 	exe, e := os.Executable()
 	if e != nil {
 		return e
 	}
+	// No inherited stdio: the supervisor owns kady.log so it can rotate it.
 	c := exec.Command(exe, "serve")
 	detach(c)
-	log, e := os.OpenFile(filepath.Join(p.Data, "logs", "kady.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if e != nil {
-		return e
-	}
-	defer log.Close()
-	c.Stdout = log
-	c.Stderr = log
 	if e = c.Start(); e != nil {
 		return e
 	}
 	exited := make(chan error, 1)
 	go func() { exited <- c.Wait() }()
-	until := time.Now().Add(90 * time.Second)
-	for time.Now().Before(until) {
+	serveDone := false
+	for until := time.Now().Add(90 * time.Second); time.Now().Before(until); {
 		if s, e := readInstance(p); e == nil && live(s) {
-			if e = waitReady(s, 90*time.Second); e != nil {
-				return e
-			}
-			if !noBrowser {
-				return browser(s.UI + "/#kady-token=" + s.Token)
-			}
-			return nil
+			return openUI(s, noBrowser)
+		}
+		// A simultaneous launch may have won the per-user lock and still be
+		// choosing ports. Give up only once no supervisor holds it.
+		if serveDone && !lockHeld(p) {
+			break
 		}
 		select {
 		case <-exited:
-			// A simultaneous launch may have won the per-user lock.
-			if s, err := readInstance(p); err == nil && live(s) {
-				continue
-			}
-			return errors.New("Kady could not start. See " + filepath.Join(p.Data, "logs", "kady.log"))
+			serveDone, exited = true, nil
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
-	return errors.New("Kady could not start. See " + filepath.Join(p.Data, "logs", "kady.log"))
+	return errors.New("Kady could not start. See " + logPath(p))
 }
 func setEnv(base []string, values map[string]string) []string {
 	result := []string{}
@@ -291,6 +283,12 @@ func serve(p paths) error {
 		return e
 	}
 	defer unlock()
+	// Opened after the lock so a losing launch never rotates the winner's log.
+	logs, e := openLog(logPath(p), maxLogBytes, true)
+	if e != nil {
+		return e
+	}
+	log.SetOutput(logs)
 	closeJob, e := containProcesses()
 	if e != nil {
 		return e
@@ -313,18 +311,27 @@ func serve(p paths) error {
 	if v, e := strconv.Atoi(os.Getenv("KADY_FRONTEND_PORT")); e == nil {
 		previous.UI = v
 	}
-	api, e := pickPort(previous.API)
+	api, apiV6, e := reservePort(previous.API)
 	if e != nil {
 		return e
 	}
-	ui, e := pickPort(previous.UI)
+	ui, uiV6, e := reservePort(previous.UI)
+	for e == nil && ui == api {
+		if uiV6 != nil {
+			uiV6.Close()
+		}
+		ui, uiV6, e = reservePort(0)
+	}
 	if e != nil {
+		if apiV6 != nil {
+			apiV6.Close()
+		}
 		return e
 	}
-	if ui == api {
-		ui, e = pickPort(0)
-		if e != nil {
-			return e
+	for port, l := range map[int]net.Listener{api: apiV6, ui: uiV6} {
+		if l != nil {
+			go forward(l, fmt.Sprintf("127.0.0.1:%d", port))
+			defer l.Close()
 		}
 	}
 	listener, e := net.Listen("tcp4", "127.0.0.1:0")
@@ -410,12 +417,18 @@ func serve(p paths) error {
 		guardPath = "/" + guardPath
 	}
 	guardian := (&url.URL{Scheme: "file", Path: guardPath}).String()
-	values := map[string]string{"KADY_PACKAGED": "1", "KADY_PROJECTS_ROOT": projectsRoot(p), "KADY_DATA_DIR": p.Data, "KADY_CONFIG_DIR": p.Config, "KADY_CACHE_DIR": p.Cache, "KADY_LAUNCHER": "1", "KADY_HOST": "127.0.0.1", "HOSTNAME": "127.0.0.1", "KADY_PORT": strconv.Itoa(api), "KADY_FRONTEND_PORT": strconv.Itoa(ui), "PORT": strconv.Itoa(ui), "KADY_API_URL": fmt.Sprintf("http://localhost:%d", api), "KADY_CONTROL_URL": s.Control, "KADY_AUTH_TOKEN": s.Token, "KADY_REQUIRE_AUTH": "1", "PATH": strings.Join(pathEntries, string(os.PathListSeparator)), "NODE_OPTIONS": "--import=" + guardian, "NODE_PATH": "", "NODE_ENV": "production", "GIT_EXEC_PATH": gitExec, "UV_CACHE_DIR": filepath.Join(p.Cache, "uv"), "UV_PYTHON_INSTALL_DIR": filepath.Join(p.Data, "python"), "UV_PYTHON_PREFERENCE": "only-managed", "KADY_OFFICE_CACHE_DIR": filepath.Join(p.Cache, "office-assets"), "NO_PROXY": envOr("NO_PROXY", "") + ",localhost,127.0.0.1,::1"}
+	values := map[string]string{"KADY_PACKAGED": "1", "KADY_PROJECTS_ROOT": projectsRoot(p), "KADY_DATA_DIR": p.Data, "KADY_CONFIG_DIR": p.Config, "KADY_CACHE_DIR": p.Cache, "KADY_LAUNCHER": "1", "KADY_HOST": "127.0.0.1", "KADY_PORT": strconv.Itoa(api), "KADY_FRONTEND_PORT": strconv.Itoa(ui), "KADY_API_URL": fmt.Sprintf("http://localhost:%d", api), "KADY_CONTROL_URL": s.Control, "KADY_AUTH_TOKEN": s.Token, "KADY_REQUIRE_AUTH": "1", "PATH": strings.Join(pathEntries, string(os.PathListSeparator)), "NODE_OPTIONS": "--import=" + guardian, "NODE_PATH": "", "GIT_EXEC_PATH": gitExec, "UV_CACHE_DIR": filepath.Join(p.Cache, "uv"), "UV_PYTHON_INSTALL_DIR": filepath.Join(p.Data, "python"), "UV_PYTHON_PREFERENCE": "only-managed", "KADY_OFFICE_CACHE_DIR": filepath.Join(p.Cache, "office-assets"), "NO_PROXY": envOr("NO_PROXY", "") + ",localhost,127.0.0.1,::1"}
 	if runtime.GOOS == "windows" {
 		values["KADY_BASH_PATH"] = filepath.Join(p.Resources, "git", "bin", "bash.exe")
 	}
+	// Every agent shell inherits this environment, so it carries no generic
+	// names (PORT, HOSTNAME, NODE_ENV); bootstrap.mjs sets those for Next only.
 	env := setEnv(os.Environ(), values)
-	children := []*exec.Cmd{}
+	type service struct {
+		cmd    *exec.Cmd
+		exited atomic.Bool
+	}
+	children := []*service{}
 	exits := make(chan error, 2)
 	var waits sync.WaitGroup
 	defer func() {
@@ -423,8 +436,8 @@ func serve(p paths) error {
 		// cooperatively, including on Windows where SIGTERM is not available.
 		stopping.Store(true)
 		cleanups := []func(){}
-		for _, c := range children {
-			cleanups = append(cleanups, treeCleanup(c))
+		for _, svc := range children {
+			cleanups = append(cleanups, treeCleanup(svc.cmd, svc.exited.Load))
 		}
 		done := make(chan struct{})
 		go func() { waits.Wait(); close(done) }()
@@ -440,15 +453,23 @@ func serve(p paths) error {
 		c := exec.Command(node, filepath.Join(p.Resources, "bootstrap.mjs"), role)
 		c.Env = env
 		c.Dir = p.Data
-		c.Stdout = os.Stdout
-		c.Stderr = os.Stderr
+		// Through pipes, so kady.log can rotate under running services.
+		c.Stdout = logs
+		c.Stderr = logs
+		c.WaitDelay = 3 * time.Second
 		childProcess(c)
 		if e = c.Start(); e != nil {
 			return fmt.Errorf("start %s: %w", role, e)
 		}
-		children = append(children, c)
+		svc := &service{cmd: c}
+		children = append(children, svc)
 		waits.Add(1)
-		go func() { defer waits.Done(); exits <- c.Wait() }()
+		go func() {
+			defer waits.Done()
+			e := c.Wait()
+			svc.exited.Store(true)
+			exits <- e
+		}()
 	}
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, terminateSignal())
@@ -472,7 +493,7 @@ func serve(p paths) error {
 				ready.Store(true)
 				b, _ := json.Marshal(ports{API: api, UI: ui})
 				_ = atomicFile(filepath.Join(p.Config, "ports.json"), b)
-				fmt.Println("Kady", version, "ready at", s.UI)
+				fmt.Fprintln(logs, "Kady", version, "ready at", s.UI)
 			}
 		}
 	}
@@ -552,7 +573,7 @@ func main() {
 		}
 	case "logs":
 		var b []byte
-		b, e = os.ReadFile(filepath.Join(p.Data, "logs", "kady.log"))
+		b, e = tailFile(logPath(p), 256<<10)
 		if e == nil {
 			os.Stdout.Write(b)
 		}
@@ -570,7 +591,7 @@ func main() {
 	if e != nil {
 		fmt.Fprintln(os.Stderr, e)
 		if command == "start" && !noBrowser {
-			showError(e.Error() + "\n\nLog: " + filepath.Join(p.Data, "logs", "kady.log"))
+			showError(e.Error() + "\n\nLog: " + logPath(p))
 		}
 		os.Exit(1)
 	}

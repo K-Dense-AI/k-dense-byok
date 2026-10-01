@@ -15,6 +15,8 @@ await fs.cp(sourceBundle, bundle, { recursive: true, verbatimSymlinks: true, mod
 const data = path.join(temp, "data");
 const macApp = sourceBundle.endsWith(".app");
 const binary = path.join(bundle, macApp ? "Contents/MacOS/kady" : process.platform === "win32" ? "kady.exe" : "kady");
+// Start-menu shortcuts open the windowless launcher.
+if (process.platform === "win32") await fs.access(path.join(bundle, "kadyw.exe"));
 // Model a system-owned installation. All mutable state must go to user storage.
 async function writable(root, enable) {
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
@@ -50,7 +52,7 @@ const model = http.createServer(async (req, res) => {
   const childTask = userText.includes("PACKAGING_CHILD");
   const delegate = !childTask && userText.includes("PACKAGING_DELEGATE");
   const childShell = childTask && process.platform === "win32";
-  const tool = userText.includes("PACKAGING_SHELL") ? { name: "bash", arguments: JSON.stringify({ command: "node --version > packaging-node.txt && npm --version > packaging-npm.txt && uv --version > packaging-uv.txt && git --version > packaging-git.txt && rg --version > packaging-rg.txt && fd --version > packaging-fd.txt" }) }
+  const tool = userText.includes("PACKAGING_SHELL") ? { name: "bash", arguments: JSON.stringify({ command: "node --version > packaging-node.txt && npm --version > packaging-npm.txt && uv --version > packaging-uv.txt && git --version > packaging-git.txt && rg --version > packaging-rg.txt && fd --version > packaging-fd.txt && { printenv PORT NODE_ENV > packaging-env.txt || true; }" }) }
     : delegate ? { name: "subagent", arguments: JSON.stringify({ workflowScript: "return runs.run('smoke-child', { agent: 'worker', task: 'PACKAGING_CHILD: Write packaging-child.txt with the exact text Packaged runtime verified.' })" }) }
     : childShell ? { name: "bash", arguments: JSON.stringify({ command: "node --version && npm --version && uv --version && git --version && rg --version && fd --version && printf 'Packaged runtime verified.\\n' > packaging-child.txt" }) }
     : { name: "write", arguments: JSON.stringify({ path: childTask ? "packaging-child.txt" : "packaging-smoke.txt", content: "Packaged runtime verified.\n" }) };
@@ -119,6 +121,7 @@ try {
   assert.match(await fs.readFile(path.join(sandbox, "packaging-git.txt"), "utf8"), /^git version 2\./);
   assert.match(await fs.readFile(path.join(sandbox, "packaging-rg.txt"), "utf8"), /^ripgrep 15\.2\.0/);
   assert.match(await fs.readFile(path.join(sandbox, "packaging-fd.txt"), "utf8"), /^fd 10\.3\.0/);
+  assert.equal(await fs.readFile(path.join(sandbox, "packaging-env.txt"), "utf8"), "", "launcher-only PORT/NODE_ENV stay out of agent shells");
   if (process.env.KADY_SMOKE_BROWSER === "1") {
     const { chromium } = await import("playwright");
     const browser = await chromium.launch({ headless: true });

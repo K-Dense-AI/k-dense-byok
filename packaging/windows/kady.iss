@@ -17,20 +17,27 @@ OutputBaseFilename=Kady-{#AppVersion}-windows-x64
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-UninstallDisplayIcon={app}\kady.exe
+UninstallDisplayIcon={app}\kadyw.exe
 CloseApplications=no
 RestartApplications=no
+
+[InstallDelete]
+; Replace the previous version's application files rather than layering the
+; new ones over them: stale node_modules or sources would shadow the update.
+; User data lives in %LOCALAPPDATA%\Kady, outside {app}.
+Type: filesandordirs; Name: "{app}\resources"
 
 [Files]
 Source: "{#BundleDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\Kady"; Filename: "{app}\kady.exe"
-Name: "{group}\Stop Kady"; Filename: "{app}\kady.exe"; Parameters: "stop"
+; kadyw.exe is the windowless build; kady.exe is the console CLI.
+Name: "{group}\Kady"; Filename: "{app}\kadyw.exe"
+Name: "{group}\Stop Kady"; Filename: "{app}\kadyw.exe"; Parameters: "stop"
 Name: "{group}\Uninstall Kady"; Filename: "{uninstallexe}"
 
 [Run]
-Filename: "{app}\kady.exe"; Description: "Open Kady in your browser"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\kadyw.exe"; Description: "Open Kady in your browser"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function PrepareToInstall(var NeedsRestart: Boolean): String;

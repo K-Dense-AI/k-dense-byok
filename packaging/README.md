@@ -69,19 +69,28 @@ remain supported. Credentials saved in Settings use the configuration `.env`.
 Never remove these data directories during an upgrade or uninstall.
 
 The launcher keeps a locked per-user instance, owner-only state/token files,
-preferred ports with collision fallback, and a startup log. The UI API endpoint
+preferred ports with collision fallback, and a log (`logs/kady.log` in the data
+directory, rotated to `kady.log.1` at 10 MB). A port is used only when it is free
+on both 127.0.0.1 and ::1, and the launcher holds the ::1 side as a forwarder to
+the IPv4 service, so `localhost` cannot reach another program. The UI API endpoint
 comes from an uncached runtime script, so changing ports does not require a web
 rebuild. Streaming retains its separate browser connection pool. The backend
-requires a per-launch token even on loopback. Windows uses a kill-on-close job;
-Unix shutdown signals owned process groups and observed detached descendants.
-Node children additionally monitor the supervisor so orphaned Pi runners exit.
+requires a per-launch token even on loopback. Windows uses a kill-on-close job
+that ends remaining descendants when the supervisor exits; Unix shutdown signals
+owned process groups and descendants recorded by PID and start time, so a reused
+PID is never signalled. Node children additionally monitor the supervisor so
+orphaned Pi runners exit. Agent shells inherit the backend environment, so the
+launcher sets only `KADY_*` names there; `PORT`/`HOSTNAME`/`NODE_ENV` are set
+for the Next.js server alone.
 
 Closing a browser tab leaves the application and schedules running. Settings →
 Services offers logs, scientific preview setup, download updates and Stop Kady.
 Remote Modal jobs can continue after shutdown and are recovered when reopened.
-CLI commands: `kady start`, `stop`, `status`, `logs`, `version`, and
-`kady import /path/to/checkout`. On macOS the CLI is inside
-`Kady.app/Contents/MacOS/kady`.
+CLI commands: `kady start`, `stop`, `status`, `logs` (the last 256 KB),
+`version`, and `kady import /path/to/checkout`. On macOS the CLI is inside
+`Kady.app/Contents/MacOS/kady`. On Windows, `kady.exe` is the console CLI and
+`kadyw.exe` the windowless launcher the Start-menu shortcuts open. Upgrades
+remove the previous `resources` directory before installing the new one.
 
 Selecting an existing installation uses its projects directory **in place**.
 It preserves project IDs, sessions, provenance and budgets without rewriting
@@ -105,6 +114,12 @@ workflow calls the distribution workflow directly, waits for every platform's
 tests, builds, signing and attestations, then uploads all six installers and
 combined checksums to a draft before publishing. It does not depend on a tag
 event created by `GITHUB_TOKEN` triggering another workflow.
+
+Until every secret below is set, a version bump still creates the tag and a
+source-only GitHub release (with a note that installers are unavailable);
+unsigned installers are never published. A partial set fails the release job.
+A version released source-only does not gain installers later; the next
+version bump after the secrets are configured is the first binary release.
 
 Configure these repository Actions secrets before the first binary release:
 

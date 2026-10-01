@@ -3,11 +3,9 @@
 package main
 
 import (
-	"errors"
 	"golang.org/x/sys/windows"
 	"os"
 	"os/exec"
-	"strconv"
 	"syscall"
 	"unsafe"
 )
@@ -20,10 +18,16 @@ func lockInstance(file string) (func(), error) {
 	var overlap windows.Overlapped
 	if e = windows.LockFileEx(windows.Handle(f.Fd()), windows.LOCKFILE_EXCLUSIVE_LOCK|windows.LOCKFILE_FAIL_IMMEDIATELY, 0, 1, 0, &overlap); e != nil {
 		f.Close()
-		return nil, errors.New("Kady is already starting or running")
+		return nil, errAlreadyRunning
 	}
 	return func() { windows.UnlockFileEx(windows.Handle(f.Fd()), 0, 1, 0, &overlap); f.Close() }, nil
 }
+
+// containProcesses puts the supervisor and everything it starts into a job
+// that terminates its members when its last handle closes. The handle is
+// deliberately never closed here: the supervisor is a member too, so closing
+// it early would kill this process before it could log why it stopped. The
+// OS closes it at exit, which is when remaining descendants must go.
 func containProcesses() (func(), error) {
 	job, e := windows.CreateJobObject(nil, nil)
 	if e != nil {
@@ -39,19 +43,28 @@ func containProcesses() (func(), error) {
 		windows.CloseHandle(job)
 		return nil, e
 	}
-	return func() { windows.CloseHandle(job) }, nil
+	return func() {}, nil
 }
 func detach(c *exec.Cmd) {
 	c.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS, HideWindow: true}
 }
 func childProcess(c *exec.Cmd)   { c.SysProcAttr = &syscall.SysProcAttr{HideWindow: true} }
 func terminateSignal() os.Signal { return os.Interrupt }
-func treeCleanup(c *exec.Cmd) func() {
+
+// redirectStd sends runtime panics and other direct writes to the log.
+func redirectStd(f *os.File) {
+	_ = windows.SetStdHandle(windows.STD_OUTPUT_HANDLE, windows.Handle(f.Fd()))
+	_ = windows.SetStdHandle(windows.STD_ERROR_HANDLE, windows.Handle(f.Fd()))
+	os.Stdout, os.Stderr = f, f
+}
+
+// The job object owns every descendant and ends them at exit. Terminate the
+// service itself only while it is unreaped, through Go's process handle: a
+// PID handed to taskkill may already belong to an unrelated program.
+func treeCleanup(c *exec.Cmd, exited func() bool) func() {
 	return func() {
-		if c.Process != nil {
-			cmd := exec.Command("taskkill", "/PID", strconv.Itoa(c.Process.Pid), "/T", "/F")
-			childProcess(cmd)
-			_ = cmd.Run()
+		if c.Process != nil && !exited() {
+			_ = c.Process.Kill()
 		}
 	}
 }

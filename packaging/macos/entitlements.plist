@@ -3,4 +3,7 @@
 <plist version="1.0"><dict>
   <key>com.apple.security.cs.allow-jit</key><true/>
   <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <!-- The bundled node is first on the agent's PATH: let it load native
+       addons (better-sqlite3, sharp, …) that npm installs into projects. -->
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
 </dict></plist>
