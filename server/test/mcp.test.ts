@@ -11,8 +11,13 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { ensureProjectExists, resolvePaths } from "../src/projects.ts";
 import {
+  RADIUS_MCP_URL,
+  addRadiusConnector,
   getMcpStatus,
   mcpConfigPath,
+  mcpNamespace,
+  mcpNamespaceClash,
+  radiusConnectorState,
   migrateDisabledMcpServers,
   readMcpServers,
   setMcpServerEnabled,
@@ -148,8 +153,28 @@ describe("validateMcpServer", () => {
     ["a", { command: "npx", toolExposure: { x: "nope" } }, /toolExposure/],
     ["a", { command: "npx", timeout: 0 }, /timeout/],
     ["a", { command: "npx", enabled: "no" }, /enabled/],
+    ["a", { command: "npx", description: 7 }, /description/],
+    ["a", { url: "https://x/mcp", oauth: { clientName: " " } }, /clientName/],
+    ["a", { url: "https://x/mcp", oauth: { authServerMetadataUrl: "http://idp.example/.well-known" } }, /authServerMetadataUrl/],
+    ["a", { url: "https://x/mcp", oauth: { callbackUrl: "https://localhost/cb" } }, /callbackUrl/],
+    ["a", { url: "https://x/mcp", oauth: { callbackUrl: "http://localhost:8080/cb", callbackPort: 9090 } }, /different ports/],
+    ["a", { url: "https://x/mcp", auth: { provider: "" } }, /auth\.provider/],
+    ["a", { url: "http://remote.example/mcp", auth: { provider: "radius" } }, /requires an https URL/],
   ])("rejects %s %j", (name, config, message) => {
     expect(validateMcpServer(name, config)).toMatch(message);
+  });
+
+  it("keeps provider sign-ins out of project files, like Pi's loader", () => {
+    const radius = { url: "https://radius.pi.dev/mcp", auth: { provider: "radius" } };
+    expect(validateMcpServer("radius", radius, "global")).toBeNull();
+    expect(validateMcpServer("radius", radius, "project")).toMatch(/shared across projects/);
+    expect(validateMcpServer("dev", { url: "http://127.0.0.1:8080/mcp", auth: { provider: "radius" } }, "global")).toBeNull();
+  });
+
+  it("folds - into _ for tool namespaces, like Pi 0.99.2+", () => {
+    expect(mcpNamespace("my-server")).toBe("mcp__my_server");
+    expect(mcpNamespaceClash("my-server", ["my_server", "other"])).toBe("my_server");
+    expect(mcpNamespaceClash("my-server", ["my-server", "other"])).toBeUndefined();
   });
 
   it("accepts Pi's full entry shapes", () => {
@@ -158,7 +183,12 @@ describe("validateMcpServer", () => {
         type: "streamable-http",
         url: "https://example.com/mcp",
         headers: { Authorization: "Bearer ${DOCS_TOKEN}" },
-        oauth: { clientId: "c", callbackPort: 8765, scope: "read write" },
+        oauth: {
+          clientId: "c", callbackPort: 8765, scope: "read write", clientName: "Kady",
+          authServerMetadataUrl: "https://idp.example/.well-known/oauth-authorization-server",
+          callbackUrl: "http://localhost:8765/callback",
+        },
+        description: "Search the team's documentation.",
         exposure: "deferred",
         toolExposure: { search: "direct", "delete_*": "hidden" },
         timeout: 90,
@@ -255,6 +285,45 @@ describe("MCP routes", () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it("rejects names Pi would fold into one namespace, within and across scopes", async () => {
+    ensureProjectExists("r1");
+    let res = await app.inject({
+      method: "PUT", url: "/mcp", headers,
+      payload: { mcpServers: { "lab-tools": echoServer(), lab_tools: echoServer() } },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().detail).toMatch(/would share tool names/);
+    res = await app.inject({
+      method: "PUT", url: "/mcp?scope=global", headers,
+      payload: { mcpServers: { lab_tools: { url: "https://g.example/mcp" } } },
+    });
+    expect(res.statusCode).toBe(200);
+    res = await app.inject({ method: "PUT", url: "/mcp", headers, payload: { mcpServers: { "lab-tools": echoServer() } } });
+    expect(res.statusCode).toBe(400);
+    // The exact same name is a deliberate project replacement, not a clash.
+    res = await app.inject({ method: "PUT", url: "/mcp", headers, payload: { mcpServers: { lab_tools: echoServer() } } });
+    expect(res.statusCode).toBe(200);
+    // Provider sign-ins are refused in the project file.
+    res = await app.inject({
+      method: "PUT", url: "/mcp", headers,
+      payload: { mcpServers: { radius: { url: RADIUS_MCP_URL, auth: { provider: "radius" } } } },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("lists provider sign-ins with Radius first and gates the Radius connector on its sign-in", async () => {
+    ensureProjectExists("r1");
+    let res = await app.inject({ method: "GET", url: "/mcp/auth-providers", headers });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().providers[0]).toMatchObject({ id: "radius", name: "Radius" });
+    res = await app.inject({ method: "GET", url: "/mcp/radius", headers });
+    expect(res.json()).toMatchObject({ configured: false, name: null, url: RADIUS_MCP_URL });
+    if (!res.json().signedIn) {
+      res = await app.inject({ method: "POST", url: "/mcp/radius", headers: { "x-project-id": "r1" } });
+      expect(res.statusCode).toBe(409);
+    }
+  });
+
   it("test route reports a connection or a readable failure", async () => {
     ensureProjectExists("r1");
     let res = await app.inject({ method: "POST", url: "/mcp/test", headers, payload: { name: "e", config: echoServer() } });
@@ -269,6 +338,23 @@ describe("MCP routes", () => {
   }, 60_000);
 });
 
+describe("Radius connector", () => {
+  it("adds the global connector once and reuses an entry at the Radius URL, as Pi's /login offer does", () => {
+    const paths = ensureProjectExists("rad");
+    expect(radiusConnectorState(paths, true)).toMatchObject({ signedIn: true, configured: false, name: null });
+    // `radius` is taken by another server, so Pi's fallback name is used.
+    writeMcpServers("global", paths, { radius: { url: "https://elsewhere.example/mcp" } });
+    expect(addRadiusConnector(paths)).toEqual({ name: "radius-mcp", replaced: false });
+    expect(readMcpServers("global", paths)["radius-mcp"]).toEqual({ url: RADIUS_MCP_URL, auth: { provider: "radius" } });
+    expect(radiusConnectorState(paths, true)).toMatchObject({ configured: true, name: "radius-mcp" });
+
+    // An existing OAuth entry at the Radius URL keeps its settings and loses only `oauth`.
+    writeMcpServers("global", paths, { gateway: { url: `${RADIUS_MCP_URL}/`, oauth: { clientId: "x" }, exposure: "direct" } });
+    expect(addRadiusConnector(paths)).toEqual({ name: "gateway", replaced: true });
+    expect(readMcpServers("global", paths).gateway).toEqual({ url: `${RADIUS_MCP_URL}/`, exposure: "direct", auth: { provider: "radius" } });
+  });
+});
+
 describe("lead session", () => {
   afterEach(() => disposeProjectSessions("s1"));
 
@@ -277,12 +363,17 @@ describe("lead session", () => {
     writeMcpServers("project", paths, {
       echo: echoServer(),
       direct: echoServer({ exposure: "direct" }),
+      "lab-direct": echoServer({ exposure: "direct", description: "Echo fixture for lab tests." }),
       off: echoServer({ enabled: false }),
     });
     const session = await createSession("s1", paths);
     await expect
       .poll(() => session.getActiveToolNames(), { timeout: 15_000, interval: 100 })
       .toContain("mcp__direct__echo");
+    // Pi 0.99.2+ replaces `-` with `_` in MCP tool and namespace names.
+    await expect
+      .poll(() => session.getActiveToolNames(), { timeout: 15_000, interval: 100 })
+      .toContain(`${mcpNamespace("lab-direct")}__echo`);
 
     const active = session.getActiveToolNames();
     // Default (codemode) exposure: callable from scripts, not declared, and

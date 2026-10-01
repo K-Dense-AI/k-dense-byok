@@ -23,7 +23,10 @@ export interface SkillInfo {
   /** Pi's `disable-model-invocation`: hidden from the model's skills index, runs only via `/skill:<name>`. */
   disableModelInvocation?: boolean;
   origin?: SkillOrigin;
-  /** Recorded source for a skill installed from somewhere other than the catalogue. */
+  /**
+   * Recorded source for a skill installed from somewhere other than the
+   * catalogue, or for a catalogue skill taken from a repo other than K-Dense's.
+   */
   source?: string;
   ref?: string;
 }

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as mcp from "@/lib/mcp";
 import * as useProjects from "@/lib/use-projects";
-import { ConnectorsPanel, configFromForm } from "@/components/connectors-panel";
+import { ConnectorsPanel, configFromForm, type McpFormState } from "@/components/connectors-panel";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -12,6 +12,16 @@ beforeEach(() => {
     activeProject: { id: "p1", name: "P1" },
     activeProjectId: "p1",
   } as unknown as ReturnType<typeof useProjects.useProjects>);
+  vi.spyOn(mcp, "getMcpAuthProviders").mockResolvedValue([
+    { id: "radius", name: "Radius", connected: true },
+    { id: "github-copilot", name: "GitHub Copilot", connected: false },
+  ]);
+  vi.spyOn(mcp, "getRadiusConnector").mockResolvedValue({
+    signedIn: false,
+    configured: false,
+    name: null,
+    url: "https://radius.pi.dev/mcp",
+  });
 });
 
 describe("ConnectorsPanel", () => {
@@ -76,16 +86,22 @@ describe("ConnectorsPanel", () => {
 });
 
 describe("configFromForm", () => {
-  const base = {
+  const base: McpFormState = {
     originalName: "docs",
+    base: null,
     name: "docs",
-    type: "http" as const,
+    type: "http",
     url: "https://example.com/mcp",
     bearerToken: "",
     command: "",
     args: "",
     env: "",
-    exposure: "codemode" as const,
+    exposure: "codemode",
+    description: "",
+    authMode: "oauth",
+    authProvider: "",
+    oauthClientName: "",
+    oauthMetadataUrl: "",
   };
 
   it("keeps Pi fields the form does not edit and drops the default exposure", () => {
@@ -100,6 +116,7 @@ describe("configFromForm", () => {
         timeout: 30,
         enabled: false,
       },
+      authMode: "bearer",
       bearerToken: "new",
     });
     expect(config).toEqual({
@@ -129,6 +146,140 @@ describe("configFromForm", () => {
       timeout: 5,
       exposure: "deferred",
     });
+  });
+
+  it("writes a description and drops it when cleared", () => {
+    const stored = { url: "https://example.com/mcp", description: "Old text" };
+    expect(configFromForm({ ...base, base: stored, description: "  Lab issue tracker " })).toEqual({
+      url: "https://example.com/mcp",
+      description: "Lab issue tracker",
+    });
+    expect(configFromForm({ ...base, base: stored, description: "" })).toEqual({
+      url: "https://example.com/mcp",
+    });
+    expect(
+      configFromForm({ ...base, type: "stdio", command: "npx", description: "Local files" }),
+    ).toEqual({ command: "npx", description: "Local files" });
+  });
+
+  it("authenticates with a signed-in provider instead of OAuth or a token", () => {
+    const config = configFromForm({
+      ...base,
+      base: {
+        url: "https://old/mcp",
+        headers: { Authorization: "Bearer stale", "X-Team": "a" },
+        oauth: { clientId: "abc" },
+      },
+      authMode: "provider",
+      authProvider: "radius",
+      bearerToken: "stale",
+    });
+    expect(config).toEqual({
+      url: "https://example.com/mcp",
+      headers: { "X-Team": "a" },
+      auth: { provider: "radius" },
+    });
+    // Round trip, then switch back to OAuth: `auth` goes away.
+    const name = "radius";
+    const back = configFromForm({ ...base, base: config, name, authMode: "oauth" });
+    expect(back).toEqual({ url: "https://example.com/mcp", headers: { "X-Team": "a" } });
+    // `auth` is an HTTP-only field.
+    expect(
+      configFromForm({ ...base, base: config, type: "stdio", command: "npx", authMode: "provider", authProvider: "radius" }),
+    ).toEqual({ command: "npx" });
+  });
+
+  it("edits advanced OAuth fields and keeps the other oauth keys", () => {
+    const stored = {
+      url: "https://example.com/mcp",
+      oauth: { clientId: "abc", scope: "read", clientName: "old", authServerMetadataUrl: "https://old/meta" },
+    };
+    expect(
+      configFromForm({
+        ...base,
+        base: stored,
+        oauthClientName: " Kady ",
+        oauthMetadataUrl: "https://auth.example.com/.well-known/oauth-authorization-server",
+      }),
+    ).toEqual({
+      url: "https://example.com/mcp",
+      oauth: {
+        clientId: "abc",
+        scope: "read",
+        clientName: "Kady",
+        authServerMetadataUrl: "https://auth.example.com/.well-known/oauth-authorization-server",
+      },
+    });
+    // Clearing both removes the keys; an oauth block left empty disappears.
+    expect(configFromForm({ ...base, base: { url: "x", oauth: { clientName: "old" } } })).toEqual({
+      url: "https://example.com/mcp",
+    });
+  });
+});
+
+describe("mcp helpers", () => {
+  it("treats the codemode-deferred alias as codemode", () => {
+    expect(mcp.exposureOf({ url: "x", exposure: "codemode-deferred" })).toBe("codemode");
+    expect(mcp.exposureOf({ url: "x", exposure: "direct" })).toBe("direct");
+    expect(mcp.MCP_EXPOSURE_OPTIONS.map((o) => o.value)).not.toContain("codemode-deferred");
+  });
+
+  it("does not treat a provider-token server as an OAuth sign-in", () => {
+    expect(mcp.usesOAuth({ url: "https://radius.pi.dev/mcp" })).toBe(true);
+    expect(mcp.usesOAuth({ url: "https://radius.pi.dev/mcp", auth: { provider: "radius" } })).toBe(false);
+  });
+
+  it("finds names that share a tool namespace", () => {
+    expect(mcp.namespaceClash("my-server", ["my_server", "other"])).toBe("my_server");
+    expect(mcp.namespaceClash("my-server", ["my-server", "other"])).toBeNull();
+  });
+});
+
+describe("ConnectorsPanel provider sign-ins", () => {
+  it("suggests the Radius connector once signed in to Radius", async () => {
+    vi.spyOn(mcp, "getMcpListing").mockResolvedValue({ mcpServers: {}, shared: [] });
+    const status = { signedIn: true, configured: false, name: null, url: "https://radius.pi.dev/mcp" };
+    vi.spyOn(mcp, "getRadiusConnector")
+      .mockResolvedValueOnce(status)
+      .mockResolvedValue({ ...status, configured: true, name: "radius" });
+    const add = vi.spyOn(mcp, "addRadiusConnector").mockResolvedValue({ name: "radius", replaced: false });
+    render(<ConnectorsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: "Add Radius connector" }));
+    await waitFor(() => expect(add).toHaveBeenCalled());
+    expect(await screen.findByText(/Added the Radius connector for all projects/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Radius connector" })).not.toBeInTheDocument();
+  });
+
+  it("labels provider-token servers and offers no OAuth sign-in for them", async () => {
+    vi.spyOn(mcp, "getMcpListing").mockResolvedValue({
+      mcpServers: { radius: { url: "https://radius.pi.dev/mcp", auth: { provider: "radius" } } },
+      shared: [],
+    });
+    vi.spyOn(mcp, "getMcpStatus").mockResolvedValue({
+      servers: [{ name: "radius", scope: "project", enabled: true, exposure: "codemode", state: "needs-auth", tools: [] }],
+      errors: [],
+    });
+    render(<ConnectorsPanel />);
+    expect(await screen.findByText(/via Radius/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /check status/i }));
+    expect(await screen.findByText("Needs sign-in")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^sign in$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Providers" })).toBeInTheDocument();
+  });
+
+  it("refuses a name that folds onto an existing connector", async () => {
+    vi.spyOn(mcp, "getMcpListing").mockResolvedValue({
+      mcpServers: { my_server: { url: "https://a.example/mcp" } },
+      shared: [],
+    });
+    const save = vi.spyOn(mcp, "saveMcpServers").mockResolvedValue();
+    render(<ConnectorsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /add connector/i }));
+    await userEvent.type(screen.getByPlaceholderText("e.g. linear"), "my-server");
+    await userEvent.type(screen.getByPlaceholderText("https://mcp.example.com/mcp"), "https://b.example/mcp");
+    await userEvent.click(screen.getByRole("button", { name: "Add connector" }));
+    expect(await screen.findByText(/would share tool names with “my_server”/)).toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
   });
 });
 

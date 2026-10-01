@@ -6,8 +6,21 @@ import * as projectsLib from "@/lib/projects";
 import * as modalJobs from "@/lib/use-modal-jobs";
 import { DefaultsPanel } from "@/components/settings/defaults-panel";
 
+const IMAGE_MODELS: appSettings.ImageModelListing = {
+  builtIn: ["openrouter/openai/gpt-image-2.5-sunburst", "openrouter/google/gemini-3.1-flash-image"],
+  models: [
+    { ref: "openrouter/google/gemini-3.1-flash-image", name: "Google: Gemini 3.1 Flash Image", available: true, imageInput: true, cost: { input: 0.5, output: 3 } },
+    { ref: "openrouter/openai/gpt-image-2.5-sunburst", name: "OpenAI: GPT Image 2.5 Sunburst", available: true, imageInput: true, cost: { input: 8, output: 8 } },
+    { ref: "vertex/imagen", name: "Imagen", available: false, imageInput: false, cost: { input: 1, output: 2 } },
+  ],
+};
+
 beforeEach(() => {
   appSettings.resetAppDefaultsCache();
+  // Radix Select uses pointer capture, which jsdom lacks.
+  Element.prototype.hasPointerCapture ??= () => false;
+  Element.prototype.releasePointerCapture ??= () => {};
+  vi.spyOn(appSettings, "getImageModels").mockResolvedValue(IMAGE_MODELS);
   vi.spyOn(projectsLib, "apiFetch").mockResolvedValue(new Response("{}", { status: 200 }));
   vi.spyOn(modalJobs, "useModalCatalog").mockReturnValue({
     catalog: null,
@@ -38,9 +51,42 @@ describe("DefaultsPanel", () => {
         model: "openrouter/openai/gpt-5.5",
         thinkingLevel: null,
         compute: null,
+        imageModel: null,
       }),
     );
     expect(await screen.findByText(/Saved\./)).toBeInTheDocument();
+  });
+
+  it("saves a default image model from the metered list and can clear it again", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(appSettings, "getAppDefaults").mockResolvedValue({});
+    const put = vi.spyOn(appSettings, "putAppDefaults").mockImplementation(async (patch) => ({
+      ...(patch.imageModel ? { imageModel: patch.imageModel } : {}),
+    }));
+    render(<DefaultsPanel />);
+
+    const trigger = await screen.findByRole("combobox", { name: "Default image model" });
+    await waitFor(() => expect(trigger).toHaveTextContent("Not set — Kady's default (OpenAI: GPT Image 2.5 Sunburst)"));
+    await user.click(trigger);
+    expect(screen.getByRole("option", { name: /Imagen/ })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("option", { name: /^Google: Gemini 3.1 Flash Image/ })).toHaveTextContent("$0.50 in · $3 out per M tokens");
+    await user.click(screen.getByRole("option", { name: /^Google: Gemini 3.1 Flash Image/ }));
+    await user.click(screen.getByRole("button", { name: "Save defaults" }));
+    await waitFor(() =>
+      expect(put).toHaveBeenLastCalledWith(expect.objectContaining({ imageModel: "openrouter/google/gemini-3.1-flash-image" })),
+    );
+    expect(trigger).toHaveTextContent("Google: Gemini 3.1 Flash Image");
+
+    await user.click(trigger);
+    await user.click(screen.getByRole("option", { name: /Not set/ }));
+    await user.click(screen.getByRole("button", { name: "Save defaults" }));
+    await waitFor(() => expect(put).toHaveBeenLastCalledWith(expect.objectContaining({ imageModel: null })));
+  });
+
+  it("warns when the saved image model's provider is disconnected", async () => {
+    vi.spyOn(appSettings, "getAppDefaults").mockResolvedValue({ imageModel: "vertex/imagen" });
+    render(<DefaultsPanel />);
+    expect(await screen.findByText(/provider is not connected/)).toBeInTheDocument();
   });
 
   it("shows the load error instead of an empty form", async () => {

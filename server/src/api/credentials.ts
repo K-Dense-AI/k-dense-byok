@@ -23,8 +23,11 @@
  * understanding — and GEMINI_API_KEY is the same variable Pi's `google`
  * provider reads, so it also enables Gemini models); and the Modal
  * remote-compute token pair (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables
- * the `modal_run` tool; and the local model-server URLs (OLLAMA_BASE_URL,
- * OPENAI_COMPATIBLE_BASE_URL), which re-register those providers on change.
+ * the `modal_run` tool; the Paperclip literature-search key
+ * (PAPERCLIP_API_KEY), checked with Paperclip before it is saved, which adds
+ * or turns off the global Paperclip MCP connector (agent/paperclip.ts); and
+ * the local model-server URLs (OLLAMA_BASE_URL, OPENAI_COMPATIBLE_BASE_URL),
+ * which re-register those providers on change.
  *
  * Keys are stored exactly where the app already expects them (repo-root
  * `.env`, plaintext, on the user's own machine) — we are removing friction,
@@ -42,6 +45,12 @@ import {
   providerKeyBodyField,
 } from "../agent/provider-catalog.ts";
 import { validateModalCredentials } from "../modal/adapter.ts";
+import {
+  PAPERCLIP_KEY_ENV,
+  connectPaperclipKey,
+  disconnectPaperclipKey,
+  validatePaperclipApiKey,
+} from "../agent/paperclip.ts";
 import { modalJobManager } from "../modal/manager.ts";
 import { notebookRobustness } from "../agent/notebook-robustness.ts";
 
@@ -111,6 +120,20 @@ async function localProvidersHook(_key: string | null, runtime: ModelRuntime): P
   }
 }
 
+/**
+ * Saving the Paperclip key turns its global MCP connector on, clearing it
+ * turns it off. The key is already saved when this runs, so a malformed
+ * mcp.json only skips the connector; Services reports its state.
+ */
+async function paperclipConnectorHook(key: string | null): Promise<void> {
+  try {
+    if (key) connectPaperclipKey();
+    else disconnectPaperclipKey();
+  } catch (error) {
+    console.warn(`[paperclip] connector not updated: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 const BASE_MANAGED_KEYS: ManagedKey[] = [
   {
     id: "openrouter",
@@ -126,6 +149,12 @@ const BASE_MANAGED_KEYS: ManagedKey[] = [
   // be set for modalConfigured() to flip true and the modal_run tool to register.
   { id: "modalTokenId", bodyField: "modalTokenId", envVar: "MODAL_TOKEN_ID" },
   { id: "modalTokenSecret", bodyField: "modalTokenSecret", envVar: "MODAL_TOKEN_SECRET" },
+  {
+    id: "paperclip",
+    bodyField: "paperclipApiKey",
+    envVar: PAPERCLIP_KEY_ENV,
+    onChange: paperclipConnectorHook,
+  },
   // Local model servers: configuration, not secrets, so echoed in full.
   {
     id: "ollamaBaseUrl",
@@ -220,6 +249,16 @@ export function setModalCredentialValidatorForTests(
   validator: typeof validateModalCredentials | null,
 ): void {
   modalCredentialValidator = validator ?? validateModalCredentials;
+}
+
+const PAPERCLIP_FIELD = "paperclipApiKey";
+let paperclipKeyValidator = validatePaperclipApiKey;
+
+/** Injectable only so credential route tests never contact Paperclip. */
+export function setPaperclipKeyValidatorForTests(
+  validator: typeof validatePaperclipApiKey | null,
+): void {
+  paperclipKeyValidator = validator ?? validatePaperclipApiKey;
 }
 
 /** Redirect persistence in tests so the user's real repo .env is never touched. */
@@ -409,6 +448,17 @@ export async function registerCredentialRoutes(
               }`,
             };
           }
+        }
+      }
+      // Like Modal, a Paperclip key is checked with the service before it is
+      // saved, so a typo fails here instead of as a failed connector later.
+      const paperclipKey = req.body?.[PAPERCLIP_FIELD];
+      if (typeof paperclipKey === "string" && paperclipKey.trim()) {
+        try {
+          await paperclipKeyValidator(paperclipKey.trim());
+        } catch (error) {
+          reply.code(400);
+          return { detail: error instanceof Error ? error.message : String(error) };
         }
       }
       for (const spec of provided) {

@@ -23,6 +23,26 @@ export interface AppDefaults {
   model?: string;
   thinkingLevel?: ThinkingLevel;
   compute?: ComputeDefault;
+  /** The model `generate_image` uses unless the user asks for another. */
+  imageModel?: string;
+}
+
+/** An image model Kady can meter (GET /settings/image-models). */
+export interface ImageModelOption {
+  ref: string;
+  name: string;
+  /** Its provider is connected now. */
+  available: boolean;
+  /** Accepts reference images for edits. */
+  imageInput: boolean;
+  /** USD per million tokens. */
+  cost: { input: number; output: number };
+}
+
+export interface ImageModelListing {
+  models: ImageModelOption[];
+  /** Built-in fallback order used when no default is saved. */
+  builtIn: string[];
 }
 
 /** `null` clears a key; absent keys are left alone. */
@@ -68,6 +88,13 @@ export async function putAppDefaults(patch: AppDefaultsPatch): Promise<AppDefaul
   cache = body.defaults ?? {};
   window.dispatchEvent(new Event(CHANGED_EVENT));
   return cache;
+}
+
+export async function getImageModels(): Promise<ImageModelListing> {
+  const response = await apiFetch("/settings/image-models");
+  if (!response.ok) throw await detailOf(response, "Failed to load image models");
+  const body = (await response.json()) as Partial<ImageModelListing>;
+  return { models: body.models ?? [], builtIn: body.builtIn ?? [] };
 }
 
 /**

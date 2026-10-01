@@ -130,6 +130,7 @@ import { SettingsLink } from "@/components/settings-link";
 import { ConnectModelCard } from "@/components/connect-model-card";
 import { computeInstanceFromDefault, useAppDefaults } from "@/lib/app-settings";
 import { openSettings } from "@/lib/settings-nav";
+import { workflowScriptsIn } from "@/lib/workflow-script";
 
 /** Toast action for "provider disconnected" errors. */
 const PROVIDERS_TOAST_ACTION = {
@@ -1395,6 +1396,10 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
     }
   };
   const activityById = new Map(activities.map((activity) => [activity.id, activity]));
+  // pi-subagents ≥0.74 runs the ```js workflow block written in the same reply
+  // as `subagent({ workflow: true })`; hand the nearest preceding one to the
+  // tool card so it can name the specialists the script launches.
+  let replyWorkflowScript: string | undefined;
   const segments = message.segments?.length
     ? message.segments
     : [
@@ -1409,6 +1414,7 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
   for (const [index, segment] of segments.entries()) {
     if (segment.type === "text") {
       flushChunk();
+      replyWorkflowScript = workflowScriptsIn(segment.content).at(-1) ?? replyWorkflowScript;
       if (segment.content) {
         orderedBlocks.push(
           <MessageResponse key={`text-${index}`} onOpenFile={onOpenFile}>{segment.content}</MessageResponse>,
@@ -1417,7 +1423,13 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
       continue;
     }
     const activity = activityById.get(segment.activityId);
-    if (activity) appendActivity(activity);
+    if (!activity) continue;
+    const args = activity.args as Record<string, unknown> | undefined;
+    appendActivity(
+      activity.toolName === "subagent" && args?.workflow === true && replyWorkflowScript
+        ? { ...activity, replyWorkflowScript }
+        : activity,
+    );
   }
   flushChunk();
 

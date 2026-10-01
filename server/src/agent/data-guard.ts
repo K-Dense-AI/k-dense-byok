@@ -1,7 +1,7 @@
 /**
  * Raw-data guard for the lead session: a Pi `tool_call` hook that
  *
- *   - blocks `write`/`edit`/`bash` mutations of protected paths (default
+ *   - blocks `write`/`edit`/`bash`/`generate_image` mutations of protected paths (default
  *     `user_data/**`) with a reason the model can act on, and
  *   - asks the user (permission card in the chat) before destructive shell
  *     commands elsewhere, when the project policy says so.
@@ -33,7 +33,8 @@ export function makeDataGuardExtension(
       const policy = readPolicy(sandboxRoot);
       const opts = { protectedGlobs: policy.protectedPaths, sandboxRoot };
 
-      if (event.toolName === "write" || event.toolName === "edit") {
+      // generate_image writes its `path` (default under figures/generated/).
+      if (event.toolName === "write" || event.toolName === "edit" || event.toolName === "generate_image") {
         const target = (event.input as { path?: unknown }).path;
         if (typeof target !== "string") return undefined;
         const verdict = classifyFilePath(target, opts);

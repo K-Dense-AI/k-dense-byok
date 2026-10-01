@@ -19,6 +19,22 @@ const originalOpenRouterAlias = process.env.OR_API_KEY;
 const originalOpenRouterBaseUrl = process.env.OPENROUTER_BASE_URL;
 const originalSpeechModel = process.env.SPEECH_TRANSCRIPTION_MODEL;
 
+const BOUNDARY = "kady-speech-boundary";
+
+function recordingPayload(): Buffer {
+  return Buffer.from(
+    [
+      `--${BOUNDARY}`,
+      'Content-Disposition: form-data; name="audio"; filename="dictation.webm"',
+      "Content-Type: audio/webm;codecs=opus",
+      "",
+      "recorded audio",
+      `--${BOUNDARY}--`,
+      "",
+    ].join("\r\n"),
+  );
+}
+
 afterEach(() => {
   if (originalOpenRouterKey === undefined) delete process.env.OPENROUTER_API_KEY;
   else process.env.OPENROUTER_API_KEY = originalOpenRouterKey;
@@ -108,9 +124,10 @@ describe("speech transcription", () => {
   it("returns a configuration error before accepting an upload", async () => {
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.OR_API_KEY;
+    const getAuth = vi.fn(async () => undefined);
     const app = Fastify();
     await app.register(multipart);
-    await registerSpeechRoutes(app);
+    await registerSpeechRoutes(app, { runtime: { getAuth } });
 
     const response = await app.inject({
       method: "POST",
@@ -118,7 +135,66 @@ describe("speech transcription", () => {
     });
 
     expect(response.statusCode).toBe(503);
-    expect(response.json().detail).toMatch(/OpenRouter API key/i);
+    expect(response.json().detail).toMatch(/OpenRouter: sign in or add an API key/i);
+    expect(getAuth).toHaveBeenCalledWith("openrouter");
+    await app.close();
+  });
+
+  it("treats a failed Pi credential lookup as not configured", async () => {
+    const app = Fastify();
+    await app.register(multipart);
+    await registerSpeechRoutes(app, {
+      runtime: {
+        getAuth: vi.fn(async () => {
+          throw new Error("auth store unreadable");
+        }),
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/speech/transcribe",
+    });
+
+    expect(response.statusCode).toBe(503);
+    await app.close();
+  });
+
+  it("transcribes with the OpenRouter credential Pi resolves", async () => {
+    // No environment key: the only credential is the Pi sign-in.
+    delete process.env.OPENROUTER_API_KEY;
+    delete process.env.OR_API_KEY;
+    const fetchMock = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      expect(init?.headers).toEqual({ Authorization: "Bearer pi-oauth-key" });
+      return new Response(JSON.stringify({ text: "signed-in transcript" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const app = Fastify();
+    await app.register(multipart);
+    await registerSpeechRoutes(app, {
+      runtime: {
+        getAuth: vi.fn(async () => ({
+          auth: { apiKey: "pi-oauth-key" },
+          source: "OAuth",
+        })),
+      },
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/speech/transcribe",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+      },
+      payload: recordingPayload(),
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().text).toBe("signed-in transcript");
+    expect(fetchMock).toHaveBeenCalledOnce();
     await app.close();
   });
 
@@ -175,27 +251,16 @@ describe("speech transcription", () => {
     );
     const app = Fastify();
     await app.register(multipart);
+    // Default runtime: Pi resolves the environment key like it would for chat.
     await registerSpeechRoutes(app);
-    const boundary = "kady-speech-boundary";
-    const payload = Buffer.from(
-      [
-        `--${boundary}`,
-        'Content-Disposition: form-data; name="audio"; filename="dictation.webm"',
-        "Content-Type: audio/webm;codecs=opus",
-        "",
-        "recorded audio",
-        `--${boundary}--`,
-        "",
-      ].join("\r\n"),
-    );
 
     const response = await app.inject({
       method: "POST",
       url: "/speech/transcribe",
       headers: {
-        "content-type": `multipart/form-data; boundary=${boundary}`,
+        "content-type": `multipart/form-data; boundary=${BOUNDARY}`,
       },
-      payload,
+      payload: recordingPayload(),
     });
 
     expect(response.statusCode).toBe(200);

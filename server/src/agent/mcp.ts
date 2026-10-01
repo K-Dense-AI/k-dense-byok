@@ -1,10 +1,11 @@
 /**
  * MCP (Model Context Protocol) servers, backed by Pi's built-in MCP support.
  *
- * Pi 0.99 ships MCP as an extension (https://pi.dev/docs/latest/mcp): the lead
+ * Pi ships MCP as an extension (https://pi.dev/docs/latest/mcp): the lead
  * session loads `createMcpExtension()` (session-registry.ts), which connects
  * the servers in two `mcp.json` files on session_start and registers their
- * tools as `mcp__<server>__<tool>`:
+ * tools as `mcp__<server>__<tool>`, with `-` replaced by `_` since Pi 0.99.2
+ * (`mcp__my-server__x` is `mcp__my_server__x`; see `mcpNamespace`):
  *
  *   - global:  `<agentDir>/mcp.json` (`~/.kady/pi-agent/mcp.json`), every project
  *   - project: `sandbox/.pi/mcp.json`, read because Kady trusts its sandboxes;
@@ -12,7 +13,8 @@
  *
  * Kady no longer dials servers itself. This module only edits those files for
  * Settings → Connectors (Pi's `mcpServers` shape, with its `enabled`,
- * `exposure`, `toolExposure`, `timeout`, `cwd` and `oauth` fields kept intact)
+ * `exposure`, `toolExposure`, `timeout`, `cwd`, `description`, `oauth` and
+ * `auth` fields kept intact)
  * and drives the bundled `pi mcp` CLI for what needs a live connection:
  * status (`pi mcp list --json`), a connection test of an unsaved entry, and
  * OAuth sign-in/out (`pi mcp login|logout`, tokens in `<agentDir>/mcp-auth.json`).
@@ -34,6 +36,7 @@ import { trustSandbox } from "./web-access-bridge.ts";
 
 export type McpScope = "project" | "global";
 
+/** `codemode-deferred` is accepted as an alias of `codemode` since Pi 0.99.2. */
 export const MCP_EXPOSURES = [
   "codemode",
   "codemode-deferred",
@@ -48,6 +51,28 @@ export type McpServerConfig = Record<string, unknown>;
 
 /** Pi's rule for server names; tools become `mcp__<name>__<tool>`. */
 export const MCP_SERVER_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/** A server's tool namespace: `mcp__<server>` with `-` replaced by `_`, like Pi. */
+export function mcpNamespace(name: string): string {
+  return `mcp__${name.replace(/-/g, "_")}`;
+}
+
+/**
+ * A name in `others` that would share `name`'s tool namespace. Pi skips the
+ * later of two such servers with a config error, so the second one would
+ * silently never connect.
+ */
+export function mcpNamespaceClash(name: string, others: Iterable<string>): string | undefined {
+  const namespace = mcpNamespace(name);
+  for (const other of others) {
+    if (other !== name && mcpNamespace(other) === namespace) return other;
+  }
+  return undefined;
+}
+
+/** The Radius gateway's MCP endpoint (Pi's `RADIUS_MCP_URL`, core/radius.ts). */
+export const RADIUS_MCP_URL = "https://radius.pi.dev/mcp";
+const RADIUS_PROVIDER_ID = "radius";
 
 export function isMcpScope(value: unknown): value is McpScope {
   return value === "project" || value === "global";
@@ -109,6 +134,27 @@ function writeMcpFile(file: string, current: McpFile, servers: Record<string, Mc
 
 export class McpConfigError extends Error {}
 
+/**
+ * The global mcp.json's servers, for callers with no project in scope.
+ * Throws McpConfigError when it is malformed.
+ */
+export function readGlobalMcpServers(agentDir: string = getAgentDir()): Record<string, McpServerConfig> {
+  const file = readMcpFile(path.join(agentDir, "mcp.json"));
+  if (file.error) throw new McpConfigError(file.error);
+  return file.servers;
+}
+
+/** Replace the global server map, keeping the file's other top-level keys. */
+export function writeGlobalMcpServers(
+  servers: Record<string, McpServerConfig>,
+  agentDir: string = getAgentDir(),
+): void {
+  const filePath = path.join(agentDir, "mcp.json");
+  const file = readMcpFile(filePath);
+  if (file.error) throw new McpConfigError(file.error);
+  writeMcpFile(filePath, file, servers);
+}
+
 /** Servers defined in one scope's mcp.json. Throws McpConfigError when it is malformed. */
 export function readMcpServers(
   scope: McpScope,
@@ -166,7 +212,7 @@ export function setMcpServerEnabled(
   }, agentDir);
 }
 
-/** Set a server's exposure; `codemode` is Pi's default and removes the key. */
+/** Set a server's exposure; `codemode` (or its alias) is Pi's default and removes the key. */
 export function setMcpServerExposure(
   scope: McpScope,
   paths: ProjectPaths,
@@ -176,8 +222,67 @@ export function setMcpServerExposure(
 ): ToggleResult {
   return patchServer(scope, paths, name, (config) => {
     const { exposure: _previous, ...rest } = config;
-    return exposure === "codemode" ? rest : { ...rest, exposure };
+    return exposure === "codemode" || exposure === "codemode-deferred" ? rest : { ...rest, exposure };
   }, agentDir);
+}
+
+export interface RadiusConnectorState {
+  /** Radius sign-in (Settings → Providers) is connected. */
+  signedIn: boolean;
+  /** A global connector already sends that sign-in to the Radius MCP endpoint. */
+  configured: boolean;
+  /** Name of the global connector at the Radius URL, if any. */
+  name: string | null;
+  url: string;
+}
+
+/** Whether a config's `url` names the endpoint `b`, ignoring trailing slashes. */
+export const sameUrl = (a: unknown, b: string) =>
+  typeof a === "string" && a.replace(/\/+$/u, "") === b.replace(/\/+$/u, "");
+
+/** Where the Radius MCP server stands in the global mcp.json. */
+export function radiusConnectorState(
+  paths: ProjectPaths,
+  signedIn: boolean,
+  agentDir?: string,
+): RadiusConnectorState {
+  let servers: Record<string, McpServerConfig> = {};
+  try {
+    servers = readMcpServers("global", paths, agentDir);
+  } catch {
+    /* a malformed file is reported by GET /mcp?scope=global */
+  }
+  const existing = Object.entries(servers).find(([, config]) => sameUrl(config.url, RADIUS_MCP_URL));
+  const auth = existing?.[1].auth;
+  return {
+    signedIn,
+    configured: isRecord(auth) && auth.provider === RADIUS_PROVIDER_ID,
+    name: existing?.[0] ?? null,
+    url: RADIUS_MCP_URL,
+  };
+}
+
+/**
+ * Point the global Radius MCP connector at the Radius sign-in, adding it when
+ * missing: Pi 1.0's `/login` offer after a Radius sign-in (interactive-mode's
+ * `offerRadiusMcpServer`). `auth` replaces the MCP OAuth sign-in, so any
+ * `oauth` block is dropped; a name already used by another server gets the
+ * `radius-mcp` fallback Pi uses.
+ */
+export function addRadiusConnector(
+  paths: ProjectPaths,
+  agentDir?: string,
+): { name: string; replaced: boolean } {
+  const servers = readMcpServers("global", paths, agentDir);
+  const existing = Object.entries(servers).find(([, config]) => sameUrl(config.url, RADIUS_MCP_URL));
+  let name = existing?.[0] ?? "radius";
+  if (!existing && name in servers) name = "radius-mcp";
+  const { oauth: _oauth, ...base } = existing?.[1] ?? {};
+  const config: McpServerConfig = existing
+    ? { ...base, auth: { provider: RADIUS_PROVIDER_ID } }
+    : { url: RADIUS_MCP_URL, auth: { provider: RADIUS_PROVIDER_ID } };
+  writeMcpServers("global", paths, { ...servers, [name]: config }, agentDir);
+  return { name, replaced: Boolean(existing) };
 }
 
 /**
@@ -219,12 +324,22 @@ function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((v) => typeof v === "string");
 }
 
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+
+/** https anywhere, or http on a loopback host (Pi's rule for credential-bearing URLs). */
+function isSecureOrLoopback(value: string): boolean {
+  if (!URL.canParse(value)) return false;
+  const url = new URL(value);
+  return url.protocol === "https:" || (url.protocol === "http:" && LOOPBACK_HOSTS.includes(url.hostname));
+}
+
 /**
- * Validate one entry against Pi's `mcpServers` rules (mcp.md). Pi also skips
- * invalid entries at load time; checking here turns a silent skip into a
- * Settings error. Returns a message, or null when valid.
+ * Validate one entry against Pi's `mcpServers` rules (core/mcp-servers.ts
+ * `validateMcpServerConfig`, plus the loader's project-scope `auth` rule).
+ * Pi also skips invalid entries at load time; checking here turns a silent
+ * skip into a Settings error. Returns a message, or null when valid.
  */
-export function validateMcpServer(name: string, config: unknown): string | null {
+export function validateMcpServer(name: string, config: unknown, scope?: McpScope): string | null {
   if (!MCP_SERVER_NAME_RE.test(name)) {
     return `Invalid server name "${name}" (use letters, digits, - and _)`;
   }
@@ -267,6 +382,37 @@ export function validateMcpServer(name: string, config: unknown): string | null 
       if (port !== undefined && !(Number.isInteger(port) && (port as number) > 0 && (port as number) < 65536)) {
         return `Server "${name}": "oauth.callbackPort" must be a port number`;
       }
+      const callback = c.oauth.callbackUrl as string | undefined;
+      if (callback !== undefined) {
+        const url = URL.canParse(callback) ? new URL(callback) : undefined;
+        if (!url || url.protocol !== "http:" || !LOOPBACK_HOSTS.includes(url.hostname) || url.search || url.hash) {
+          return `Server "${name}": "oauth.callbackUrl" must be an http URL on localhost, 127.0.0.1 or [::1], without query or fragment`;
+        }
+        if (url.port && port !== undefined && Number(url.port) !== port) {
+          return `Server "${name}": "oauth.callbackUrl" and "oauth.callbackPort" name different ports`;
+        }
+      }
+      const clientName = c.oauth.clientName;
+      if (clientName !== undefined && (typeof clientName !== "string" || !clientName.trim())) {
+        return `Server "${name}": "oauth.clientName" must be a non-empty string`;
+      }
+      const metadata = c.oauth.authServerMetadataUrl;
+      if (metadata !== undefined && (typeof metadata !== "string" || !isSecureOrLoopback(metadata))) {
+        return `Server "${name}": "oauth.authServerMetadataUrl" must be an https URL, or http on localhost, 127.0.0.1 or [::1]`;
+      }
+    }
+    if (c.auth !== undefined) {
+      if (!isRecord(c.auth) || typeof c.auth.provider !== "string" || !c.auth.provider.trim()) {
+        return `Server "${name}": "auth.provider" must name a signed-in provider`;
+      }
+      // Pi refuses provider credentials in project files, so a repository
+      // cannot choose where a user's sign-in token is sent.
+      if (scope === "project") {
+        return `Server "${name}": a provider sign-in ("auth") can only be used by connectors shared across projects`;
+      }
+      if (!isSecureOrLoopback(c.url as string)) {
+        return `Server "${name}": "auth" requires an https URL, or http on localhost, 127.0.0.1 or [::1]`;
+      }
     }
   } else {
     if (c.args !== undefined && !(Array.isArray(c.args) && c.args.every((a) => typeof a === "string"))) {
@@ -284,6 +430,9 @@ export function validateMcpServer(name: string, config: unknown): string | null 
   }
   if (c.timeout !== undefined && !(typeof c.timeout === "number" && c.timeout > 0)) {
     return `Server "${name}": "timeout" must be a positive number of seconds`;
+  }
+  if (c.description !== undefined && typeof c.description !== "string") {
+    return `Server "${name}": "description" must be a string`;
   }
   const exposures: readonly unknown[] = MCP_EXPOSURES;
   if (c.exposure !== undefined && !exposures.includes(c.exposure)) {
@@ -401,7 +550,8 @@ export async function getMcpStatus(paths: ProjectPaths, agentDir: string = getAg
  * Dial one (possibly unsaved) entry with Pi's own client and transports.
  * Runs `pi mcp list` against a throwaway agent directory holding only this
  * entry, plus a copy of the stored OAuth tokens so a signed-in server tests
- * as signed in; the project's own mcp.json is not read there (untrusted).
+ * as signed in (and of the provider sign-ins for an `auth.provider` entry);
+ * the project's own mcp.json is not read there (untrusted).
  */
 export async function testMcpServer(
   name: string,
@@ -412,10 +562,12 @@ export async function testMcpServer(
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kady-mcp-test-"));
   try {
     atomicJson(path.join(tmp, "mcp.json"), { mcpServers: { [name]: { ...config, enabled: true } } });
-    const tokens = path.join(agentDir, "mcp-auth.json");
-    if (fs.existsSync(tokens)) {
-      fs.copyFileSync(tokens, path.join(tmp, "mcp-auth.json"));
-      fs.chmodSync(path.join(tmp, "mcp-auth.json"), 0o600);
+    const stores = ["mcp-auth.json", ...(isRecord(config.auth) ? ["auth.json"] : [])];
+    for (const store of stores) {
+      const tokens = path.join(agentDir, store);
+      if (!fs.existsSync(tokens)) continue;
+      fs.copyFileSync(tokens, path.join(tmp, store));
+      fs.chmodSync(path.join(tmp, store), 0o600);
     }
     const report = parseListReport(await runPiMcp(["list", "--json"], paths.sandbox, tmp));
     const server = report.servers.find((s) => s.name === name);

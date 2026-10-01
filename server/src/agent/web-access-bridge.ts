@@ -24,7 +24,8 @@
  *     silently skip project resources in untrusted directories. We only
  *     pre-trust sandboxes this app created and seeded; an explicit "false"
  *     a user recorded is never overridden.
- *  3. default `toolActivation` to "eager" in `<agentDir>/web-search.json`.
+ *  3. default `toolActivation` to "eager" (and seed scientific
+ *     `summaryInstructions`) in `<agentDir>/web-search.json`.
  *     Since 0.31 fresh sessions get a `web_enable` loader in place of the web
  *     tools. The lead's tool allowlist filters the loader out, which already
  *     keeps its tools eager, but seeded specialists carry no `tools:` list, so
@@ -101,13 +102,39 @@ export function trustSandbox(paths: ProjectPaths, agentDir: string = getAgentDir
 }
 
 /**
- * Write `toolActivation: "eager"` into pi-web-access's config unless the key
- * is already set (write-if-missing: a user's explicit "dynamic" wins). The
- * file doubles as pi-web-access's credential store, so an unparseable one is
- * left untouched and the rewrite keeps owner-only permissions. Returns true
- * when the file was written.
+ * Requirements appended to pi-web-access's summary prompt (`summaryInstructions`,
+ * 0.35+; used by the `auto-summary` and curator workflows). The package keeps
+ * its own guardrails — no invented sources, weak-evidence notes, a Sources
+ * section — so these only add what research summaries must not lose.
  */
-export function seedWebAccessActivation(agentDir: string = getAgentDir()): boolean {
+export const SCIENTIFIC_SUMMARY_INSTRUCTIONS = [
+  "- Preserve every number verbatim with its unit and uncertainty: effect sizes, confidence intervals, p-values, sample sizes, doses, concentrations, dates, and software, model or database versions.",
+  "- Say what each claim rests on: study design, organism or population, and data source.",
+  "- Distinguish peer-reviewed papers, preprints, documentation and news, and flag retractions, corrections or expressions of concern the sources mention.",
+  "- Give DOIs, PMIDs or arXiv ids when a source shows them.",
+].join("\n");
+
+/**
+ * `fetch_content` modes Kady allows. Answer mode runs a model on the page
+ * through the registry's raw `complete()`: with no reasoning level (models
+ * whose reasoning cannot be disabled reject it, see AGENTS.md "One-shot model
+ * calls"), and with its usage discarded, so the spend would never reach the
+ * ledger or the project cap. `get_search_content` with `findText` covers most
+ * page-question needs without a model call.
+ */
+export const KADY_FETCH_MODES = ["readable", "raw"] as const;
+
+/**
+ * Seed pi-web-access's config, each key write-if-missing so a user's choice
+ * wins: `toolActivation: "eager"` (an explicit "dynamic" sticks), the
+ * scientific `summaryInstructions` (a blank string keeps the package's
+ * default prompt), and `fetch.allowedModes` (an explicit list, or a
+ * `fetch.defaultMode` of "answer", is left alone). The file doubles as
+ * pi-web-access's credential store, so an unparseable one is left untouched
+ * and the rewrite keeps owner-only permissions. Returns true when the file
+ * was written.
+ */
+export function seedWebAccessDefaults(agentDir: string = getAgentDir()): boolean {
   const configPath = path.join(agentDir, "web-search.json");
   let config: Record<string, unknown> = {};
   try {
@@ -117,8 +144,28 @@ export function seedWebAccessActivation(agentDir: string = getAgentDir()): boole
   } catch (exc) {
     if ((exc as NodeJS.ErrnoException).code !== "ENOENT") return false;
   }
-  if ("toolActivation" in config) return false;
-  atomicJson(configPath, { ...config, toolActivation: "eager" });
+  const defaults: Record<string, unknown> = {
+    toolActivation: "eager",
+    summaryInstructions: SCIENTIFIC_SUMMARY_INSTRUCTIONS,
+  };
+  const next: Record<string, unknown> = { ...config };
+  let changed = false;
+  for (const [key, value] of Object.entries(defaults)) {
+    if (key in config) continue;
+    next[key] = value;
+    changed = true;
+  }
+  const fetchConfig = config.fetch;
+  if (fetchConfig === undefined || (fetchConfig && typeof fetchConfig === "object" && !Array.isArray(fetchConfig))) {
+    const current = (fetchConfig ?? {}) as Record<string, unknown>;
+    // The package fails closed when the default mode is not allowed.
+    if (!("allowedModes" in current) && current.defaultMode !== "answer") {
+      next.fetch = { ...current, allowedModes: [...KADY_FETCH_MODES] };
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  atomicJson(configPath, next);
   return true;
 }
 
@@ -126,5 +173,5 @@ export function seedWebAccessActivation(agentDir: string = getAgentDir()): boole
 export function ensureWebAccess(paths: ProjectPaths, agentDir: string = getAgentDir()): void {
   seedWebAccessPackage(paths);
   trustSandbox(paths, agentDir);
-  seedWebAccessActivation(agentDir);
+  seedWebAccessDefaults(agentDir);
 }

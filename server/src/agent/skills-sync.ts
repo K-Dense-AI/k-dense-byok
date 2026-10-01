@@ -16,7 +16,7 @@ import {
   resolvePaths,
   type ProjectPaths,
 } from "../projects.ts";
-import { fetchCatalogue } from "./skills-fetch.ts";
+import { fetchCatalogue, type CatalogueSkill } from "./skills-fetch.ts";
 import {
   asSkillRoot,
   isSkillDefaultDisabled,
@@ -42,7 +42,10 @@ interface ManifestSkill {
   upstreamHash?: string;
   /** Defaults to `catalogue` for entries written before origins existed. */
   origin?: SkillOrigin;
-  /** Registry provenance, mirrored from the CLI's lock file. */
+  /**
+   * Registry provenance, mirrored from the CLI's lock file. A catalogue skill
+   * carries it only when it comes from one of `CATALOGUE_EXTRA_SOURCES`.
+   */
   source?: string;
   ref?: string;
   skillPath?: string;
@@ -108,10 +111,10 @@ interface InstalledSkill {
 interface UpstreamSkill {
   dir: string;
   hash: string;
+  source?: string;
 }
 
 interface Catalogue {
-  skillsDir: string;
   skills: Map<string, UpstreamSkill>;
   commit: string | null;
   cleanup: () => void;
@@ -403,12 +406,32 @@ function installedSkills(ref: SkillScopeRef): Map<string, InstalledSkill> {
 }
 
 function indexCatalogue(skillsDir: string): Map<string, UpstreamSkill> {
-  return new Map(
-    [...listSkillDirs(skillsDir)].map(([name, dir]) => [
-      name,
-      { dir, hash: hashDirectory(dir) },
-    ]),
+  return indexCatalogueSkills(
+    new Map([...listSkillDirs(skillsDir)].map(([name, dir]) => [name, { dir }])),
   );
+}
+
+function indexCatalogueSkills(
+  skills: Map<string, CatalogueSkill>,
+): Map<string, UpstreamSkill> {
+  const index = new Map<string, UpstreamSkill>();
+  for (const [name, skill] of skills) {
+    if (SKILL_NAME_RE.test(name)) index.set(name, { ...skill, hash: hashDirectory(skill.dir) });
+  }
+  return index;
+}
+
+/** Manifest entry for a catalogue skill, carrying its source repo if any. */
+function catalogueEntry(
+  from: { source?: string } | undefined,
+  hashes: { baseHash?: string; upstreamHash?: string },
+): ManifestSkill {
+  return {
+    ...(hashes.baseHash ? { baseHash: hashes.baseHash } : {}),
+    ...(hashes.upstreamHash ? { upstreamHash: hashes.upstreamHash } : {}),
+    origin: "catalogue",
+    ...(from?.source ? { source: from.source } : {}),
+  };
 }
 
 function destinationForNewSkill(ref: SkillScopeRef, name: string): string {
@@ -511,12 +534,14 @@ function catalogueDigestOf(upstream: Map<string, UpstreamSkill>): string {
  */
 export function syncProjectSkillsFromCatalogue(
   paths: ProjectPaths,
-  catalogueSkillsDir: string,
+  catalogue: string | Map<string, CatalogueSkill>,
   upstreamCommit: string | null,
 ): SkillSyncResult {
   return syncProjectSkillsFromIndex(
     paths,
-    indexCatalogue(catalogueSkillsDir),
+    typeof catalogue === "string"
+      ? indexCatalogue(catalogue)
+      : indexCatalogueSkills(catalogue),
     upstreamCommit,
   );
 }
@@ -573,28 +598,27 @@ function syncProjectSkillsFromIndex(
 
     if (!local) {
       installSkillTree(paths, source.dir, destinationForNewSkill(paths, name));
-      nextSkills[name] = { baseHash: upstreamHash, upstreamHash, origin: "catalogue" };
+      nextSkills[name] = catalogueEntry(source, { baseHash: upstreamHash, upstreamHash });
       counts.added++;
       continue;
     }
 
     const localHash = hashDirectory(local.dir);
     if (localHash === upstreamHash) {
-      nextSkills[name] = { baseHash: upstreamHash, upstreamHash, origin: "catalogue" };
+      nextSkills[name] = catalogueEntry(source, { baseHash: upstreamHash, upstreamHash });
       counts.unchanged++;
       continue;
     }
 
     if (oldEntry?.baseHash && localHash === oldEntry.baseHash) {
       if (installSkillTree(paths, source.dir, local.dir, localHash)) {
-        nextSkills[name] = { baseHash: upstreamHash, upstreamHash, origin: "catalogue" };
+        nextSkills[name] = catalogueEntry(source, { baseHash: upstreamHash, upstreamHash });
         counts.updated++;
       } else {
-        nextSkills[name] = {
+        nextSkills[name] = catalogueEntry(source, {
           baseHash: oldEntry.baseHash,
           upstreamHash,
-          origin: "catalogue",
-        };
+        });
         customized.push(name);
         updatesAvailable.push(name);
         counts.preserved++;
@@ -602,11 +626,10 @@ function syncProjectSkillsFromIndex(
       continue;
     }
 
-    nextSkills[name] = {
-      ...(oldEntry?.baseHash ? { baseHash: oldEntry.baseHash } : {}),
+    nextSkills[name] = catalogueEntry(source, {
+      baseHash: oldEntry?.baseHash,
       upstreamHash,
-      origin: "catalogue",
-    };
+    });
     customized.push(name);
     if (!oldEntry?.baseHash || oldEntry.baseHash !== upstreamHash) {
       updatesAvailable.push(name);
@@ -630,15 +653,12 @@ function syncProjectSkillsFromIndex(
       }
       orphaned.push(name);
       customized.push(name);
-      nextSkills[name] = { baseHash: oldEntry.baseHash, origin: "catalogue" };
+      nextSkills[name] = catalogueEntry(oldEntry, { baseHash: oldEntry.baseHash });
       counts.preserved++;
     } else {
       orphaned.push(name);
       customized.push(name);
-      nextSkills[name] = {
-        ...(oldEntry.baseHash ? { baseHash: oldEntry.baseHash } : {}),
-        origin: "catalogue",
-      };
+      nextSkills[name] = catalogueEntry(oldEntry, { baseHash: oldEntry.baseHash });
       counts.preserved++;
     }
   }
@@ -675,13 +695,15 @@ function syncProjectSkillsFromIndex(
 export function replaceProjectSkillFromCatalogue(
   paths: ProjectPaths,
   name: string,
-  catalogueSkillsDir: string,
+  catalogue: string | Map<string, CatalogueSkill>,
   upstreamCommit: string | null,
 ): SkillSyncStatus {
   return replaceProjectSkillFromIndex(
     paths,
     name,
-    indexCatalogue(catalogueSkillsDir),
+    typeof catalogue === "string"
+      ? indexCatalogue(catalogue)
+      : indexCatalogueSkills(catalogue),
     upstreamCommit,
   );
 }
@@ -705,7 +727,7 @@ function replaceProjectSkillFromIndex(
   manifest.branch = SKILLS_BRANCH;
   manifest.upstreamCommit = upstreamCommit;
   manifest.lastCheckedAt = new Date().toISOString();
-  manifest.skills[name] = { baseHash: upstreamHash, upstreamHash, origin: "catalogue" };
+  manifest.skills[name] = catalogueEntry(source, { baseHash: upstreamHash, upstreamHash });
   manifest.updatesAvailable = manifest.updatesAvailable.filter((item) => item !== name);
   manifest.customized = manifest.customized.filter((item) => item !== name);
   manifest.orphaned = manifest.orphaned.filter((item) => item !== name);
@@ -731,8 +753,7 @@ async function withRemoteCatalogue<T>(work: (catalogue: Catalogue) => T): Promis
     const fetched = await fetchCatalogue();
     cleanup = fetched.cleanup;
     return work({
-      skillsDir: fetched.skillsDir,
-      skills: indexCatalogue(fetched.skillsDir),
+      skills: indexCatalogueSkills(fetched.skills),
       commit: fetched.commit,
       cleanup: fetched.cleanup,
     });

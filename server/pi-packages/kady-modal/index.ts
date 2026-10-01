@@ -5,6 +5,7 @@ import {
   type SubagentChildIdentity,
 } from "../../src/agent/subagent-child-identity.ts";
 import { modalProjectId } from "./project-id.ts";
+import { modalFailureHint } from "../../src/modal/tool-hints.ts";
 
 const INSTANCE_IDS = [
   "cpu", "cpu-2", "cpu-4", "cpu-8", "cpu-16", "t4", "l4", "a10g",
@@ -425,11 +426,16 @@ function failed(error: unknown, extra?: Record<string, unknown>) {
       ? error.code
       : "MODAL_FAILURE";
   const retryable = error instanceof ApiError ? (error.retryable ?? false) : false;
-  return result(`Modal compute request failed: ${message}`, {
-    ...extra,
-    error: code,
-    retryable,
-  });
+  const hint = modalFailureHint(code);
+  // An error result, so the model and the UI both see a failure, not a success.
+  return {
+    ...result(`Modal compute request failed: ${message}${hint ? `\n${hint}` : ""}`, {
+      ...extra,
+      error: code,
+      retryable,
+    }),
+    isError: true,
+  };
 }
 
 /**

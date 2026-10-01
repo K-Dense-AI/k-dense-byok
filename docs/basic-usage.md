@@ -38,6 +38,15 @@ Paste, drop or select images to send them directly to a vision-capable model.
 Other file attachments use sandbox uploads. Sending data to hosted models,
 connectors or remote compute can transfer it off the backend host.
 
+Kady can also **generate images** — schematics, pipeline diagrams, graphical
+abstracts, or edits of a sandbox image — with an OpenRouter image model (an
+OpenRouter key or sign-in is required). Choose the model under **Settings →
+Defaults → Image generation**, or name one in chat. Images are saved under
+`figures/generated/` unless you name a path, and are never overwritten. Each one
+is billed by OpenRouter and counts toward the project cap. Image models draw;
+they do not compute, so data plots are made with code. Check generated labels
+for spelling before using a figure.
+
 ## Workflows
 
 Open the workflow library, choose a template, fill its fields and click

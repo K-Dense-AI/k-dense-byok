@@ -40,6 +40,7 @@ import { notebookSearchTool } from "../../pi-packages/kady-notebook/memory-tool.
 import { executeMemoryRecall } from "./notebook-memory.ts";
 import { makeScientificResultTool } from "./scientific-result.ts";
 import { clearSessionCompute, makeModalTools } from "./modal-tool.ts";
+import { makeCodemodeModelBudgetExtension, makeImageTool } from "./image-tool.ts";
 import {
   makeSubagentLedgerExtension,
   makeSubagentRefusalExtension,
@@ -367,6 +368,10 @@ async function build(
         () => holder.session?.model,
         (providerId) => modelRuntime.isUsingOAuth(providerId),
       ),
+      // Over the spend cap, refuse codemode scripts that run models
+      // themselves (image generation, classifiers): their cost is unknown
+      // until the script runs.
+      makeCodemodeModelBudgetExtension(projectId),
       // Rewrites the outgoing provider body to an OpenRouter Fusion request when
       // the /run handler stashed a Fusion config for this session (setFusionConfig).
       makeFusionRequestExtension(projectId, () => holder.session?.sessionId ?? ""),
@@ -423,6 +428,9 @@ async function build(
   // reported at submission time, so warm sessions become compatible
   // immediately after credentials are configured live.
   const modalTools = makeModalTools(projectId, () => holder.session?.sessionId ?? "");
+  // Pi 1.0 image models (OpenRouter's), saved into the sandbox and billed by
+  // their own provider; reachable without codemode.
+  const imageTool = makeImageTool(projectId, (provider) => modelRuntime.checkAuth(provider));
   const { session } = await createAgentSession({
     cwd: paths.sandbox,
     // A cold-opened session starts on the model it last ran with (or the
@@ -448,6 +456,7 @@ async function build(
       scientificResultTool,
       ...pdfAnnotationTools,
       ...modalTools,
+      imageTool,
     ],
   });
   // Pi emits `session_start` only from bindExtensions(); without it the

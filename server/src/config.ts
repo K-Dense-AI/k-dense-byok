@@ -42,6 +42,28 @@ export const SKILLS_REPO =
   process.env.KADY_SKILLS_REPO ?? "K-Dense-AI/scientific-agent-skills";
 export const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
 
+/** A GitHub repo contributing named skills to the catalogue. */
+export interface CatalogueSource {
+  /** `owner/repo`; skills live under its `skills/` directory. */
+  repo: string;
+  branch: string;
+  skills: readonly string[];
+}
+
+/**
+ * Sources merged into the catalogue after `SKILLS_REPO`. They are part of it:
+ * synced daily, archived when dropped upstream, and placed by the same
+ * default-enabled policy. A later source wins a name clash, so these copies
+ * replace any the primary repo still ships under the same name.
+ */
+export const CATALOGUE_EXTRA_SOURCES: readonly CatalogueSource[] = [
+  {
+    repo: "anthropics/skills",
+    branch: "main",
+    skills: ["docx", "pdf", "pptx", "xlsx"],
+  },
+];
+
 /**
  * Staging cache the `skills` CLI fetches into. Deliberately outside any
  * project sandbox: one download per source serves every project, and nothing

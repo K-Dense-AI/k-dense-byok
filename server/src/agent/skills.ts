@@ -3,8 +3,9 @@
  *
  * Skills are placed in `<sandbox>/.pi/skills/` so Pi's DefaultResourceLoader
  * (cwd = sandbox) auto-discovers and the agent activates them natively — no
- * orchestrator passthrough. The catalogue is the same K-Dense repo as before,
- * and the SKILL.md format is unchanged (Pi-compatible).
+ * orchestrator passthrough. The catalogue is the K-Dense repo plus the named
+ * skills of `CATALOGUE_EXTRA_SOURCES`, and the SKILL.md format is unchanged
+ * (Pi-compatible).
  *
  * Fast path: copy an existing sibling project's skills (local I/O). Slow path:
  * fetch the catalogue once through `skills-fetch.ts`.
@@ -234,20 +235,26 @@ function findSiblingSkillDirs(excludeId: string): string[] | null {
   return null;
 }
 
-function copySkillDirs(srcDir: string, paths: ProjectPaths): number {
-  if (!fs.existsSync(srcDir)) return 0;
+/** `[name, dir]` for each skill tree directly under `srcDir`. */
+function skillTreesIn(srcDir: string): [string, string][] {
+  if (!fs.existsSync(srcDir)) return [];
+  return fs
+    .readdirSync(srcDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d): [string, string] => [d.name, path.join(srcDir, d.name)]);
+}
+
+function copySkillTrees(trees: Iterable<[string, string]>, paths: ProjectPaths): number {
   let copied = 0;
-  for (const d of fs.readdirSync(srcDir, { withFileTypes: true })) {
-    if (!d.isDirectory()) continue;
-    const src = path.join(srcDir, d.name);
+  for (const [name, src] of trees) {
     if (!fs.existsSync(path.join(src, "SKILL.md"))) continue;
-    const enabled = path.join(paths.skillsDir, d.name);
-    const disabled = path.join(skillsDisabledDir(paths), d.name);
+    const enabled = path.join(paths.skillsDir, name);
+    const disabled = path.join(skillsDisabledDir(paths), name);
     if (fs.existsSync(enabled) || fs.existsSync(disabled)) continue; // preserve user state/customizations
-    const destDir = DEFAULT_DISABLED_SKILLS.has(d.name)
+    const destDir = DEFAULT_DISABLED_SKILLS.has(name)
       ? skillsDisabledDir(paths)
       : paths.skillsDir;
-    const dest = path.join(destDir, d.name);
+    const dest = path.join(destDir, name);
     fs.mkdirSync(destDir, { recursive: true });
     fs.cpSync(src, dest, { recursive: true });
     copied++;
@@ -270,7 +277,7 @@ export async function seedProjectSkills(
 
   const sibling = findSiblingSkillDirs(paths.id);
   if (sibling) {
-    for (const sourceDir of sibling) copySkillDirs(sourceDir, paths);
+    for (const sourceDir of sibling) copySkillTrees(skillTreesIn(sourceDir), paths);
     if (countInstalledSkills(paths) > 0) {
       applyDefaultSkillStates(paths);
       return countInstalledSkills(paths);
@@ -282,7 +289,10 @@ export async function seedProjectSkills(
       // same download instead of fetching the catalogue a second time.
       const catalogue = await fetchCatalogue();
       try {
-        copySkillDirs(catalogue.skillsDir, paths);
+        copySkillTrees(
+          [...catalogue.skills].map(([name, skill]): [string, string] => [name, skill.dir]),
+          paths,
+        );
       } finally {
         catalogue.cleanup();
       }

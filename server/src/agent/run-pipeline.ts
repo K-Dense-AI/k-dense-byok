@@ -38,7 +38,7 @@ import {
   type RunKind,
   type RunOrigin,
 } from "./run-broker.ts";
-import { pinSession, unpinSession } from "./session-registry.ts";
+import { getModelRuntime, pinSession, unpinSession } from "./session-registry.ts";
 import { ProvenanceRecorder } from "../provenance/recorder.ts";
 import {
   addTurnUsage,
@@ -52,7 +52,13 @@ import {
   untrackInFlightRun,
   type CostSnapshot,
 } from "../cost/ledger.ts";
-import { billingCountsTowardBudget, type BillingContext } from "../cost/billing.ts";
+import { billingCountsTowardBudget, billingForProvider, type BillingContext } from "../cost/billing.ts";
+import {
+  addToolResultUsage,
+  emptyToolUsageSplit,
+  snapshotMinus,
+  splitTotal,
+} from "../cost/tool-usage.ts";
 
 /** The slice of AgentSession the pipeline touches (fakes implement exactly this). */
 export type PipelineSession = Pick<
@@ -259,6 +265,16 @@ export interface ExecuteRunOptions {
   budgetPolicy: "refuse" | "abort";
   onBudgetAbort?: () => void;
   log: Pick<FastifyBaseLogger, "warn" | "error">;
+  /** Billing for a model a tool ran itself (codemode `models.*`, `generate_image`). */
+  toolModelBilling?: (modelRef: string) => Promise<BillingContext>;
+}
+
+/** Billing for a `provider/model` ref, from the credential Pi resolves for it. */
+async function defaultToolModelBilling(modelRef: string): Promise<BillingContext> {
+  const provider = modelRef.split("/", 1)[0] || "unknown";
+  if (provider === "ollama" || provider === "openai-compatible") return billingForProvider(provider, "local");
+  const auth = await getModelRuntime().checkAuth(provider);
+  return billingForProvider(provider, auth?.type ?? "none");
 }
 
 const FAIL_CLOSED_BILLING: BillingContext = {
@@ -284,6 +300,10 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
     // shrink the cumulative stats and make the before/after delta lie low; the
     // per-turn events are immune to that.
     const turnTally = emptySnapshot();
+    // Tool-reported usage that is not the turn's model: models a tool ran
+    // itself (billed by their own provider) and child-agent usage the
+    // subagent meter already ledgered (see cost/tool-usage.ts).
+    const toolUsage = emptyToolUsageSplit();
     // Observational provenance: binds each tool call to the sandbox files it
     // actually read and wrote. Constructed before the first model round-trip so
     // its baseline sandbox walk overlaps it.
@@ -317,6 +337,7 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
       if (ev.type === "turn_end") {
         const usage = (ev.message as { usage?: Parameters<typeof addTurnUsage>[1] }).usage;
         if (usage) addTurnUsage(turnTally, usage);
+        addToolResultUsage(toolUsage, (ev as { toolResults?: readonly unknown[] }).toolResults);
       }
       if (ev.type === "message_start" && handle.origin === "system") {
         const message = ev.message as { role?: string; customType?: string };
@@ -393,7 +414,10 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
         // tokens. The stats delta catches a partial turn that never reached
         // turn_end; the tally catches compaction — take the max of the two.
         try {
-          const run = snapshotMax(snapshotDelta(before, snapshot(session)), turnTally);
+          const run = snapshotMax(
+            snapshotMinus(snapshotDelta(before, snapshot(session)), splitTotal(toolUsage)),
+            turnTally,
+          );
           const entry = recordRun({
             sessionId,
             projectId,
@@ -402,6 +426,26 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
             after: run,
             billing,
           });
+          let toolCostUsd = 0;
+          let toolTokens = 0;
+          for (const [modelRef, usage] of toolUsage.models) {
+            let toolBilling: BillingContext;
+            try {
+              toolBilling = await (opts.toolModelBilling ?? defaultToolModelBilling)(modelRef);
+            } catch {
+              toolBilling = FAIL_CLOSED_BILLING;
+            }
+            const toolEntry = recordRun({
+              sessionId,
+              projectId,
+              model: modelRef,
+              before: emptySnapshot(),
+              after: usage,
+              billing: toolBilling,
+            });
+            toolCostUsd += toolEntry?.costUsd ?? 0;
+            toolTokens += usage.total;
+          }
           const stats = session.getSessionStats();
           // `cost` is the session's full ledgered spend (subagents included,
           // restart/compaction-proof); `tokens` is Pi's in-context cumulative;
@@ -412,8 +456,8 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
               type: "cost",
               cost: sessionCostSummary(sessionId, projectId).totalUsd,
               tokens: stats.tokens,
-              runCost: entry?.costUsd ?? 0,
-              runTokens: run.total,
+              runCost: (entry?.costUsd ?? 0) + toolCostUsd,
+              runTokens: run.total + toolTokens,
               runBillingMode: billing.billingMode,
               runProvider: billing.provider,
               ...(entry?.listPriceUsd !== undefined ? { runListPriceUsd: entry.listPriceUsd } : {}),

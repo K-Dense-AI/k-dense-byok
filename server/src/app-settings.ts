@@ -3,10 +3,12 @@
  *
  * Global across projects and Kady-owned (Pi never reads this file), edited
  * from Settings. It holds the model a new chat starts on, its thinking level,
- * and the compute target its Modal selector starts on. Only the model is
- * consumed server-side (`configuredDefaultRef` in agent/models.ts, which puts
- * it ahead of DEFAULT_MODEL_PROVIDER / DEFAULT_MODEL_ID); the rest seeds a new
- * tab in the web UI.
+ * the compute target its Modal selector starts on, and the image model
+ * `generate_image` uses. The chat model is consumed server-side
+ * (`configuredDefaultRef` in agent/models.ts, which puts it ahead of
+ * DEFAULT_MODEL_PROVIDER / DEFAULT_MODEL_ID), and so is the image model
+ * (agent/image-tool.ts, read on every call); the rest seeds a new tab in the
+ * web UI.
  *
  * Same read/validate/write trio as compaction-settings.ts: a missing or
  * malformed file reads as no defaults, a malformed one is never rewritten
@@ -37,12 +39,14 @@ export interface AppDefaults {
   model?: string;
   thinkingLevel?: ThinkingLevel;
   compute?: ComputeDefaults;
+  /** `generate_image`'s model, a `<provider>/<image-model-id>` ref. */
+  imageModel?: string;
 }
 
 /** A present key set to `null` clears it; an absent key is left unchanged. `compute` is replaced whole. */
 export type AppDefaultsPatch = { [K in keyof AppDefaults]?: AppDefaults[K] | null };
 
-const DEFAULT_KEYS = new Set<string>(["model", "thinkingLevel", "compute"]);
+const DEFAULT_KEYS = new Set<string>(["model", "thinkingLevel", "compute", "imageModel"]);
 const COMPUTE_KEYS = new Set<string>(["target", "gpuCount", "gpuFallback", "cache"]);
 
 type Rec = Record<string, unknown>;
@@ -117,6 +121,10 @@ export function validateAppDefaultsPatch(patch: unknown): string | null {
   if (patch.thinkingLevel != null && !parseThinkingLevel(patch.thinkingLevel)) {
     return `thinkingLevel must be one of: ${THINKING_LEVELS.join(", ")}, or null to clear it`;
   }
+  if (patch.imageModel != null) {
+    const error = invalidModelRef(patch.imageModel, "imageModel");
+    if (error) return error;
+  }
   if (patch.compute != null) return invalidCompute(patch.compute);
   return null;
 }
@@ -146,6 +154,7 @@ export function readAppDefaults(agentDir = KADY_PI_AGENT_DIR): AppDefaults {
   if (isRecord(defaults.compute) && !invalidCompute(defaults.compute)) {
     out.compute = normalizeCompute(defaults.compute);
   }
+  if (!invalidModelRef(defaults.imageModel, "imageModel")) out.imageModel = (defaults.imageModel as string).trim();
   return out;
 }
 
@@ -180,6 +189,10 @@ export function writeAppDefaults(patch: AppDefaultsPatch, agentDir = KADY_PI_AGE
   if (patch.compute !== undefined) {
     if (patch.compute === null) delete defaults.compute;
     else defaults.compute = normalizeCompute(patch.compute as unknown as Rec);
+  }
+  if (patch.imageModel !== undefined) {
+    if (patch.imageModel === null) delete defaults.imageModel;
+    else defaults.imageModel = patch.imageModel.trim();
   }
   fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
   atomicJson(appSettingsPath(agentDir), { ...file, version: APP_SETTINGS_VERSION, defaults });

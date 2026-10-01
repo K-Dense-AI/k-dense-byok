@@ -93,6 +93,20 @@ describe("notebookEntriesFromSessionFile", () => {
     expect(got.planHistory).toBeUndefined(); expect(got.resultSnapshots).toBeUndefined();
   });
 
+  it("skips calls the child's notebook tool rejected, so a retry is harvested once", () => {
+    const result = (id: string, isError: boolean) => JSON.stringify({
+      type: "message", id: `r-${id}`, timestamp: "2026-07-05T20:49:16.000Z",
+      message: { role: "toolResult", toolCallId: id, toolName: "notebook", content: [{ type: "text", text: isError ? "Validation failed" : "logged" }], isError },
+    });
+    const file = writeSession("retry.jsonl", [
+      asstRow([toolCall("first", "notebook", { type: "observation", title: "ARI 0.995", outcome: "positive" })]),
+      result("first", true),
+      asstRow([toolCall("retry", "notebook", { type: "observation", title: "ARI 0.995", outcome: "signal" })]),
+      result("retry", false),
+    ]);
+    expect(notebookEntriesFromSessionFile(file, "worker").map((e) => e.id)).toEqual(["worker:retry"]);
+  });
+
   it("returns [] for a missing file", () => {
     expect(notebookEntriesFromSessionFile(path.join(dir, "nope.jsonl"), "a")).toEqual([]);
   });

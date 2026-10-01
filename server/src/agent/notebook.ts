@@ -17,9 +17,9 @@ import { normalizeNotebookExecution } from "../../../web/src/lib/notebook-execut
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { resolvePaths } from "../projects.ts";
 import { stripSandboxRoot } from "./events.ts";
-import { appendNotebookEntry, type NotebookEntry } from "./notebook-store.ts";
+import { appendNotebookEntry, readNotebookEntries, type NotebookEntry } from "./notebook-store.ts";
 import { currentRunId } from "./run-ids.ts";
-import { captureNotebookArtifacts } from "./notebook-artifacts.ts";
+import { NOTEBOOK_ARTIFACT_LIMIT, captureNotebookArtifacts } from "./notebook-artifacts.ts";
 import { normalizeEvidenceLinks } from "../../../web/src/lib/notebook-evidence-core.ts";
 import { NextExperimentsSchema } from "../../pi-packages/kady-notebook/next-experiments-schema.ts";
 import { normalizeNextExperiments } from "../../../web/src/lib/next-experiments.ts";
@@ -102,6 +102,43 @@ export const NotebookParams = Type.Object({
 
 export type NotebookParamsT = Static<typeof NotebookParams>;
 
+/** Names in a warning list, bounded so a long list cannot flood the result. */
+const listed = (values: string[]) => values.slice(0, 5).join(", ") + (values.length > 5 ? ` and ${values.length - 5} more` : "");
+
+/**
+ * What the server changed or could not resolve while recording an entry.
+ * Without this the model reads "logged" and believes the record says what it
+ * wrote, while a completion claim was downgraded, a mistyped path was stored
+ * as missing, or a link points at no entry and stays unresolved.
+ */
+export function notebookWarnings(
+  params: { execution?: { status?: string }; evidence?: unknown[]; relatesTo?: string; supersedes?: string; artifacts?: string[] },
+  entry: Pick<NotebookEntry, "execution" | "evidence" | "artifactSnapshots" | "resultSnapshots">,
+  /** Entry ids already in this chat's notebook; undefined skips the link checks (history unreadable). */
+  knownIds: ReadonlySet<string> | undefined,
+): string[] {
+  const warnings: string[] = [];
+  if (params.execution?.status === "completed" && entry.execution?.status !== "completed") {
+    warnings.push(`execution was recorded as "unverified": "completed" needs execution.evidence (the command or run id, its exit status or output, and the log or result path).`);
+  }
+  const missing = (entry.artifactSnapshots ?? []).filter((s) => s.reason === "missing").map((s) => s.path);
+  if (missing.length) warnings.push(`artifact not found in the sandbox, so it is recorded as missing: ${listed(missing)}. Use sandbox-relative paths of files that exist.`);
+  if ((params.artifacts?.length ?? 0) > NOTEBOOK_ARTIFACT_LIMIT) warnings.push(`only the first ${NOTEBOOK_ARTIFACT_LIMIT} artifacts were identity-checked.`);
+  const results = (entry.resultSnapshots ?? []).filter((r) => r.status !== "available").map((r) => `${r.toolCallId} (${r.status}${r.reason ? `: ${r.reason}` : ""})`);
+  if (results.length) warnings.push(`result reference not resolved: ${listed(results)}.`);
+  const dropped = (params.evidence?.length ?? 0) - (entry.evidence?.length ?? 0);
+  if (params.evidence && dropped > 0) warnings.push(`${dropped} evidence link${dropped === 1 ? " was" : "s were"} dropped: each needs an entryId and a relation of supports, challenges, inconclusive or context.`);
+  if (!knownIds) return warnings;
+  // Ids in this chat only: links that name another chat's sessionId are resolved at read time.
+  const unknown = [
+    ...(params.relatesTo && !knownIds.has(params.relatesTo) ? [params.relatesTo] : []),
+    ...(entry.evidence ?? []).filter((link) => !link.sessionId && !knownIds.has(link.entryId)).map((link) => link.entryId),
+  ];
+  if (unknown.length) warnings.push(`no earlier entry in this chat has id ${listed([...new Set(unknown)])}; the link stays unresolved. Use an id a previous notebook call returned (add sessionId for another chat's entry).`);
+  if (params.supersedes && !knownIds.has(params.supersedes)) warnings.push(`supersedes "${params.supersedes}" names no earlier entry in this chat, so nothing is marked as amended (supersedes only resolves within one chat).`);
+  return warnings;
+}
+
 export function makeNotebookTool(
   projectId: string,
   getSessionId: () => string,
@@ -177,6 +214,12 @@ export function makeNotebookTool(
         ...(artifactSnapshots ? { artifactSnapshots } : {}),
         id: toolCallId, timestamp, role: "agent", runId,
       };
+      let knownIds: Set<string> | undefined;
+      try {
+        knownIds = new Set(readNotebookEntries(sessionId, projectId).map((e) => e.id));
+      } catch {
+        /* unreadable history: link checks are skipped */
+      }
       try {
         appendNotebookEntry(sessionId, entry, projectId);
       } catch (exc) {
@@ -191,14 +234,17 @@ export function makeNotebookTool(
           details: { error: true },
         };
       }
+      const warnings = notebookWarnings(params, entry, knownIds);
       return {
         content: [
           {
             type: "text" as const,
-            text: `logged notebook entry (id: ${toolCallId}) — reference this id in relatesTo/supersedes to link later entries`,
+            text:
+              `logged notebook entry (id: ${toolCallId}) — reference this id in relatesTo/supersedes to link later entries` +
+              (warnings.length ? `\nRecorded with changes:\n${warnings.map((w) => `- ${w}`).join("\n")}` : ""),
           },
         ],
-        details: { logged: true },
+        details: { logged: true, ...(warnings.length ? { warnings } : {}) },
       };
     },
   };

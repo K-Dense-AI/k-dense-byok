@@ -24,7 +24,17 @@ import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
 import "katex/dist/katex.min.css";
 import { mermaid } from "@streamdown/mermaid";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, WorkflowIcon } from "lucide-react";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  asJavaScriptFence,
+  parseWorkflowFence,
+  workflowScriptAgents,
+} from "@/lib/workflow-script";
 import {
   type ReactNode,
   createContext,
@@ -36,7 +46,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { Streamdown, defaultRehypePlugins } from "streamdown";
+import { Block, Streamdown, defaultRehypePlugins, type BlockProps } from "streamdown";
 
 export type MessageProps = HTMLAttributes<HTMLDivElement> & {
   from: UIMessage["role"];
@@ -422,6 +432,41 @@ const SandboxImage = memo(
 );
 SandboxImage.displayName = "SandboxImage";
 
+/**
+ * Streamdown block renderer that folds a pi-subagents workflow script — the
+ * ```js workflow fence the agent writes before `subagent({ workflow: true })`
+ * — into a collapsed "Workflow script" disclosure. Expanded, it is the normal
+ * highlighted JavaScript block; every other block renders unchanged.
+ */
+const WorkflowAwareBlock = memo((props: BlockProps) => {
+  const [open, setOpen] = useState(false);
+  const fence = parseWorkflowFence(props.content);
+  if (!fence) return <Block {...props} />;
+  const agents = workflowScriptAgents(fence.body);
+  const lines = fence.body.split("\n").filter((line) => line.trim()).length;
+  const detail = agents.length > 0
+    ? agents.join(" · ")
+    : `${lines} line${lines === 1 ? "" : "s"}`;
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} data-streamdown="workflow-script">
+      <CollapsibleTrigger className="flex w-full items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5 text-left text-xs transition-colors hover:bg-muted/60">
+        <ChevronRightIcon
+          className={cn("size-3 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
+        />
+        <WorkflowIcon className="size-3.5 shrink-0 text-muted-foreground" />
+        <span className="font-medium text-foreground">Workflow script</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+          {fence.closed && !props.isIncomplete ? detail : "writing…"}
+        </span>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <Block {...props} content={asJavaScriptFence(props.content, fence)} />
+      </CollapsibleContent>
+    </Collapsible>
+  );
+});
+WorkflowAwareBlock.displayName = "WorkflowAwareBlock";
+
 const streamdownComponents = {
   p: SafeParagraph,
   img: SandboxImage,
@@ -445,6 +490,7 @@ export const MessageResponse = memo(
             className
           )}
           components={streamdownComponents}
+          BlockComponent={WorkflowAwareBlock}
           rehypePlugins={rehypePlugins}
           linkSafety={linkSafetyOff}
           plugins={streamdownPlugins}

@@ -175,6 +175,53 @@ describe("executeRun", () => {
     expect(opened.handle.isComplete).toBe(true);
   });
 
+  it("ledgers models a tool ran itself under their own billing and drops child usage", async () => {
+    // A ChatGPT-subscription turn whose codemode script generated an image
+    // through OpenRouter and whose foreground subagent reported child usage.
+    const session = new FakeSession();
+    const subscription: BillingContext = { provider: "openai", authType: "oauth", billingMode: "subscription" };
+    const claim = claimRun(projectId, session.sessionId)!;
+    const opened = openRun(claim, { origin: "user", kind: "turn", prompt: "x", images: [], baseline, session });
+    const usage = (input: number, output: number, cost: number) => ({ input, output, cacheRead: 0, cacheWrite: 0, totalTokens: input + output, cost: { total: cost } });
+    const toolModelBilling = vi.fn(async (ref: string) =>
+      ref.startsWith("openrouter/") ? payg : subscription);
+    await executeRun(opened, {
+      session,
+      paths: resolvePaths(projectId),
+      billing: subscription,
+      budgetPolicy: "refuse",
+      log,
+      toolModelBilling,
+      run: async () => {
+        session.emit({
+          type: "turn_end",
+          message: { role: "assistant", usage: usage(1000, 100, 0.02) },
+          toolResults: [
+            {
+              role: "toolResult", toolName: "codemode", usage: usage(40, 1290, 0.039),
+              details: { calls: [{ name: "models.generateImages", args: "openrouter/google/gemini-2.5-flash-image", cost: 0.039, status: "ok" }] },
+            },
+            { role: "toolResult", toolName: "subagent", usage: usage(5000, 500, 0.5), details: { results: [] } },
+            { role: "toolResult", toolName: "read", details: {} },
+          ],
+        });
+        // Pi's stats include all three: the turn, the image call and the child.
+        session.cost = 0.02 + 0.039 + 0.5;
+      },
+    });
+    const rows = costRows(projectId, session.sessionId).map((row) => JSON.parse(row));
+    expect(toolModelBilling).toHaveBeenCalledWith("openrouter/google/gemini-2.5-flash-image");
+    expect(rows).toHaveLength(2);
+    // The turn: subscription, priced at list only, without image or child usage.
+    expect(rows[0]).toMatchObject({ model: "openrouter/fake-model", billingMode: "subscription", costUsd: 0, totalTokens: 1100 });
+    expect(rows[0].listPriceUsd).toBeCloseTo(0.02);
+    // The image: real OpenRouter spend that counts toward the cap.
+    expect(rows[1]).toMatchObject({ model: "openrouter/google/gemini-2.5-flash-image", billingMode: "payg", totalTokens: 1330 });
+    expect(rows[1].costUsd).toBeCloseTo(0.039);
+    const cost = opened.handle.state().run!.frames.find((f) => f.type === "cost") as { runCost?: number };
+    expect(cost.runCost).toBeCloseTo(0.039);
+  });
+
   it("refuses over budget without running or ledgering; abort policy runs and ledgers", async () => {
     const capped = createProject({ name: "Capped", spendLimitUsd: 0.01 });
     const zero = { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 };

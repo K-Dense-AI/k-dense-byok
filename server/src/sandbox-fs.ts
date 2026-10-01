@@ -47,9 +47,9 @@ export function apiRelative(
   return toApiPath(p.relative(from, to), p.sep);
 }
 
-/** Resolve a sandbox-relative path, refusing traversal outside the sandbox. */
-export function safePath(rel: string): string {
-  const sandbox = activePaths().sandbox;
+/** Resolve a sandbox-relative path, refusing traversal outside the sandbox
+ *  (the request's project by default; tools pass their project's sandbox). */
+export function safePath(rel: string, sandbox: string = activePaths().sandbox): string {
   const target = path.resolve(sandbox, rel);
   if (!isWithin(sandbox, target)) {
     throw new SandboxError(403, "Path traversal denied");

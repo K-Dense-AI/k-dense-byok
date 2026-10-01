@@ -41,6 +41,12 @@ export interface ActivityItem {
   resultImages?: ToolResultImage[];
   /** Count of result images omitted by server safety limits. */
   resultImagesTruncated?: number;
+  /**
+   * Display-only: the ```js workflow block of the reply that issued a
+   * `subagent({ workflow: true })` call (pi-subagents ≥0.74 reads the script
+   * from there, so the tool arguments carry none). Set at render time.
+   */
+  replyWorkflowScript?: string;
 }
 
 export type AssistantMessageSegment =

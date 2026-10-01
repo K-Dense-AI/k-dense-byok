@@ -17,6 +17,7 @@ import {
   listProjectSkills,
   skillsDisabledDir,
 } from "../src/agent/skills.ts";
+import { mergeCatalogueSources } from "../src/agent/skills-fetch.ts";
 import { ensureProjectExists } from "../src/projects.ts";
 
 function reset(): void {
@@ -240,5 +241,67 @@ describe("skill catalogue synchronization", () => {
       updated: 1,
       preserved: 0,
     });
+  });
+
+  it("hands a skill to an extra source without losing state, and keeps it when the primary drops it", () => {
+    const paths = ensureProjectExists("extra-source-project");
+    const primary = path.join(PROJECTS_ROOT, "primary");
+    const anthropic = path.join(PROJECTS_ROOT, "anthropic");
+    writeSkill(primary, "docx", "kdense");
+    writeSkill(primary, "pptx", "kdense");
+    writeSkill(primary, "literature-review", "v1");
+    writeSkill(anthropic, "docx", "anthropic");
+    writeSkill(anthropic, "pptx", "anthropic");
+    writeSkill(anthropic, "skill-creator", "anthropic");
+    const merged = () =>
+      mergeCatalogueSources([
+        { skillsDir: primary },
+        { skillsDir: anthropic, source: "anthropics/skills", skills: ["docx", "pptx"] },
+      ]);
+
+    // Before the extra source existed: K-Dense copies, one disabled, one edited.
+    syncProjectSkillsFromCatalogue(paths, primary, null);
+    fs.mkdirSync(skillsDisabledDir(paths), { recursive: true });
+    fs.renameSync(
+      path.join(paths.skillsDir, "pptx"),
+      path.join(skillsDisabledDir(paths), "pptx"),
+    );
+    fs.appendFileSync(path.join(paths.skillsDir, "docx", "SKILL.md"), "Local note.\n");
+
+    const first = syncProjectSkillsFromCatalogue(paths, merged(), null);
+    // The clean copy is replaced in place and stays disabled.
+    expect(skillBody(skillsDisabledDir(paths), "pptx")).toContain("anthropic");
+    expect(fs.existsSync(path.join(paths.skillsDir, "pptx"))).toBe(false);
+    expect(getSkillProvenance(paths, "pptx")).toEqual({
+      origin: "catalogue",
+      source: "anthropics/skills",
+    });
+    // The edited copy is preserved and offered the new upstream.
+    expect(skillBody(paths.skillsDir, "docx")).toContain("Local note.");
+    expect(first.updatesAvailable).toEqual(["docx"]);
+    // Only the named skills are taken from the extra source.
+    expect(fs.existsSync(path.join(paths.skillsDir, "skill-creator"))).toBe(false);
+    // Primary-repo skills record no source.
+    expect(getSkillProvenance(paths, "literature-review")).toEqual({ origin: "catalogue" });
+
+    // The primary repo drops both: nothing is archived, the extra source owns them.
+    fs.rmSync(path.join(primary, "docx"), { recursive: true });
+    fs.rmSync(path.join(primary, "pptx"), { recursive: true });
+    const second = syncProjectSkillsFromCatalogue(paths, merged(), null);
+    expect(second.counts.archived).toBe(0);
+    expect(second.orphaned).toEqual([]);
+    expect(skillBody(skillsDisabledDir(paths), "pptx")).toContain("anthropic");
+
+    // Taking the update brings the edited skill onto the extra source's copy.
+    const replaced = replaceProjectSkillFromCatalogue(paths, "docx", merged(), null);
+    expect(replaced.updatesAvailable).toEqual([]);
+    expect(skillBody(paths.skillsDir, "docx")).toContain("anthropic");
+    expect(getSkillProvenance(paths, "docx")?.source).toBe("anthropics/skills");
+
+    // The extra source dropping a skill retires it like any catalogue skill.
+    fs.rmSync(path.join(anthropic, "pptx"), { recursive: true });
+    const third = syncProjectSkillsFromCatalogue(paths, merged(), null);
+    expect(third.archived).toContain("pptx");
+    expect(fs.existsSync(path.join(skillsDisabledDir(paths), "pptx"))).toBe(false);
   });
 });

@@ -74,6 +74,58 @@ describe("ToolActivityList", () => {
     ).toBeInTheDocument();
   });
 
+  it("names the specialists of a workflow: true launch from its reply block", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "subagent",
+            args: { workflow: true },
+            replyWorkflowScript:
+              'const a = await runs.run("lit", { agent: "literature-reviewer", task: "Survey" });\n' +
+              "return runs.run('stats', { agent: 'statistical-reviewer', task: a.text });",
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText("literature-reviewer + statistical-reviewer"),
+    ).toBeInTheDocument();
+  });
+
+  it.each([
+    [{ workflow: true }, "workflow script"],
+    [{ workflow: "./ci/sweep.js" }, "workflow ./ci/sweep.js"],
+    [{ workflow: "review" }, "workflow “review”"],
+  ])("summarizes an unnamed %j launch by its workflow source", (args, text) => {
+    render(<ToolActivityList activities={[item({ toolName: "subagent", args })]} />);
+    expect(screen.getByText(text)).toBeInTheDocument();
+    expect(screen.queryByText("subtask")).not.toBeInTheDocument();
+  });
+
+  it("summarizes generate_image by its prompt and shows the image without expanding", () => {
+    render(
+      <ToolActivityList
+        activities={[
+          item({
+            toolName: "generate_image",
+            args: {
+              prompt: "Schematic of the single-cell RNA-seq pipeline\nflat vector style",
+              path: "figures/pipeline.png",
+            },
+            result: "Saved figures/pipeline.png",
+            resultImages: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+          }),
+        ]}
+      />,
+    );
+    expect(
+      screen.getByText("Schematic of the single-cell RNA-seq pipeline"),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("figures/pipeline.png")).not.toBeInTheDocument();
+    expect(screen.getByAltText("Tool result image 1")).toBeInTheDocument();
+  });
+
   it("labels the pi-subagents wait tool", () => {
     render(
       <ToolActivityList

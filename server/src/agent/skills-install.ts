@@ -484,6 +484,11 @@ async function stageForSkill(
   if (provenance.origin === "local") {
     fail(400, `"${name}" was written here and has no source to update from`);
   }
+  // A catalogue skill may record a source (an extra catalogue repo), but its
+  // updates belong to the catalogue sync, which owns its baseline.
+  if (provenance.origin === "catalogue") {
+    fail(400, `"${name}" is a catalogue skill; sync the catalogue to update it`);
+  }
   if (!provenance.source) {
     fail(400, `No source recorded for "${name}", so it cannot be updated`);
   }

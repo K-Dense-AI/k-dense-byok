@@ -12,6 +12,7 @@ import {
   modalJobManager,
 } from "../modal/manager.ts";
 import { ModalJobError, type ModalJobOwner, type ModalJobRequest } from "../modal/types.ts";
+import { modalFailureHint } from "../modal/tool-hints.ts";
 
 const MAX_TOOL_OUTPUT_CHARS = 16_000;
 
@@ -169,17 +170,23 @@ export const ModalSubmitBatchParams = Type.Object({
   group_id: Type.Optional(Type.String()),
 });
 
-function requestFromParams(
+/** Exported for tests. */
+export function requestFromParams(
   params: ModalRunParamsT,
   defaultInstance: string | null | undefined,
   defaultOptions: SessionComputeOptions | undefined,
   groupId?: string,
 ): ModalJobRequest {
+  // The chat's GPU count and fallback chain belong to the chat's selected
+  // instance. A job on an instance the model chose itself must not inherit
+  // them: a CPU job would fail INVALID_GPU_COUNT, or reserve (and possibly
+  // fall back onto) the chat's GPU chain.
+  const chatInstance = params.instance === undefined || params.instance === defaultInstance;
   return {
     command: params.command,
     instance: params.instance ?? defaultInstance ?? DEFAULT_INSTANCE_ID,
-    gpuCount: params.gpu_count ?? defaultOptions?.gpuCount,
-    gpuFallback: params.gpu_fallback ?? defaultOptions?.gpuFallback,
+    gpuCount: params.gpu_count ?? (chatInstance ? defaultOptions?.gpuCount : undefined),
+    gpuFallback: params.gpu_fallback ?? (chatInstance ? defaultOptions?.gpuFallback : undefined),
     image: params.image,
     environment: params.environment,
     cache: params.cache ?? defaultOptions?.cache,
@@ -200,7 +207,16 @@ function truncate(value: string): string {
   return `…(${value.length - MAX_TOOL_OUTPUT_CHARS} earlier characters truncated)\n${value.slice(-MAX_TOOL_OUTPUT_CHARS)}`;
 }
 
-function publicJob(job: ReturnType<typeof modalJobManager.get>) {
+/** Transfer manifests can list 10,000 files; the model needs a sample (same cap as kady-modal). */
+const MAX_LISTED_FILES = 50;
+
+function capList<T>(list: readonly T[] | undefined): Array<T | string> | undefined {
+  if (!list || list.length <= MAX_LISTED_FILES) return list ? [...list] : undefined;
+  return [...list.slice(0, MAX_LISTED_FILES), `… ${list.length - MAX_LISTED_FILES} more`];
+}
+
+/** Exported for tests. */
+export function publicJob(job: ReturnType<typeof modalJobManager.get>) {
   return {
     id: job.id,
     job_id: job.id,
@@ -216,8 +232,9 @@ function publicJob(job: ReturnType<typeof modalJobManager.get>) {
         : undefined,
     created_at: job.createdAt,
     finished_at: job.finishedAt,
-    files_out: job.outputFiles,
-    missing_outputs: job.missingOutputs,
+    files_out: capList(job.outputFiles),
+    ...(job.outputFiles && job.outputFiles.length > MAX_LISTED_FILES ? { files_out_total: job.outputFiles.length } : {}),
+    missing_outputs: capList(job.missingOutputs),
     estimated_cost_usd: job.accounting.estimatedCostUsd,
     cost_usd: job.accounting.estimatedCostUsd,
     cleanup_pending: Boolean(job.cleanupUncertain || job.approvalCleanupUncertain || job.orphanedSandboxIds?.length),
@@ -232,7 +249,9 @@ function toolFailure(error: unknown) {
       ? { error: error.code, retryable: error.retryable }
       : { error: "MODAL_FAILURE", retryable: false };
   const message = error instanceof Error ? error.message : String(error);
-  return textResult(`Modal compute request failed: ${message}`, detail);
+  const hint = modalFailureHint(detail.error);
+  // An error result, so the model and the UI both see a failure, not a success.
+  return { ...textResult(`Modal compute request failed: ${message}${hint ? `\n${hint}` : ""}`, detail), isError: true };
 }
 
 export const MODAL_TOOL_NAMES = [

@@ -2,6 +2,16 @@
  * Existing supported settings win. Remove the obsolete project key that the
  * plugin never read; forceTopLevelAsync belongs in extensions/subagent/config.json.
  */
+
+/**
+ * pi-subagents (0.74+) feature groups the Kady host cannot present, removed
+ * from the model-facing `subagent` tool: `panes` drives the TUI inspector and
+ * project panes, `external-machines` targets Herdr saved machines (remote
+ * compute here is Modal). Every request carries the tool declaration, so the
+ * unused parameters and their guidance are paid for on every lead turn.
+ * Fleet controls (status/steer/stop/resume) and schedules are unaffected.
+ */
+export const KADY_DISABLED_SUBAGENT_FEATURES = ["panes", "external-machines"] as const;
 import fs from "node:fs";
 import path from "node:path";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
@@ -29,7 +39,9 @@ export function seedSubagentRuntimeSettings(paths: ProjectPaths): boolean {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  if (!("forceTopLevelAsync" in config)) atomicJson(configFile, { ...config, forceTopLevelAsync: true });
+  const configDefaults: Rec = { forceTopLevelAsync: true, disabledFeatures: [...KADY_DISABLED_SUBAGENT_FEATURES] };
+  const missing = Object.entries(configDefaults).filter(([key]) => !(key in config));
+  if (missing.length > 0) atomicJson(configFile, { ...config, ...Object.fromEntries(missing) });
   // Parsed here rather than via readPiSettings(): that helper maps a malformed
   // file to `{}`, and rewriting from that would destroy user configuration.
   // Missing is fine (start empty); unparseable means leave it alone.

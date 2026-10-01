@@ -255,14 +255,16 @@ function billingFromModelRef(
 }
 
 /**
- * Child agents and models named inside a `workflowScript`.
+ * Child agents and models named inside a workflow script.
  *
- * Since pi-subagents 0.43 the `subagent` tool has one execution surface: a
- * `workflowScript` JavaScript string whose children are declared as
- * `runs.run(key, { agent, ... })`. Top-level `agent` now only addresses
- * management actions, so a structural walk of the tool input no longer sees
- * any child — every check that guards delegation (spend cap, provider
- * support, model inheritance) would silently pass everything through.
+ * Since pi-subagents 0.43 the `subagent` tool's orchestration surface is a
+ * JavaScript workflow script whose children are declared as
+ * `runs.run(key, { agent, ... })`, so a structural walk of the tool input
+ * does not see them — every check that guards delegation (spend cap, provider
+ * support, model inheritance) would silently pass everything through. Since
+ * 0.74 the script is not even in the tool input: `workflow: true` runs the one
+ * ```js workflow block written in the same assistant reply, and a `workflow`
+ * string containing `/` names a script file (see `workflowCallTargets`).
  *
  * The script is source text, not data, so this reads the literals rather than
  * pretending to evaluate it. `dynamic` records that at least one `agent:` or
@@ -313,12 +315,99 @@ export function workflowScriptTargets(script: string): WorkflowScriptTargets {
 
 }
 
-/** Script targets for a tool input, or empty when this is not an execution call. */
-function scriptTargets(input: Record<string, unknown>): WorkflowScriptTargets {
-  return typeof input.workflowScript === "string"
-    ? workflowScriptTargets(input.workflowScript)
-    : { agents: new Set(), models: new Set(), dynamic: false };
+/** Where a `subagent` call's script can be found besides its own input. */
+export interface WorkflowCallSource {
+  /** This call's id: locates the reply that carries a `workflow: true` block. */
+  toolCallId?: string;
+  /** The calling session's branch (ExtensionContext.sessionManager). */
+  sessionManager?: { getBranch(): ReadonlyArray<unknown> };
+  /** Base for script paths: the calling session's cwd (the sandbox for the lead). */
+  cwd?: string;
 }
+
+const UNKNOWN_SCRIPT = (): WorkflowScriptTargets => ({ agents: new Set(), models: new Set(), dynamic: true });
+
+/**
+ * Script targets for a `subagent` tool call, or undefined when it runs no script.
+ *
+ * Mirrors how pi-subagents 0.74 resolves the script it will execute: the one
+ * ```js workflow block of the assistant message that issued `workflow: true`,
+ * or a `workflow` file path resolved against the request cwd. A script that
+ * cannot be read here — a named workflow resource, a missing file, a reply
+ * without exactly one block — reports `dynamic`, which widens billing to
+ * "unknown" and disables the model pin; the upstream executor rejects the
+ * malformed cases itself. `workflowScript` is now only the plugin's internal
+ * carrier (model calls that pass it are refused), kept for internal callers.
+ */
+export function workflowCallTargets(
+  input: Record<string, unknown>,
+  source: WorkflowCallSource = {},
+): WorkflowScriptTargets | undefined {
+  if (typeof input.workflowScript === "string") return workflowScriptTargets(input.workflowScript);
+  const workflow = input.workflow;
+  if (workflow === undefined) return undefined;
+  if (workflow === true) {
+    const script = source.sessionManager && source.toolCallId
+      ? replyWorkflowScript(source.sessionManager.getBranch(), source.toolCallId)
+      : undefined;
+    return script === undefined ? UNKNOWN_SCRIPT() : workflowScriptTargets(script);
+  }
+  // Named workflow resources (no path separator) are extension-owned code.
+  if (typeof workflow !== "string" || !/[\\/]/.test(workflow) || !source.cwd) return UNKNOWN_SCRIPT();
+  const base = typeof input.cwd === "string" && input.cwd ? path.resolve(source.cwd, input.cwd) : source.cwd;
+  try {
+    const file = path.resolve(base, workflow);
+    if (fs.statSync(file).size > MAX_SCRIPT_SCAN_CHARS * 4) return UNKNOWN_SCRIPT();
+    return workflowScriptTargets(fs.readFileSync(file, "utf8"));
+  } catch {
+    return UNKNOWN_SCRIPT();
+  }
+}
+
+const WORKFLOW_FENCE = /^```(?:js|javascript) workflow[ \t]*$/;
+const OPEN_FENCE = /^(`{3,}|~{3,})/;
+const CLOSE_FENCE = /^(`{3,}|~{3,})[ \t]*$/;
+
+/**
+ * The ```js workflow block of the assistant message that issued `toolCallId`,
+ * or undefined when pi-subagents would refuse to run it. A port of the
+ * plugin's `readReplyWorkflowScript` (src/extension/reply-workflow-script.js,
+ * not a public export): Pi persists the whole assistant message before its
+ * tool calls run, so the message is on the branch when `tool_call` fires.
+ */
+export function replyWorkflowScript(branch: ReadonlyArray<unknown>, toolCallId: string): string | undefined {
+  type Block = { type?: string; id?: string; name?: string; text?: unknown; arguments?: Record<string, unknown> };
+  for (let index = branch.length - 1; index >= 0; index--) {
+    const entry = branch[index] as { type?: string; message?: { role?: string; content?: unknown } } | undefined;
+    if (entry?.type !== "message" || entry.message?.role !== "assistant" || !Array.isArray(entry.message.content)) continue;
+    const content = entry.message.content as Block[];
+    if (!content.some((block) => block.type === "toolCall" && block.id === toolCallId)) continue;
+    const replyCalls = content.filter((block) =>
+      block.type === "toolCall" && block.name === "subagent" && block.arguments?.workflow === true).length;
+    if (replyCalls > 1) return undefined;
+    const text = content.flatMap((block) => block.type === "text" && typeof block.text === "string" ? [block.text] : []).join("\n");
+    const blocks: string[] = [];
+    let fence: { marker: string; tagged: boolean; start: number } | undefined;
+    const lines = text.split("\n");
+    for (let line = 0; line < lines.length; line++) {
+      const value = lines[line].replace(/\r$/, "");
+      if (!fence) {
+        const open = OPEN_FENCE.exec(value);
+        if (open) fence = { marker: open[1], tagged: WORKFLOW_FENCE.test(value), start: line + 1 };
+        continue;
+      }
+      const close = CLOSE_FENCE.exec(value);
+      if (!close || close[1][0] !== fence.marker[0] || close[1].length < fence.marker.length) continue;
+      if (fence.tagged) blocks.push(lines.slice(fence.start, line).join("\n"));
+      fence = undefined;
+    }
+    if (fence?.tagged || blocks.length !== 1 || !blocks[0].trim()) return undefined;
+    return blocks[0];
+  }
+  return undefined;
+}
+
+const NO_SCRIPT = (): WorkflowScriptTargets => ({ agents: new Set(), models: new Set(), dynamic: false });
 
 function collectStringFields(
   value: unknown,
@@ -342,10 +431,10 @@ function requestedBillings(
   input: Record<string, unknown>,
   parentModel?: Model<Api>,
   isProviderUsingOAuth: (providerId: string) => boolean = () => false,
+  script: WorkflowScriptTargets = workflowCallTargets(input) ?? NO_SCRIPT(),
 ): BillingContext[] {
   // The workflow-wide override outranks definitions and all settings defaults.
   if (typeof input.model === "string" && input.model.trim()) return [billingFromModelRef(input.model, parentModel, isProviderUsingOAuth)];
-  const script = scriptTargets(input);
   const pinned = settingsPinnedModels(resolvePaths(projectId));
   const explicitModels = collectStringFields(input, "model");
   for (const model of script.models) explicitModels.add(model);
@@ -365,7 +454,7 @@ function requestedBillings(
       );
     }
   }
-  if (script.dynamic || input.workflowScriptPath || input.workflow) billings.push(billingForProvider("unknown", "api_key"));
+  if (script.dynamic) billings.push(billingForProvider("unknown", "api_key"));
   if (billings.length === 0) {
     billings.push(
       billingFromModelRef(undefined, parentModel, isProviderUsingOAuth),
@@ -378,8 +467,8 @@ function unsupportedDirectProviders(
   projectId: string,
   input: Record<string, unknown>,
   isProviderUsingOAuth: (providerId: string) => boolean,
+  script: WorkflowScriptTargets = workflowCallTargets(input) ?? NO_SCRIPT(),
 ): string[] {
-  const script = scriptTargets(input);
   const refs = collectStringFields(input, "model");
   for (const model of script.models) refs.add(model);
   const paths = resolvePaths(projectId);
@@ -420,6 +509,7 @@ export function pinInheritedChildModels(
   projectId: string,
   input: Record<string, unknown>,
   parentModel: Model<Api> | undefined,
+  script: WorkflowScriptTargets | undefined = workflowCallTargets(input, { cwd: resolvePaths(projectId).sandbox }),
 ): void {
   if (!parentModel) return;
   // Let Pi resolve user-level and provider-scoped policies itself. A global
@@ -439,8 +529,8 @@ export function pinInheritedChildModels(
   const paths = resolvePaths(projectId);
   const definitions = new Map(listAgents(paths).map((agent) => [agent.name, agent] as const));
   const pinned = settingsPinnedModels(paths);
-  if (typeof input.workflowScript === "string") {
-    pinWorkflowScriptModel(input, inherited, definitions, pinned);
+  if (script) {
+    pinWorkflowScriptModel(input, inherited, script, definitions, pinned);
     return;
   }
   const apply = (value: unknown): void => {
@@ -470,8 +560,8 @@ export function pinInheritedChildModels(
 }
 
 /**
- * Pin the parent's model for a `workflowScript` call, where children live in a
- * source string we cannot rewrite. The only lever is the top-level `model`,
+ * Pin the parent's model for a workflow script call, where children live in
+ * source text we cannot rewrite. The only lever is the top-level `model`,
  * which pi-subagents forwards to every child as a per-run override — the
  * strongest rank there is. So this pins only after establishing that nothing it
  * would outrank exists: no model literal in the script, no frontmatter or
@@ -485,11 +575,11 @@ export function pinInheritedChildModels(
 function pinWorkflowScriptModel(
   input: Record<string, unknown>,
   inherited: string,
+  targets: WorkflowScriptTargets,
   definitions: Map<string, { model?: string }>,
   pinned: { defaultModel?: string; byAgent: Map<string, string> },
 ): void {
   if (input.model !== undefined || pinned.defaultModel) return;
-  const targets = workflowScriptTargets(input.workflowScript as string);
   if (targets.dynamic || targets.models.size > 0 || targets.agents.size === 0) return;
   for (const agent of targets.agents) {
     if (!definitions.has(agent) || definitions.get(agent)?.model || pinned.byAgent.get(agent)) return;
@@ -570,17 +660,23 @@ export function makeSubagentLedgerExtension(
   isProviderUsingOAuth: (providerId: string) => boolean = () => false,
 ): ExtensionFactory {
   return (pi) => {
-    pi.on("tool_call", async (event) => {
+    pi.on("tool_call", async (event, ctx) => {
       if (event.toolName !== "subagent") return;
       const action =
         typeof event.input.action === "string" ? event.input.action : undefined;
+      const script = () => workflowCallTargets(event.input, {
+        toolCallId: event.toolCallId,
+        sessionManager: ctx?.sessionManager,
+        cwd: ctx?.cwd ?? resolvePaths(projectId).sandbox,
+      });
       // Schedules defer model work past this hook (a fire produces no tool
       // call), so gate their creation and manual firing like a launch now.
       if (action === "schedule.create") {
         const budget = isBudgetExceeded(projectId);
         const parentModel = getParentModel();
-        pinInheritedChildModels(projectId, event.input, parentModel);
-        const unsupported = unsupportedDirectProviders(projectId, event.input, isProviderUsingOAuth);
+        const targets = script();
+        pinInheritedChildModels(projectId, event.input, parentModel, targets);
+        const unsupported = unsupportedDirectProviders(projectId, event.input, isProviderUsingOAuth, targets ?? NO_SCRIPT());
         if (unsupported.length > 0) {
           return {
             block: true,
@@ -589,7 +685,7 @@ export function makeSubagentLedgerExtension(
               `subscription login in Settings; ambient API keys are not supported for this route.`,
           };
         }
-        if (budget.exceeded && requestedBillings(projectId, event.input, parentModel, isProviderUsingOAuth).some(billingCountsTowardBudget)) {
+        if (budget.exceeded && requestedBillings(projectId, event.input, parentModel, isProviderUsingOAuth, targets ?? NO_SCRIPT()).some(billingCountsTowardBudget)) {
           return {
             block: true,
             reason:
@@ -630,11 +726,13 @@ export function makeSubagentLedgerExtension(
         return;
       }
       const parentModel = getParentModel();
-      pinInheritedChildModels(projectId, event.input, parentModel);
+      const targets = script();
+      pinInheritedChildModels(projectId, event.input, parentModel, targets);
       const unsupportedProviders = unsupportedDirectProviders(
         projectId,
         event.input,
         isProviderUsingOAuth,
+        targets ?? NO_SCRIPT(),
       );
       if (unsupportedProviders.length > 0) {
         return {
@@ -650,6 +748,7 @@ export function makeSubagentLedgerExtension(
         event.input,
         parentModel,
         isProviderUsingOAuth,
+        targets ?? NO_SCRIPT(),
       ).some(billingCountsTowardBudget);
       if (hasBillableChild && budget.exceeded) {
         return {

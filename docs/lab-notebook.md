@@ -93,10 +93,15 @@ source citations and claims still require checking. Usage appears under
 ## Context compaction
 
 Automatic compaction summarizes older conversation when context fills. Kady adds
-a bounded state block from notebook/plans/results/provenance and pending work,
-then asks the model for a scientific summary. Narrative can omit details; status
-snapshots must be rechecked before resuming work. Compaction is billed, and a
-Kady summary failure falls back to Pi's default behavior.
+a bounded state block from notebook/plans/results/provenance and pending work
+(including hypotheses older than the recent-entry window), then asks the model
+for a scientific summary with a Scientific Record section (hypotheses, results,
+methods and parameters, failures, corrections, outstanding work). The state
+block is rebuilt fresh at each compaction rather than copied from the last one,
+and the read/modified file lists carry forward. Long tool outputs keep their
+beginning and end. The narrative can still omit details, and status snapshots
+must be rechecked before resuming work. Compaction is billed, and a Kady summary
+failure falls back to Pi's default behavior.
 
 Use **Compact now** beside the context gauge while idle. Configure automatic
 compaction under **Settings → General → Context compaction**.

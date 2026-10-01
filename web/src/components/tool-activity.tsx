@@ -9,6 +9,7 @@ import {
   FileIcon,
   FilePlusIcon,
   FolderTreeIcon,
+  ImagePlusIcon,
   SearchIcon,
   ServerCogIcon,
   TerminalIcon,
@@ -30,6 +31,7 @@ import { modalJobIdFromActivity, openModalJob } from "@/lib/modal-jobs";
 import { skillNameFromRead } from "@/lib/skill-invocation";
 import type { ActivityItem } from "@/lib/use-agent";
 import { cn } from "@/lib/utils";
+import { workflowScriptAgents } from "@/lib/workflow-script";
 
 function ToolIcon({ toolName }: { toolName?: string }) {
   const className = "size-3.5 shrink-0 text-muted-foreground";
@@ -51,6 +53,8 @@ function ToolIcon({ toolName }: { toolName?: string }) {
     case "bg_wait":
     case "subagent_wait":
       return <UsersIcon className={className} />;
+    case "generate_image":
+      return <ImagePlusIcon className={className} />;
     default:
       return <WrenchIcon className={className} />;
   }
@@ -59,6 +63,7 @@ function ToolIcon({ toolName }: { toolName?: string }) {
 function subagentNames(
   args: Record<string, unknown>,
   result: string | undefined,
+  replyScript: string | undefined,
 ): string[] {
   const names: string[] = [];
   const add = (value: unknown) => {
@@ -75,15 +80,12 @@ function subagentNames(
       }
     }
   }
-  // Since pi-subagents 0.43 children are declared inside a `workflowScript`
-  // string as `runs.run(key, { agent: "name", task })`; read the literals.
-  if (typeof args.workflowScript === "string") {
-    for (const match of args.workflowScript.matchAll(
-      /\bagent\s*:\s*(["'`])([A-Za-z0-9][A-Za-z0-9._-]*)\1/g,
-    )) {
-      add(match[2]);
-    }
-  }
+  // Children are declared in a workflow script as `runs.run(key, { agent:
+  // "name", task })`; read the literals. Since pi-subagents 0.74 the script is
+  // the ```js workflow block of the reply that called `workflow: true`;
+  // earlier sessions passed it as the `workflowScript` argument.
+  if (typeof args.workflowScript === "string") workflowScriptAgents(args.workflowScript).forEach(add);
+  if (args.workflow === true && replyScript) workflowScriptAgents(replyScript).forEach(add);
 
   if (result) {
     const asyncNames = /^Async (?:parallel|single): \[([^\]]+)\]/m.exec(result)?.[1];
@@ -101,11 +103,23 @@ function subagentNames(
   return names;
 }
 
+/** What a `subagent` call runs when no specialist name is known yet. */
+function workflowSummary(workflow: unknown): string | null {
+  if (workflow === true) return "workflow script";
+  if (typeof workflow !== "string" || !workflow.trim()) return null;
+  // A value with a path separator is a script file; anything else names an
+  // extension-registered workflow resource.
+  return /[\\/]/.test(workflow) ? `workflow ${workflow}` : `workflow “${workflow}”`;
+}
+
+const MAX_PROMPT_SUMMARY = 140;
+
 /** One-line human summary of a tool call's arguments. */
 function summarize(
   toolName: string | undefined,
   args: unknown,
   result?: string,
+  replyScript?: string,
 ): string {
   if (args && typeof args === "object") {
     const a = args as Record<string, unknown>;
@@ -113,10 +127,16 @@ function summarize(
       typeof v === "string" ? v.split("\n")[0] : "";
     if (toolName === "bash" && typeof a.command === "string")
       return firstLine(a.command);
+    // Before the generic path lookup: `path` is where the image is saved, the
+    // prompt is what the user wants to recognize.
+    if (toolName === "generate_image" && typeof a.prompt === "string") {
+      const prompt = firstLine(a.prompt).trim();
+      return prompt.length > MAX_PROMPT_SUMMARY ? `${prompt.slice(0, MAX_PROMPT_SUMMARY - 1)}…` : prompt;
+    }
     const pathish = a.path ?? a.file_path ?? a.filePath ?? a.pattern ?? a.query;
     if (typeof pathish === "string") return pathish;
     if (toolName === "subagent") {
-      const agents = subagentNames(a, result);
+      const agents = subagentNames(a, result, replyScript);
       if (agents.length > 0) {
         const task =
           agents.length === 1 && Array.isArray(a.tasks) && a.tasks.length === 1
@@ -128,7 +148,7 @@ function summarize(
       if (a.action === "list") return "list agents";
       if (a.action === "status") return "check subagent status";
       if (a.action === "interrupt") return "interrupt subagent";
-      return firstLine(a.task ?? a.prompt ?? a.description) || "subtask";
+      return firstLine(a.task ?? a.prompt ?? a.description) || workflowSummary(a.workflow) || "subtask";
     }
     if (toolName === "bg_wait" || toolName === "subagent_wait") {
       return "wait for subagents";
@@ -169,7 +189,10 @@ const ToolCard = memo(function ToolCard({ item }: { item: ActivityItem }) {
   // server resolves the frontmatter name; the path-derived name is a fallback.
   const skill = item.skillName ?? skillNameFromRead(item.toolName, item.args);
   const name = skill ? "skill" : (item.toolName ?? item.label);
-  const summary = skill ?? summarize(item.toolName, item.args, item.result);
+  const summary = skill ?? summarize(item.toolName, item.args, item.result, item.replyWorkflowScript);
+  // A generated image is the point of the call: keep it visible while the
+  // card is collapsed instead of behind the disclosure.
+  const inlineImages = item.toolName === "generate_image";
   const args = fullArgs(item.args);
   const hasDetail = Boolean(
     args ||
@@ -241,12 +264,22 @@ const ToolCard = memo(function ToolCard({ item }: { item: ActivityItem }) {
                 </pre>
               </div>
             )}
-            <ToolResultImages
-              images={item.resultImages ?? []}
-              truncated={item.resultImagesTruncated}
-            />
+            {!inlineImages && (
+              <ToolResultImages
+                images={item.resultImages ?? []}
+                truncated={item.resultImagesTruncated}
+              />
+            )}
           </div>
         </CollapsibleContent>
+      )}
+      {inlineImages && (
+        <div className="mt-1">
+          <ToolResultImages
+            images={item.resultImages ?? []}
+            truncated={item.resultImagesTruncated}
+          />
+        </div>
       )}
     </Collapsible>
   );

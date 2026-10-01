@@ -235,6 +235,7 @@ function hasSubscriptionCredential() {
  */
 const DIRECT_PROVIDER_ENV_VARS = [
   "ANTHROPIC_API_KEY",
+  "ANTHROPIC_FEDERATION_RULE_ID",
   "OPENAI_API_KEY",
   "GEMINI_API_KEY",
   "GOOGLE_CLOUD_API_KEY",

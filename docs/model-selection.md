@@ -14,12 +14,19 @@ Copilot, xAI, Kimi For Coding, Meta, OpenRouter and Radius. **OpenAI Codex
 (legacy)** remains available for existing logins. Provider quotas and eligibility
 are external to Kady; a successful login does not imply unlimited usage.
 
+Anthropic sign-in asks for a method first. **Browser login** is the default.
+**Copy code login** works when the browser runs on a different machine from
+Kady: sign in, then paste the code Anthropic shows into the dialog. After a
+Radius sign-in, Settings → Connectors offers to add the Radius MCP server.
+
 ### Direct API-key providers
 
 Kady exposes Pi's direct providers, including OpenAI, Anthropic, Google, NVIDIA,
 Groq and cloud services such as Azure, Bedrock, Vertex and Cloudflare. The UI
 shows the exact key, endpoint, account and region fields required. Values saved
-there update `.env` and apply to new requests without a restart.
+there update `.env` and apply to new requests without a restart. Anthropic also
+accepts workload identity federation instead of a key: set the federation rule
+id, organization id and identity token file.
 
 The authoritative field list is
 [`provider-catalog.ts`](../server/src/agent/provider-catalog.ts); sign-in methods
@@ -87,6 +94,14 @@ These are **Kady's accounting rules**, not provider invoices:
 For providers offering multiple credentials, classification follows the
 credential Pi resolves; a Kimi For Coding API key is pay-as-you-go, while its
 OAuth login uses plan accounting. Kady cannot read remaining provider quotas or overages.
+
+Models a tool runs on its own — image generation, and codemode scripts calling
+`models.generateImages()` or `models.classify()` — are ledgered as separate rows
+under their own provider and credential, not the chat's. A chat on a ChatGPT
+subscription that generates an image through OpenRouter therefore records the
+image as OpenRouter spend toward the cap. Only image models with per-token
+prices are offered for generation, because Pi cannot price per-image models.
+Over the cap, codemode scripts that call models are refused.
 The implementation is [`billing.ts`](../server/src/cost/billing.ts).
 
 The cap checks committed project spend before paid model requests. Concurrent
@@ -96,6 +111,7 @@ estimated full-lifetime cost. External-CLI specialists bypass Kady accounting.
 
 ## OpenRouter-only features
 
-[Fusion](openrouter-fusion.md) and server-side speech transcription require
-`OPENROUTER_API_KEY`. Browser-native dictation uses the Web Speech API when
+[Fusion](openrouter-fusion.md) and server-side speech transcription require an
+OpenRouter credential: the OpenRouter sign-in or `OPENROUTER_API_KEY`, resolved
+by Pi like a chat turn. Browser-native dictation uses the Web Speech API when
 available. Other providers' logins do not authorize the OpenRouter endpoints.

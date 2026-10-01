@@ -3,6 +3,7 @@
  * project-scoped: `<agentDir>/kady-settings.json` (see app-settings.ts).
  *   - GET /settings/defaults → { defaults }
  *   - PUT /settings/defaults → patch (a key set to null clears it) → { defaults }
+ *   - GET /settings/image-models → { models, builtIn } for the image-model picker
  */
 import type { FastifyInstance } from "fastify";
 import {
@@ -13,6 +14,7 @@ import {
 } from "../app-settings.ts";
 import { resolveModel } from "../agent/models.ts";
 import { getModelRegistry } from "../agent/session-registry.ts";
+import { DEFAULT_IMAGE_MODELS, imageModelIssue, listImageModels } from "../agent/image-tool.ts";
 
 export interface RegisterAppSettingsRoutesOptions {
   /** Agent dir holding kady-settings.json (tests point this at a temp dir). */
@@ -24,6 +26,11 @@ export async function registerAppSettingsRoutes(
   options: RegisterAppSettingsRoutesOptions = {},
 ): Promise<void> {
   app.get("/settings/defaults", async () => ({ defaults: readAppDefaults(options.agentDir) }));
+
+  app.get("/settings/image-models", async () => ({
+    models: await listImageModels(getModelRegistry()),
+    builtIn: [...DEFAULT_IMAGE_MODELS],
+  }));
 
   app.put<{ Body: AppDefaultsPatch }>("/settings/defaults", async (req, reply) => {
     const error = validateAppDefaultsPatch(req.body);
@@ -40,6 +47,14 @@ export async function registerAppSettingsRoutes(
       } catch (err) {
         reply.code(400);
         return { detail: `Unknown default model: ${(err as Error).message}` };
+      }
+    }
+    // Only meterable image models: an unpriced one would bill images as free.
+    if (typeof patch.imageModel === "string") {
+      const issue = imageModelIssue(getModelRegistry(), patch.imageModel.trim());
+      if (issue) {
+        reply.code(400);
+        return { detail: `Invalid default image model: ${issue}` };
       }
     }
     const written = writeAppDefaults(patch, options.agentDir);

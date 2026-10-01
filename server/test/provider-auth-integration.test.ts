@@ -104,6 +104,24 @@ describe("authentication with the installed Pi runtime", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("offers Pi 1.0's Anthropic copy-code login for a browser on another machine", async () => {
+    const auth = manager(await runtime());
+    const flow = await auth.start("anthropic");
+    await vi.waitFor(() => expect(auth.get(flow.id).prompt?.type).toBe("select"));
+    const choice = auth.get(flow.id).prompt!;
+    expect(choice.type === "select" && choice.options.map((option) => option.id)).toEqual(["browser", "copy_code"]);
+    auth.respond(flow.id, choice.id, "copy_code");
+    await vi.waitFor(() => expect(auth.get(flow.id).prompt?.type).toBe("manual_code"));
+    const event = auth.get(flow.id).events.find((entry) => entry.type === "auth_url");
+    expect(event?.type === "auth_url" && new URL(event.url).searchParams.get("redirect_uri"))
+      .toBe("https://platform.claude.com/oauth/code/callback");
+    // A pasted code from another sign-in (its state differs) is refused before any exchange.
+    auth.respond(flow.id, auth.get(flow.id).prompt!.id, "the-code#another-state");
+    await vi.waitFor(() => expect(auth.get(flow.id).status).toBe("error"));
+    expect(auth.get(flow.id).error).toMatch(/state/i);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("keeps a stored OpenRouter login active when an older .env key is present", async () => {
     fs.writeFileSync(path.join(dir, "auth.json"), JSON.stringify({
       openrouter: { type: "oauth", access: "oauth-test-key", refresh: "", expires: Number.MAX_SAFE_INTEGER },

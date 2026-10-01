@@ -132,7 +132,10 @@ export async function executeMemoryRecall(projectId: string, input: unknown) {
     const result = await readNotebookMemory(projectId, raw?.source, raw?.expectedDigest as string | undefined);
     let body = result.entry.body?.slice(0, 10000) ?? "";
     let code = result.entry.code?.source.slice(0, 4000) ?? "";
-    const base = { rules: MEMORY_RULES, projectId, hit: compactHit(result.hit), changedSinceSearch: result.changedSinceSearch, coverage: result.coverage, truncated: result.truncated };
+    // The authored execution report (status + evidence) is what the search
+    // qualifier tells the model to read before claiming completion.
+    const execution = normalizeNotebookExecution(result.entry.execution);
+    const base = { rules: MEMORY_RULES, projectId, hit: compactHit(result.hit), ...(execution ? { execution } : {}), changedSinceSearch: result.changedSinceSearch, coverage: result.coverage, truncated: result.truncated };
     payload = { ...base, body, code, bodyTruncated: body.length < (result.entry.body?.length ?? 0), codeTruncated: code.length < (result.entry.code?.source.length ?? 0) };
     while (Buffer.byteLength(JSON.stringify(payload)) > MEMORY_TOOL_BYTES && (body.length || code.length)) {
       if (body.length >= code.length) body = body.slice(0, Math.floor(body.length / 2)); else code = code.slice(0, Math.floor(code.length / 2));

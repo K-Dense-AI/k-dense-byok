@@ -218,6 +218,40 @@ describe("GET/PUT /settings/defaults", () => {
     expect(fs.existsSync(appSettingsPath(dir))).toBe(false);
   });
 
+  it("saves a meterable default image model and refuses unknown or unpriced ones", async () => {
+    const app = await routes();
+    const saved = await put(app, { imageModel: "openrouter/google/gemini-3.1-flash-image" });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().defaults).toEqual({ imageModel: "openrouter/google/gemini-3.1-flash-image" });
+    for (const [imageModel, message] of [
+      ["openrouter/google/not-an-image-model", /not an image model/],
+      // Priced per image (FLUX) or by input only (MAI): images would ledger as free.
+      ["openrouter/black-forest-labs/flux.2-pro", /per-token output price/],
+      ["openrouter/microsoft/mai-image-2.6", /per-token output price/],
+      ["openrouter/openai/gpt-5.5", /not an image model/],
+    ] as const) {
+      const res = await put(app, { imageModel });
+      expect(res.statusCode, imageModel).toBe(400);
+      expect(res.json().detail).toMatch(message);
+    }
+    expect((await put(app, { imageModel: null })).json().defaults).toEqual({});
+  });
+
+  it("lists only meterable image models for the picker, with the built-in order", async () => {
+    const app = await routes();
+    const body = (await app.inject({ url: "/settings/image-models" })).json() as {
+      models: Array<{ ref: string; available: boolean; cost: { output: number } }>;
+      builtIn: string[];
+    };
+    expect(body.builtIn[0]).toBe("openrouter/openai/gpt-image-2.5-sunburst");
+    expect(body.models.map((m) => m.ref)).toContain("openrouter/openai/gpt-image-2.5-sunburst");
+    expect(body.models.every((m) => m.cost.output > 0)).toBe(true);
+    expect(body.models.map((m) => m.ref)).not.toContain("openrouter/black-forest-labs/flux.2-pro");
+    // Connected models sort first.
+    const firstUnavailable = body.models.findIndex((m) => !m.available);
+    if (firstUnavailable >= 0) expect(body.models.slice(firstUnavailable).every((m) => !m.available)).toBe(true);
+  });
+
   it("answers 409 when the file is malformed and leaves it alone", async () => {
     fs.writeFileSync(appSettingsPath(dir), "{broken");
     const app = await routes();

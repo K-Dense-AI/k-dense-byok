@@ -16,9 +16,18 @@ their existing skill set. Global skills also reach specialist processes.
 
 | Origin | Update policy |
 |---|---|
-| K-Dense catalogue | Sync at launch and daily, or **Sync catalogue**. Untouched skills update; local edits are preserved and flagged; upstream removals are archived. |
+| Catalogue | Sync at launch and daily, or **Sync catalogue**. Untouched skills update; local edits are preserved and flagged; upstream removals are archived. |
 | Installed source | No automatic updates. Check the source with refresh, then choose **Use upstream** to accept changes. |
 | Local | No upstream update. |
+
+The catalogue is the K-Dense scientific skills plus Anthropic's document skills
+(`docx`, `pdf`, `pptx`, `xlsx`) from
+[`anthropics/skills`](https://github.com/anthropics/skills), which are enabled
+by default and badged with that source in Settings. Anthropic's copy wins if
+the K-Dense repo ships the same name. Both repos are fetched together; if
+either fails, the sync is skipped rather than archiving the other's skills.
+Those four skills are source-available under Anthropic's proprietary
+`LICENSE.txt`, not open source.
 
 ## Install, write and remove
 
@@ -45,7 +54,7 @@ acknowledgement is not a content audit. See [the trust boundary](limitations.md#
 | Variable | Effect |
 |---|---|
 | `KADY_SKILLS_AUTO_SYNC` | `0` disables automatic catalogue sync. |
-| `KADY_SKILLS_REPO` / `KADY_SKILLS_BRANCH` | Catalogue source; defaults to `K-Dense-AI/scientific-agent-skills`, `main`. |
+| `KADY_SKILLS_REPO` / `KADY_SKILLS_BRANCH` | Primary catalogue source; defaults to `K-Dense-AI/scientific-agent-skills`, `main`. Extra sources are `CATALOGUE_EXTRA_SOURCES` in `server/src/config.ts`. |
 | `KADY_SKILLS_SYNC_INTERVAL_MS` | Default 24 hours; minimum 60 seconds. |
 | `KADY_SKILLS_CACHE_DIR` | Staging cache; default `~/.kady/skills-cache`. |
 | `KADY_PI_AGENT_DIR` | Shared Pi directory, including global skills. |

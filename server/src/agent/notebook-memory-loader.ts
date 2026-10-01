@@ -9,6 +9,7 @@ import { jsonDigest } from "../canonical-json.ts";
 import type { NotebookEntry } from "./notebook-store.ts";
 import { normalizeNextExperiments, nextExperimentsText } from "../../../web/src/lib/next-experiments.ts";
 import { normalizeEvidenceLinks } from "../../../web/src/lib/notebook-evidence-core.ts";
+import { normalizeNotebookExecution } from "../../../web/src/lib/notebook-execution.ts";
 import { planDirectory, validateAnalysisPlanRecords } from "./notebook-plans.ts";
 import { planHistoryText, type FrozenPlanEvent } from "../../../web/src/lib/notebook-plans.ts";
 import { memorySourceKey, type MemoryCoverage, type MemoryKind, type MemorySource } from "../../../web/src/lib/notebook-memory.ts";
@@ -100,6 +101,9 @@ export function memoryEntry(value: unknown): NotebookEntry | undefined {
     stance: ["supports", "refutes", "neutral"].includes(String(v.stance)) ? v.stance as NotebookEntry["stance"] : undefined,
     outcome: ["signal", "null", "inconclusive", "technical-failure"].includes(String(v.outcome)) ? v.outcome as NotebookEntry["outcome"] : undefined,
     confidence: ["low", "medium", "high"].includes(String(v.confidence)) ? v.confidence as NotebookEntry["confidence"] : undefined,
+    // Without it every recalled method reads as "unverified", even one logged
+    // as completed with execution evidence.
+    execution: normalizeNotebookExecution(v.execution),
     ...(snapshots ? { artifactSnapshots: snapshots } : {}),
   };
 }

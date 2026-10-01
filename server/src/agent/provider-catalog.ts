@@ -124,12 +124,51 @@ function simple(
 
 export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
   // ---- Frontier labs -------------------------------------------------------
-  simple("anthropic", "Anthropic", "ANTHROPIC_API_KEY", {
-    keysUrl: "https://console.anthropic.com/settings/keys",
-    keyPlaceholder: "sk-ant-…",
-    hint: "Direct Anthropic API access, billed per token to your Anthropic account. A Claude Pro/Max subscription signs in instead.",
-    oauth: true,
-  }),
+  {
+    ...simple("anthropic", "Anthropic", "ANTHROPIC_API_KEY", {
+      keysUrl: "https://console.anthropic.com/settings/keys",
+      keyPlaceholder: "sk-ant-…",
+      hint: "Direct Anthropic API access, billed per token to your Anthropic account. A Claude Pro/Max subscription signs in instead. Without a key, workload identity federation (rule id, organization id and identity token file below) exchanges your platform's identity token for short-lived Anthropic credentials.",
+      oauth: true,
+    }),
+    // Pi 0.99.2+: with no key or token, the Anthropic SDK's workload identity
+    // federation runs when these three are set (pi-ai env-api-keys.ts).
+    extraEnv: [
+      {
+        envVar: "ANTHROPIC_FEDERATION_RULE_ID",
+        label: "Federation rule id (optional)",
+        secret: false,
+        required: false,
+        hint: "Workload identity federation, instead of an API key.",
+      },
+      {
+        envVar: "ANTHROPIC_ORGANIZATION_ID",
+        label: "Organization id (optional)",
+        secret: false,
+        required: false,
+      },
+      {
+        envVar: "ANTHROPIC_IDENTITY_TOKEN_FILE",
+        label: "Identity token file (optional)",
+        secret: false,
+        required: false,
+        placeholder: "/var/run/secrets/tokens/anthropic",
+        hint: "Re-read on refresh, so keep it current for long sessions.",
+      },
+      {
+        envVar: "ANTHROPIC_SERVICE_ACCOUNT_ID",
+        label: "Service account id (optional)",
+        secret: false,
+        required: false,
+      },
+      {
+        envVar: "ANTHROPIC_WORKSPACE_ID",
+        label: "Workspace id (optional)",
+        secret: false,
+        required: false,
+      },
+    ],
+  },
   simple("openai", "OpenAI", "OPENAI_API_KEY", {
     keysUrl: "https://platform.openai.com/api-keys",
     keyPlaceholder: "sk-…",
@@ -150,6 +189,7 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
     oauth: true,
   }),
   simple("meta", "Meta", "META_API_KEY", {
+    keysUrl: "https://dev.meta.ai/",
     sectionLabel: "Meta Muse",
     keyLabel: "Meta Model API key",
     hint: "Direct Meta Model API access for Muse Spark models, billed per token. A Meta (Muse) subscription signs in instead.",
@@ -291,6 +331,7 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
     billingMode: "subscription",
   }),
   simple("ant-ling", "Ant Ling", "ANT_LING_API_KEY", {
+    keysUrl: "https://chat.ant-ling.com/open",
     hint: "Ant Group Ling models.",
   }),
 

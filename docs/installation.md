@@ -38,8 +38,8 @@ flow, or configure a [local model server](local-models-ollama.md). For ChatGPT,
 use **OpenAI → Sign in with ChatGPT**. The provider list shows the available
 methods and cloud configuration fields.
 
-An OpenRouter key is optional unless you use Fusion or server-side speech
-transcription. Keys can also be set in the repo-root `.env`; see `.env.example`
+OpenRouter is optional unless you use Fusion or server-side speech
+transcription; either an OpenRouter sign-in or an API key works. Keys can also be set in the repo-root `.env`; see `.env.example`
 for names. See [Model selection](model-selection.md) for billing and defaults.
 
 OAuth tokens live in `~/.kady/pi-agent/auth.json`, shared by lead and specialist
@@ -61,10 +61,11 @@ separate from the newer OpenAI sign-in.
 
 ## Optional services
 
-**Settings → Services** accepts Exa, Perplexity and Gemini search keys and a
-Modal token ID/secret pair. Web search has a shared fallback without a key;
-video understanding requires Gemini. [Modal compute](modal-compute.md) needs
-the token pair. Configure database credentials only when a task needs them.
+**Settings → Services** accepts Exa, Perplexity and Gemini search keys, a
+Paperclip API key and a Modal token ID/secret pair. Web search has a shared
+fallback without a key; video understanding requires Gemini. The Paperclip key
+adds a [literature-search connector](mcp-servers.md#authentication).
+[Modal compute](modal-compute.md) needs the token pair. Configure database credentials only when a task needs them.
 
 ## Updates
 

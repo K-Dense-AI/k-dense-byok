@@ -131,9 +131,11 @@ describe("local model-server URLs", () => {
     expect(res.json().openaiCompatibleBaseUrl).toEqual({ set: false, masked: null });
     expect(process.env.OLLAMA_BASE_URL).toBeUndefined();
     expect(process.env.OPENAI_COMPATIBLE_BASE_URL).toBeUndefined();
+    // Clearing writes an empty assignment so a stale shell/legacy value cannot
+    // return at restart; an empty value means "use the default".
     const env = fs.readFileSync(envFile, "utf-8");
-    expect(env).not.toContain("OLLAMA_BASE_URL");
-    expect(env).not.toContain("OPENAI_COMPATIBLE_BASE_URL");
+    expect(env).toMatch(/^OLLAMA_BASE_URL=$/m);
+    expect(env).toMatch(/^OPENAI_COMPATIBLE_BASE_URL=$/m);
 
     expect(ollamaBaseUrl()).toBe("http://localhost:11434");
     expect(openaiCompatibleConfigured()).toBe(false);

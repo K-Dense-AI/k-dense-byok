@@ -12,7 +12,11 @@ import { apiFetch } from "@/lib/projects";
 
 export type McpScope = "project" | "global";
 
-/** How the model reaches a server's tools (Pi's `exposure`; default codemode). */
+/**
+ * How the model reaches a server's tools (Pi's `exposure`; default codemode).
+ * `codemode-deferred` is only an alias of `codemode` since Pi 0.99.2: stored
+ * configs may still carry it, but the UI no longer offers it.
+ */
 export type McpExposure = "codemode" | "codemode-deferred" | "deferred" | "direct" | "hidden";
 
 export const MCP_EXPOSURE_OPTIONS: { value: McpExposure; label: string; description: string }[] = [
@@ -20,12 +24,7 @@ export const MCP_EXPOSURE_OPTIONS: { value: McpExposure; label: string; descript
     value: "codemode",
     label: "Codemode",
     description:
-      "Pi default. The agent calls the tools from short scripts, which keeps large tool lists out of its context.",
-  },
-  {
-    value: "codemode-deferred",
-    label: "Codemode (searched)",
-    description: "Like codemode, but the tools are not listed; scripts search for them. For large, rarely used servers.",
+      "Pi default. The agent finds the tools by searching and calls them from short scripts, so large tool lists stay out of its context.",
   },
   {
     value: "deferred",
@@ -45,7 +44,23 @@ interface McpBaseConfig {
   toolExposure?: Record<string, McpExposure>;
   enabled?: boolean;
   timeout?: number;
+  /** What the server offers, in a sentence (Pi's system prompt + tool search ranking). */
+  description?: string;
   /** Other Pi fields (type, oauth, cwd, …) are kept verbatim across edits. */
+  [key: string]: unknown;
+}
+
+/** Pi's OAuth client settings for an HTTP server (all optional). */
+export interface McpOAuthConfig {
+  clientId?: string;
+  clientSecret?: string;
+  callbackPort?: number;
+  callbackUrl?: string;
+  scope?: string;
+  /** `client_name` for dynamic registration, for servers that only accept known clients. */
+  clientName?: string;
+  /** RFC 8414 / OIDC metadata document used instead of discovery. */
+  authServerMetadataUrl?: string;
   [key: string]: unknown;
 }
 
@@ -58,6 +73,12 @@ export interface McpStdioConfig extends McpBaseConfig {
 export interface McpHttpConfig extends McpBaseConfig {
   url: string;
   headers?: Record<string, string>;
+  oauth?: McpOAuthConfig;
+  /**
+   * Send a Pi provider's `/login` token instead of MCP OAuth. Pi allows it
+   * only in the global mcp.json.
+   */
+  auth?: { provider: string };
 }
 
 export type McpServerConfig = McpStdioConfig | McpHttpConfig;
@@ -68,16 +89,45 @@ export function isHttpConfig(config: McpServerConfig): config is McpHttpConfig {
   return typeof (config as McpHttpConfig).url === "string";
 }
 
-/** HTTP servers without an Authorization header sign in with OAuth (Pi). */
+/** The provider whose `/login` token authenticates this server, if any. */
+export function authProviderOf(config: McpServerConfig): string | null {
+  if (!isHttpConfig(config)) return null;
+  const provider = config.auth?.provider;
+  return typeof provider === "string" && provider ? provider : null;
+}
+
+/**
+ * HTTP servers without an Authorization header sign in with OAuth (Pi),
+ * unless they send a signed-in provider's token (`auth.provider`).
+ */
 export function usesOAuth(config: McpServerConfig): boolean {
   return (
     isHttpConfig(config) &&
+    !authProviderOf(config) &&
     !Object.keys(config.headers ?? {}).some((h) => h.toLowerCase() === "authorization")
   );
 }
 
 export function exposureOf(config: McpServerConfig): McpExposure {
-  return config.exposure ?? "codemode";
+  const exposure = config.exposure ?? "codemode";
+  return exposure === "codemode-deferred" ? "codemode" : exposure;
+}
+
+/**
+ * Pi 1.0 replaces `-` with `_` in tool namespaces (`mcp__my-server__x` is
+ * `mcp__my_server__x`), so two names that differ only there would collide.
+ */
+export function foldedServerName(name: string): string {
+  return name.replace(/-/g, "_");
+}
+
+/** Another name in `names` that would share `name`'s tool namespace, if any. */
+export function namespaceClash(name: string, names: Iterable<string>): string | null {
+  const folded = foldedServerName(name);
+  for (const other of names) {
+    if (other !== name && foldedServerName(other) === folded) return other;
+  }
+  return null;
 }
 
 async function detailOf(res: Response, fallback: string): Promise<string> {
@@ -217,4 +267,68 @@ export async function cancelMcpLogin(name: string): Promise<void> {
 export async function mcpLogout(name: string): Promise<void> {
   const res = await apiFetch(`/mcp/${encodeURIComponent(name)}/logout`, { method: "POST" });
   if (!res.ok) throw new Error(await detailOf(res, "mcpLogout"));
+}
+
+/** A Pi provider login an HTTP server can authenticate with (`auth.provider`). */
+export interface McpAuthProvider {
+  id: string;
+  name: string;
+  connected: boolean;
+}
+
+export async function getMcpAuthProviders(): Promise<McpAuthProvider[]> {
+  const res = await apiFetch("/mcp/auth-providers");
+  if (!res.ok) throw new Error(await detailOf(res, "getMcpAuthProviders"));
+  const data = (await res.json()) as { providers?: McpAuthProvider[] };
+  return data.providers ?? [];
+}
+
+export interface RadiusConnectorStatus {
+  /** Signed in to Radius under Settings → Providers. */
+  signedIn: boolean;
+  /** A global connector already uses the Radius MCP URL with the Radius login. */
+  configured: boolean;
+  name: string | null;
+  url: string;
+}
+
+export async function getRadiusConnector(): Promise<RadiusConnectorStatus> {
+  const res = await apiFetch("/mcp/radius");
+  if (!res.ok) throw new Error(await detailOf(res, "getRadiusConnector"));
+  return (await res.json()) as RadiusConnectorStatus;
+}
+
+/** Add (or repoint) the global Radius MCP connector, like Pi's `/login` offer. */
+export async function addRadiusConnector(): Promise<{ name: string; replaced: boolean }> {
+  const res = await apiFetch("/mcp/radius", { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res, "addRadiusConnector"));
+  const data = (await res.json()) as { name: string; replaced?: boolean };
+  return { name: data.name, replaced: data.replaced === true };
+}
+
+export interface PaperclipConnectorStatus {
+  /** PAPERCLIP_API_KEY is set (Settings → Services, or `.env`). */
+  keySet: boolean;
+  /** Name of the global connector at the Paperclip MCP URL, if any. */
+  name: string | null;
+  /** That connector sends PAPERCLIP_API_KEY rather than signing in another way. */
+  usesKey: boolean;
+  enabled: boolean;
+  url: string;
+  /** The global mcp.json could not be read. */
+  error?: string;
+}
+
+export async function getPaperclipConnector(): Promise<PaperclipConnectorStatus> {
+  const res = await apiFetch("/mcp/paperclip");
+  if (!res.ok) throw new Error(await detailOf(res, "getPaperclipConnector"));
+  return (await res.json()) as PaperclipConnectorStatus;
+}
+
+/** Point the global Paperclip connector at the saved key and turn it on. */
+export async function connectPaperclipConnector(): Promise<{ name: string; replaced: boolean }> {
+  const res = await apiFetch("/mcp/paperclip", { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res, "connectPaperclipConnector"));
+  const data = (await res.json()) as { name: string; replaced?: boolean };
+  return { name: data.name, replaced: data.replaced === true };
 }

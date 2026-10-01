@@ -11,11 +11,22 @@ import {
   type ThinkingLevel,
 } from "@/components/thinking-selector";
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   computeDefaultFromInstance,
   computeInstanceFromDefault,
   getAppDefaults,
+  getImageModels,
   putAppDefaults,
   type AppDefaults,
+  type ImageModelListing,
 } from "@/lib/app-settings";
 import type { ModalInstance } from "@/lib/modal-jobs";
 import { useModalCatalog } from "@/lib/use-modal-jobs";
@@ -26,13 +37,19 @@ interface Draft {
   model: string;
   thinkingLevel: ThinkingLevel;
   compute: ModalInstance | null;
+  /** "" = not set (built-in order). */
+  imageModel: string;
 }
+
+/** Select value for "not set"; Radix forbids an empty-string item value. */
+const BUILT_IN_IMAGE_MODEL = "__built-in__";
 
 function draftFrom(defaults: AppDefaults, instances: readonly ModalInstance[] | undefined): Draft {
   return {
     model: defaults.model ?? "",
     thinkingLevel: defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
     compute: computeInstanceFromDefault(defaults.compute, instances),
+    imageModel: defaults.imageModel ?? "",
   };
 }
 
@@ -40,6 +57,7 @@ function sameDraft(a: Draft, b: Draft): boolean {
   return (
     a.model === b.model &&
     a.thinkingLevel === b.thinkingLevel &&
+    a.imageModel === b.imageModel &&
     JSON.stringify(computeDefaultFromInstance(a.compute)) ===
       JSON.stringify(computeDefaultFromInstance(b.compute))
   );
@@ -52,6 +70,22 @@ export function DefaultsPanel() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [imageModels, setImageModels] = useState<ImageModelListing | null>(null);
+  const [imageModelsError, setImageModelsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getImageModels()
+      .then((listing) => {
+        if (!cancelled) setImageModels(listing);
+      })
+      .catch((cause) => {
+        if (!cancelled) setImageModelsError(cause instanceof Error ? cause.message : "Failed to load image models");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -87,10 +121,11 @@ export function DefaultsPanel() {
         model: draft.model || null,
         thinkingLevel: draft.thinkingLevel === DEFAULT_THINKING_LEVEL ? null : draft.thinkingLevel,
         compute: computeDefaultFromInstance(draft.compute),
+        imageModel: draft.imageModel || null,
       });
       setSaved(next);
       setDraft(draftFrom(next, instances));
-      setNotice("Saved. A project's next first chat starts with these.");
+      setNotice("Saved. A project's next first chat starts with these; the image model applies right away.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Save failed");
     } finally {
@@ -169,22 +204,121 @@ export function DefaultsPanel() {
               </p>
             </div>
           </div>
-          <div className="mt-4 flex justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-xs"
-              disabled={!dirty || saving}
-              onClick={() => baseline && setDraft(baseline)}
-            >
-              Discard
-            </Button>
-            <Button type="button" size="sm" className="text-xs" disabled={!dirty || saving} onClick={() => void save()}>
-              {saving ? "Saving…" : "Save defaults"}
-            </Button>
-          </div>
         </SettingsCard>
+      )}
+
+      {draft && (
+        <SettingsCard title="Image generation">
+          <ImageModelField
+            value={draft.imageModel}
+            listing={imageModels}
+            error={imageModelsError}
+            onChange={(imageModel) => setDraft({ ...draft, imageModel })}
+          />
+        </SettingsCard>
+      )}
+
+      {draft && (
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="text-xs"
+            disabled={!dirty || saving}
+            onClick={() => baseline && setDraft(baseline)}
+          >
+            Discard
+          </Button>
+          <Button type="button" size="sm" className="text-xs" disabled={!dirty || saving} onClick={() => void save()}>
+            {saving ? "Saving…" : "Save defaults"}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const price = (perMillion: number) => `$${Number.isInteger(perMillion) ? perMillion : perMillion.toFixed(2)}`;
+
+/** Image model for `generate_image`: only models Kady can meter are listed. */
+function ImageModelField({
+  value,
+  listing,
+  error,
+  onChange,
+}: {
+  value: string;
+  listing: ImageModelListing | null;
+  error: string | null;
+  onChange: (value: string) => void;
+}) {
+  const models = listing?.models ?? [];
+  const byRef = new Map(models.map((model) => [model.ref, model] as const));
+  const builtIn = listing?.builtIn.map((ref) => byRef.get(ref)?.name ?? ref) ?? [];
+  const selected = value ? byRef.get(value) : undefined;
+  const connected = models.filter((model) => model.available);
+  const disconnected = models.filter((model) => !model.available);
+  const row = (model: (typeof models)[number]) => (
+    <SelectItem key={model.ref} value={model.ref} className="text-xs" disabled={!model.available}>
+      <div className="flex flex-col">
+        <span>{model.name}</span>
+        <span className="text-[10px] text-muted-foreground">
+          {price(model.cost.input)} in · {price(model.cost.output)} out per M tokens
+          {model.imageInput ? " · edits images" : ""}
+        </span>
+      </div>
+    </SelectItem>
+  );
+  return (
+    <div className="grid gap-1.5">
+      <label htmlFor="default-image-model" className="text-xs font-medium">
+        Image model
+      </label>
+      <Select
+        value={value || BUILT_IN_IMAGE_MODEL}
+        onValueChange={(next) => onChange(next === BUILT_IN_IMAGE_MODEL ? "" : next)}
+        disabled={!listing}
+      >
+        <SelectTrigger id="default-image-model" size="sm" className="h-8 w-full text-xs" aria-label="Default image model">
+          {/* Explicit children: the items carry a price line the trigger must not mirror. */}
+          <SelectValue>
+            {value ? (selected?.name ?? value) : `Not set — Kady's default (${builtIn[0] ?? "built-in order"})`}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value={BUILT_IN_IMAGE_MODEL} className="text-xs">
+              Not set — Kady&apos;s default{builtIn.length ? ` (${builtIn.join(", then ")})` : ""}
+            </SelectItem>
+          </SelectGroup>
+          {connected.length > 0 && (
+            <SelectGroup>
+              <SelectLabel className="text-[10px]">Connected</SelectLabel>
+              {connected.map(row)}
+            </SelectGroup>
+          )}
+          {disconnected.length > 0 && (
+            <SelectGroup>
+              <SelectLabel className="text-[10px]">Not connected</SelectLabel>
+              {disconnected.map(row)}
+            </SelectGroup>
+          )}
+        </SelectContent>
+      </Select>
+      {error ? (
+        <p className="text-[11px] text-destructive">{error}</p>
+      ) : value && selected && !selected.available ? (
+        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+          This model&apos;s provider is not connected, so Kady uses its built-in default until you connect it under{" "}
+          <SettingsLink tab="providers">Providers</SettingsLink>.
+        </p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">
+          Used when Kady generates figures and schematics, unless you ask for another model in chat. Only models priced
+          per token are listed, so every image counts toward the project spend cap. Applies right away, including to
+          open chats.
+        </p>
       )}
     </div>
   );

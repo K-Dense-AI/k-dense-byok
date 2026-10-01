@@ -1,4 +1,6 @@
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { FastifyInstance } from "fastify";
+import { getModelRuntime } from "../agent/session-registry.ts";
 import { emptySnapshot, isBudgetExceeded, recordRun } from "../cost/ledger.ts";
 import { currentProjectId } from "../scope.ts";
 
@@ -179,7 +181,32 @@ export async function transcribeAudio(
   };
 }
 
-export async function registerSpeechRoutes(app: FastifyInstance): Promise<void> {
+type SpeechAuthRuntime = Pick<ModelRuntime, "getAuth">;
+
+export interface RegisterSpeechRoutesOptions {
+  /** Runtime the OpenRouter credential is resolved through (default: the process runtime). */
+  runtime?: SpeechAuthRuntime;
+}
+
+/**
+ * The OpenRouter key Pi would send for a chat turn: a stored credential in
+ * auth.json first, then `OPENROUTER_API_KEY`. Pi's OpenRouter sign-in exchanges
+ * the OAuth code for a real API key, so it authorizes this endpoint as well.
+ */
+async function openRouterApiKey(runtime: SpeechAuthRuntime): Promise<string | undefined> {
+  try {
+    return (await runtime.getAuth("openrouter"))?.auth.apiKey?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export async function registerSpeechRoutes(
+  app: FastifyInstance,
+  options: RegisterSpeechRoutesOptions = {},
+): Promise<void> {
+  const runtime = options.runtime ?? getModelRuntime();
+
   app.post("/speech/transcribe", async (req, reply) => {
     const projectId = currentProjectId();
     const budget = isBudgetExceeded(projectId);
@@ -192,14 +219,12 @@ export async function registerSpeechRoutes(app: FastifyInstance): Promise<void> 
       };
     }
 
-    const apiKey = (
-      process.env.OPENROUTER_API_KEY || process.env.OR_API_KEY
-    )?.trim();
+    const apiKey = await openRouterApiKey(runtime);
     if (!apiKey) {
       reply.code(503);
       return {
         detail:
-          "Dictation fallback requires an OpenRouter API key in Settings → Providers.",
+          "Dictation fallback requires OpenRouter: sign in or add an API key in Settings → Providers.",
       };
     }
     if (!req.isMultipart()) {

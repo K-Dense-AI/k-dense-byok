@@ -16,7 +16,11 @@ import {
   makeScientificCompactionExtension,
   PREAMBLE_VERSION,
   SCIENCE_COMPACTION_INSTRUCTIONS,
+  TURN_PREFIX_FOCUS,
   childWorkSummary,
+  clipToolResultsForSummary,
+  compactionFileLists,
+  previousNarrative,
   type SummaryGenerator,
 } from "../src/agent/compaction-bridge.ts";
 
@@ -133,6 +137,20 @@ describe("buildCompactionPreamble", () => {
     expect(preamble.planRevision).toBeUndefined();
   });
 
+  it("keeps hypotheses older than the recent window unless superseded", () => {
+    appendNotebookEntry(sessionId, { id: "h-old", type: "hypothesis", title: "Dose drives response", timestamp: 1, role: "agent" }, projectId);
+    appendNotebookEntry(sessionId, { id: "h-gone", type: "hypothesis", title: "Batch explains variance", timestamp: 2, role: "agent" }, projectId);
+    appendNotebookEntry(sessionId, { id: "h-new", type: "hypothesis", title: "Batch is minor", timestamp: 3, role: "agent", supersedes: "h-gone" }, projectId);
+    for (let i = 0; i < 20; i++) {
+      appendNotebookEntry(sessionId, { id: `o${i}`, type: "observation", title: `obs ${i}`, timestamp: 10 + i, role: "agent" }, projectId);
+    }
+    const text = buildCompactionPreamble(projectId, sessionId).text;
+    expect(text).toContain("### Earlier hypotheses (2 before the recent window, not superseded)");
+    expect(text).toContain("- h-old: Dose drives response");
+    expect(text).toContain("- h-new: Batch is minor");
+    expect(text).not.toContain("h-gone: Batch explains variance");
+  });
+
   it("states plainly when nothing is recorded", () => {
     const preamble = buildCompactionPreamble(projectId, "fresh");
     expect(preamble.text).toContain("(no notebook entries, plans or results recorded yet)");
@@ -178,7 +196,7 @@ const event = (overrides: Record<string, unknown> = {}) => ({
     isSplitTurn: false,
     tokensBefore: 90_000,
     previousSummary: "earlier summary",
-    fileOps: { readFiles: [], modifiedFiles: [] },
+    fileOps: { read: new Set<string>(), written: new Set<string>(), edited: new Set<string>() },
     settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
   },
   customInstructions: "keep the QC thresholds",
@@ -186,6 +204,19 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   willRetry: false,
   signal: new AbortController().signal,
   ...overrides,
+});
+
+describe("previousNarrative / compactionFileLists", () => {
+  it("drops Kady records and file tags, keeps Pi summaries, and unions file lists", () => {
+    expect(previousNarrative("## Kady scientific state\n- x\n\n## Current turn so far\nT.")).toBe("## Current turn so far\nT.");
+    expect(previousNarrative("## Kady scientific state\n- only records")).toBeUndefined();
+    expect(previousNarrative("## Goal\nG.\n\n<modified-files>\na\n</modified-files>")).toBe("## Goal\nG.");
+    expect(previousNarrative(undefined)).toBeUndefined();
+    expect(compactionFileLists(undefined, "<read-files>\na\nb\n</read-files>\n\n<modified-files>\nb\n</modified-files>")).toEqual({
+      readFiles: ["a"],
+      modifiedFiles: ["b"],
+    });
+  });
 });
 
 describe("makeScientificCompactionExtension", () => {
@@ -202,6 +233,8 @@ describe("makeScientificCompactionExtension", () => {
     expect(summary).toContain("[hypothesis] n1");
     expect(summary).toContain("## Conversation summary\nThe narrative.");
     expect(result.compaction.details).toEqual({
+      readFiles: [],
+      modifiedFiles: [],
       kady: { preambleVersion: PREAMBLE_VERSION, environmentId: "env-abc", resultIds: ["res-1"], reason: "threshold" },
     });
     const args = (generate as unknown as { mock: { calls: unknown[][] } }).mock.calls[0];
@@ -209,7 +242,12 @@ describe("makeScientificCompactionExtension", () => {
     expect(args[2]).toBe(16_384);
     expect(args[3]).toBe("k");
     expect(args[4]).toEqual({ "x-a": "1" });
-    expect(args[6]).toBe(`${SCIENCE_COMPACTION_INSTRUCTIONS}\n\nkeep the QC thresholds`);
+    const instructions = args[6] as string;
+    expect(instructions.startsWith(SCIENCE_COMPACTION_INSTRUCTIONS)).toBe(true);
+    // The model sees the records it is summarized under, then the user's instructions last.
+    expect(instructions).toContain("<kady-records>\n## Kady scientific state");
+    expect(instructions).toContain("[hypothesis] n1");
+    expect(instructions.endsWith("(they take precedence):\nkeep the QC thresholds")).toBe(true);
     expect(args[7]).toBe("earlier summary");
     expect(args[8]).toBe("high");
     expect(args[10]).toEqual({ E: "1" });
@@ -256,6 +294,107 @@ describe("makeScientificCompactionExtension", () => {
     expect(result.compaction.summary).toContain("## Conversation summary\nearlier summary");
     expect(result.compaction.summary).toContain("## Current turn so far\nTurn so far.");
     expect(result.compaction.usage.cost.total).toBeCloseTo(0.005);
+  });
+
+  it("reuses only the narrative of an earlier Kady summary, never its stale records", async () => {
+    const earlier = [
+      "## Kady scientific state (derived from the lab notebook, plan journal and provenance log)",
+      "- job stale-job: running; last recorded update 1",
+      "",
+      "### Specialist work (snapshot at compaction; recheck live status before acting)",
+      "- run-old: running",
+      "",
+      "## Conversation summary",
+      "## Goal",
+      "Find DE genes.",
+      "",
+      "<read-files>\nuser_data/counts.csv\n</read-files>",
+    ].join("\n");
+    const generate = vi.fn(async () => ({ text: "New narrative.", usage: usage(0.01) })) as unknown as SummaryGenerator;
+    const { handler } = install(generate);
+    await handler(event({ preparation: { ...event().preparation, previousSummary: earlier } }), ctx());
+    expect((generate as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][7]).toBe("## Goal\nFind DE genes.");
+
+    // With nothing new before a split turn, the carried narrative is not nested inside a second preamble.
+    const prefixOnly = vi.fn(async () => ({ text: "Turn so far.", usage: usage(0) })) as unknown as SummaryGenerator;
+    const second = install(prefixOnly);
+    const result = (await second.handler(
+      event({
+        preparation: {
+          ...event().preparation,
+          previousSummary: earlier,
+          messagesToSummarize: [],
+          isSplitTurn: true,
+          turnPrefixMessages: [{ role: "assistant", content: "x" }],
+        },
+      }),
+      ctx(),
+    )) as { compaction: { summary: string } };
+    const summary = result.compaction.summary;
+    expect(summary.split("## Kady scientific state").length).toBe(2);
+    expect(summary).not.toContain("stale-job");
+    expect(summary).not.toContain("run-old");
+    expect(summary).toContain("## Conversation summary\n## Goal\nFind DE genes.");
+    // The read-file list survives, once, at the end.
+    expect(summary.endsWith("<read-files>\nuser_data/counts.csv\n</read-files>")).toBe(true);
+    expect(summary.split("<read-files>").length).toBe(2);
+  });
+
+  it("gives a split turn's prefix the turn-prefix focus without the records block", async () => {
+    const generate = vi.fn(async () => ({ text: "x", usage: usage(0) })) as unknown as SummaryGenerator;
+    const { handler } = install(generate);
+    await handler(
+      event({ preparation: { ...event().preparation, isSplitTurn: true, turnPrefixMessages: [{ role: "assistant", content: "x" }] } }),
+      ctx(),
+    );
+    const prefixInstructions = (generate as unknown as { mock: { calls: unknown[][] } }).mock.calls[1][6] as string;
+    expect(prefixInstructions.startsWith(TURN_PREFIX_FOCUS)).toBe(true);
+    expect(prefixInstructions).toContain(SCIENCE_COMPACTION_INSTRUCTIONS);
+    expect(prefixInstructions).not.toContain("<kady-records>");
+    expect(prefixInstructions).toContain("keep the QC thresholds");
+  });
+
+  it("appends Pi's file lists, unioned with the ones the previous summary carried", async () => {
+    const generate = vi.fn(async () => ({ text: "N.", usage: usage(0) })) as unknown as SummaryGenerator;
+    const { handler } = install(generate);
+    const result = (await handler(
+      event({
+        preparation: {
+          ...event().preparation,
+          previousSummary: "Pi summary.\n\n<read-files>\na.csv\nfig.py\n</read-files>\n\n<modified-files>\nold.py\n</modified-files>",
+          fileOps: { read: new Set(["b.csv"]), written: new Set(["fig.py"]), edited: new Set<string>() },
+        },
+      }),
+      ctx(),
+    )) as { compaction: { summary: string; details: { readFiles: string[]; modifiedFiles: string[] } } };
+    expect(result.compaction.details.readFiles).toEqual(["a.csv", "b.csv"]);
+    expect(result.compaction.details.modifiedFiles).toEqual(["fig.py", "old.py"]);
+    expect(result.compaction.summary.endsWith(
+      "## Conversation summary\nN.\n\n<read-files>\na.csv\nb.csv\n</read-files>\n\n<modified-files>\nfig.py\nold.py\n</modified-files>",
+    )).toBe(true);
+    // The model is not asked to restate lists that are re-appended anyway.
+    expect((generate as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][7]).toBe("Pi summary.");
+  });
+
+  it("clips long tool results to head and tail before Pi keeps only the head", async () => {
+    const long = `${"h".repeat(1500)}MIDDLE${"t".repeat(1500)}FINAL: p = 0.003`;
+    const original = { role: "toolResult", toolCallId: "c1", toolName: "bash", content: [{ type: "text", text: long }], isError: false };
+    const short = { role: "toolResult", toolCallId: "c2", toolName: "bash", content: [{ type: "text", text: "ok" }], isError: false };
+    const [clipped, untouched] = clipToolResultsForSummary([original, short] as never) as unknown as Array<typeof original>;
+    const text = clipped.content[0].text;
+    expect(text.length).toBeLessThanOrEqual(2_000);
+    expect(text.startsWith("hhh")).toBe(true);
+    expect(text.endsWith("FINAL: p = 0.003")).toBe(true);
+    expect(text).toContain("characters omitted");
+    expect(text).not.toContain("MIDDLE");
+    expect(original.content[0].text).toBe(long);
+    expect(untouched).toBe(short);
+
+    const generate = vi.fn(async () => ({ text: "x", usage: usage(0) })) as unknown as SummaryGenerator;
+    const { handler } = install(generate);
+    await handler(event({ preparation: { ...event().preparation, messagesToSummarize: [original] } }), ctx());
+    const sent = (generate as unknown as { mock: { calls: unknown[][] } }).mock.calls[0][0] as Array<typeof original>;
+    expect(sent[0].content[0].text.endsWith("FINAL: p = 0.003")).toBe(true);
   });
 
   it("falls back to Pi's default (undefined) on generator errors, missing credentials or no model", async () => {

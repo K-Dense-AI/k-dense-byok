@@ -49,7 +49,10 @@ describe("seedSubagentRuntimeSettings", () => {
     expect(seedSubagentRuntimeSettings(paths)).toBe(true);
     const settings = readSettings(paths.sandbox);
     const configFile = path.join(KADY_PI_AGENT_DIR, "extensions", "subagent", "config.json");
-    expect(JSON.parse(fs.readFileSync(configFile, "utf8")).forceTopLevelAsync).toBe(true);
+    expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({
+      forceTopLevelAsync: true,
+      disabledFeatures: ["panes", "external-machines"],
+    });
     expect(settings.subagents?.forceTopLevelAsync).toBeUndefined();
     for (const name of externalCli) {
       expect(settings.subagents?.agentOverrides?.[name]?.disabled).toBe(true);
@@ -67,7 +70,7 @@ describe("seedSubagentRuntimeSettings", () => {
     const [enabled, ...rest] = externalCli;
     const configFile = path.join(KADY_PI_AGENT_DIR, "extensions", "subagent", "config.json");
     fs.mkdirSync(path.dirname(configFile), { recursive: true });
-    fs.writeFileSync(configFile, JSON.stringify({ forceTopLevelAsync: false, concurrency: 3 }));
+    fs.writeFileSync(configFile, JSON.stringify({ forceTopLevelAsync: false, concurrency: 3, disabledFeatures: [] }));
     fs.writeFileSync(
       path.join(dir, "settings.json"),
       JSON.stringify({
@@ -85,7 +88,7 @@ describe("seedSubagentRuntimeSettings", () => {
     const settings = readSettings(paths.sandbox);
     expect(settings.packages).toEqual(["keep-me"]);
     expect(settings.subagents?.forceTopLevelAsync).toBeUndefined();
-    expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({ forceTopLevelAsync: false, concurrency: 3 });
+    expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({ forceTopLevelAsync: false, concurrency: 3, disabledFeatures: [] });
     expect(settings.subagents?.agentOverrides?.[enabled]).toEqual({ disabled: false, tools: ["read"] });
     expect(settings.subagents?.agentOverrides?.researcher).toEqual({ tools: ["read", "notebook"] });
     for (const name of rest) {

@@ -14,6 +14,7 @@ import {
   cacheKeyForSource,
   clearStaging,
   fetchSkills,
+  mergeCatalogueSources,
   resolveSkillsCli,
   stagedSkillsDir,
 } from "../src/agent/skills-fetch.ts";
@@ -149,5 +150,39 @@ describe("skills CLI fetcher", () => {
     expect(fs.readdirSync(skillsDir)).toEqual(["alpha-skill"]);
     clearStaging(cacheKey);
     expect(fs.existsSync(skillsDir)).toBe(false);
+  });
+
+  it("merges catalogue sources: named subsets only, later sources win", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "kady-catalogue-merge-"));
+    try {
+      const primary = path.join(root, "primary");
+      const extra = path.join(root, "extra");
+      for (const [dir, name] of [
+        [primary, "docx"],
+        [primary, "scanpy"],
+        [extra, "docx"],
+        [extra, "pdf"],
+        [extra, "skill-creator"],
+      ]) {
+        fs.mkdirSync(path.join(dir, name), { recursive: true });
+        fs.writeFileSync(path.join(dir, name, "SKILL.md"), `${name}\n`, "utf-8");
+      }
+      fs.mkdirSync(path.join(extra, "not-a-skill"), { recursive: true });
+
+      const merged = mergeCatalogueSources([
+        { skillsDir: primary },
+        // `xlsx` is listed but absent: it is simply not offered.
+        { skillsDir: extra, source: "anthropics/skills", skills: ["docx", "pdf", "xlsx"] },
+      ]);
+
+      expect([...merged.keys()].sort()).toEqual(["docx", "pdf", "scanpy"]);
+      expect(merged.get("docx")).toEqual({
+        dir: path.join(extra, "docx"),
+        source: "anthropics/skills",
+      });
+      expect(merged.get("scanpy")).toEqual({ dir: path.join(primary, "scanpy") });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

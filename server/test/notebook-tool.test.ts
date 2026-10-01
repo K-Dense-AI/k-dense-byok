@@ -22,6 +22,33 @@ beforeEach(() => {
 });
 
 describe("notebook tool", () => {
+  it("tells the model what the server changed or could not resolve", async () => {
+    const s = "sess-warnings";
+    const tool = makeNotebookTool("default", () => s);
+    const text = (res: Awaited<ReturnType<typeof run>>) => (res.content?.[0] as { text: string }).text;
+    const clean = await run(tool, "first", { type: "hypothesis", title: "Six clusters" });
+    expect(text(clean)).not.toMatch(/Recorded with changes/);
+
+    fs.mkdirSync(`${resolvePaths("default").sandbox}/figures`, { recursive: true });
+    fs.writeFileSync(`${resolvePaths("default").sandbox}/figures/umap.png`, "png");
+    const res = await run(tool, "second", {
+      type: "method", title: "Clustered", execution: { status: "completed" },
+      artifacts: ["figures/umap.png", "figures/umpa.png"],
+      relatesTo: "first",
+      supersedes: "nope",
+      evidence: [{ entryId: "first", relation: "supports" }, { entryId: "ghost", relation: "supports" }, { entryId: "first", relation: "proves" }],
+    });
+    const warning = text(res);
+    expect(warning).toMatch(/Recorded with changes/);
+    expect(warning).toMatch(/execution was recorded as "unverified"/);
+    expect(warning).toMatch(/artifact not found in the sandbox.*figures\/umpa\.png/);
+    expect(warning).not.toMatch(/umap\.png[,.]/);
+    expect(warning).toMatch(/1 evidence link was dropped/);
+    expect(warning).toMatch(/no earlier entry in this chat has id ghost;/);
+    expect(warning).toMatch(/supersedes "nope" names no earlier entry/);
+    expect((res.details as { warnings?: string[] }).warnings).toHaveLength(5);
+  });
+
   it("persists a stamped entry and returns a non-blocking ack", async () => {
     const s = "sess-tool-a";
     const tool = makeNotebookTool("default", () => s);

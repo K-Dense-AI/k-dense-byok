@@ -44,7 +44,9 @@ it("binds the public RPC/preflight APIs with parent tool ceilings and required c
   expect(prompt.systemPromptOptions.sections.kady_specialist).toBeUndefined();
   expect((await host.preflight({ agent: "missing-agent-xyz" }) as any).ok).toBe(false);
   vi.spyOn(modalJobManager, "list").mockReturnValue([{ id: "compute", state: "running" }, { id: "done", state: "succeeded" }] as any);
-  expect(snapshotBackgroundWork(session.sessionId).items).toContainEqual({ provider: `kady-modal:runtime:${session.sessionId}`, sessionId: session.sessionId, id: "modal:compute" });
+  // pi-subagents asks by its own session identity: the session file.
+  const owner = session.sessionFile ?? session.sessionId;
+  expect(snapshotBackgroundWork(owner).items).toContainEqual({ provider: `kady-modal:runtime:${session.sessionId}`, sessionId: owner, id: "modal:compute" });
   expect(snapshotBackgroundWork("foreign-session").items).toEqual([]);
 }, 30_000);
 

@@ -29,6 +29,14 @@ Handoffs report completed/partial/blocked status, supporting evidence, checks
 performed, artifacts and remaining questions. A completed review can find an
 invalid result; completion is not a scientific verdict.
 
+To run several specialists, or one in stages, Kady writes a short workflow
+script in its reply and launches it. The script appears in chat as a collapsed
+**Workflow script** block naming the specialists it starts; expand it to read
+the plan. Kady checks the specialists and models it names against the spend cap
+before anything runs. Kady can hand the chat back while specialists keep
+working; when they finish, it picks their results up in a new turn of the same
+chat, which an open tab shows automatically.
+
 A specialist uses `contact_supervisor` for blocking decisions. Kady resolves the
 request from existing instructions or asks you through the interview form.
 The child waits up to ten minutes; timeout/dismissal is not approval.
@@ -46,7 +54,7 @@ disabled project files move to `.pi/agents-disabled/`. Changes apply to new chat
 |---|---|
 | Model | Pin a model; otherwise use the project specialist default or launching chat. A workflow override can take precedence. |
 | Thinking | Pin reasoning effort rather than inheriting Pi's current default. |
-| Tools | Optional allowlist; empty uses the available inherited toolset. |
+| Tools | Optional allowlist; empty uses the available inherited toolset. `mcp:<server>` or `mcp:<server>/<tool>` grants a [connector](mcp-servers.md)'s tools. |
 | Inherit context/skills | Include project instructions and skills. |
 | Replace base system prompt | Replace rather than append to default behavior. |
 | Persistent memory | Enable a role-specific, model-written `MEMORY.md` in project or user scope. |

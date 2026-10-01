@@ -14,7 +14,16 @@
  *      remain authored and omitted/unavailable evidence is explicit; then
  *   2. the narrative summary Pi itself would have written, generated with
  *      Pi's exported `generateSummaryWithUsage` under science-focused
- *      instructions (keep parameters, paths, numbers with units, decisions).
+ *      instructions that map Pi's checkpoint format onto research work and
+ *      add a Scientific Record section. The model sees the preamble too, so
+ *      it can cite record ids instead of contradicting them; then
+ *   3. Pi's `<read-files>`/`<modified-files>` lists, carried across
+ *      compactions by parsing the previous summary (Pi ignores the `details`
+ *      of hook-made compactions, so it cannot carry them for us).
+ *
+ * Only the narrative of an earlier summary is reused: its records are
+ * regenerated from the stores, and passing them on would hand the model stale
+ * job/specialist states to "preserve" and nest one preamble inside the next.
  *
  * Usage from the summary call rides `CompactionResult.usage`, which Pi persists
  * on the compaction entry and folds into `getSessionStats()`, so the cost is
@@ -36,26 +45,160 @@ import { normalizeNotebookExecution } from "../../../web/src/lib/notebook-execut
 import { ModalJobStore } from "../modal/store.ts";
 import { isTerminalModalState } from "../modal/types.ts";
 
-export const PREAMBLE_VERSION = 2;
+export const PREAMBLE_VERSION = 3;
 const MAX_PREAMBLE_ENTRIES = 20;
+const MAX_EARLIER_HYPOTHESES = 15;
 const MAX_RESULT_IDS = 30;
 const MAX_FIELD_CHARS = 400;
 
+const RECORDS_HEADING = "## Kady scientific state";
+const NARRATIVE_HEADING = "## Conversation summary";
+const TURN_PREFIX_HEADING = "## Current turn so far";
+
+/**
+ * Pi's serializer keeps only the first 2,000 characters of each tool result
+ * (`TOOL_RESULT_MAX_CHARS`). Analyses print their numbers last and a traceback
+ * ends with the exception, so longer results are clipped to both ends first.
+ */
+const PI_TOOL_RESULT_MAX_CHARS = 2_000;
+const TOOL_RESULT_HEAD_CHARS = 1_100;
+const TOOL_RESULT_TAIL_CHARS = 800;
+
+/**
+ * Appended by Pi after its checkpoint format as "Additional focus: …", so it
+ * says how to fill those sections for research rather than restating them.
+ */
 export const SCIENCE_COMPACTION_INSTRUCTIONS = [
-  "This is a scientific analysis session. Preserve, verbatim where possible:",
-  "- every hypothesis and whether it is supported, refuted or open;",
-  "- exact parameter values, thresholds, filters and random seeds used;",
-  "- file paths of inputs read and outputs written (scripts, tables, figures);",
-  "- numeric results with units, sample sizes and uncertainty;",
-  "- decisions made and the reason for each, including rejected alternatives;",
-  "- open questions and the next planned step.",
-  "- evidence status: planned/attempted/completed versus independently verified, authored interpretations versus observed outputs, and the source ids supporting each claim;",
-  "- superseded/corrected/retracted findings and replacement ids; never resurrect an obsolete result from an earlier summary;",
-  "- pending subagent run/child ids and Modal job ids, last observed states and where to check them; submitted or running is not completed, and a missing completion notice is not permission to launch a duplicate;",
-  "- frozen-plan revisions, recorded deviations, unresolved blockers and the exact scope of existing approvals (authorization is not execution).",
-  "Keep null/inconclusive evidence and technical failure distinct from refutation. Do not promote a provisional claim to verified, or unchanged artifact identity to scientific validity. Preserve uncertainty and missing evidence explicitly.",
-  "Do not summarize away caveats, failed runs or data-quality warnings.",
+  "This is a scientific analysis session in Kady. Fill the format above for research work:",
+  "- Goal: the research question(s) and the deliverable the user asked for.",
+  "- Constraints & Preferences: the user's instructions, data restrictions, budgets, and the exact scope of any approval (authorization is not execution).",
+  "- Progress: mark each item planned, attempted, completed or independently verified; submitted or running work is not completed.",
+  "- Key Decisions: each analysis choice, its reason and the alternatives rejected.",
+  "- Next Steps: the next planned step and the open questions.",
+  "",
+  'After Critical Context, add this section, writing "(none)" under any empty heading:',
+  "",
+  "## Scientific Record",
+  "### Hypotheses",
+  "- Each hypothesis, its status (supported, refuted, mixed, inconclusive or open) and the ids of the notebook entries, results or files behind it.",
+  "### Results",
+  "- Numeric results with units, sample sizes and uncertainty, and the input and output paths that produced them.",
+  "### Methods & Parameters",
+  "- Exact parameter values, thresholds, filters, random seeds, software versions and commands.",
+  "### Failures & Caveats",
+  "- Failed runs with their error text, data-quality warnings and limitations.",
+  "### Corrections",
+  "- Superseded, corrected or retracted findings and the ids that replace them.",
+  "### Outstanding Work",
+  "- Subagent run/child ids and Modal job ids, their last observed state and where to check it.",
+  "",
+  "Rules:",
+  '- Copy numbers, units, paths, ids, parameters and error messages exactly. Write "not recorded" rather than estimating a missing value. Long tool results above are clipped with an omission marker; never reconstruct the omitted part.',
+  "- Keep null or inconclusive evidence and technical failures distinct from refutation. Do not promote a provisional claim to verified, an authored interpretation to an observed output, or an unchanged file hash to scientific validity.",
+  "- Never restate a superseded or retracted result as current, including one carried in the previous summary.",
+  "- A missing completion notice is not permission to relaunch work; keep the ids so the status can be checked.",
+  "- Do not summarize away caveats, failed runs or data-quality warnings.",
 ].join("\n");
+
+/** Leads the instructions for the first part of a turn that is still running. */
+export const TURN_PREFIX_FOCUS = [
+  "These messages are only the start of the turn still in progress; the rest of the turn is kept verbatim after this summary.",
+  "Summarize only what they show (the request that opened the turn, the work done, and the results and decisions so far) and do not guess at later messages.",
+].join(" ");
+
+/** Shows the model the records Kady stores above its summary. */
+function recordsInstructions(records: string): string {
+  return [
+    "Kady stores the record block below verbatim above your summary and regenerates it from its stores at every compaction.",
+    "It is newer than the conversation, so where they disagree, follow the block. It lists only recent notebook entries, so still give each hypothesis and result that matters a one-line statement with its id, but do not copy the block wholesale.",
+    `<kady-records>\n${records}\n</kady-records>`,
+  ].join(" ");
+}
+
+function joinInstructions(parts: Array<string | undefined>, custom: string | undefined): string {
+  const text = custom?.trim();
+  return [...parts, text ? `Instructions from the user for this compaction (they take precedence):\n${text}` : undefined]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+const FILE_TAGS = ["read-files", "modified-files"] as const;
+
+function taggedFiles(summary: string | undefined, tag: (typeof FILE_TAGS)[number]): string[] {
+  const match = summary?.match(new RegExp(`<${tag}>\\n([\\s\\S]*?)\\n</${tag}>`));
+  return match ? match[1].split("\n").map((line) => line.trim()).filter(Boolean) : [];
+}
+
+function stripFileTags(text: string): string {
+  return text.replace(/\n*<(read-files|modified-files)>\n[\s\S]*?\n<\/\1>/g, "");
+}
+
+/**
+ * The part of an earlier summary worth carrying forward. A Kady summary's
+ * records are regenerated, so only what follows them is kept; a summary from
+ * Pi's default compaction is all narrative. File lists are re-appended fresh.
+ */
+export function previousNarrative(summary: string | undefined): string | undefined {
+  if (!summary) return undefined;
+  let text = summary;
+  if (text.startsWith(RECORDS_HEADING)) {
+    // Record fields are clipped to one line, so the first narrative heading
+    // at the start of a line is ours.
+    const starts = [`\n${NARRATIVE_HEADING}\n`, `\n${TURN_PREFIX_HEADING}\n`]
+      .map((heading) => text.indexOf(heading))
+      .filter((index) => index >= 0);
+    if (starts.length === 0) return undefined;
+    text = text.slice(Math.min(...starts) + 1);
+    if (text.startsWith(`${NARRATIVE_HEADING}\n`)) text = text.slice(NARRATIVE_HEADING.length + 1);
+  }
+  text = stripFileTags(text).trim();
+  return text || undefined;
+}
+
+type FileOps = SessionBeforeCompactEvent["preparation"]["fileOps"];
+
+/** Pi's read/modified split, unioned with the lists the previous summary carried. */
+export function compactionFileLists(
+  fileOps: Partial<FileOps> | undefined,
+  previousSummary: string | undefined,
+): { readFiles: string[]; modifiedFiles: string[] } {
+  const modified = new Set([
+    ...(fileOps?.edited ?? []),
+    ...(fileOps?.written ?? []),
+    ...taggedFiles(previousSummary, "modified-files"),
+  ]);
+  const read = new Set([...(fileOps?.read ?? []), ...taggedFiles(previousSummary, "read-files")]);
+  return {
+    readFiles: [...read].filter((file) => !modified.has(file)).sort(),
+    modifiedFiles: [...modified].sort(),
+  };
+}
+
+/** Same tags as Pi's `formatFileOperations`, so either kind of summary can follow the other. */
+function formatFileLists(readFiles: string[], modifiedFiles: string[]): string {
+  const sections: string[] = [];
+  if (readFiles.length > 0) sections.push(`<read-files>\n${readFiles.join("\n")}\n</read-files>`);
+  if (modifiedFiles.length > 0) sections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
+  return sections.length > 0 ? `\n\n${sections.join("\n\n")}` : "";
+}
+
+type SummaryMessage = SessionBeforeCompactEvent["preparation"]["messagesToSummarize"][number];
+
+/** Copies (never mutates) tool results longer than Pi keeps, as head + tail. */
+export function clipToolResultsForSummary(messages: SummaryMessage[]): SummaryMessage[] {
+  return messages.map((message) => {
+    const { role, content } = message as { role?: string; content?: unknown };
+    if (role !== "toolResult" || !Array.isArray(content)) return message;
+    const text = content
+      .filter((block): block is { type: "text"; text: string } => block?.type === "text" && typeof block.text === "string")
+      .map((block) => block.text)
+      .join("\n");
+    if (text.length <= PI_TOOL_RESULT_MAX_CHARS) return message;
+    const omitted = text.length - TOOL_RESULT_HEAD_CHARS - TOOL_RESULT_TAIL_CHARS;
+    const clipped = `${text.slice(0, TOOL_RESULT_HEAD_CHARS)}\n[… ${omitted} characters omitted …]\n${text.slice(-TOOL_RESULT_TAIL_CHARS)}`;
+    return { ...message, content: [{ type: "text", text: clipped }] } as SummaryMessage;
+  });
+}
 
 export interface CompactionPreamble {
   text: string;
@@ -72,7 +215,7 @@ function clip(value: string | undefined, max = MAX_FIELD_CHARS): string {
 
 /** Deterministic state block from Kady's stores; no model involved. */
 export function buildCompactionPreamble(projectId: string, sessionId: string): CompactionPreamble {
-  const lines: string[] = ["## Kady scientific state (derived from the lab notebook, plan journal and provenance log)"];
+  const lines: string[] = [`${RECORDS_HEADING} (derived from the lab notebook, plan journal and provenance log)`];
   let planRevision: number | undefined;
   let environmentId: string | undefined;
   const resultIds: string[] = [];
@@ -118,6 +261,21 @@ export function buildCompactionPreamble(projectId: string, sessionId: string): C
 
   const recent = entries.slice(-MAX_PREAMBLE_ENTRIES);
   const threads = deriveEvidenceThreads(entries);
+  // A hypothesis older than the recent window is still the frame later
+  // results are read against; keep a line for each one not superseded.
+  const recentIds = new Set(recent.map((entry) => entry.id));
+  const earlier = entries.filter(
+    (entry) => entry.type === "hypothesis" && !recentIds.has(entry.id) && !threads.get(entry.id)?.supersededBy,
+  );
+  if (earlier.length > 0) {
+    const shown = earlier.slice(-MAX_EARLIER_HYPOTHESES);
+    lines.push(`### Earlier hypotheses (${earlier.length} before the recent window, not superseded)`);
+    for (const entry of shown) {
+      const status = threads.get(entry.id)?.status;
+      lines.push(`- ${entry.id}: ${clip(entry.title, 160)}${status ? ` (evidence interpretation: ${status}; authored links)` : ""}`);
+    }
+    if (earlier.length > shown.length) lines.push(`- ${earlier.length - shown.length} older hypotheses omitted; consult the notebook.`);
+  }
   if (recent.length > 0) {
     lines.push(`### Lab notebook (last ${recent.length} of ${entries.length} entries; ids are citable)`);
     for (const entry of recent) {
@@ -244,12 +402,6 @@ export function makeScientificCompactionExtension(
           return undefined;
         }
         const headers = resolveHeaders(auth.headers);
-        const instructions = [SCIENCE_COMPACTION_INSTRUCTIONS, event.customInstructions?.trim()]
-          .filter(Boolean)
-          .join("\n\n");
-        // Mirror Pi: when the cut point falls inside the only turn there is
-        // nothing before it to summarize — asking the model to summarize an
-        // empty conversation yields a "no messages provided" narrative.
         let childStatus: unknown;
         if (options.readChildStatus) {
           let timer: ReturnType<typeof setTimeout> | undefined;
@@ -261,46 +413,54 @@ export function makeScientificCompactionExtension(
           } catch { /* unavailable state remains explicit in the summary */ }
           finally { if (timer) clearTimeout(timer); }
         }
-        let summary = `${preamble.text}\n\n${childWorkSummary(childStatus)}`;
+        const records = `${preamble.text}\n\n${childWorkSummary(childStatus)}`;
+        const previous = previousNarrative(prep.previousSummary);
+        let summary = records;
         let usage: Usage | undefined;
+        // Mirror Pi: when the cut point falls inside the only turn there is
+        // nothing before it to summarize — asking the model to summarize an
+        // empty conversation yields a "no messages provided" narrative.
         if (prep.messagesToSummarize.length > 0) {
           const main = await generate(
-            prep.messagesToSummarize,
+            clipToolResultsForSummary(prep.messagesToSummarize),
             model,
             prep.settings.reserveTokens,
             auth.apiKey,
             headers,
             event.signal,
-            instructions,
-            prep.previousSummary,
+            joinInstructions([SCIENCE_COMPACTION_INSTRUCTIONS, recordsInstructions(records)], event.customInstructions),
+            previous,
             ctx.thinkingLevel,
             undefined,
             auth.env,
           );
-          summary += `\n\n## Conversation summary\n${main.text}`;
+          summary += `\n\n${NARRATIVE_HEADING}\n${main.text}`;
           usage = main.usage;
-        } else if (prep.previousSummary) {
-          summary += `\n\n## Conversation summary\n${prep.previousSummary}`;
+        } else if (previous) {
+          summary += `\n\n${NARRATIVE_HEADING}\n${previous}`;
         }
         if (prep.isSplitTurn && prep.turnPrefixMessages.length > 0) {
           // Mirror Pi: the cut point fell inside a turn, so the turn's earlier
-          // part is summarized separately and appended.
+          // part is summarized separately and appended. In an agentic analysis
+          // one turn can hold most of the work, so it keeps the science focus.
           const prefix = await generate(
-            prep.turnPrefixMessages,
+            clipToolResultsForSummary(prep.turnPrefixMessages),
             model,
             prep.settings.reserveTokens,
             auth.apiKey,
             headers,
             event.signal,
-            instructions,
+            joinInstructions([TURN_PREFIX_FOCUS, SCIENCE_COMPACTION_INSTRUCTIONS], event.customInstructions),
             undefined,
             ctx.thinkingLevel,
             undefined,
             auth.env,
           );
-          summary += `\n\n## Current turn so far\n${prefix.text}`;
+          summary += `\n\n${TURN_PREFIX_HEADING}\n${prefix.text}`;
           usage = usage ? addUsage(usage, prefix.usage) : prefix.usage;
         }
+        const { readFiles, modifiedFiles } = compactionFileLists(prep.fileOps, prep.previousSummary);
+        summary += formatFileLists(readFiles, modifiedFiles);
         return {
           compaction: {
             summary,
@@ -308,6 +468,8 @@ export function makeScientificCompactionExtension(
             tokensBefore: prep.tokensBefore,
             usage,
             details: {
+              readFiles,
+              modifiedFiles,
               kady: {
                 preambleVersion: PREAMBLE_VERSION,
                 ...(preamble.planRevision !== undefined ? { planRevision: preamble.planRevision } : {}),

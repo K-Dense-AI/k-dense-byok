@@ -112,6 +112,29 @@ describe("provider catalogue covers Pi's built-in providers", () => {
     }
   });
 
+  it("configures Anthropic through workload identity federation without a key", async () => {
+    const names = [
+      "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN",
+      "ANTHROPIC_FEDERATION_RULE_ID", "ANTHROPIC_ORGANIZATION_ID", "ANTHROPIC_IDENTITY_TOKEN_FILE",
+    ];
+    const saved = new Map(names.map((name) => [name, process.env[name]] as const));
+    try {
+      for (const name of names) delete process.env[name];
+      process.env.ANTHROPIC_FEDERATION_RULE_ID = "fdrl_test";
+      process.env.ANTHROPIC_ORGANIZATION_ID = "org_test";
+      expect(await runtime.checkAuth("anthropic")).toBeUndefined();
+      process.env.ANTHROPIC_IDENTITY_TOKEN_FILE = "/var/run/secrets/anthropic";
+      expect(await runtime.checkAuth("anthropic")).toMatchObject({ type: "api_key", source: "workload identity federation" });
+      const anthropic = DIRECT_PROVIDERS.find((p) => p.id === "anthropic")!;
+      for (const name of names.slice(3)) expect(anthropic.extraEnv.map((f) => f.envVar)).toContain(name);
+    } finally {
+      for (const [name, value] of saved) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
+
   it("marks OAuth availability consistently with Pi", () => {
     for (const definition of DIRECT_PROVIDERS) {
       const provider = runtime.getProvider(definition.id)!;
@@ -149,6 +172,12 @@ describe("provider catalogue covers Pi's built-in providers", () => {
     expect(vars).toContain("CLOUDFLARE_ACCOUNT_ID");
     expect(providerKeyBodyField("cloudflare-ai-gateway")).toBe("cloudflareAiGatewayApiKey");
     expect(providerKeyBodyField("nvidia")).toBe("nvidiaApiKey");
+  });
+
+  it("links every provider to an https page where its key is issued", () => {
+    for (const provider of DIRECT_PROVIDERS) {
+      expect(provider.keysUrl, provider.id).toMatch(/^https:\/\/[^/\s]+\.[^/\s]+/);
+    }
   });
 });
 

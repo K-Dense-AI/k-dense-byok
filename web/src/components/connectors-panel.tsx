@@ -6,7 +6,9 @@
  * Two scopes, like Skills: this project (`sandbox/.pi/mcp.json`) and all
  * projects (`~/.kady/pi-agent/mcp.json`). Servers can be toggled off (Pi's
  * `enabled: false`, config kept), given an exposure (how the agent reaches
- * their tools), checked live, and — for OAuth servers — signed in.
+ * their tools), checked live, and — for OAuth servers — signed in. HTTP
+ * servers in the global scope may instead send a signed-in Pi provider's
+ * token (`auth.provider`, e.g. Radius), which Pi refuses in project files.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -32,41 +34,63 @@ import {
 } from "@/components/settings/primitives";
 import { cn } from "@/lib/utils";
 import {
+  ChevronRightIcon,
   ExternalLinkIcon,
   GlobeIcon,
   KeyRoundIcon,
   LogOutIcon,
   PencilIcon,
+  PlugZapIcon,
   PlusIcon,
   RefreshCwIcon,
   TerminalIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useProjects } from "@/lib/use-projects";
+import { SettingsLink } from "@/components/settings-link";
 import {
   MCP_EXPOSURE_OPTIONS,
+  addRadiusConnector,
+  authProviderOf,
   cancelMcpLogin,
   exposureOf,
+  getMcpAuthProviders,
   getMcpListing,
   getMcpLogin,
   getMcpStatus,
+  getRadiusConnector,
   isHttpConfig,
   mcpLogout,
+  namespaceClash,
   saveMcpServers,
   setConnectorEnabled,
   setConnectorExposure,
   startMcpLogin,
   testMcpServer,
   usesOAuth,
+  type McpAuthProvider,
   type McpExposure,
   type McpLoginFlow,
   type McpScope,
   type McpServerConfig,
   type McpServerStatus,
   type McpServers,
+  type RadiusConnectorStatus,
 } from "@/lib/mcp";
 
-interface McpFormState {
+/**
+ * How an HTTP server authenticates: Pi's MCP OAuth sign-in (no Authorization
+ * header), a bearer token header, or a signed-in Pi provider's token.
+ */
+export type McpAuthMode = "oauth" | "bearer" | "provider";
+
+const AUTH_MODE_LABELS: Record<McpAuthMode, string> = {
+  oauth: "Sign in with OAuth",
+  bearer: "Bearer token",
+  provider: "Use a signed-in provider",
+};
+
+export interface McpFormState {
   /** Key being edited, or null when adding a new server. */
   originalName: string | null;
   /** The entry as loaded; fields the form does not edit are kept from it. */
@@ -79,6 +103,16 @@ interface McpFormState {
   args: string;
   env: string;
   exposure: McpExposure;
+  /** What the server offers, in a sentence; empty removes it. */
+  description: string;
+  authMode: McpAuthMode;
+  /** Provider id for `authMode: "provider"`. */
+  authProvider: string;
+  /** `oauth.clientName` / `oauth.authServerMetadataUrl`; empty removes them. */
+  oauthClientName: string;
+  oauthMetadataUrl: string;
+  /** UI only: the Advanced OAuth section is expanded. */
+  advancedOAuth?: boolean;
 }
 
 const EMPTY_MCP_FORM: McpFormState = {
@@ -92,11 +126,22 @@ const EMPTY_MCP_FORM: McpFormState = {
   args: "",
   env: "",
   exposure: "codemode",
+  description: "",
+  authMode: "oauth",
+  authProvider: "",
+  oauthClientName: "",
+  oauthMetadataUrl: "",
 };
 
 /** Fields that belong to one transport; switching transport drops the other's. */
-const HTTP_FIELDS = ["url", "headers", "oauth"];
+const HTTP_FIELDS = ["url", "headers", "oauth", "auth"];
 const STDIO_FIELDS = ["command", "args", "env", "cwd"];
+/** Fields of the same transport kept from the stored entry unless the form rewrites them. */
+const KEPT_TRANSPORT_FIELDS = new Set(["headers", "oauth", "auth", "cwd"]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function formFromConfig(name: string, config: McpServerConfig): McpFormState {
   const common = {
@@ -105,14 +150,24 @@ function formFromConfig(name: string, config: McpServerConfig): McpFormState {
     base: config,
     name,
     exposure: exposureOf(config),
+    description: typeof config.description === "string" ? config.description : "",
   };
   if (isHttpConfig(config)) {
     const auth = Object.entries(config.headers ?? {}).find(([k]) => k.toLowerCase() === "authorization")?.[1];
+    const provider = authProviderOf(config);
+    const oauth = isRecord(config.oauth) ? config.oauth : {};
+    const oauthClientName = typeof oauth.clientName === "string" ? oauth.clientName : "";
+    const oauthMetadataUrl = typeof oauth.authServerMetadataUrl === "string" ? oauth.authServerMetadataUrl : "";
     return {
       ...common,
       type: "http",
       url: config.url,
       bearerToken: (auth ?? "").replace(/^Bearer\s+/i, ""),
+      authMode: provider ? "provider" : auth !== undefined ? "bearer" : "oauth",
+      authProvider: provider ?? "",
+      oauthClientName,
+      oauthMetadataUrl,
+      advancedOAuth: Boolean(oauthClientName || oauthMetadataUrl),
     };
   }
   return {
@@ -129,8 +184,8 @@ function formFromConfig(name: string, config: McpServerConfig): McpFormState {
 export function configFromForm(form: McpFormState): McpServerConfig {
   const base: Record<string, unknown> = { ...(form.base ?? {}) };
   const sameTransport = form.base ? isHttpConfig(form.base) === (form.type === "http") : true;
-  for (const key of [...HTTP_FIELDS, ...STDIO_FIELDS, "exposure"]) {
-    if (key === "headers" || key === "oauth" || key === "cwd") {
+  for (const key of [...HTTP_FIELDS, ...STDIO_FIELDS, "exposure", "description"]) {
+    if (KEPT_TRANSPORT_FIELDS.has(key)) {
       if (!sameTransport) delete base[key];
     } else {
       delete base[key];
@@ -138,19 +193,41 @@ export function configFromForm(form: McpFormState): McpServerConfig {
   }
   if (!sameTransport) delete base.type;
   const exposure = form.exposure === "codemode" ? {} : { exposure: form.exposure };
+  const description = form.description.trim() ? { description: form.description.trim() } : {};
   if (form.type === "http") {
     const headers: Record<string, string> = {};
     for (const [k, v] of Object.entries((base.headers as Record<string, string> | undefined) ?? {})) {
       if (k.toLowerCase() !== "authorization") headers[k] = v;
     }
     delete base.headers;
-    if (form.bearerToken.trim()) {
-      headers.Authorization = `Bearer ${form.bearerToken.trim()}`;
+    // `auth` is rewritten from the form: kept only while a provider is chosen.
+    delete base.auth;
+    let oauth = isRecord(base.oauth) ? { ...base.oauth } : undefined;
+    delete base.oauth;
+    if (form.authMode === "bearer") {
+      if (form.bearerToken.trim()) headers.Authorization = `Bearer ${form.bearerToken.trim()}`;
+    } else if (form.authMode === "provider") {
+      // The provider token replaces the MCP OAuth sign-in entirely.
+      oauth = undefined;
+    } else {
+      const next: Record<string, unknown> = { ...(oauth ?? {}) };
+      for (const [key, value] of [
+        ["clientName", form.oauthClientName],
+        ["authServerMetadataUrl", form.oauthMetadataUrl],
+      ] as const) {
+        if (value.trim()) next[key] = value.trim();
+        else delete next[key];
+      }
+      oauth = Object.keys(next).length > 0 ? next : undefined;
     }
+    const provider = form.authMode === "provider" ? form.authProvider.trim() : "";
     return {
       ...base,
       url: form.url.trim(),
       ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(oauth ? { oauth } : {}),
+      ...(provider ? { auth: { provider } } : {}),
+      ...description,
       ...exposure,
     };
   }
@@ -167,6 +244,7 @@ export function configFromForm(form: McpFormState): McpServerConfig {
     command: form.command.trim(),
     ...(args.length > 0 ? { args } : {}),
     ...(Object.keys(env).length > 0 ? { env } : {}),
+    ...description,
     ...exposure,
   };
 }
@@ -250,6 +328,39 @@ export function ConnectorsPanel() {
   const { confirm, dialog } = useConfirm();
   const [login, setLogin] = useState<{ name: string; flow: McpLoginFlow } | null>(null);
   const loginPoll = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Provider logins an HTTP server can authenticate with, and the Radius
+  // suggestion. Both fail quietly: an older backend lacks the endpoints.
+  const [authProviders, setAuthProviders] = useState<McpAuthProvider[] | null>(null);
+  const [radius, setRadius] = useState<RadiusConnectorStatus | null>(null);
+  const [addingRadius, setAddingRadius] = useState(false);
+  const [radiusAdded, setRadiusAdded] = useState(false);
+
+  const refreshRadius = useCallback(async () => {
+    try {
+      setRadius(await getRadiusConnector());
+    } catch {
+      /* older server: no suggestion */
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    getMcpAuthProviders()
+      .then((providers) => {
+        if (!cancelled) setAuthProviders(providers);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthProviders([]);
+      });
+    getRadiusConnector()
+      .then((status) => {
+        if (!cancelled) setRadius(status);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId]);
 
   const load = useCallback(async (which: McpScope) => {
     const listing = await getMcpListing(which);
@@ -317,13 +428,15 @@ export function ConnectorsPanel() {
         setTestResult(null);
         setStatus(null);
         await load(scope).catch(() => undefined);
+        // The Radius suggestion reflects the global file.
+        if (scope === "global") void refreshRadius();
       } catch (exc) {
         setError(exc instanceof Error ? exc.message : "Save failed");
       } finally {
         setSaving(false);
       }
     },
-    [load, scope],
+    [load, refreshRadius, scope],
   );
 
   const handleSave = useCallback(async () => {
@@ -337,9 +450,35 @@ export function ConnectorsPanel() {
     if (form.originalName && form.originalName !== name) {
       delete next[form.originalName];
     }
+    const clash = namespaceClash(name, Object.keys(next));
+    if (clash) {
+      setError(`“${name}” would share tool names with “${clash}” (Pi treats - and _ alike)`);
+      return;
+    }
+    if (form.type === "http" && form.authMode === "provider" && !form.authProvider.trim()) {
+      setError("Choose the signed-in provider this connector authenticates with");
+      return;
+    }
     next[name] = configFromForm(form);
     await persist(next);
   }, [form, servers, persist]);
+
+  const addRadius = useCallback(async () => {
+    setAddingRadius(true);
+    setError(null);
+    try {
+      await addRadiusConnector();
+      setRadius((current) => (current ? { ...current, configured: true } : current));
+      setRadiusAdded(true);
+      setStatus(null);
+      if (scope === "global") await load("global").catch(() => undefined);
+      void refreshRadius();
+    } catch (exc) {
+      setError(exc instanceof Error ? exc.message : "Could not add the Radius connector");
+    } finally {
+      setAddingRadius(false);
+    }
+  }, [load, refreshRadius, scope]);
 
   const handleDelete = useCallback(
     async (name: string) => {
@@ -465,6 +604,25 @@ export function ConnectorsPanel() {
     [checkStatus],
   );
 
+  const changeScope = useCallback(
+    async (value: McpScope) => {
+      if (form) {
+        const ok = await confirm({
+          title: "Discard the connector you are editing?",
+          description: "Switching scope closes the form without saving.",
+          confirmLabel: "Discard",
+        });
+        if (!ok) return;
+      }
+      setForm(null);
+      setTestResult(null);
+      setScope(value);
+    },
+    [confirm, form],
+  );
+
+  const providerName = (id: string) => authProviders?.find((p) => p.id === id)?.name ?? id;
+
   const allNames = useMemo(() => Object.keys(servers).sort(), [servers]);
   const names = allNames.filter((name) => matchesQuery(query, name, summarizeConfig(servers[name])));
   const statusFor = (name: string) => status?.find((s) => s.name === name && s.scope === scope);
@@ -481,20 +639,41 @@ export function ConnectorsPanel() {
       <ScopeSwitcher
         value={scope}
         projectName={activeProject?.name ?? activeProjectId}
-        onChange={async (value) => {
-          if (form) {
-            const ok = await confirm({
-              title: "Discard the connector you are editing?",
-              description: "Switching scope closes the form without saving.",
-              confirmLabel: "Discard",
-            });
-            if (!ok) return;
-          }
-          setForm(null);
-          setTestResult(null);
-          setScope(value);
-        }}
+        onChange={(value) => void changeScope(value)}
       />
+
+      {radius?.signedIn && !radius.configured && (
+        <div className="flex items-center gap-2.5 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs">
+          <PlugZapIcon className="size-3.5 shrink-0 text-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">You&apos;re signed in to Radius.</div>
+            <p className="text-[11px] text-muted-foreground">
+              Add its MCP server so the agent can use Radius tools. It is added for all
+              projects and authenticates with your Radius sign-in.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="h-7 shrink-0 text-[11px]"
+            disabled={addingRadius}
+            onClick={() => void addRadius()}
+          >
+            {addingRadius ? "Adding…" : "Add Radius connector"}
+          </Button>
+        </div>
+      )}
+      {radiusAdded && scope === "project" && (
+        <p className="-mt-2 text-[11px] text-muted-foreground">
+          Added the Radius connector for all projects.{" "}
+          <button
+            type="button"
+            className="font-medium underline underline-offset-2 hover:no-underline"
+            onClick={() => void changeScope("global")}
+          >
+            Show it
+          </button>
+        </p>
+      )}
 
       {scope === "global" && (
         <p className="text-[11px] text-muted-foreground -mt-2">
@@ -595,6 +774,7 @@ export function ConnectorsPanel() {
               {names.map((name) => {
                 const config = servers[name];
                 const http = isHttpConfig(config);
+                const viaProvider = authProviderOf(config);
                 const enabled = config.enabled !== false;
                 const live = statusFor(name);
                 const label = live ? statusLabel(live) : null;
@@ -621,6 +801,7 @@ export function ConnectorsPanel() {
                         <div className="text-xs font-medium">{name}</div>
                         <div className="truncate text-[11px] text-muted-foreground">
                           {summarizeConfig(config)}
+                          {viaProvider && <span> · via {providerName(viaProvider)}</span>}
                         </div>
                       </div>
                       <ExposureSelect
@@ -676,7 +857,13 @@ export function ConnectorsPanel() {
                         {note && !label && (
                           <span className="min-w-0 flex-1 text-muted-foreground">{note}</span>
                         )}
-                        {live?.state === "needs-auth" && (
+                        {live?.state === "needs-auth" && viaProvider && (
+                          <span className="shrink-0 text-muted-foreground">
+                            Sign in to {providerName(viaProvider)} in{" "}
+                            <SettingsLink tab="providers">Providers</SettingsLink>
+                          </span>
+                        )}
+                        {live?.state === "needs-auth" && !viaProvider && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -724,6 +911,24 @@ export function ConnectorsPanel() {
                 />
               </div>
 
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium" htmlFor="mcp-description">
+                  Description{" "}
+                  <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <Input
+                  id="mcp-description"
+                  value={form.description}
+                  placeholder="e.g. Issue tracker for the lab's projects"
+                  className="h-8 text-xs"
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  What the server offers, in a sentence. Pi lists it in the agent&apos;s prompt and
+                  uses it to rank the server&apos;s tools in search.
+                </p>
+              </div>
+
               <div className="flex gap-2">
                 {(
                   [
@@ -756,23 +961,149 @@ export function ConnectorsPanel() {
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-medium">
-                      Bearer token{" "}
-                      <span className="font-normal text-muted-foreground">(optional)</span>
-                    </label>
-                    <Input
-                      type="password"
-                      value={form.bearerToken}
-                      placeholder="Sent as Authorization: Bearer … — or ${ENV_VAR}"
-                      className="h-8 text-xs"
-                      autoComplete="off"
-                      onChange={(e) => setForm({ ...form, bearerToken: e.target.value })}
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      Leave empty for servers that sign in with OAuth (e.g. Sentry, Linear):
-                      save, then use Sign in.
-                    </p>
+                    <label className="text-xs font-medium">Authentication</label>
+                    <Select
+                      value={form.authMode}
+                      onValueChange={(v) => setForm({ ...form, authMode: v as McpAuthMode })}
+                    >
+                      <SelectTrigger size="sm" className="h-8 w-full text-xs" aria-label="Authentication">
+                        <SelectValue>{AUTH_MODE_LABELS[form.authMode]}</SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          <SelectItem value="oauth" className="text-xs">
+                            {AUTH_MODE_LABELS.oauth}
+                          </SelectItem>
+                          <SelectItem value="bearer" className="text-xs">
+                            {AUTH_MODE_LABELS.bearer}
+                          </SelectItem>
+                          {(scope === "global" || form.authMode === "provider") && (
+                            <SelectItem value="provider" className="text-xs">
+                              {AUTH_MODE_LABELS.provider}
+                            </SelectItem>
+                          )}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
                   </div>
+
+                  {form.authMode === "bearer" && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium" htmlFor="mcp-bearer">
+                        Bearer token
+                      </label>
+                      <Input
+                        id="mcp-bearer"
+                        type="password"
+                        value={form.bearerToken}
+                        placeholder="Sent as Authorization: Bearer … — or ${ENV_VAR}"
+                        className="h-8 text-xs"
+                        autoComplete="off"
+                        onChange={(e) => setForm({ ...form, bearerToken: e.target.value })}
+                      />
+                    </div>
+                  )}
+
+                  {form.authMode === "oauth" && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-[11px] text-muted-foreground">
+                        For servers that sign in with OAuth (e.g. Sentry, Linear): save, then use
+                        Sign in. Servers that need no sign-in work the same way.
+                      </p>
+                      <button
+                        type="button"
+                        aria-expanded={Boolean(form.advancedOAuth)}
+                        className="inline-flex items-center gap-1 self-start text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                        onClick={() => setForm({ ...form, advancedOAuth: !form.advancedOAuth })}
+                      >
+                        <ChevronRightIcon
+                          className={cn("size-3 transition-transform", form.advancedOAuth && "rotate-90")}
+                        />
+                        Advanced OAuth
+                      </button>
+                      {form.advancedOAuth && (
+                        <div className="flex flex-col gap-2.5 border-l pl-3">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-medium" htmlFor="mcp-oauth-client-name">
+                              Client name
+                            </label>
+                            <Input
+                              id="mcp-oauth-client-name"
+                              value={form.oauthClientName}
+                              placeholder="pi"
+                              className="h-8 text-xs"
+                              onChange={(e) => setForm({ ...form, oauthClientName: e.target.value })}
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              Sent when Pi registers itself, for servers that only accept known
+                              OAuth clients.
+                            </p>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <label className="text-xs font-medium" htmlFor="mcp-oauth-metadata">
+                              Authorization server metadata URL
+                            </label>
+                            <Input
+                              id="mcp-oauth-metadata"
+                              value={form.oauthMetadataUrl}
+                              placeholder="https://auth.example.com/.well-known/oauth-authorization-server"
+                              className="h-8 text-xs"
+                              onChange={(e) => setForm({ ...form, oauthMetadataUrl: e.target.value })}
+                            />
+                            <p className="text-[11px] text-muted-foreground">
+                              For servers that advertise a wrong authorization server or none.
+                              Must use https (http only on localhost).
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {form.authMode === "provider" && (
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-medium">Provider</label>
+                      <Select
+                        value={form.authProvider || undefined}
+                        onValueChange={(v) => setForm({ ...form, authProvider: v })}
+                      >
+                        <SelectTrigger size="sm" className="h-8 w-full text-xs" aria-label="Provider">
+                          <SelectValue placeholder="Choose a signed-in provider">
+                            {form.authProvider ? providerName(form.authProvider) : undefined}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {(authProviders ?? []).map((provider) => (
+                              <SelectItem key={provider.id} value={provider.id} className="text-xs">
+                                {provider.name}
+                                {!provider.connected && (
+                                  <span className="text-muted-foreground"> (not signed in)</span>
+                                )}
+                              </SelectItem>
+                            ))}
+                            {form.authProvider &&
+                              !(authProviders ?? []).some((p) => p.id === form.authProvider) && (
+                                <SelectItem value={form.authProvider} className="text-xs">
+                                  {form.authProvider}
+                                </SelectItem>
+                              )}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-[11px] text-muted-foreground">
+                        Sends that provider&apos;s sign-in token instead of an MCP OAuth sign-in, and
+                        picks up its refreshes. Sign in under{" "}
+                        <SettingsLink tab="providers">Providers</SettingsLink>. Needs an https URL.
+                      </p>
+                      {scope === "project" && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                          Pi allows provider sign-ins only for connectors shared across projects.
+                          Add this connector under All projects instead.
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </>
               ) : (
                 <>

@@ -24,6 +24,18 @@ describe("source-linked research memory", () => {
     expect(result.hits[0].sourceUri).toContain("expectedDigest=");
     expect(result.hits[0].matchedFields).toContain("title"); expect(result.coverage.complete).toBe(true);
   });
+  it("recalls a method's authored execution status and evidence", async () => {
+    add("s", "ran", { type: "method", title: "Fit mixed model", execution: { status: "completed", evidence: "python fit.py exited 0; results/fit.json" } });
+    add("s", "claimed", { type: "method", title: "Fit fixed model", execution: { status: "completed" } });
+    const { hits } = await searchNotebookMemory(project, { query: "fit model" });
+    const qualifier = (id: string) => hits.find((h) => h.source.kind === "notebook" && h.source.entryId === id)!.qualifiers.find((q) => q.startsWith("Execution status"));
+    expect(qualifier("ran")).toMatch(/^Execution status is completed/);
+    // "completed" without evidence is never promoted.
+    expect(qualifier("claimed")).toMatch(/^Execution status is unverified/);
+    const read = await executeMemoryRecall(project, { action: "read", source: { kind: "notebook", sessionId: "s", entryId: "ran" } });
+    expect(JSON.parse(read.content[0].text).execution).toEqual({ status: "completed", evidence: "python fit.py exited 0; results/fit.json" });
+  });
+
   it("keeps technical failures, null findings and inconclusive results separate", async () => {
     add("s", "failed", { title: "Model failed", outcome: "technical-failure" });
     add("s", "null", { title: "Model null result", outcome: "null" });

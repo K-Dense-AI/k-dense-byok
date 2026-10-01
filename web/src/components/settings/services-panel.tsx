@@ -4,17 +4,22 @@ import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
-  ExternalLinkIcon,
   LoaderCircleIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
+import { SettingsLink } from "@/components/settings-link";
 import { apiFetch } from "@/lib/projects";
+import {
+  connectPaperclipConnector,
+  getPaperclipConnector,
+  type PaperclipConnectorStatus,
+} from "@/lib/mcp";
 import { notifyModalCredentialsChanged } from "@/lib/modal-jobs";
 import { useProjects } from "@/lib/use-projects";
 import { cn } from "@/lib/utils";
-import { KeyRow, useCredentialStatus, type CredentialStatus, type KeyDef } from "./key-row";
+import { GetKeyLink, KeyRow, useCredentialStatus, type CredentialStatus, type KeyDef } from "./key-row";
 import { SettingsCard, SettingsError, SettingsHeader } from "./primitives";
 
 const SEARCH_KEY_DEFS: KeyDef[] = [
@@ -44,6 +49,132 @@ const SEARCH_KEY_DEFS: KeyDef[] = [
     notifyProviders: true,
   },
 ];
+
+const PAPERCLIP_KEY_DEF: KeyDef = {
+  id: "paperclip",
+  bodyField: "paperclipApiKey",
+  label: "Paperclip API key",
+  placeholder: "gxl_…",
+  keysUrl: "https://paperclip.gxl.ai/keys",
+  hint: "Checked with Paperclip before it is saved. The connector reads the key from .env by name, so it is never copied into the connector settings.",
+  savedNote: "Saved. New chat tabs can search Paperclip — no restart needed.",
+};
+
+/**
+ * Paperclip literature search: saving the key adds a global MCP connector
+ * that sends it (server agent/paperclip.ts); this card also reports and
+ * repairs that connector, e.g. for a key set in .env by hand.
+ */
+function PaperclipCard({
+  status,
+  onStatus,
+}: {
+  status: CredentialStatus | null;
+  onStatus: (status: CredentialStatus) => void;
+}) {
+  const [connector, setConnector] = useState<PaperclipConnectorStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setConnector(await getPaperclipConnector());
+      setError(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load the Paperclip connector");
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const connect = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await connectPaperclipConnector();
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not turn on the Paperclip connector");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const keySet = connector?.keySet ?? Boolean(status?.paperclip?.set);
+  const ready = Boolean(connector?.name && connector.usesKey && connector.enabled);
+  const signsInWithoutKey = Boolean(connector?.name && connector.enabled && !connector.usesKey);
+  const name = <code className="font-mono">{connector?.name}</code>;
+
+  return (
+    <SettingsCard
+      id="paperclip"
+      title="Paperclip literature search"
+      description="Lets the agent search and read papers, preprints, clinical trials, FDA documents and patents. Saving a key adds a Paperclip connector shared by every project."
+    >
+      <KeyRow
+        def={PAPERCLIP_KEY_DEF}
+        current={status?.paperclip}
+        onStatus={(next) => {
+          onStatus(next);
+          void load();
+        }}
+      />
+      <SettingsError className="mt-3">{error ?? connector?.error ?? null}</SettingsError>
+      {connector && !connector.error && (keySet || signsInWithoutKey) ? (
+        <div
+          role="status"
+          className={cn(
+            "mt-3 flex items-center gap-2 rounded-md border px-2.5 py-2 text-[11px]",
+            ready || (!keySet && signsInWithoutKey)
+              ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
+              : "border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300",
+          )}
+        >
+          {ready || (!keySet && signsInWithoutKey) ? (
+            <CheckCircle2Icon className="size-3.5 shrink-0" />
+          ) : (
+            <AlertCircleIcon className="size-3.5 shrink-0" />
+          )}
+          <span className="min-w-0 flex-1">
+            {ready ? (
+              <>Connector {name} is on for every project.</>
+            ) : !keySet ? (
+              <>Connector {name} signs in to Paperclip without a key.</>
+            ) : !connector.name ? (
+              "Your key is saved, but there is no Paperclip connector."
+            ) : !connector.usesKey ? (
+              <>Connector {name} signs in another way and does not use this key.</>
+            ) : (
+              <>Connector {name} is turned off.</>
+            )}
+          </span>
+          {keySet && !ready ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-6 text-[11px]"
+              disabled={busy}
+              onClick={() => void connect()}
+            >
+              {busy ? "Turning on…" : connector.usesKey || !connector.name ? "Turn on" : "Use this key"}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {connector && !keySet && !signsInWithoutKey ? (
+        <p className="mt-3 text-[11px] leading-relaxed text-muted-foreground">
+          No key? Add{" "}
+          <code className="rounded bg-muted px-1 py-0.5 text-[10px]">{connector.url}</code> under{" "}
+          <SettingsLink tab="connectors">Connectors</SettingsLink> and sign in with your Paperclip
+          account instead.
+        </p>
+      ) : null}
+    </SettingsCard>
+  );
+}
 
 type ModalConnectionState = "idle" | "testing" | "connected" | "error";
 
@@ -185,17 +316,7 @@ function ModalCredentialPair({
   return (
     <SettingsCard
       id="modal"
-      title={
-        <a
-          href="https://modal.com/settings/tokens"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 hover:underline"
-        >
-          Modal compute
-          <ExternalLinkIcon className="size-3" />
-        </a>
-      }
+      title="Modal compute"
       description="Save and validate the token ID and secret as one pair. The pair enables durable CPU and GPU jobs without restarting Kady; pick a target per chat with the compute chip."
     >
       {dialog}
@@ -276,7 +397,13 @@ function ModalCredentialPair({
           />
         </label>
       </div>
-      <div className="mt-3 flex justify-end gap-2">
+      <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
+        <GetKeyLink
+          href="https://modal.com/settings/tokens"
+          service="Modal token pair"
+          label="Get a token"
+          className="mr-auto"
+        />
         {tokenIdStatus?.set || tokenSecretStatus?.set ? (
           <Button
             type="button"
@@ -420,6 +547,7 @@ export function ServicesPanel() {
               ))}
             </div>
           </SettingsCard>
+          <PaperclipCard status={status} onStatus={setStatus} />
           <ModalCredentialPair status={status} onStatus={setStatus} />
           <ModalCacheCard connected={modalConnected} />
         </>

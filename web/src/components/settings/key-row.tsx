@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ArrowUpRightIcon, KeyRoundIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { apiFetch } from "@/lib/projects";
 import { notifyProviderAuthChanged } from "@/lib/use-provider-auth";
+import { cn } from "@/lib/utils";
 import { SettingsError } from "./primitives";
 
 export type CredentialStatus = Record<string, { set: boolean; masked: string | null }>;
@@ -18,10 +20,63 @@ export interface KeyDef {
   placeholder: string;
   keysUrl?: string;
   hint: string;
+  /** Name of the service, for the sign-up link's accessible name (defaults to `label`). */
+  service?: string;
   /** Password input + masked echo (default). Configuration values are shown in full. */
   secret?: boolean;
   /** Saving changes which model-picker sections exist, so re-probe providers. */
   notifyProviders?: boolean;
+  /** Replaces the default confirmation shown after a save. */
+  savedNote?: string;
+}
+
+function hostOf(href: string): string {
+  try {
+    return new URL(href).hostname.replace(/^www\./, "");
+  } catch {
+    return href;
+  }
+}
+
+/**
+ * Where to sign up for a credential: a small pill that names the site it
+ * opens, so a user knows where they are going before they click.
+ */
+export function GetKeyLink({
+  href,
+  service,
+  label = "Get a key",
+  className,
+}: {
+  href: string;
+  /** What the key is for, read out by screen readers ("Exa API key"). */
+  service?: string;
+  label?: string;
+  className?: string;
+}) {
+  const host = hostOf(href);
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`Opens ${host} in a new tab`}
+      aria-label={`${label}${service ? ` (${service})` : ""} at ${host}, opens in a new tab`}
+      className={cn(
+        "group inline-flex min-w-0 max-w-full items-center gap-1 rounded-full border border-border/70 px-2 py-0.5 text-[10px] leading-4 text-muted-foreground transition-colors",
+        "hover:border-primary/30 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        className,
+      )}
+    >
+      <KeyRoundIcon className="size-3 shrink-0 text-primary/70" aria-hidden />
+      <span className="shrink-0 font-medium">{label}</span>
+      <span className="truncate text-muted-foreground/70 group-hover:text-muted-foreground">{host}</span>
+      <ArrowUpRightIcon
+        className="size-3 shrink-0 opacity-60 transition-transform group-hover:-translate-y-px group-hover:translate-x-px group-hover:opacity-100"
+        aria-hidden
+      />
+    </a>
+  );
 }
 
 /**
@@ -120,20 +175,11 @@ export function KeyRow({
   return (
     <div className="flex flex-col gap-2">
       {dialog}
-      <div className="flex items-baseline gap-2">
-        <label htmlFor={inputId} className="text-xs font-medium">
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <label htmlFor={inputId} className="shrink-0 text-xs font-medium">
           {def.label}
         </label>
-        {def.keysUrl ? (
-          <a
-            href={def.keysUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-[11px] text-muted-foreground hover:underline"
-          >
-            Get a key ↗
-          </a>
-        ) : null}
+        {def.keysUrl ? <GetKeyLink href={def.keysUrl} service={def.service ?? def.label} /> : null}
       </div>
       {error ? <SettingsError>{error}</SettingsError> : null}
       {current?.set && (
@@ -185,7 +231,7 @@ export function KeyRow({
       </div>
       {saved && (
         <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-          Saved. New runs use it immediately — no restart needed.
+          {def.savedNote ?? "Saved. New runs use it immediately — no restart needed."}
         </p>
       )}
       {def.hint ? (

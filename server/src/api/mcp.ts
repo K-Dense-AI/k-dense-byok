@@ -11,17 +11,23 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { activePaths } from "../projects.ts";
 import { currentProjectId } from "../scope.ts";
+import { getModelRuntime } from "../agent/session-registry.ts";
+import { SUBSCRIPTION_PROVIDERS } from "../agent/provider-auth.ts";
+import { connectPaperclipKey, paperclipConnectorState, paperclipKeySet } from "../agent/paperclip.ts";
 import {
   MCP_EXPOSURES,
   MCP_SERVER_NAME_RE,
   McpConfigError,
+  addRadiusConnector,
   cancelMcpLogin,
   getMcpLoginFlow,
   getMcpStatus,
   isMcpScope,
   mcpConfigPath,
   mcpLogout,
+  mcpNamespaceClash,
   migrateDisabledMcpServers,
+  radiusConnectorState,
   readMcpServers,
   setMcpServerEnabled,
   setMcpServerExposure,
@@ -93,11 +99,27 @@ export async function registerMcpRoutes(app: FastifyInstance): Promise<void> {
         reply.code(400);
         return { detail: "Body must be { mcpServers: { <name>: <config> } }" };
       }
+      let otherNames: string[] = [];
+      try {
+        otherNames = Object.keys(readMcpServers(scope === "project" ? "global" : "project", activePaths()));
+      } catch {
+        /* the other file's problem is reported when that scope is opened */
+      }
       for (const [name, config] of Object.entries(servers)) {
-        const error = validateMcpServer(name, config);
+        const error = validateMcpServer(name, config, scope);
         if (error) {
           reply.code(400);
           return { detail: error };
+        }
+        // Pi folds `-` into `_` for tool names and skips the later of two
+        // servers that would share a namespace. The same name in the other
+        // scope is an intended replacement, so only a folded twin conflicts.
+        const clash = mcpNamespaceClash(name, [...Object.keys(servers), ...otherNames]);
+        if (clash) {
+          reply.code(400);
+          return {
+            detail: `Server "${name}" would share tool names with "${clash}" (Pi treats - and _ in server names alike); rename one of them`,
+          };
         }
       }
       try {
@@ -149,6 +171,66 @@ export async function registerMcpRoutes(app: FastifyInstance): Promise<void> {
       return { ok: true };
     },
   );
+
+  // Pi provider sign-ins an HTTP connector can authenticate with instead of
+  // MCP OAuth (`"auth": { "provider": … }`, global connectors only). The token
+  // is read on every request, so provider refreshes apply.
+  app.get("/mcp/auth-providers", async () => {
+    const runtime = getModelRuntime();
+    const ordered = [...SUBSCRIPTION_PROVIDERS].sort((a, b) => Number(b.id === "radius") - Number(a.id === "radius"));
+    const providers = await Promise.all(ordered.map(async (provider) => {
+      let connected = false;
+      try {
+        connected = (await runtime.checkAuth(provider.id))?.type === "oauth";
+      } catch {
+        /* treated as not signed in */
+      }
+      return { id: provider.id, name: provider.name, connected };
+    }));
+    return { providers };
+  });
+
+  // Radius gateway MCP in one step, like Pi's `/login` offer after a Radius
+  // sign-in: a global connector that sends the Radius login as its bearer token.
+  const radiusSignedIn = async () => {
+    try {
+      return (await getModelRuntime().checkAuth("radius"))?.type === "oauth";
+    } catch {
+      return false;
+    }
+  };
+  app.get("/mcp/radius", async () => radiusConnectorState(activePaths(), await radiusSignedIn()));
+  app.post("/mcp/radius", async (_req, reply) => {
+    if (!(await radiusSignedIn())) {
+      reply.code(409);
+      return { detail: "Sign in to Radius in Settings → Providers first." };
+    }
+    try {
+      return { ok: true, ...addRadiusConnector(activePaths()) };
+    } catch (err) {
+      if (!(err instanceof McpConfigError)) throw err;
+      reply.code(409);
+      return { detail: err.message };
+    }
+  });
+
+  // Paperclip literature search: a global connector that sends the
+  // PAPERCLIP_API_KEY saved under Settings → Services. Saving the key adds it;
+  // POST turns it back on (a key set in .env by hand, or a removed connector).
+  app.get("/mcp/paperclip", async () => paperclipConnectorState());
+  app.post("/mcp/paperclip", async (_req, reply) => {
+    if (!paperclipKeySet()) {
+      reply.code(409);
+      return { detail: "Save a Paperclip API key in Settings → Services first." };
+    }
+    try {
+      return { ok: true, ...connectPaperclipKey() };
+    } catch (err) {
+      if (!(err instanceof McpConfigError)) throw err;
+      reply.code(409);
+      return { detail: err.message };
+    }
+  });
 
   // Connect every server the active project's sessions would see (both
   // scopes) and report state and tools. Slow by nature: it starts stdio servers.
