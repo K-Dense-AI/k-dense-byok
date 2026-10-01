@@ -267,6 +267,31 @@ describe("ConnectorsPanel provider sign-ins", () => {
     expect(screen.getByRole("button", { name: "Providers" })).toBeInTheDocument();
   });
 
+  it("offers sign-out only for connectors Pi holds OAuth tokens for", async () => {
+    vi.spyOn(mcp, "getMcpListing").mockResolvedValue({
+      mcpServers: {
+        docs: { url: "https://docs.example/mcp" },
+        paperclip: { url: "https://paperclip.gxl.ai/mcp", headers: { "X-API-Key": "${PAPERCLIP_API_KEY}" } },
+      },
+      shared: [],
+    });
+    vi.spyOn(mcp, "getMcpStatus").mockResolvedValue({
+      servers: [
+        { name: "docs", scope: "project", enabled: true, exposure: "codemode", state: "connected", tools: ["a"], signedIn: true },
+        { name: "paperclip", scope: "project", enabled: true, exposure: "codemode", state: "connected", tools: ["b"], signedIn: false },
+      ],
+      errors: [],
+    });
+    const logout = vi.spyOn(mcp, "mcpLogout").mockResolvedValue(undefined);
+    render(<ConnectorsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /check status/i }));
+    expect(await screen.findAllByText("Connected · 1 tool")).toHaveLength(2);
+    const signOut = screen.getAllByRole("button", { name: /sign out/i });
+    expect(signOut).toHaveLength(1);
+    await userEvent.click(signOut[0]);
+    await waitFor(() => expect(logout).toHaveBeenCalledWith("docs"));
+  });
+
   it("refuses a name that folds onto an existing connector", async () => {
     vi.spyOn(mcp, "getMcpListing").mockResolvedValue({
       mcpServers: { my_server: { url: "https://a.example/mcp" } },

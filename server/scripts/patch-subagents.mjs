@@ -128,6 +128,19 @@ export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
                     const host = await import(process.env.KADY_SUBAGENT_HOST_MODULE);
                     baseStreamFn = host.watchdogStream(request.ctx, baseStreamFn);
                 }`, 'KADY_HOST_ARBITER_V1'],
+    ['src/runs/background/runner-aliases.js', `        if (target && fs.existsSync(target))
+            aliases[specifier] = fs.realpathSync(target);
+        else
+            missing.push(specifier);`, `        if (target && fs.existsSync(target))
+            aliases[specifier] = fs.realpathSync(target);
+        // KADY_HOST_CORE_NODE_ALIAS_V1: Pi 1.0 removed pi-agent-core's "./node"
+        // export and nothing in the runner graph imports it, so requiring the
+        // alias refused every background launch. Skip it only when the package
+        // no longer declares it; a declared but missing target is still broken.
+        else if (process.env.KADY_SUBAGENT_HOST_MODULE && specifier === "@earendil-works/pi-agent-core/node" && packageDir && !Object.hasOwn(readManifest(packageDir)?.exports ?? {}, subpath))
+            continue;
+        else
+            missing.push(specifier);`, 'KADY_HOST_CORE_NODE_ALIAS_V1'],
   ];
   // Check all anchors before mutating any file.
   const writes = patches.map(([file, before, after, marker]) => {

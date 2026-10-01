@@ -6,6 +6,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { PROJECTS_ROOT } from "../src/config.ts";
@@ -219,6 +220,44 @@ describe("pi mcp CLI bridge", () => {
     expect(byName.off).toMatchObject({ enabled: false, state: "disabled" });
     // The project entry replaces the global one of the same name.
     expect(report.servers.filter((s) => s.name === "echo")).toHaveLength(1);
+  }, 60_000);
+
+  it("reports which HTTP servers Pi holds OAuth tokens for", async () => {
+    const paths = ensureProjectExists("p7");
+    // Disabled, so nothing is dialled: the sign-in state comes from the files.
+    writeMcpServers("global", paths, {
+      "signed-in": { url: "https://docs.example/mcp", enabled: false },
+      legacy: { url: "https://legacy.example/mcp", enabled: false },
+      keyed: { url: "https://keyed.example/mcp", headers: { "X-API-Key": "${KEY}" }, enabled: false },
+      local: { ...echoServer(), enabled: false },
+    });
+    // Write tokens with Pi's own (unexported) store, so a change to its key
+    // format fails here instead of hiding Sign out for signed-in connectors.
+    const oauthModule = path.join(
+      path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
+      "extensions",
+      "mcp",
+      "oauth.js",
+    );
+    const { McpOAuthCredentialStore } = await import(pathToFileURL(oauthModule).href);
+    const authFile = path.join(getAgentDir(), "mcp-auth.json");
+    try {
+      await new McpOAuthCredentialStore().forServer("signed-in", "https://docs.example/mcp").save({
+        tokens: { access_token: "a", token_type: "Bearer" },
+      });
+      // Older Pi versions keyed state by URL alone.
+      const states = readJson(authFile);
+      states["https://legacy.example/mcp"] = { tokens: { access_token: "b", token_type: "Bearer" } };
+      fs.writeFileSync(authFile, JSON.stringify(states));
+
+      const byName = Object.fromEntries((await getMcpStatus(paths)).servers.map((s) => [s.name, s]));
+      expect(byName["signed-in"].signedIn).toBe(true);
+      expect(byName.legacy.signedIn).toBe(true);
+      expect(byName.keyed.signedIn).toBe(false);
+      expect(byName.local.signedIn).toBeUndefined();
+    } finally {
+      fs.rmSync(authFile, { force: true });
+    }
   }, 60_000);
 
   it("test-dials an unsaved entry and reports failures as states", async () => {

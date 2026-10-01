@@ -874,7 +874,7 @@ export function ConnectorsPanel() {
                             Sign in
                           </Button>
                         )}
-                        {live?.state === "connected" && usesOAuth(config) && (
+                        {live?.state === "connected" && live.signedIn && usesOAuth(config) && (
                           <Button
                             variant="ghost"
                             size="sm"

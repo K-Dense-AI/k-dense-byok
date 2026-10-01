@@ -509,6 +509,12 @@ export interface McpServerStatus {
   resources?: number;
   resourceTemplates?: number;
   error?: string;
+  /**
+   * Pi holds OAuth tokens for this HTTP server, i.e. there is a sign-in to
+   * sign out of. Added by Kady; a key-header connector such as Paperclip
+   * connects without one.
+   */
+  signedIn?: boolean;
 }
 
 export interface McpStatusReport {
@@ -543,7 +549,43 @@ export async function getMcpStatus(paths: ProjectPaths, agentDir: string = getAg
   // The CLI reads a project mcp.json only in trusted projects. Session builds
   // trust the sandbox too, but a project may not have opened a chat yet.
   trustSandbox(paths, agentDir);
-  return parseListReport(await runPiMcp(["list", "--json"], paths.sandbox, agentDir));
+  const report = parseListReport(await runPiMcp(["list", "--json"], paths.sandbox, agentDir));
+  return { ...report, servers: withSignInState(report.servers, paths, agentDir) };
+}
+
+/**
+ * Mark the HTTP servers Pi holds OAuth tokens for. Pi's credential store is
+ * not exported, so this reads `<agentDir>/mcp-auth.json` with its keys: the
+ * tool namespace and URL (`mcp__docs|https://…/`), or the URL alone as written
+ * by older versions. Unreadable files count as signed out.
+ */
+function withSignInState(servers: McpServerStatus[], paths: ProjectPaths, agentDir: string): McpServerStatus[] {
+  const readJson = (file: string): Record<string, unknown> => {
+    try {
+      const data: unknown = JSON.parse(fs.readFileSync(file, "utf8"));
+      return isRecord(data) ? data : {};
+    } catch {
+      return {};
+    }
+  };
+  const states = readJson(path.join(agentDir, "mcp-auth.json"));
+  const configs: Record<McpScope, Record<string, unknown>> = {
+    global: readMcpFile(mcpConfigPath("global", paths, agentDir)).servers,
+    project: readMcpFile(mcpConfigPath("project", paths, agentDir)).servers,
+  };
+  return servers.map((server) => {
+    const config = configs[server.scope]?.[server.name];
+    const url = isRecord(config) && typeof config.url === "string" ? config.url : undefined;
+    if (!url) return server;
+    let legacyKey: string;
+    try {
+      legacyKey = String(new URL(url));
+    } catch {
+      return { ...server, signedIn: false };
+    }
+    const state = states[`${mcpNamespace(server.name)}|${legacyKey}`] ?? states[legacyKey];
+    return { ...server, signedIn: isRecord(state) && isRecord(state.tokens) };
+  });
 }
 
 /**

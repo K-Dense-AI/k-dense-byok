@@ -80,6 +80,24 @@ describe("Paperclip card", () => {
     expect(await scope.findByRole("status")).toHaveTextContent("Connector paperclip is on for every project.");
   });
 
+  it("drops a rejected key's error once the field is edited", async () => {
+    const user = userEvent.setup();
+    const base = fetchMock.getMockImplementation() as (path: string, init?: RequestInit) => Promise<Response>;
+    fetchMock.mockImplementation(async (path: string, init?: RequestInit) =>
+      path === "/credentials" && init?.method === "PUT"
+        ? json({ detail: "Paperclip rejected this API key. Check it at https://paperclip.gxl.ai/keys." }, 400)
+        : base(path, init),
+    );
+    render(<ServicesPanel />);
+    const scope = within(await card());
+    const input = scope.getByLabelText("Paperclip API key");
+    await user.type(input, "gxl_wrong");
+    await user.click(scope.getByRole("button", { name: "Save" }));
+    expect(await scope.findByText(/Paperclip rejected this API key/)).toBeInTheDocument();
+    await user.clear(input);
+    expect(scope.queryByText(/Paperclip rejected this API key/)).not.toBeInTheDocument();
+  });
+
   it("turns a disabled key-backed connector back on", async () => {
     const user = userEvent.setup();
     credentials = { paperclip: { set: true, masked: "gxl_…6789" } };

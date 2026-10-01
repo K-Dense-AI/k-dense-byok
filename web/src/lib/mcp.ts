@@ -206,6 +206,8 @@ export interface McpServerStatus {
   tools: string[];
   resources?: number;
   error?: string;
+  /** Pi holds OAuth tokens for this server, so Sign out has something to remove. */
+  signedIn?: boolean;
 }
 
 export interface McpStatusReport {
