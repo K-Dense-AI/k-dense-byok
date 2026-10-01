@@ -156,13 +156,15 @@ const app = await buildApp();
 beforeEach(() => {
   fakeSessions.clear();
   runBroker.clear();
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
 });
 
 afterAll(async () => {
   await app.close();
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function steer(id: string, body: unknown, projectId = "default") {

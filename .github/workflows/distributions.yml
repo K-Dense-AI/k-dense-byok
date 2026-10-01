@@ -30,6 +30,10 @@ concurrency:
   group: distributions-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ inputs.release != true }}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     name: Installer (${{ matrix.target }})
@@ -74,12 +78,14 @@ jobs:
           cache-dependency-glob: server/src/helpers/uv.lock
       - name: Install scientific test dependencies
         run: uv sync --frozen --project server/src/helpers --python 3.12.14 --python-preference only-managed
-      - name: Check and test application
-        run: |
-          npm run typecheck --prefix server
-          npm test --prefix server
-          npm exec --prefix web -- tsc --noEmit -p web/tsconfig.json
-          npm test --prefix web
+      - name: Check backend types
+        run: npm run typecheck --prefix server
+      - name: Test backend
+        run: npm test --prefix server
+      - name: Check frontend types
+        run: npm exec --prefix web -- tsc --noEmit -p web/tsconfig.json
+      - name: Test frontend
+        run: npm test --prefix web
       - name: Test launcher
         working-directory: packaging/launcher
         run: go test -race ./...

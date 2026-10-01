@@ -181,20 +181,31 @@ func pickPort(preferred int) (int, error) {
 }
 func waitReady(s instance, timeout time.Duration) error {
 	until := time.Now().Add(timeout)
+	misses := 0
 	for time.Now().Before(until) {
 		r, e := control(s, "GET", "/status")
 		if e == nil {
+			misses = 0
 			var v struct {
-				Ready bool   `json:"ready"`
-				Error string `json:"error"`
+				Ready    bool   `json:"ready"`
+				Stopping bool   `json:"stopping"`
+				Error    string `json:"error"`
 			}
 			json.NewDecoder(r.Body).Decode(&v)
 			r.Body.Close()
 			if v.Error != "" {
 				return errors.New(v.Error)
 			}
+			if v.Stopping {
+				return errors.New("Kady is stopping. Reopen the application after shutdown completes")
+			}
 			if v.Ready {
 				return nil
+			}
+		} else {
+			misses++
+			if misses >= 8 {
+				return errors.New("Kady stopped during startup. Open the startup log for details")
 			}
 		}
 		time.Sleep(250 * time.Millisecond)
@@ -227,7 +238,8 @@ func start(p paths, noBrowser bool) error {
 	if e = c.Start(); e != nil {
 		return e
 	}
-	_ = c.Process.Release()
+	exited := make(chan error, 1)
+	go func() { exited <- c.Wait() }()
 	until := time.Now().Add(90 * time.Second)
 	for time.Now().Before(until) {
 		if s, e := readInstance(p); e == nil && live(s) {
@@ -239,7 +251,15 @@ func start(p paths, noBrowser bool) error {
 			}
 			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		select {
+		case <-exited:
+			// A simultaneous launch may have won the per-user lock.
+			if s, err := readInstance(p); err == nil && live(s) {
+				continue
+			}
+			return errors.New("Kady could not start. See " + filepath.Join(p.Data, "logs", "kady.log"))
+		case <-time.After(200 * time.Millisecond):
+		}
 	}
 	return errors.New("Kady could not start. See " + filepath.Join(p.Data, "logs", "kady.log"))
 }
@@ -369,7 +389,7 @@ func serve(p paths) error {
 	}
 	gitDir := filepath.Join(p.Resources, "git", "bin")
 	gitExec := filepath.Join(p.Resources, "git", "libexec", "git-core")
-	pathEntries := []string{nodeDir, filepath.Join(p.Resources, "uv"), gitDir}
+	pathEntries := []string{nodeDir, filepath.Join(p.Resources, "uv"), filepath.Join(p.Resources, "rg"), filepath.Join(p.Resources, "fd"), gitDir}
 	if runtime.GOOS == "windows" {
 		pathEntries = append(pathEntries, filepath.Join(p.Resources, "git", "cmd"), filepath.Join(p.Resources, "git", "usr", "bin"))
 		gitExec = filepath.Join(p.Resources, "git", "mingw64", "libexec", "git-core")

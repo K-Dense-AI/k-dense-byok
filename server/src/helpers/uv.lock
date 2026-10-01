@@ -3,9 +3,16 @@ revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.12' and platform_machine != 'ARM64') or (python_full_version >= '3.12' and sys_platform != 'win32')",
     "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
     "(python_full_version < '3.12' and platform_machine != 'ARM64') or (python_full_version < '3.12' and sys_platform != 'win32')",
+]
+required-markers = [
+    "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'arm64' and sys_platform == 'darwin'",
+    "python_full_version == '3.12.*' and platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'linux'",
 ]
 
 [[package]]
@@ -510,7 +517,8 @@ dependencies = [
     { name = "pyarrow" },
     { name = "pydicom" },
     { name = "pyteomics" },
-    { name = "rdkit" },
+    { name = "rdkit", version = "2025.9.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'" },
+    { name = "rdkit", version = "2026.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12' or platform_machine != 'x86_64' or sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "tifffile", version = "2026.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -998,7 +1006,8 @@ version = "2.5.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.12' and platform_machine != 'ARM64') or (python_full_version >= '3.12' and sys_platform != 'win32')",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/22/fd/89965aa4ac08c74998539fcbf24fa3540f3e15237fbeb6bcf9c908f4aade/numpy-2.5.1.tar.gz", hash = "sha256:a48a113e6afea91f5608793bafa7ef2ad481fefbda87ec5069f483de61cb9fa3", size = 20755553, upload-time = "2026-07-04T17:08:00.933Z" }
 wheels = [
@@ -1398,11 +1407,35 @@ wheels = [
 
 [[package]]
 name = "rdkit"
+version = "2025.9.3"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" } },
+    { name = "pillow" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/19/4a606ef1c090b0abc54627a4aa5313c8bbef50da888841101bf1aa89ff70/rdkit-2025.9.3-cp311-cp311-macosx_10_15_x86_64.whl", hash = "sha256:520e572f70ac81a75091f953d4d9805bc1455879ad85724591c2b4b03bf1faf1", size = 31862854, upload-time = "2025-12-03T13:33:11.974Z" },
+    { url = "https://files.pythonhosted.org/packages/08/6d/678f4cba4e0822b1a246e1e35b8092c8668ace259f8d23c05add87c90396/rdkit-2025.9.3-cp312-cp312-macosx_10_15_x86_64.whl", hash = "sha256:946f41f0d35193961e9b54731fc38f0c637608a1b5ced7a72c909af4e5c836dc", size = 31937483, upload-time = "2025-12-03T13:33:30.538Z" },
+    { url = "https://files.pythonhosted.org/packages/3f/8b/4b55e528f1b3628be857d99f4f6cc2dd8d1e12006cbd23ec7d3cb31b8352/rdkit-2025.9.3-cp313-cp313-macosx_10_15_x86_64.whl", hash = "sha256:37cd7f85f3604a895c7072b8ba5ea30dac0749a8cea75ea470309fd79bcfe518", size = 31936347, upload-time = "2025-12-03T13:33:50.404Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/bf/dbc5759b5514866cde4fd8b559c32af540c4b850289cbecd088e97c1e7c8/rdkit-2025.9.3-cp314-cp314-macosx_10_15_x86_64.whl", hash = "sha256:067f5cc721086a78bb756c737357ce50cfab5fc78d8e10902ba00d4c87cace68", size = 31937271, upload-time = "2025-12-03T13:34:11.031Z" },
+]
+
+[[package]]
+name = "rdkit"
 version = "2026.3.3"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
+    "python_full_version < '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "(python_full_version < '3.12' and platform_machine != 'ARM64') or (python_full_version < '3.12' and sys_platform != 'win32')",
+]
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
-    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.12' and platform_machine != 'x86_64') or (python_full_version >= '3.12' and sys_platform == 'linux') or (python_full_version >= '3.12' and sys_platform == 'win32')" },
     { name = "pillow" },
 ]
 wheels = [
@@ -1505,7 +1538,8 @@ version = "1.18.0"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.12' and platform_machine != 'ARM64') or (python_full_version >= '3.12' and sys_platform != 'win32')",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" } },
@@ -1577,7 +1611,8 @@ version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.12' and platform_machine != 'ARM64') or (python_full_version >= '3.12' and sys_platform != 'win32')",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "session-info2" },
@@ -1676,7 +1711,8 @@ version = "2026.6.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.12' and platform_machine != 'ARM64') or (python_full_version >= '3.12' and sys_platform != 'win32')",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" } },
@@ -1731,7 +1767,8 @@ version = "3.2.1"
 source = { registry = "https://pypi.org/simple" }
 resolution-markers = [
     "python_full_version >= '3.12' and platform_machine == 'ARM64' and sys_platform == 'win32'",
-    "(python_full_version >= '3.12' and platform_machine != 'ARM64') or (python_full_version >= '3.12' and sys_platform != 'win32')",
+    "(python_full_version >= '3.12' and platform_machine != 'x86_64' and sys_platform != 'win32') or (python_full_version >= '3.12' and platform_machine != 'ARM64' and sys_platform == 'win32') or (python_full_version >= '3.12' and sys_platform == 'linux')",
+    "python_full_version >= '3.12' and platform_machine == 'x86_64' and sys_platform != 'linux' and sys_platform != 'win32'",
 ]
 dependencies = [
     { name = "donfig" },

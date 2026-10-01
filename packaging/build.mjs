@@ -67,6 +67,11 @@ for (const [name, spec] of Object.entries(runtimes)) {
     const destination = path.join(resources, name);
     if (name === "node") {
       const [root] = await fs.readdir(tmp); await fs.cp(path.join(tmp, root), destination, { recursive: true, verbatimSymlinks: true });
+    } else if (name === "rg" || name === "fd") {
+      const source = await findFile(tmp, name + (process.platform === "win32" ? ".exe" : ""));
+      if (!source) throw new Error("Missing " + name);
+      // Keep the release's licenses and notices beside its executable.
+      await fs.cp(path.dirname(source), destination, { recursive: true, verbatimSymlinks: true });
     } else if (name === "uv") {
       await fs.mkdir(destination, { recursive: true });
       for (const binary of ["uv", "uvx"]) {
@@ -122,5 +127,5 @@ await fs.writeFile(path.join(bundle, "README.txt"), "Open Kady to launch the app
 for (const name of ["LICENSE", "NOTICE"]) { try { await fs.copyFile(path.join(repo, name), path.join(bundle, name)); } catch (e) { if (e.code !== "ENOENT") throw e; } }
 await fs.cp(path.join(repo, "packaging", "licenses"), path.join(resources, "licenses"), { recursive: true });
 // Both dependency trees and their original license files stay in the bundle.
-await fs.writeFile(path.join(bundle, "THIRD-PARTY-NOTICES.txt"), "Includes Node.js (MIT and bundled dependency licenses), uv (MIT/Apache-2.0), Git (GPL-2.0), the Go runtime (BSD), and npm dependencies. See resources/licenses, resources/node/LICENSE, resources/git and each node_modules package for license notices. Exact runtime versions and binary checksums: resources/runtimes.json. Corresponding upstream Git source and build recipes: https://github.com/desktop/dugite-native/tree/v2.53.0-4 (including its pinned git submodule and dependencies.json), https://github.com/git/git/tree/v2.53.0 and https://github.com/git-for-windows/git/tree/v2.56.0.windows.1. uv source: https://github.com/astral-sh/uv/tree/0.12.21. Kady launcher source and build recipes accompany this release in https://github.com/K-Dense-AI/k-dense-byok.\n");
+await fs.writeFile(path.join(bundle, "THIRD-PARTY-NOTICES.txt"), "Includes Node.js (MIT and bundled dependency licenses), uv (MIT/Apache-2.0), ripgrep and fd (MIT/Unlicense), Git (GPL-2.0), the Go runtime (BSD), and npm dependencies. See resources/licenses, resources/node/LICENSE, resources/git, resources/rg, resources/fd and each node_modules package for license notices. Exact runtime versions and binary checksums: resources/runtimes.json. Corresponding upstream Git source and build recipes: https://github.com/desktop/dugite-native/tree/v2.53.0-4 (including its pinned git submodule and dependencies.json), https://github.com/git/git/tree/v2.53.0 and https://github.com/git-for-windows/git/tree/v2.56.0.windows.1. uv source: https://github.com/astral-sh/uv/tree/0.12.21. Kady launcher source and build recipes accompany this release in https://github.com/K-Dense-AI/k-dense-byok.\n");
 console.log("Built", bundle);

@@ -58,7 +58,8 @@ const costRows = (projectId: string, sessionId: string) => {
 
 let projectId: string;
 beforeEach(() => {
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
   runBroker.clear();
   pinSession.mockClear();

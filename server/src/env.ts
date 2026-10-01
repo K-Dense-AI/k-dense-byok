@@ -45,4 +45,4 @@ const expandedPiDir =
     : configuredPiDir.startsWith("~/") || configuredPiDir.startsWith("~\\")
       ? path.join(os.homedir(), configuredPiDir.slice(2))
       : configuredPiDir;
-process.env.PI_CODING_AGENT_DIR = path.resolve(repoRoot, expandedPiDir);
+process.env.PI_CODING_AGENT_DIR = path.resolve(runtime.packaged ? runtime.data : repoRoot, expandedPiDir);

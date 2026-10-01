@@ -56,11 +56,11 @@ it("reviews a successful sandbox write even when the parent Git status is unchan
 it("retains Git detection for a checkout rooted at the working directory", () => {
   fs.writeFileSync(path.join(root, "result.md"), "new analysis");
   expect(computeWatchdogRepoChangeSignature(root).changedPaths).toContain("result.md");
-  expect(captureWatchdogDiffBaseline(root).root).toBe(fs.realpathSync(root));
+  expect(fs.realpathSync.native(captureWatchdogDiffBaseline(root).root)).toBe(fs.realpathSync.native(root));
 });
 
 it("leaves standalone Pi behavior unchanged outside the Kady host", () => {
   vi.stubEnv("KADY_SUBAGENT_HOST_MODULE", "");
-  expect(computeWatchdogRepoChangeSignature(sandbox).root).toBe(fs.realpathSync(root));
-  expect(captureWatchdogDiffBaseline(sandbox).root).toBe(fs.realpathSync(root));
+  expect(fs.realpathSync.native(computeWatchdogRepoChangeSignature(sandbox).root)).toBe(fs.realpathSync.native(root));
+  expect(fs.realpathSync.native(captureWatchdogDiffBaseline(sandbox).root)).toBe(fs.realpathSync.native(root));
 });

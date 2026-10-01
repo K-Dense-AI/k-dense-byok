@@ -32,13 +32,15 @@ const echoServer = (extra: Record<string, unknown> = {}) => ({
 });
 
 function reset(): void {
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
   fs.rmSync(path.join(getAgentDir(), "mcp.json"), { force: true });
 }
 beforeEach(reset);
 afterAll(() => {
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.rmSync(path.join(getAgentDir(), "mcp.json"), { force: true });
 });
 
@@ -199,7 +201,7 @@ describe("pi mcp CLI bridge", () => {
     });
     const failed = await testMcpServer("y", { command: "definitely-not-a-binary" }, paths);
     expect(failed.state).toBe("failed");
-    expect(failed.error).toMatch(/ENOENT/);
+    expect(failed.error).toMatch(process.platform === "win32" ? /not recognized/ : /ENOENT/);
   }, 60_000);
 });
 

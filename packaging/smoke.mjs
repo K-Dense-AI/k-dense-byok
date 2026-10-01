@@ -42,7 +42,7 @@ const model = http.createServer(async (req, res) => {
   if (userText.includes("PACKAGING_WAIT") && hasResult) { pendingModelRequest = true; res.flushHeaders(); return; }
   const childTask = userText.includes("PACKAGING_CHILD");
   const delegate = !childTask && userText.includes("PACKAGING_DELEGATE");
-  const tool = userText.includes("PACKAGING_SHELL") ? { name: "bash", arguments: JSON.stringify({ command: "node --version > packaging-node.txt && npm --version > packaging-npm.txt && uv --version > packaging-uv.txt && git --version > packaging-git.txt" }) }
+  const tool = userText.includes("PACKAGING_SHELL") ? { name: "bash", arguments: JSON.stringify({ command: "node --version > packaging-node.txt && npm --version > packaging-npm.txt && uv --version > packaging-uv.txt && git --version > packaging-git.txt && rg --version > packaging-rg.txt && fd --version > packaging-fd.txt" }) }
     : delegate ? { name: "subagent", arguments: JSON.stringify({ workflowScript: "return runs.run('smoke-child', { agent: 'worker', task: 'PACKAGING_CHILD: Write packaging-child.txt with the exact text Packaged runtime verified.' })" }) }
     : { name: "write", arguments: JSON.stringify({ path: childTask ? "packaging-child.txt" : "packaging-smoke.txt", content: "Packaged runtime verified.\n" }) };
   const delta = hasResult ? { content: "Packaged runtime verified." } : { tool_calls: [{ index: 0, id: "smoke_write", type: "function", function: tool }] };
@@ -105,6 +105,8 @@ try {
   assert.match(await fs.readFile(path.join(sandbox, "packaging-npm.txt"), "utf8"), /^\d+\.\d+/);
   assert.match(await fs.readFile(path.join(sandbox, "packaging-uv.txt"), "utf8"), /^uv 0\.12\.21/);
   assert.match(await fs.readFile(path.join(sandbox, "packaging-git.txt"), "utf8"), /^git version 2\./);
+  assert.match(await fs.readFile(path.join(sandbox, "packaging-rg.txt"), "utf8"), /^ripgrep 15\.2\.0/);
+  assert.match(await fs.readFile(path.join(sandbox, "packaging-fd.txt"), "utf8"), /^fd 10\.3\.0/);
   if (process.env.KADY_SMOKE_BROWSER === "1") {
     const { chromium } = await import("playwright");
     const browser = await chromium.launch({ headless: true });

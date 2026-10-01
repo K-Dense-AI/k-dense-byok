@@ -1,6 +1,6 @@
 # Installable distributions
 
-Kady uses a small native Go launcher and private Node, uv and Git runtimes. The
+Kady uses a small native Go launcher and private Node, uv, Git, ripgrep and fd runtimes. The
 existing Next.js production server and Pi backend run on loopback and open in
 the default browser. No global Node/npm/Python installation is needed to launch.
 
