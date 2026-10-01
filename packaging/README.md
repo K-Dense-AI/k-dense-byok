@@ -46,6 +46,12 @@ prints the test artifact directory for diagnosis. Unit tests also cover locks,
 port conflicts, imports, platform paths and component setup failures.
 Set the smoke environment variables with `$env:NAME="1"` in PowerShell.
 CI also installs or extracts each installer and exercises its installed payload.
+The smoke check interrupts an active model call, verifies its ledger is flushed,
+kills the supervisor to exercise orphan cleanup, and reopens from stale state.
+Run application tests with `npm test --prefix server` or `npm test --prefix web`.
+Root-level Vitest execution is refused because backend tests require their
+isolated projects/auth configuration; backend configuration also rejects a test
+process using the checkout's real projects directory.
 
 ## Runtime and data
 

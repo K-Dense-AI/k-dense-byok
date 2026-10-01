@@ -67,6 +67,13 @@ jobs:
           npm ci --prefix packaging
       - name: Install test browser
         run: npm exec --prefix packaging -- playwright install --with-deps chromium
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.21'
+          enable-cache: true
+          cache-dependency-glob: server/src/helpers/uv.lock
+      - name: Install scientific test dependencies
+        run: uv sync --frozen --project server/src/helpers --python 3.12.14 --python-preference only-managed
       - name: Check and test application
         run: |
           npm run typecheck --prefix server

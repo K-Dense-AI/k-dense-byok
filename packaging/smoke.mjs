@@ -30,6 +30,7 @@ Object.assign(env, { KADY_DATA_DIR: data, KADY_CONFIG_DIR: path.join(temp, "conf
 const occupied = http.createServer((_req, res) => res.end("untouched"));
 await new Promise(resolve => occupied.listen(0, "127.0.0.1", resolve));
 env.KADY_PORT = String(occupied.address().port); env.KADY_FRONTEND_PORT = env.KADY_PORT;
+let pendingModelRequest = false;
 const model = http.createServer(async (req, res) => {
   if (req.url === "/v1/models") { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ data: [{ id: "packaging-smoke" }] })); return; }
   const chunks = []; for await (const chunk of req) chunks.push(chunk);
@@ -38,6 +39,7 @@ const model = http.createServer(async (req, res) => {
   const send = data => res.write("data: " + JSON.stringify(data) + "\n\n");
   const hasResult = body.messages.some(m => m.role === "tool");
   const userText = body.messages.filter(m => m.role === "user").map(m => JSON.stringify(m.content)).join(" ");
+  if (userText.includes("PACKAGING_WAIT") && hasResult) { pendingModelRequest = true; res.flushHeaders(); return; }
   const childTask = userText.includes("PACKAGING_CHILD");
   const delegate = !childTask && userText.includes("PACKAGING_DELEGATE");
   const tool = userText.includes("PACKAGING_SHELL") ? { name: "bash", arguments: JSON.stringify({ command: "node --version > packaging-node.txt && npm --version > packaging-npm.txt && uv --version > packaging-uv.txt && git --version > packaging-git.txt" }) }
@@ -133,14 +135,45 @@ try {
       helpers = (await request("/installation").then(r => r.json())).helpers;
     } while (helpers.status === "installing" && Date.now() < until);
     assert.equal(helpers.status, "ready", helpers.detail);
-    console.log("Locked scientific preview environment installed successfully.");
+    // A small NPY fixture exercises the actual installed Python decoder.
+    const header = Buffer.from("{'descr': '<f8', 'fortran_order': False, 'shape': (2,), }".padEnd(117) + "\n");
+    const npy = Buffer.alloc(10 + header.length + 16);
+    Buffer.from([0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59, 1, 0]).copy(npy);
+    npy.writeUInt16LE(header.length, 8); header.copy(npy, 10);
+    npy.writeDoubleLE(2, 10 + header.length); npy.writeDoubleLE(4, 18 + header.length);
+    await fs.writeFile(path.join(sandbox, "packaging-array.npy"), npy);
+    const preview = await request("/sandbox/sci-summary?kind=arrays&path=packaging-array.npy");
+    const summary = await preview.json(); assert.equal(preview.status, 200, JSON.stringify(summary));
+    assert.equal(summary.plot.stats.mean, 3);
+    console.log("Locked scientific preview environment installed and decoded an array successfully.");
   }
+  const waitingSession = await request("/sessions", { method: "POST" }).then(r => r.json());
+  const pending = await request(`/sessions/${waitingSession.id}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "PACKAGING_WAIT: wait for cancellation.", model: "openai/gpt-4o-mini" }), signal: AbortSignal.timeout(60_000) });
+  const pendingStream = pending.text();
+  for (let i = 0; i < 120 && !pendingModelRequest; i++) await new Promise(r => setTimeout(r, 100));
+  assert.equal(pendingModelRequest, true, "model call is in flight before shutdown");
   await run(["stop"]);
+  assert.match(await pendingStream, /"type":"done"/, "shutdown completes the in-flight run stream");
   for (let i = 0; i < 80; i++) { try { await fs.access(path.join(data, "instance.json")); await new Promise(r => setTimeout(r, 250)); } catch { break; } }
   await assert.rejects(fs.access(path.join(data, "instance.json")), "shutdown removes state");
+  const costs = (await fs.readFile(path.join(sandbox, ".kady", "runs", waitingSession.id, "costs.jsonl"), "utf8")).trim().split("\n").map(JSON.parse);
+  assert.ok(costs.some(row => row.sessionId === waitingSession.id), "shutdown persists the interrupted run ledger");
   await run(["start", "--no-browser"]);
   assert.equal(await fs.readFile(path.join(data, "projects", "default", "sandbox", "packaging-smoke.txt"), "utf8"), "Packaged runtime verified.\n");
-  console.log("Packaged smoke passed: production assets, dynamic ports, authentication, single instance, real Pi lead/child tool execution against a local model stub, shutdown, restart and data retention.");
+  const restarted = JSON.parse(await fs.readFile(path.join(data, "instance.json"), "utf8"));
+  const restartedConfig = await (await fetch(restarted.ui + "/runtime-config.js")).text();
+  const restartedAPI = JSON.parse(restartedConfig.match(/=(.*);/)[1]).apiBase;
+  process.kill(restarted.pid, "SIGKILL");
+  let orphanExited = false;
+  for (let i = 0; i < 80; i++) {
+    try { await fetch(restartedAPI + "/health", { signal: AbortSignal.timeout(500) }); }
+    catch { orphanExited = true; break; }
+    await new Promise(r => setTimeout(r, 250));
+  }
+  assert.equal(orphanExited, true, "services exit when their supervisor crashes");
+  await run(["start", "--no-browser"]);
+  assert.notEqual(JSON.parse(await fs.readFile(path.join(data, "instance.json"), "utf8")).pid, restarted.pid, "stale state is recoverable");
+  console.log("Packaged smoke passed: production assets, dynamic ports, authentication, single instance, private shell tools, real Pi lead/child execution, graceful active-run shutdown, crash recovery and data retention.");
 } catch (error) {
   try { console.error((await fs.readFile(path.join(data, "logs", "kady.log"), "utf8")).slice(-18000)); } catch {}
   throw error;

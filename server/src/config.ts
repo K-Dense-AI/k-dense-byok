@@ -23,6 +23,12 @@ export const PROJECTS_ROOT = path.resolve(
     : runtimePaths().projects,
 );
 
+// A misdirected test command must never fall back to real user projects.
+// The normal Vitest configuration supplies an isolated temporary directory.
+if (process.env.VITEST && (!process.env.KADY_PROJECTS_ROOT || PROJECTS_ROOT === path.join(REPO_ROOT, "projects"))) {
+  throw new Error("Tests require an explicit isolated KADY_PROJECTS_ROOT. Run npm test --prefix server.");
+}
+
 /** App-scoped Pi configuration/auth directory, established by env.ts. */
 const rawPiAgentDir =
   process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".kady", "pi-agent");
