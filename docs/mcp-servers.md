@@ -25,6 +25,18 @@ For OAuth, save the remote server without a token, check status and choose
 `mcp-auth.json`; existing sessions pick up a completed login on their next turn.
 **Sign out** removes the stored login.
 
+### Example: You.com Search (remote HTTP)
+
+To add optional web search and URL content extraction through You.com's MCP server, use:
+
+- **Name**: `youcom-search`
+- **Server URL**: `https://api.you.com/mcp?profile=free`
+- **Bearer token**: leave blank for the keyless free tier (basic `you-search` tool), or paste a [You.com API key](https://you.com/platform/api-keys) for authenticated access with higher rate limits
+
+The keyless profile requires no account or API key. After you test and save it, the `you-search` and `you-contents` tools are available in new chat tabs — Kady can search the web, read page content, and synthesize cited answers.
+
+For authenticated access with all tools, use `https://api.you.com/mcp` as the server URL and set the bearer token to your API key. See the [You.com Agent Skills](https://github.com/youdotcom-oss/agent-skills) repo for additional skill and platform install options.
+
 ## Tool exposure
 
 | Setting | How tools are called |
