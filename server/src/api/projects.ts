@@ -304,7 +304,7 @@ export async function registerProjectRoutes(app: FastifyInstance): Promise<void>
       await abortProjectSessions(projectId);
       await Promise.all(activeRuns.map((run) => run.waitForCompletion()));
       // Releasing a session emits session_shutdown, which closes its MCP connections.
-      disposeProjectSessions(projectId);
+      await disposeProjectSessions(projectId);
       deleteProject(projectId);
       modalJobManager.resumeProject(projectId);
       reply.code(204);

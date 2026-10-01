@@ -31,16 +31,16 @@ const echoServer = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-function reset(): void {
+async function reset(): Promise<void> {
   // Windows may briefly retain directory handles after child processes exit.
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
   fs.rmSync(path.join(getAgentDir(), "mcp.json"), { force: true });
 }
 beforeEach(reset);
-afterAll(() => {
+afterAll(async () => {
   // Windows may briefly retain directory handles after child processes exit.
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.rmSync(path.join(getAgentDir(), "mcp.json"), { force: true });
 });
 

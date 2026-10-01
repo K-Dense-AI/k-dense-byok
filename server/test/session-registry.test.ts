@@ -6,8 +6,8 @@ import { disposeProjectSessions, getSession } from "../src/agent/session-registr
 import { subagentHost } from "../src/agent/subagent-control.ts";
 
 const projectId = "session-registry";
-afterEach(() => {
-  disposeProjectSessions(projectId);
+afterEach(async () => {
+  await disposeProjectSessions(projectId);
   vi.restoreAllMocks();
 });
 

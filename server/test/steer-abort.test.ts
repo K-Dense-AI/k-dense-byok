@@ -153,18 +153,18 @@ import { resolvePaths } from "../src/projects.ts";
 
 const app = await buildApp();
 
-beforeEach(() => {
+beforeEach(async () => {
   fakeSessions.clear();
   runBroker.clear();
   // Windows may briefly retain directory handles after child processes exit.
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
 });
 
 afterAll(async () => {
   await app.close();
   // Windows may briefly retain directory handles after child processes exit.
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function steer(id: string, body: unknown, projectId = "default") {

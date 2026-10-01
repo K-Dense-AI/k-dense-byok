@@ -275,7 +275,7 @@ if (isMain) {
         for (const run of runs) run.requestAbort();
         await abortProjectSessions(id);
         await Promise.all(runs.map(run => run.waitForCompletion()));
-        disposeProjectSessions(id);
+        await disposeProjectSessions(id);
       }));
       await closed;
       app.log.info("Kady shutdown complete");

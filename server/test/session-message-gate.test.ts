@@ -10,8 +10,8 @@ import { runBroker } from "../src/agent/run-broker.ts";
 import { ProvenanceRecorder } from "../src/provenance/recorder.ts";
 
 const projectId = "message-gate";
-afterEach(() => {
-  disposeProjectSessions(projectId);
+afterEach(async () => {
+  await disposeProjectSessions(projectId);
   vi.restoreAllMocks();
 });
 

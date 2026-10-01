@@ -171,13 +171,13 @@ function evictOverCap(projectId: string): void {
     if (remaining <= MAX_LIVE_PER_PROJECT) break;
     const s = live.get(k);
     if (!s || s.isStreaming || pinned.has(k)) continue; // in-flight or claimed
-    release(projectId, k, s);
+    void release(projectId, k, s);
     remaining--;
   }
 }
 
 /** Dispose one live session and drop everything keyed off it. */
-function release(projectId: string, key: string, session: AgentSession): void {
+function release(projectId: string, key: string, session: AgentSession): Promise<void> {
   // Detach before dispose so an in-flight system run can finalize its handle
   // while the session is still queryable.
   const detach = observers.get(key);
@@ -192,14 +192,16 @@ function release(projectId: string, key: string, session: AgentSession): void {
   // Pi's dispose() does not tell extensions the session is going away;
   // pi-subagents releases its supervisor-channel watchers and pollers on
   // `session_shutdown`, so emit it the way Pi's own quit path does.
-  void session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {
+  const shutdown = session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {
     /* best effort: a failing shutdown handler must not block disposal */
   });
-  session.dispose();
   live.delete(key);
   pinned.delete(key);
   systemSessions.delete(key);
   clearSessionCompute(projectId, key.slice(projectId.length + 1));
+  // Keep extension contexts valid until asynchronous MCP/worker cleanup has
+  // completed. In particular, Windows cannot remove a live child's cwd.
+  return shutdown.finally(() => session.dispose());
 }
 
 export interface OpenSessionOptions {
@@ -531,10 +533,10 @@ export async function listSessions(paths: ProjectPaths): Promise<SessionInfo[]> 
   return SessionManager.list(paths.sandbox, paths.sessionsDir);
 }
 
-export function disposeSession(projectId: string, sessionId: string): void {
+export async function disposeSession(projectId: string, sessionId: string): Promise<void> {
   const k = keyFor(projectId, sessionId);
   const s = live.get(k);
-  if (s) release(projectId, k, s);
+  if (s) await release(projectId, k, s);
 }
 
 /** Stop every live session before its project directory is removed. */
@@ -550,10 +552,8 @@ export async function abortProjectSessions(projectId: string): Promise<void> {
 }
 
 /** Release every live session after its project runs have finalized. */
-export function disposeProjectSessions(projectId: string): void {
+export async function disposeProjectSessions(projectId: string): Promise<void> {
   const prefix = `${projectId}:`;
   const sessions = [...live.entries()].filter(([key]) => key.startsWith(prefix));
-  for (const [key, session] of sessions) {
-    release(projectId, key, session);
-  }
+  await Promise.all(sessions.map(([key, session]) => release(projectId, key, session)));
 }

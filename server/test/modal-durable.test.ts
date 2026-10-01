@@ -925,7 +925,7 @@ describe("Durable Modal manager safety nets", () => {
     expect(cancelled.accounting.reconciled).toBe(true);
     expect(sandbox.terminated).toBe(true);
     expect(listComputeReservations("default")).toEqual([]);
-  });
+  }, 20_000); // cancel allows up to 10s for the recovery worker to settle.
 
   it("cancelling while Modal is unconfigured still reconciles the hold", async () => {
     const store = new ModalJobStore();
