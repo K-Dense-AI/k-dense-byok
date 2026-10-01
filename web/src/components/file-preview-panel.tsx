@@ -12,9 +12,11 @@ import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { NotebookEntry } from "@/lib/notebook";
 import { cn } from "@/lib/utils";
 import {
+  notebookHtmlDocument,
+  notebookSvgDataUrl,
   sanitizeNotebookHtml,
-  sanitizeNotebookSvg,
 } from "@/lib/notebook-output-sanitize";
+import { useTheme } from "next-themes";
 import { getViewerDef } from "@/lib/viewers/registry";
 import {
   fileCategory,
@@ -101,8 +103,14 @@ function categoryLabel(name: string): string {
   if (cat === "structure3d") return ext || "structure";
   if (cat === "massspec") return ext === "jdx" || ext === "dx" ? "spectrum" : ext;
   if (cat === "arraydata") {
-    return ext === "parquet" ? "parquet" : ext === "npy" || ext === "npz" ? "ndarray" : ext === "nc" || ext === "cdf" ? "netcdf" : "hdf5";
+    if (["npy", "npz"].includes(ext)) return "ndarray";
+    if (["nc", "nc4", "cdf"].includes(ext)) return "netcdf";
+    if (ext === "mat") return "matlab";
+    if (ext === "mtx") return "matrix market";
+    if (["fits", "fit", "fts"].includes(ext)) return "fits";
+    return ext === "parquet" ? "parquet" : "hdf5";
   }
+  if (cat === "datatable") return ["db", "sqlite3"].includes(ext) ? "sqlite" : ext;
   if (cat === "phylo") return "phylo tree";
   if (cat === "alignment") return "alignment";
   if (cat === "dicom") return "dicom";
@@ -496,6 +504,38 @@ function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*[mGKHF]/g, "");
 }
 
+/**
+ * An HTML cell output in its own inert document (see notebookHtmlDocument):
+ * `sandbox="allow-same-origin"` without `allow-scripts` runs nothing but lets
+ * us size the frame to its content.
+ */
+function NotebookHtmlFrame({ html }: { html: string }) {
+  const { resolvedTheme } = useTheme();
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(48);
+  const srcDoc = useMemo(
+    () => notebookHtmlDocument(sanitizeNotebookHtml(html), resolvedTheme === "dark"),
+    [html, resolvedTheme],
+  );
+  const measure = useCallback(() => {
+    const doc = frame.current?.contentDocument;
+    if (!doc?.documentElement) return;
+    // +2: scrollHeight rounds fractional layout down, which shows a scrollbar.
+    setHeight(Math.min(Math.max(doc.documentElement.scrollHeight + 2, 24), 4000));
+  }, []);
+  return (
+    <iframe
+      ref={frame}
+      title="Cell output"
+      sandbox="allow-same-origin"
+      srcDoc={srcDoc}
+      onLoad={measure}
+      style={{ height }}
+      className="block w-full border-0"
+    />
+  );
+}
+
 function NotebookOutput({ out }: { out: NbOutput }) {
   if (out.output_type === "stream") {
     const text = nbText(out.text);
@@ -521,17 +561,20 @@ function NotebookOutput({ out }: { out: NbOutput }) {
       );
     }
     if (data["image/svg+xml"]) {
-      const svg = sanitizeNotebookSvg(nbText(data["image/svg+xml"] as string | string[]));
+      // As an image, not inline: see notebookSvgDataUrl.
+      const src = notebookSvgDataUrl(nbText(data["image/svg+xml"] as string | string[]));
       return (
-        <div className="border-t px-4 py-3 overflow-x-auto [&_svg]:max-w-full"
-          dangerouslySetInnerHTML={{ __html: svg }} />
+        <div className="border-t px-4 py-3 overflow-x-auto">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="cell output" className="max-w-full" />
+        </div>
       );
     }
     if (data["text/html"]) {
-      const html = sanitizeNotebookHtml(nbText(data["text/html"] as string | string[]));
       return (
-        <div className="border-t px-4 py-2 text-xs overflow-x-auto [&_table]:text-xs [&_td]:px-2 [&_th]:px-2"
-          dangerouslySetInnerHTML={{ __html: html }} />
+        <div className="border-t px-4 py-2">
+          <NotebookHtmlFrame html={nbText(data["text/html"] as string | string[])} />
+        </div>
       );
     }
     const plain = nbText(data["text/plain"] as string | string[] | undefined);
@@ -1001,11 +1044,13 @@ function ImageAnnotator({
   projectId,
   onSave,
   onDiscard,
+  onDirtyChange,
 }: {
   path: string;
   projectId: string;
   onSave: (blob: Blob) => Promise<boolean>;
   onDiscard: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -1017,6 +1062,10 @@ function ImageAnnotator({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savedStrokes, setSavedStrokes] = useState<Point[][]>([]);
+  useEffect(() => {
+    onDirtyChange?.(strokesRef.current !== savedStrokes && (strokeCount > 0 || savedStrokes.length > 0));
+  }, [onDirtyChange, savedStrokes, strokeCount]);
 
   const brushWidth = useCallback(() => {
     if (!canvasRef.current) return 4;
@@ -1138,10 +1187,11 @@ function ImageAnnotator({
 
   const handleSave = useCallback(() => {
     setSaving(true);
+    const strokes = strokesRef.current;
     canvasRef.current?.toBlob(async (blob) => {
       if (blob) {
         const ok = await onSave(blob);
-        if (ok) { setSaved(true); setTimeout(() => setSaved(false), 2000); }
+        if (ok) { setSavedStrokes(strokes); setSaved(true); setTimeout(() => setSaved(false), 2000); }
       }
       setSaving(false);
     }, "image/png");
@@ -1663,6 +1713,7 @@ export interface RevealTarget {
 
 export interface FilePreviewPanelProps {
   projectId: string;
+  isActive?: boolean;
   activeModelRef?: string;
   tabs: Tab[];
   activeTabPath: string | null;
@@ -1700,6 +1751,7 @@ export interface FilePreviewPanelProps {
 
 export function FilePreviewPanel({
   projectId,
+  isActive = true,
   activeModelRef,
   tabs,
   activeTabPath,
@@ -1733,6 +1785,32 @@ export function FilePreviewPanel({
 }: FilePreviewPanelProps) {
   // Per-tab mode tracking
   const [tabModes, setTabModes] = useState<Record<string, PanelMode>>({});
+  const dirtyPaths = useRef(new Set<string>());
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (dirtyPaths.current.size === 0) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
+  const trackDirty = useCallback((path: string, dirty: boolean) => {
+    if (dirty) dirtyPaths.current.add(path);
+    else dirtyPaths.current.delete(path);
+  }, []);
+  const confirmDiscard = useCallback((path: string) =>
+    !dirtyPaths.current.has(path) || window.confirm(`Discard unsaved changes to ${path.split("/").pop()}?`), []);
+  const closeTab = useCallback((path: string) => {
+    if (!confirmDiscard(path)) return;
+    dirtyPaths.current.delete(path);
+    setTabModes((previous) => {
+      const next = { ...previous };
+      delete next[path];
+      return next;
+    });
+    onTabClose(path);
+  }, [confirmDiscard, onTabClose]);
 
   const setMode = useCallback((path: string, mode: PanelMode) => {
     setTabModes((prev) => ({ ...prev, [path]: mode }));
@@ -1818,7 +1896,7 @@ export function FilePreviewPanel({
         activeTabPath={activeTabPath}
         tabModes={tabModes}
         onSelect={onTabSelect}
-        onClose={onTabClose}
+        onClose={closeTab}
         showNotebook={showNotebook}
         onSelectNotebook={onSelectNotebook}
         showCompute={showCompute}
@@ -1827,7 +1905,46 @@ export function FilePreviewPanel({
         onSelectAutomation={onSelectAutomation}
       />
 
-      {showNotebook ? (
+      {/* Each open editor owns its draft/undo history. Keep it mounted while
+          viewing another file or project panel; only an explicit close discards. */}
+      {tabs.filter((tab) => tabModes[tab.path] === "edit" || tabModes[tab.path] === "annotate").map((tab) => {
+        const visible = isActive && tab.path === selectedPath && !showNotebook && !showCompute && !showAutomation;
+        const name = tab.path.split("/").pop() ?? "";
+        const discard = () => {
+          if (!confirmDiscard(tab.path)) return;
+          dirtyPaths.current.delete(tab.path);
+          setMode(tab.path, "view");
+        };
+        const editorProps = {
+          path: tab.path,
+          name,
+          initialContent: tab.content ?? "",
+          onSave: (content: string) => onSaveText(tab.path, content),
+          onDiscard: discard,
+          onDirtyChange: (dirty: boolean) => trackDirty(tab.path, dirty),
+        };
+        return (
+          <div key={tab.path} className="flex min-h-0 flex-1 flex-col" style={visible ? undefined : { display: "none" }}>
+            {visible && header}
+            <div className="min-h-0 flex-1">
+              {tabModes[tab.path] === "annotate" ? (
+                <ImageAnnotator
+                  path={tab.path}
+                  projectId={projectId}
+                  onSave={(blob) => onSaveImageBlob(tab.path, blob)}
+                  onDiscard={discard}
+                  onDirtyChange={(dirty) => trackDirty(tab.path, dirty)}
+                />
+              ) : fileCategory(name) === "latex" && onCompileLatex ? (
+                <LatexEditor {...editorProps} model={oneShotModelRef} onCompile={onCompileLatex} onOpenFile={onTabSelect}
+                  onDiscard={() => { dirtyPaths.current.delete(tab.path); setMode(tab.path, "view"); }} />
+              ) : <TextEditor {...editorProps} />}
+            </div>
+          </div>
+        );
+      })}
+
+      {isActive && (showNotebook ? (
         <LabNotebookView
           projectId={projectId}
           model={oneShotModelRef}
@@ -1863,58 +1980,6 @@ export function FilePreviewPanel({
             <p className="text-xs text-muted-foreground/60">Click a file in the sidebar to open it</p>
           </div>
         </div>
-      )}
-
-      {/* Edit mode — LaTeX gets the split-pane editor */}
-      {selectedPath && mode === "edit" && cat === "latex" && onCompileLatex && (
-        <>
-          {header}
-          <div className="flex-1 min-h-0">
-            <LatexEditor
-              key={selectedPath}
-              path={selectedPath}
-              name={selectedName ?? ""}
-              initialContent={fileContent ?? ""}
-              model={oneShotModelRef}
-              onSave={(content) => onSaveText(selectedPath, content)}
-              onCompile={onCompileLatex}
-              onDiscard={() => setMode(selectedPath, "view")}
-              onOpenFile={onTabSelect}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Edit mode — standard text editor */}
-      {selectedPath && mode === "edit" && (cat !== "latex" || !onCompileLatex) && (
-        <>
-          {header}
-          <div className="flex-1 min-h-0">
-            <TextEditor
-              key={selectedPath}
-              path={selectedPath}
-              name={selectedName ?? ""}
-              initialContent={fileContent ?? ""}
-              onSave={(content) => onSaveText(selectedPath, content)}
-              onDiscard={() => setMode(selectedPath, "view")}
-            />
-          </div>
-        </>
-      )}
-
-      {/* Annotate mode */}
-      {selectedPath && mode === "annotate" && (
-        <>
-          {header}
-          <div className="flex-1 min-h-0">
-            <ImageAnnotator
-              path={selectedPath}
-              projectId={projectId}
-              onSave={(blob) => onSaveImageBlob(selectedPath, blob)}
-              onDiscard={() => setMode(selectedPath, "view")}
-            />
-          </div>
-        </>
       )}
 
       {/* Provenance mode — lineage instead of contents */}
@@ -1972,7 +2037,7 @@ export function FilePreviewPanel({
         </>
       )}
       </>
-      )}
+      ))}
     </div>
   );
 }

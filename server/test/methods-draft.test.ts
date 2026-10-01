@@ -68,10 +68,26 @@ describe("buildMethodsDraftContext", () => {
     expect(text).not.toContain("Housekeeping only");
   });
 
-  it("includes fenced code and artifact basenames", () => {
+  it("includes fenced code and unambiguous artifact paths", () => {
     expect(text).toContain("```python");
     expect(text).toContain("sc.pp.pca(adata)");
-    expect(text).toContain("artifacts: pca.png");
+    expect(text).toContain("artifacts: figures/pca.png");
+  });
+
+  it("keeps execution evidence separate from plans, attempts and unsupported completion labels", () => {
+    const ctx = buildMethodsDraftContext([
+      entryOf({ id: "plan", execution: { status: "planned" }, artifacts: ["old/result.csv"] }),
+      entryOf({ id: "attempt", execution: { status: "attempted", evidence: "run-1 failed: exit 1; logs/run-1.txt" } }),
+      entryOf({ id: "bare", execution: { status: "completed" } }),
+      entryOf({ id: "done", execution: { status: "completed", evidence: "run-2 exited 0; new/result.csv; logs/run-2.txt" }, artifacts: ["new/result.csv"] }),
+    ], { sessionId: "s" });
+    const digest = ctx.messages[0].content as string;
+    expect(digest).toContain("Execution (authored, not independently verified): planned");
+    expect(digest).toContain("Execution (authored, not independently verified): attempted");
+    expect(digest).toContain("Execution (authored, not independently verified): unverified");
+    expect(digest).toContain("run-2 exited 0; new/result.csv; logs/run-2.txt");
+    expect(digest).toContain("artifacts: old/result.csv");
+    expect(digest).toContain("artifacts: new/result.csv");
   });
 
   it("excludes superseded methods and preserves source ids, limitations and check warnings", () => {
@@ -132,7 +148,7 @@ describe("runMethodsDraft", () => {
     );
     expect(res.path).toBe("methods_draft_sess-1.md");
     expect(res.markdown).toContain("## Methods");
-    expect(res.costUsd).toBeCloseTo(0.003);
+    expect(res.costUsd).toBeCloseTo(0.003, 6);
     expect(res.inputTokens).toBe(100);
     expect(res.outputTokens).toBe(20);
 
@@ -143,7 +159,7 @@ describe("runMethodsDraft", () => {
     const summary = withActiveProject(p.id, () =>
       sessionCostSummary(METHODS_DRAFT_SESSION_ID, p.id),
     );
-    expect(summary.totalUsd).toBeCloseTo(0.003);
+    expect(summary.totalUsd).toBeCloseTo(0.003, 6);
     expect(summary.entries[0].role).toBe("agent");
   });
 
@@ -223,5 +239,37 @@ describe("runMethodsDraft", () => {
         runMethodsDraft("s", p.id, {}, async () => fakeMessage("   ")),
       ),
     ).rejects.toMatchObject({ status: 502 });
+  });
+
+  it.each(["error", "aborted", "pending", "empty"] as const)(
+    "ledgers a paid %s response and applies its spend to the next request",
+    async (reason) => {
+      const p = createProject({ name: "Paid failed draft", spendLimitUsd: 0.002 });
+      appendNotebookEntry("s", entryOf(), p.id);
+      let calls = 0;
+      const complete = async () => {
+        calls++;
+        return reason === "empty"
+          ? fakeMessage("   ")
+          : fakeMessage("Partial draft", { stopReason: reason });
+      };
+      await expect(runMethodsDraft("s", p.id, {}, complete)).rejects.toMatchObject({ status: 502 });
+      const summary = sessionCostSummary(METHODS_DRAFT_SESSION_ID, p.id);
+      expect(summary.totalUsd).toBeCloseTo(0.003, 6);
+      expect(summary.entries).toHaveLength(1);
+      expect(summary.entries[0]).toMatchObject({ promptTokens: 100, completionTokens: 20 });
+      await expect(runMethodsDraft("s", p.id, {}, complete)).rejects.toMatchObject({ status: 402 });
+      expect(calls).toBe(1);
+    },
+  );
+
+  it("retains incurred usage when saving the draft fails", async () => {
+    const p = createProject({ name: "Unwritable draft" });
+    appendNotebookEntry("s", entryOf(), p.id);
+    fs.mkdirSync(path.join(resolvePaths(p.id).sandbox, "methods_draft_s.md"));
+    await expect(runMethodsDraft("s", p.id, {}, async () => fakeMessage("## Methods\nDraft."))).rejects.toThrow();
+    const summary = sessionCostSummary(METHODS_DRAFT_SESSION_ID, p.id);
+    expect(summary.totalUsd).toBeCloseTo(0.003, 6);
+    expect(summary.entries).toHaveLength(1);
   });
 });

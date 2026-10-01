@@ -8,9 +8,9 @@ import { sessionCostSummary } from "../src/cost/ledger.ts";
 import {
   AssistError,
   buildAssistContext,
-  extractReplacement,
   runLatexAssist,
 } from "../src/latex/assist.ts";
+import { parseLatexAssistDecision } from "../../web/src/lib/latex/assist-result.ts";
 import { ONE_SHOT_REASONING } from "../src/agent/one-shot-reasoning.ts";
 
 function reset(): void {
@@ -36,17 +36,16 @@ function fakeMessage(text: string): AssistantMessage {
   } as AssistantMessage;
 }
 
-describe("extractReplacement", () => {
-  it("prefers the first fenced block", () => {
-    expect(
-      extractReplacement("Here you go:\n```latex\n\\textbf{fixed}\n```\ntrailing"),
-    ).toBe("\\textbf{fixed}");
+describe("parseLatexAssistDecision", () => {
+  it("preserves exact replacement whitespace and LaTeX backslashes", () => {
+    const decision = { status: "replacement", replacement: "  \\textbf{fixed}\n" };
+    expect(parseLatexAssistDecision(JSON.stringify(decision))).toEqual(decision);
+    expect(parseLatexAssistDecision("```json\n" + JSON.stringify(decision) + "\n```")).toEqual(decision);
   });
-  it("falls back to trimmed plain text", () => {
-    expect(extractReplacement("  \\alpha + \\beta  ")).toBe("\\alpha + \\beta");
-  });
-  it("returns null for empty output", () => {
-    expect(extractReplacement("   ")).toBeNull();
+  it("never turns explanations, partial JSON or ambiguous responses into edits", () => {
+    for (const text of ["Need more context", "```latex\ntext\n```", '{"status":"replacement",', JSON.stringify({ status: "needs_context", message: "Need preamble", replacement: "bad" }), "null", "   "]) {
+      expect(parseLatexAssistDecision(text)).toBeNull();
+    }
   });
 });
 
@@ -59,14 +58,13 @@ describe("buildAssistContext", () => {
       error: { line: 12, message: "Undefined control sequence." },
       context: { startLine: 10, endLine: 14, text: "a\n\\badmac\nb\nc\nd" },
     });
-    expect(ctx.systemPrompt).toMatch(/single fenced/i);
     const user = ctx.messages[0];
     expect(user.role).toBe("user");
     const text = user.content as string;
     expect(text).toContain("Undefined control sequence.");
     expect(text).toContain("\\badmac");
     expect(text).toContain("amsmath");
-    expect(text).toContain("line 12");
+    expect(JSON.parse(text).referenceData.compilerError.line).toBe(12);
   });
   it("builds an edit prompt containing instruction and selection", () => {
     const ctx = buildAssistContext({
@@ -82,6 +80,26 @@ describe("buildAssistContext", () => {
 });
 
 describe("runLatexAssist", () => {
+  it("returns a billed needs_context response with no replacement", async () => {
+    const p = createProject({ name: "Missing macro" });
+    const result = await withActiveProject(p.id, () => runLatexAssist(
+      { mode: "fix", fileName: "main.tex", error: { line: 1, message: "Undefined control sequence" }, context: { startLine: 1, endLine: 1, text: "\\unknown" } },
+      p.id, async () => fakeMessage(JSON.stringify({ status: "needs_context", message: "Provide the definition of the custom macro." })),
+    ));
+    expect(result).toMatchObject({ status: "needs_context", costUsd: 0.003 });
+    expect(result).not.toHaveProperty("replacement");
+    expect(withActiveProject(p.id, () => sessionCostSummary("latex-assist", p.id)).totalUsd).toBeCloseTo(0.003);
+  });
+
+  it.each(["length", "pending"])("rejects %s output even if it contains valid JSON and records incurred usage", async (stopReason) => {
+    const p = createProject({ name: "Incomplete" });
+    await expect(withActiveProject(p.id, () => runLatexAssist(
+      { mode: "edit", fileName: "main.tex", instruction: "bold", selection: "x" }, p.id,
+      async () => ({ ...fakeMessage(JSON.stringify({ status: "replacement", replacement: "bad" })), stopReason } as AssistantMessage),
+    ))).rejects.toMatchObject({ status: 502 });
+    expect(withActiveProject(p.id, () => sessionCostSummary("latex-assist", p.id)).totalUsd).toBeCloseTo(0.003);
+  });
+
   it("returns the replacement and ledgers cost under latex-assist", async () => {
     const p = createProject({ name: "Assist" });
     const res = await withActiveProject(p.id, () =>
@@ -94,11 +112,11 @@ describe("runLatexAssist", () => {
         async (_model, _context, options) => {
           expect(options?.apiKey).toBeUndefined();
           expect(options?.reasoning).toBe(ONE_SHOT_REASONING);
-          return fakeMessage("```latex\n\\textbf{hello}\n```");
+          return fakeMessage(JSON.stringify({ status: "replacement", replacement: "\\textbf{hello}" }));
         },
       ),
     );
-    expect(res.replacement).toBe("\\textbf{hello}");
+    expect(res).toMatchObject({ status: "replacement", replacement: "\\textbf{hello}" });
     expect(res.costUsd).toBeCloseTo(0.003);
     const summary = withActiveProject(p.id, () =>
       sessionCostSummary("latex-assist", p.id),
@@ -115,7 +133,7 @@ describe("runLatexAssist", () => {
       runLatexAssist(
         { mode: "edit", fileName: "m.tex", instruction: "x", selection: "y" },
         p.id,
-        async () => fakeMessage("ok"),
+        async () => fakeMessage(JSON.stringify({ status: "replacement", replacement: "ok" })),
       ),
     );
     await expect(

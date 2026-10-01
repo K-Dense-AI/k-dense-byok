@@ -19,6 +19,7 @@ import {
   parseModalInstance,
 } from "@/lib/modal-jobs";
 import { cn } from "@/lib/utils";
+import { SettingsLink } from "@/components/settings-link";
 
 export type { ModalInstance } from "@/lib/modal-jobs";
 
@@ -103,6 +104,15 @@ function normalizedSelected(selected: ModalInstance | null): ModalInstance | nul
   return parseModalInstance(selected) ?? selected;
 }
 
+/** The server prices host resources once; only the GPU component scales. */
+function withGpuCount(instance: ModalInstance, gpuCount: number): ModalInstance {
+  return {
+    ...instance,
+    gpuCount,
+    pricePerHour: instance.pricePerHour + (gpuCount - instance.gpuCount) * (instance.gpuPricePerHour ?? 0),
+  };
+}
+
 function PickerOption({
   instance,
   selected,
@@ -126,7 +136,7 @@ function PickerOption({
       aria-selected={selected}
       disabled={!enabled}
       onClick={onSelect}
-      title={!enabled ? "Connect Modal in Settings to enable remote compute" : undefined}
+      title={!enabled ? "Connect Modal in Settings → Services to enable remote compute" : undefined}
       className={cn(
         "flex w-full items-start gap-2.5 px-3 py-2.5 text-left text-xs transition-colors",
         enabled ? "hover:bg-muted/60 focus-visible:bg-muted/60" : "cursor-not-allowed opacity-50",
@@ -223,8 +233,7 @@ export function ComputePickerBody({
   const effective =
     catalogSelected && parsedSelected
       ? {
-          ...catalogSelected,
-          gpuCount: parsedSelected.gpuCount,
+          ...withGpuCount(catalogSelected, parsedSelected.gpuCount),
           fallback: parsedSelected.fallback,
           cache: parsedSelected.cache,
         }
@@ -272,7 +281,11 @@ export function ComputePickerBody({
           <span className="mt-1 size-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden />
           <div className="min-w-0 text-[11px] leading-relaxed text-muted-foreground">
             <span className="font-medium text-foreground">Modal is not connected.</span>{" "}
-            Save a token ID and secret together in Settings → API keys.
+            Save a token ID and secret together in{" "}
+            <SettingsLink tab="services" section="modal">
+              Settings → Services
+            </SettingsLink>
+            .
             <a
               href="https://modal.com/settings/tokens"
               target="_blank"
@@ -332,10 +345,10 @@ export function ComputePickerBody({
         {catalog?.instances.map((instance) => (
           <PickerOption
             key={instance.id}
-            instance={instance}
+            instance={effective.id === instance.id ? effective : instance}
             selected={effective.id === instance.id}
             enabled={modalConfigured}
-            onSelect={() => handleSelect(instance)}
+            onSelect={() => handleSelect(effective.id === instance.id ? effective : instance)}
           />
         ))}
         {loading && !catalog ? (
@@ -359,10 +372,7 @@ export function ComputePickerBody({
               value={effective.gpuCount}
               disabled={!effective.gpu}
               onChange={(event) =>
-                onChange({
-                  ...effective,
-                  gpuCount: Number(event.target.value),
-                })
+                onChange(withGpuCount(effective, Number(event.target.value)))
               }
               className="h-7 w-full rounded border bg-background px-1.5 text-[11px] text-foreground disabled:opacity-50"
             >
@@ -452,8 +462,7 @@ export function ComputeSelector({
       : null;
     return catalogInstance && parsed
       ? {
-          ...catalogInstance,
-          gpuCount: parsed.gpuCount,
+          ...withGpuCount(catalogInstance, parsed.gpuCount),
           fallback: parsed.fallback,
           cache: parsed.cache,
         }

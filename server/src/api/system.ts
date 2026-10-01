@@ -5,9 +5,9 @@
  */
 import type { FastifyInstance } from "fastify";
 import {
-  OLLAMA_BASE_URL,
-  OPENAI_COMPATIBLE_BASE_URL,
-  OPENAI_COMPATIBLE_CONFIGURED,
+  ollamaBaseUrl,
+  openaiCompatibleBaseUrl,
+  openaiCompatibleConfigured,
 } from "../config.ts";
 import { getSystemStats } from "../system-stats.ts";
 
@@ -64,7 +64,7 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 2000);
-      const resp = await fetch(`${OLLAMA_BASE_URL.replace(/\/+$/, "")}/api/tags`, {
+      const resp = await fetch(`${ollamaBaseUrl().replace(/\/+$/, "")}/api/tags`, {
         signal: ctrl.signal,
       });
       clearTimeout(t);
@@ -95,12 +95,12 @@ export async function registerSystemRoutes(app: FastifyInstance): Promise<void> 
   // provider, so it can stay hidden for everyone else instead of showing a
   // permanently dead section.
   app.get("/openai-compatible/models", async () => {
-    const configured = OPENAI_COMPATIBLE_CONFIGURED;
+    const configured = openaiCompatibleConfigured();
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), 2000);
       const resp = await fetch(
-        `${OPENAI_COMPATIBLE_BASE_URL.replace(/\/+$/, "")}/v1/models`,
+        `${openaiCompatibleBaseUrl().replace(/\/+$/, "")}/v1/models`,
         { signal: ctrl.signal },
       );
       clearTimeout(t);

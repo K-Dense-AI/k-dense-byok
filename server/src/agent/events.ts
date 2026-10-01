@@ -379,6 +379,13 @@ export function toolResultFields(raw: unknown, sandboxRoot = ""): ToolResultFiel
   };
 }
 
+/** Calls a tool made itself (codemode scripts calling MCP or other tools)
+ *  carry the calling tool's id; the model-issued calls have none. */
+function parentField(ev: object): { parentToolCallId?: string } {
+  const parent = (ev as { parentToolCallId?: unknown }).parentToolCallId;
+  return typeof parent === "string" ? { parentToolCallId: parent } : {};
+}
+
 /** Returns a client frame for an event, or null to skip it.
  *  `sandboxRoot` (when provided) relativizes absolute sandbox paths in tool
  *  args so the UI shows `de_analysis.py` rather than the full host path. */
@@ -448,9 +455,10 @@ export function toClientFrame(
         toolName: ev.toolName,
         args: relativizeSandboxPaths(ev.args, sandboxRoot),
         ...skillFieldFor(ev.toolName, ev.args, sandboxRoot),
+        ...parentField(ev),
       };
     case "tool_execution_update":
-      return { type: "tool_update", toolCallId: ev.toolCallId, toolName: ev.toolName };
+      return { type: "tool_update", toolCallId: ev.toolCallId, toolName: ev.toolName, ...parentField(ev) };
     case "tool_execution_end":
       return {
         type: "tool_end",
@@ -458,6 +466,7 @@ export function toClientFrame(
         toolName: ev.toolName,
         isError: ev.isError,
         ...toolResultFields(ev.result, sandboxRoot),
+        ...parentField(ev),
       };
     case "queue_update":
       return { type: "queue_update", steering: ev.steering, followUp: ev.followUp };

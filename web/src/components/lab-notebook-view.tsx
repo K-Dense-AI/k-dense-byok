@@ -34,6 +34,7 @@ import { LabNotebookTimeline } from "./lab-notebook-timeline";
 import { TYPE_META } from "./lab-notebook-entry-card";
 import { NotebookMemoryDialog } from "./notebook-memory-dialog";
 import { EvidencePackageDialog } from "./evidence-package-dialog";
+import { openSettings } from "@/lib/settings-nav";
 
 const VIEW_MODE_KEY = "kady:notebook:view:v2";
 const FOCUS_DEADLINE_MS = 4000;
@@ -391,7 +392,9 @@ export function LabNotebookView({
         message?: string;
       };
       if (res.status === 402) {
-        toast.error("Project spend limit reached — raise it in project settings.");
+        toast.error("Project spend limit reached — raise it in project settings.", {
+          action: { label: "Project settings", onClick: () => openSettings({ tab: "project", section: "budget" }) },
+        });
         return;
       }
       if (!res.ok) {
@@ -404,8 +407,10 @@ export function LabNotebookView({
           : typeof data.costUsd === "number"
           ? `Methods draft saved ($${data.costUsd.toFixed(4)})`
           : "Methods draft saved",
+        typeof data.path === "string" ? {
+          action: { label: "Open draft", onClick: () => onOpenFile(data.path!) },
+        } : undefined,
       );
-      if (typeof data.path === "string") onOpenFile(data.path);
     } catch {
       toast.error("Methods draft failed.");
     } finally {

@@ -52,7 +52,7 @@ describe("agent markdown", () => {
       "Prompt body",
     ].join("\n");
     const parsed = parseAgentMarkdown(text, "custom", "project");
-    expect(parsed.extra).toEqual({ defaultReads: "plan.md, progress.md", maxTokens: "50000" });
+    expect(parsed.extra).toEqual({ defaultReads: "plan.md, progress.md", maxTokens: 50000 });
     const reserialized = serializeAgentMarkdown(parsed);
     expect(reserialized).toContain("defaultReads: plan.md, progress.md");
     expect(reserialized).toContain("maxTokens: 50000");
@@ -90,6 +90,9 @@ describe("agent files CRUD + seeding", () => {
 
     expect(() => writeProjectAgent(paths, "Bad Name", { description: "", systemPrompt: "x" }))
       .toThrow(/Invalid agent name/);
+    // Shadowed by the static GET/PUT /agents/defaults route.
+    expect(() => writeProjectAgent(paths, "defaults", { description: "", systemPrompt: "x" }))
+      .toThrow(/reserved/);
     expect(() => writeProjectAgent(paths, "ok", { description: "", systemPrompt: "  " }))
       .toThrow(/System prompt/);
     expect(() =>

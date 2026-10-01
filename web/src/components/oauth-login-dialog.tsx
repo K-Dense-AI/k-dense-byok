@@ -264,7 +264,18 @@ export function OAuthLoginDialog({
             </div>
           ) : null}
 
-          {authUrl?.type === "auth_url" ? (
+          {flow?.events.filter((event) => event.type === "info").map((event, index) => (
+            <div key={index} className="space-y-2 rounded-md border p-3 text-sm">
+              <p>{event.message}</p>
+              {event.links?.map((link) => (
+                <a key={link.url} href={link.url} target="_blank" rel="noopener noreferrer" className="block underline">
+                  {link.label ?? link.url}
+                </a>
+              ))}
+            </div>
+          ))}
+
+          {!terminal && authUrl?.type === "auth_url" ? (
             <div className="space-y-2 rounded-md border p-3">
               <p className="text-sm">
                 {authUrl.instructions ?? "Continue sign-in in your browser."}
@@ -289,7 +300,7 @@ export function OAuthLoginDialog({
             </div>
           ) : null}
 
-          {deviceCode?.type === "device_code" ? (
+          {!terminal && deviceCode?.type === "device_code" ? (
             <div className="space-y-3 rounded-md border p-3">
               <div>
                 <p className="text-xs font-medium text-muted-foreground">

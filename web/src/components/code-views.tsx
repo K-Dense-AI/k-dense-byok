@@ -125,12 +125,14 @@ export function TextEditor({
   initialContent,
   onSave,
   onDiscard,
+  onDirtyChange,
 }: {
   path: string;
   name: string;
   initialContent: string;
   onSave: (content: string) => Promise<boolean>;
   onDiscard: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [content, setContent] = useState(initialContent);
   const [saving, setSaving] = useState(false);
@@ -143,6 +145,7 @@ export function TextEditor({
   contentRef.current = content;
   const [diskChanged, setDiskChanged] = useState(false);
   const isDirty = content !== savedRef.current;
+  useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
 
   useEffect(() => {
     if (initialContent === savedRef.current) return;

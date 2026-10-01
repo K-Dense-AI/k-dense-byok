@@ -1,3 +1,4 @@
+import { seedSubagentResources } from "../agent/subagent-resources.ts";
 /**
  * Skill management endpoints.
  *
@@ -92,6 +93,7 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get<{ Querystring: ScopeQuery }>("/skills", async (req) => {
     const paths = activePaths();
+    seedSubagentResources(paths);
     applyDefaultSkillStates(paths);
     if (req.query.scope) {
       const root = skillRootForScope(paths, req.query.scope);
@@ -115,6 +117,7 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
 
   app.get<{ Querystring: ScopeQuery }>("/skills/all", async (req) => {
     const paths = activePaths();
+    seedSubagentResources(paths);
     applyDefaultSkillStates(paths);
     const root = skillRootForScope(paths, req.query.scope);
     const { enabled, disabled, problems } = listSkillsWithProblems(root);
@@ -152,6 +155,7 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
   // holds only skills the user installed or wrote.
   app.post("/skills/sync", async (_req, reply) => {
     const paths = activePaths();
+    seedSubagentResources(paths);
     try {
       const result = await syncProjectSkillsFromRemote(paths);
       return { ok: true, result };
@@ -251,6 +255,7 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
         return { detail: `Invalid skill name "${name}"` };
       }
       const paths = activePaths();
+      seedSubagentResources(paths);
       const root = skillRootForScope(paths, req.query.scope);
       const origin = getSkillProvenance(root, name)?.origin ?? "catalogue";
       try {
@@ -363,6 +368,7 @@ export async function registerSkillRoutes(app: FastifyInstance): Promise<void> {
     "/sandbox/init",
     async (req) => {
       const paths = activePaths();
+      seedSubagentResources(paths);
       const allowRemote = req.query.remote !== "false";
       const count = await seedProjectSkills(paths, allowRemote);
       const venvSynced = req.query.venv === "true" ? syncSandboxVenv(paths) : false;

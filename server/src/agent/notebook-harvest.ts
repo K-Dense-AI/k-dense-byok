@@ -16,6 +16,7 @@ import { normalizeAnalysisPlan } from "../../../web/src/lib/notebook-plans.ts";
 import { normalizeRobustnessDraft } from "../../../web/src/lib/notebook-robustness.ts";
 import { normalizeResultLinks } from "../../../web/src/lib/notebook-result-links.ts";
 import fs from "node:fs";
+import { normalizeNotebookExecution } from "../../../web/src/lib/notebook-execution.ts";
 import { stripSandboxRoot } from "./events.ts";
 import type { NotebookEntry, NotebookEntryType } from "./notebook-store.ts";
 
@@ -82,6 +83,7 @@ function entryFromArgs(
     type: args.type,
     title,
     body: typeof args.body === "string" ? args.body : undefined,
+    execution: normalizeNotebookExecution(args.execution),
     // Same sandbox-relative normalization the lead's notebook tool applies —
     // subagents may echo absolute host paths.
     artifacts: Array.isArray(args.artifacts)

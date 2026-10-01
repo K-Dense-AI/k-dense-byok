@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { withApiToken } from "@/lib/api-auth";
 
 import {
   API_BASE,
@@ -33,6 +34,8 @@ export type FileCategory =
   | "structure3d"
   | "massspec"
   | "arraydata"
+  | "datatable"
+  | "office"
   | "phylo"
   | "alignment"
   | "dicom"
@@ -54,7 +57,8 @@ const STRUCTURE3D_EXTS = new Set(["pdb", "ent", "cif", "mmcif", "xyz", "gro", "p
 
 const MASSSPEC_EXTS = new Set(["mzml", "mzxml", "mgf", "jdx", "dx"]);
 
-const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf"]);
+const ARRAYDATA_EXTS = new Set(["h5", "hdf5", "parquet", "npy", "npz", "nc", "nc4", "cdf", "mat", "mtx", "fits", "fit", "fts"]);
+const DATATABLE_EXTS = new Set(["arrow", "feather", "ipc", "jsonl", "ndjson", "sqlite", "sqlite3", "db"]);
 
 const PHYLO_EXTS = new Set(["nwk", "newick", "tree", "nhx"]);
 
@@ -72,6 +76,7 @@ export function fileCategory(name: string): FileCategory {
   if (IMAGE_EXTS.has(ext)) return "image";
   if (MICROSCOPY_EXTS.has(ext)) return "microscopy";
   if (ext === "dcm" || ext === "dicom") return "dicom";
+  if (["docx", "pptx", "xlsx"].includes(ext)) return "office";
   if (ext === "pdf") return "pdf";
   if (ext === "md" || ext === "mdx") return "markdown";
   if (ext === "csv") return "csv";
@@ -83,6 +88,7 @@ export function fileCategory(name: string): FileCategory {
   if (STRUCTURE3D_EXTS.has(ext)) return "structure3d";
   if (MASSSPEC_EXTS.has(ext)) return "massspec";
   if (ARRAYDATA_EXTS.has(ext)) return "arraydata";
+  if (DATATABLE_EXTS.has(ext)) return "datatable";
   if (PHYLO_EXTS.has(ext)) return "phylo";
   if (ALIGNMENT_EXTS.has(ext)) return "alignment";
   return "text";
@@ -90,12 +96,12 @@ export function fileCategory(name: string): FileCategory {
 
 export function rawFileUrl(path: string, projectId = getActiveProjectId()): string {
   const project = encodeURIComponent(projectId);
-  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(path)}&project=${project}`;
+  return withApiToken(`${API_BASE}/sandbox/raw?path=${encodeURIComponent(path)}&project=${project}`);
 }
 
 export function anndataSummaryUrl(path: string, projectId = getActiveProjectId()): string {
   const project = encodeURIComponent(projectId);
-  return `${API_BASE}/sandbox/anndata-summary?path=${encodeURIComponent(path)}&project=${project}`;
+  return withApiToken(`${API_BASE}/sandbox/anndata-summary?path=${encodeURIComponent(path)}&project=${project}`);
 }
 
 export function anndataEmbeddingUrl(
@@ -110,16 +116,19 @@ export function anndataEmbeddingUrl(
     project: projectId,
   });
   if (color) params.set("color", color);
-  return `${API_BASE}/sandbox/anndata-embedding.png?${params.toString()}`;
+  return withApiToken(`${API_BASE}/sandbox/anndata-embedding.png?${params.toString()}`);
 }
 
 export function sciSummaryUrl(
   path: string,
   kind: string,
   projectId = getActiveProjectId(),
+  selection?: { key?: string; slice?: number },
 ): string {
   const params = new URLSearchParams({ path, kind, project: projectId });
-  return `${API_BASE}/sandbox/sci-summary?${params.toString()}`;
+  if (selection?.key !== undefined) params.set("key", selection.key);
+  if (selection?.slice !== undefined) params.set("slice", String(selection.slice));
+  return withApiToken(`${API_BASE}/sandbox/sci-summary?${params.toString()}`);
 }
 
 export function sciRenderUrl(
@@ -133,7 +142,7 @@ export function sciRenderUrl(
     path, kind, index: String(index), project: projectId,
   });
   if (axis) params.set("axis", axis);
-  return `${API_BASE}/sandbox/sci-render.png?${params.toString()}`;
+  return withApiToken(`${API_BASE}/sandbox/sci-render.png?${params.toString()}`);
 }
 
 /** Last segment of a sandbox-relative path (paths are always `/`-separated). */
@@ -146,6 +155,19 @@ export function flattenFiles(node: TreeNode | null): string[] {
   const paths: string[] = [];
   function walk(current: TreeNode) {
     if (current.type === "file") paths.push(current.path);
+    for (const child of current.children ?? []) walk(child);
+  }
+  walk(node);
+  return paths;
+}
+
+/** Existing sandbox directories, including empty folders but excluding the root. */
+export function flattenFolders(node: TreeNode | null): string[] {
+  if (!node) return [];
+  const paths: string[] = [];
+  function walk(current: TreeNode) {
+    if (current.type !== "directory") return;
+    if (current.path) paths.push(current.path);
     for (const child of current.children ?? []) walk(child);
   }
   walk(node);
@@ -167,6 +189,7 @@ export interface LatexCompileResult {
   success: boolean;
   pdf_path: string | null;
   log: string;
+  diagnostics_log?: string;
   errors: string[];
   synctex: boolean;
 }
@@ -333,7 +356,9 @@ export function useSandbox(
           headers: etag ? { "If-None-Match": etag } : undefined,
         });
         if (!isCurrent() || controller.signal.aborted || res.status === 304) return;
-        const content = res.ok ? await res.text() : `[Error: ${res.status} ${res.statusText}]`;
+        const content = res.ok ? await res.text() : res.status === 413
+          ? "[Error: This file exceeds the preview size limit (8 MB for CSV, 512 KB for other text). Use Download to access the complete file.]"
+          : `[Error: ${res.status} ${res.statusText}]`;
         if (!isCurrent() || controller.signal.aborted) return;
         const nextEtag = res.ok ? res.headers.get("etag") : null;
         if (nextEtag) fileEtags.current.set(path, nextEtag);
@@ -554,7 +579,7 @@ export function useSandbox(
   const downloadDir = useCallback((path: string) => {
     const project = encodeURIComponent(scopedProjectId);
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download-dir?path=${encodeURIComponent(path)}&project=${project}`;
+    a.href = withApiToken(`${API_BASE}/sandbox/download-dir?path=${encodeURIComponent(path)}&project=${project}`);
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -564,7 +589,7 @@ export function useSandbox(
   const downloadFile = useCallback((path: string) => {
     const project = encodeURIComponent(scopedProjectId);
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download?path=${encodeURIComponent(path)}&project=${project}`;
+    a.href = withApiToken(`${API_BASE}/sandbox/download?path=${encodeURIComponent(path)}&project=${project}`);
     a.download = "";
     document.body.appendChild(a);
     a.click();
@@ -574,7 +599,7 @@ export function useSandbox(
   const downloadAll = useCallback(() => {
     const project = encodeURIComponent(scopedProjectId);
     const a = document.createElement("a");
-    a.href = `${API_BASE}/sandbox/download-all?project=${project}`;
+    a.href = withApiToken(`${API_BASE}/sandbox/download-all?project=${project}`);
     a.download = "sandbox.zip";
     document.body.appendChild(a);
     a.click();

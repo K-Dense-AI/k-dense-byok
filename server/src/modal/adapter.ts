@@ -130,6 +130,11 @@ export function classifyModalError(error: unknown): ModalJobError {
   if (/Image build .*failed/i.test(message)) {
     return new ModalJobError("IMAGE_BUILD_FAILED", message, 422, false);
   }
+  // An explicit capacity rejection is safe to try on another instance. A
+  // transport UNAVAILABLE/TIMEOUT is not: creation may already have succeeded.
+  if (name === "ClientError" && grpcCode === 8 && /capacity/i.test(message)) {
+    return new ModalJobError("CAPACITY_UNAVAILABLE", message, 503, true);
+  }
   if (error instanceof InvalidError) return new ModalJobError("INVALID_REQUEST", message, 400, false);
   if (error instanceof NotFoundError || error instanceof SandboxFilesystemNotFoundError) {
     return new ModalJobError("REMOTE_NOT_FOUND", message, 404, false);
@@ -216,6 +221,35 @@ interface SdkEnvironmentOpaque {
   volume: Volume | null;
 }
 
+/** A validated package is still a shell argument: < and > are version operators. */
+function quotePackage(value: string): string {
+  return "'" + value.replaceAll("'", "'\\''") + "'";
+}
+
+export const MODAL_RUNTIME_CHECK = "import sys,json,os,selectors,subprocess,time,hashlib; assert sys.version_info >= (3,8)";
+
+/** Check the wrapper's runtime before uploading any project data. */
+export async function validateModalRuntime(sandbox: ModalRemoteSandbox): Promise<void> {
+  let exitCode: number;
+  try {
+    const process = await sandbox.exec(["python3", "-I", "-c", MODAL_RUNTIME_CHECK], {
+      stdout: "ignore", stderr: "ignore", timeoutMs: 10_000,
+    });
+    exitCode = await process.wait();
+  } catch (error) {
+    if (!/executable.*not found|no such file.*python3|ENOENT.*python3/i.test(error instanceof Error ? error.message : String(error))) throw error;
+    exitCode = 127;
+  }
+  if (exitCode !== 0) {
+    throw new ModalJobError(
+      "RUNTIME_UNAVAILABLE",
+      "Modal images must include Python 3.8+ and its standard library for job execution and checksum verification. Use python:3.13-slim or install python3 in your custom image.",
+      422,
+      false,
+    );
+  }
+}
+
 export class SdkModalAdapter implements ModalAdapter {
   private client: ModalClient;
 
@@ -269,10 +303,10 @@ export class SdkModalAdapter implements ModalAdapter {
     const commands: string[] = [];
     if (apt.length) {
       commands.push(
-        `RUN apt-get update && apt-get install -y --no-install-recommends ${apt.join(" ")} && rm -rf /var/lib/apt/lists/*`,
+        `RUN apt-get update && apt-get install -y --no-install-recommends ${apt.map(quotePackage).join(" ")} && rm -rf /var/lib/apt/lists/*`,
       );
     }
-    if (pip.length) commands.push(`RUN pip install --no-cache-dir ${pip.join(" ")}`);
+    if (pip.length) commands.push(`RUN pip install --no-cache-dir ${pip.map(quotePackage).join(" ")}`);
     if (commands.length) image = image.dockerfileCommands(commands);
     let snapshotName: string | undefined;
     let reusedSnapshot = false;
@@ -283,7 +317,8 @@ export class SdkModalAdapter implements ModalAdapter {
       }
       const specHash = crypto
         .createHash("sha256")
-        .update(JSON.stringify({ base, apt, pip }))
+        // Invalidate environments built before package arguments were quoted.
+        .update(JSON.stringify({ recipeVersion: 2, base, apt, pip }))
         .digest("hex")
         .slice(0, 16);
       snapshotName = `kady-${projectId}-${safeEnvironment}:${specHash}`.slice(0, 127);
@@ -319,7 +354,9 @@ export class SdkModalAdapter implements ModalAdapter {
       this.client.sandboxes.create(app, image, {
         gpu: gpuString(params.instance, params.gpuCount),
         cpu: params.instance.cpu,
+        cpuLimit: params.instance.cpu,
         memoryMiB: params.instance.memoryMiB,
+        memoryLimitMiB: params.instance.memoryMiB,
         timeoutMs: params.timeoutMs,
         workdir: "/workspace",
         ...(volume ? { volumes: { "/cache": volume } } : {}),

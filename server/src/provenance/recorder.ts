@@ -87,6 +87,13 @@ export const READ_ONLY_TOOLS = new Set([
   "list_pdf_annotations",
   "modal_status",
   "modal_instances",
+  // Pi's MCP support: tool_search only declares tools, and the resource tools
+  // read from servers (binary resources go to OS temp files, not the sandbox).
+  // `codemode` is deliberately absent: its scripts may call any tool.
+  "tool_search",
+  "list_mcp_resources",
+  "list_mcp_resource_templates",
+  "read_mcp_resource",
 ]);
 
 /** Tools whose args name the single file they write. */

@@ -504,7 +504,7 @@ describe("LabNotebookView", () => {
     ).toBe(true);
   });
 
-  it("runs the methods draft after confirmation and opens the saved file", async () => {
+  it("saves the methods draft without interrupting notebook work and offers an explicit open action", async () => {
     const user = userEvent.setup();
     routeFetch((url) => {
       if (url.includes("/notebook/methods-draft")) {
@@ -522,8 +522,14 @@ describe("LabNotebookView", () => {
     );
     await user.click(screen.getByRole("button", { name: /methods draft/i }));
     await user.click(await screen.findByRole("button", { name: /generate/i }));
-    await waitFor(() => expect(onOpenFile).toHaveBeenCalledWith("methods_draft_x.md"));
-    expect(toast.success).toHaveBeenCalled();
+    await waitFor(() => expect(toast.success).toHaveBeenCalled());
+    expect(onOpenFile).not.toHaveBeenCalled();
+    const options = vi.mocked(toast.success).mock.calls.at(-1)?.[1];
+    expect(options?.action).toMatchObject({ label: "Open draft" });
+    const action = options?.action;
+    if (!action || typeof action !== "object" || !("onClick" in action)) throw new Error("Missing draft action");
+    act(() => Reflect.apply(action.onClick, undefined, []));
+    expect(onOpenFile).toHaveBeenCalledWith("methods_draft_x.md");
     expect(
       spy.mock.calls.some(
         ([u, init]) =>

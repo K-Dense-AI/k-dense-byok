@@ -118,6 +118,10 @@ export interface ModalJob {
   sandboxTags: Record<string, string>;
   sandboxCreatedAt?: number;
   sandboxTerminatedAt?: number;
+  /** A create request may have reached Modal but its sandbox id is not yet known. */
+  sandboxCreatePending?: boolean;
+  /** Termination is unconfirmed; recovery must retry even after the job finishes. */
+  cleanupUncertain?: boolean;
   /** Sandboxes created for this job whose termination was not confirmed; recovery retries. */
   orphanedSandboxIds?: string[];
   exitCode?: number;
@@ -129,6 +133,9 @@ export interface ModalJob {
   stderrBytes: number;
   stdoutBaseCursor: number;
   stderrBaseCursor: number;
+  /** Bytes observed on the remote stream, including gaps never retained locally. */
+  stdoutRemoteCursor?: number;
+  stderrRemoteCursor?: number;
   eventSeq: number;
   retryOf?: string;
   approval?: ModalJobApproval;
@@ -138,6 +145,8 @@ export interface ModalJob {
     reconciled: boolean;
     estimatedCostUsd?: number;
     ledgerEntryId?: string;
+    /** Full reservation counted because the remote lifetime could not be confirmed. */
+    conservative?: boolean;
   };
 }
 

@@ -314,7 +314,7 @@ export async function installStagedSkills(
 const SKILL_TEMPLATE = (name: string, description: string): string =>
   `---
 name: ${name}
-description: ${description}
+description: ${JSON.stringify(description)}
 ---
 
 # ${name}

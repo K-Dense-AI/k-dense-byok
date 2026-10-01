@@ -1,10 +1,12 @@
+import { parse } from "acorn";
+import { annotateMeteredChild, childIsMetered, recoverSubagentUsage } from "./subagent-meter.ts";
 /**
  * Integration glue for the `pi-subagents` package (npm:pi-subagents).
  *
- * The package is a Pi extension that registers a `subagent` tool and runs each
- * delegation as a separate `pi` CLI process (the binary ships with our
- * @earendil-works/pi-coding-agent dependency, so `server/node_modules/.bin`
- * must be on PATH — ensured in session-registry).
+ * The package delegates to native Pi sessions hosted in the backend or a
+ * detached runner. Per-request provider admission/accounting lives in
+ * subagent-host.mjs and subagent-meter.ts; completion accounting below also
+ * supports unmetered runs from earlier backend versions.
  *
  * Three pieces live here:
  *  1. `subagentsExtensionPath()` — locates the package's extension entry so
@@ -33,6 +35,7 @@ import {
   type BillingContext,
 } from "../cost/billing.ts";
 import { resolvePaths } from "../projects.ts";
+import { KADY_PI_AGENT_DIR } from "../config.ts";
 import { listAgents, settingsPinnedModels, subagentsPackageDir } from "./agent-files.ts";
 import { isProviderRefusal, providerRefusalGuidance } from "./model-refusal.ts";
 import { isOAuthOnlyProvider, modelReference } from "./models.ts";
@@ -92,6 +95,8 @@ interface AsyncCompletePayload {
     agent?: string;
     model?: string;
     sessionFile?: string;
+    context?: string;
+    usage?: {input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number};
     modelAttempts?: SubagentModelAttempt[];
   }>;
 }
@@ -271,37 +276,41 @@ export interface WorkflowScriptTargets {
   dynamic: boolean;
 }
 
-// A key, then either a plain string literal (captured) or anything else (a
-// variable, call, or interpolated template — flagged dynamic and not captured).
-const SCRIPT_TARGET_RE =
-  /\b(agent|model)\s*:\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|`([^`$\\]*)`|(\S))/g;
-
 /** Bounds on a model-authored string: scripts are prompt-sized, not file-sized. */
 const MAX_SCRIPT_SCAN_CHARS = 200_000;
-const MAX_SCRIPT_TARGETS = 200;
 
 export function workflowScriptTargets(script: string): WorkflowScriptTargets {
-  const agents = new Set<string>();
-  const models = new Set<string>();
+  const agents = new Set<string>(), models = new Set<string>();
   let dynamic = script.length > MAX_SCRIPT_SCAN_CHARS;
-  SCRIPT_TARGET_RE.lastIndex = 0;
-  for (const match of script.slice(0, MAX_SCRIPT_SCAN_CHARS).matchAll(SCRIPT_TARGET_RE)) {
-    const [, key, doubleQuoted, singleQuoted, backticked, nonLiteral] = match;
-    if (nonLiteral !== undefined) {
-      dynamic = true;
-      continue;
-    }
-    const raw = doubleQuoted ?? singleQuoted ?? backticked ?? "";
-    const value = raw.replace(/\\(.)/g, "$1").trim();
-    if (!value) continue;
-    const out = key === "agent" ? agents : models;
-    if (out.size >= MAX_SCRIPT_TARGETS) {
-      dynamic = true;
-      continue;
-    }
-    out.add(value);
-  }
+  if (dynamic) return { agents, models, dynamic };
+  try {
+    const tree = parse(script, { ecmaVersion: "latest", allowReturnOutsideFunction: true, allowAwaitOutsideFunction: true });
+    type Node = Record<string, any>;
+    const literal = (node: Node | undefined): string | undefined => {
+      if (node?.type === "Literal" && typeof node.value === "string") return node.value;
+      if (node?.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0].value.cooked;
+      // Only literals are authoritative. Variables can be reassigned or shadowed.
+      return undefined;
+    };
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      const n = node as Node;
+      if (n.type === "SpreadElement") dynamic = true;
+      if (n.type === "Property") {
+        const key = n.computed ? literal(n.key) : n.key.name ?? n.key.value;
+        if (key === "agent" || key === "model") {
+          const value = literal(n.value);
+          if (value) (key === "agent" ? agents : models).add(value);
+          else dynamic = true;
+        } else if (n.computed && key === undefined) dynamic = true;
+      }
+      for (const value of Object.values(n)) walk(value);
+    };
+    walk(tree);
+  } catch { dynamic = true; }
   return { agents, models, dynamic };
+
 }
 
 /** Script targets for a tool input, or empty when this is not an execution call. */
@@ -334,7 +343,10 @@ function requestedBillings(
   parentModel?: Model<Api>,
   isProviderUsingOAuth: (providerId: string) => boolean = () => false,
 ): BillingContext[] {
+  // The workflow-wide override outranks definitions and all settings defaults.
+  if (typeof input.model === "string" && input.model.trim()) return [billingFromModelRef(input.model, parentModel, isProviderUsingOAuth)];
   const script = scriptTargets(input);
+  const pinned = settingsPinnedModels(resolvePaths(projectId));
   const explicitModels = collectStringFields(input, "model");
   for (const model of script.models) explicitModels.add(model);
   const billings = [...explicitModels].map((model) =>
@@ -347,12 +359,13 @@ function requestedBillings(
       listAgents(resolvePaths(projectId)).map((agent) => [agent.name, agent] as const),
     );
     for (const name of agents) {
-      const model = definitions.get(name)?.model;
+      const model = definitions.get(name)?.model ?? pinned.byAgent.get(name) ?? pinned.defaultModel;
       billings.push(
         billingFromModelRef(model, parentModel, isProviderUsingOAuth),
       );
     }
   }
+  if (script.dynamic || input.workflowScriptPath || input.workflow) billings.push(billingForProvider("unknown", "api_key"));
   if (billings.length === 0) {
     billings.push(
       billingFromModelRef(undefined, parentModel, isProviderUsingOAuth),
@@ -384,7 +397,7 @@ function unsupportedDirectProviders(
       [...refs].flatMap((ref) => {
         const provider = ref.split("/", 1)[0] ?? "";
         // Only OAuth-only providers (openai-codex, github-copilot, radius)
-        // need the login; anthropic/xai/kimi-coding also take an API key,
+        // need the login; openai/anthropic/xai/kimi-coding/meta also take an API key,
         // and the run-time auth check rejects a missing one with a clear error.
         return isOAuthOnlyProvider(provider) && !isProviderUsingOAuth(provider)
           ? [provider]
@@ -398,7 +411,10 @@ function unsupportedDirectProviders(
  * Make parent-model inheritance explicit before pi-subagents builds child CLI
  * arguments. Relying only on Pi's asynchronously persisted global default can
  * race immediately after a model switch and could send a child through the
- * wrong provider. A specialist's own pinned model remains authoritative.
+ * wrong provider. A specialist's own pinned model remains authoritative, and
+ * so does one pinned in settings (`agentOverrides.<name>.model` or
+ * `subagents.defaultModel`): the pin is a per-run override, which pi-subagents
+ * ranks above both (see `settingsPinnedModels`).
  */
 export function pinInheritedChildModels(
   projectId: string,
@@ -406,11 +422,25 @@ export function pinInheritedChildModels(
   parentModel: Model<Api> | undefined,
 ): void {
   if (!parentModel) return;
+  // Let Pi resolve user-level and provider-scoped policies itself. A global
+  // per-run pin would outrank these settings even for an otherwise literal script.
+  for (const [file, global] of [
+    [path.join(KADY_PI_AGENT_DIR, "settings.json"), true],
+    [path.join(resolvePaths(projectId).sandbox, ".pi", "settings.json"), false],
+  ] as const) {
+    try {
+      const settings = JSON.parse(fs.readFileSync(file, "utf8")).subagents;
+      if (settings && (settings.defaultProvider || settings.agentOverridesByProvider || (global && (settings.defaultModel || settings.agentOverrides)))) return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return;
+    }
+  }
   const inherited = modelReference(parentModel);
   const paths = resolvePaths(projectId);
   const definitions = new Map(listAgents(paths).map((agent) => [agent.name, agent] as const));
+  const pinned = settingsPinnedModels(paths);
   if (typeof input.workflowScript === "string") {
-    pinWorkflowScriptModel(input, inherited, definitions, settingsPinnedModels(paths));
+    pinWorkflowScriptModel(input, inherited, definitions, pinned);
     return;
   }
   const apply = (value: unknown): void => {
@@ -424,7 +454,9 @@ export function pinInheritedChildModels(
     if (
       agent &&
       record.model === undefined &&
-      !definitions.get(agent)?.model
+      !definitions.get(agent)?.model &&
+      !pinned.byAgent.get(agent) &&
+      !pinned.defaultModel
     ) {
       record.model = inherited;
     }
@@ -460,7 +492,7 @@ function pinWorkflowScriptModel(
   const targets = workflowScriptTargets(input.workflowScript as string);
   if (targets.dynamic || targets.models.size > 0 || targets.agents.size === 0) return;
   for (const agent of targets.agents) {
-    if (definitions.get(agent)?.model || pinned.byAgent.get(agent)) return;
+    if (!definitions.has(agent) || definitions.get(agent)?.model || pinned.byAgent.get(agent)) return;
   }
   input.model = inherited;
 }
@@ -512,9 +544,9 @@ function recordModelAttempts(args: {
  * the scheduler (agent/scheduler.ts, registered from index.ts to avoid an
  * import cycle through session-registry) can keep a resident session alive.
  */
-let scheduleActivityListener: ((projectId: string, action: string) => void) | null = null;
+let scheduleActivityListener: ((projectId: string, action: string) => void | Promise<void>) | null = null;
 export function setScheduleActivityListener(
-  listener: ((projectId: string, action: string) => void) | null,
+  listener: ((projectId: string, action: string) => void | Promise<void>) | null,
 ): void {
   scheduleActivityListener = listener;
 }
@@ -566,7 +598,6 @@ export function makeSubagentLedgerExtension(
               `Raise the limit before scheduling recurring work.`,
           };
         }
-        scheduleActivityListener?.(projectId, action);
         return;
       }
       if (action === "schedule.run" || action === "schedule.run-due" || action === "schedule.resume") {
@@ -580,7 +611,6 @@ export function makeSubagentLedgerExtension(
               `($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}).`,
           };
         }
-        scheduleActivityListener?.(projectId, action);
         return;
       }
       if (action && action !== "resume") return;
@@ -634,8 +664,23 @@ export function makeSubagentLedgerExtension(
 
     pi.on("tool_result", async (event) => {
       if (event.toolName !== "subagent") return;
+      const action = event.input?.action;
+      if (!event.isError && typeof action === "string" &&
+          ["schedule.create", "schedule.resume", "schedule.pause", "schedule.delete", "schedule.run", "schedule.run-due"].includes(action)) {
+        try {
+          // The schedule must exist before the resident reads and arms it.
+          await scheduleActivityListener?.(projectId, action);
+        } catch (error) {
+          return {
+            isError: true,
+            content: [...event.content, { type: "text" as const, text: `Schedule saved, but its background host could not be refreshed: ${(error as Error).message}` }],
+          };
+        }
+      }
+      recoverSubagentUsage(projectId);
       const details = event.details as SubagentRunDetails | undefined;
       for (const result of details?.results ?? []) {
+        if (childIsMetered(projectId, result.sessionFile)) continue;
         const parentModel = getParentModel();
         const sessionUsage = result.sessionFile
           ? usageFromSessionFile(result.sessionFile)
@@ -690,7 +735,14 @@ export function makeSubagentLedgerExtension(
     // session file.
     pi.events.on(ASYNC_COMPLETE_EVENT, (data: unknown) => {
       const payload = data as AsyncCompletePayload;
+      recoverSubagentUsage(projectId);
       for (const [index, result] of (payload.results ?? []).entries()) {
+        if (childIsMetered(projectId, result.sessionFile)) {
+          if (payload.scheduleOrigin?.id) annotateMeteredChild(projectId, result.sessionFile, {
+            schedule: payload.scheduleOrigin.id, ...(payload.scheduleOrigin.name ? { name: payload.scheduleOrigin.name } : {}),
+          });
+          continue;
+        }
         const key = `${payload.id ?? ""}:${result.sessionFile ?? result.agent ?? index}`;
         if (ledgeredAsyncRuns.has(key)) continue;
         boundedSetAdd(ledgeredAsyncRuns, key, MAX_LEDGERED_ASYNC_RUNS);
@@ -710,8 +762,14 @@ export function makeSubagentLedgerExtension(
           }
           continue;
         }
-        if (!result.sessionFile) continue;
-        const usage = usageDeltaFromSessionFile(result.sessionFile);
+        if (!result.sessionFile && !result.usage) continue;
+        const reported = result.usage;
+        const usage = reported ? {
+          cost: reported.cost ?? 0,
+          tokens: { input: reported.input ?? 0, output: reported.output ?? 0, cacheRead: reported.cacheRead ?? 0,
+            total: (reported.input ?? 0) + (reported.output ?? 0) + (reported.cacheRead ?? 0) + (reported.cacheWrite ?? 0) },
+          provider: undefined as string | undefined, model: undefined as string | undefined,
+        } : result.context === "fork" ? null : usageDeltaFromSessionFile(result.sessionFile!);
         if (usage) {
           const billing = billingFromModelRef(
             usage.provider

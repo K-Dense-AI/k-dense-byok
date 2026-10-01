@@ -46,6 +46,7 @@ class FakeSandbox implements ModalRemoteSandbox {
     }
     if (command.includes("-c")) {
       if (!command.includes("-I")) throw new Error("Checksum verification must isolate Python from uploaded module names");
+      if (command.length === 4) return { wait: async () => 0 }; // runtime preflight
       const listPath = command[4]!;
       if (listPath.endsWith("outputs.json")) {
         const paths = JSON.parse(await this.filesystem.readText(listPath)) as string[];

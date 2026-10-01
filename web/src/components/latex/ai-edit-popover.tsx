@@ -37,8 +37,8 @@ export function AiEditPopover({
     <div
       className="fixed z-50 w-80 rounded-lg border bg-background p-2 shadow-xl"
       style={{
-        left: Math.min(anchor.x, window.innerWidth - 340),
-        top: Math.min(anchor.y + 8, window.innerHeight - 120),
+        left: Math.max(8, Math.min(anchor.x, window.innerWidth - 340)),
+        top: Math.max(8, Math.min(anchor.y + 8, window.innerHeight - 120)),
       }}
     >
       <form

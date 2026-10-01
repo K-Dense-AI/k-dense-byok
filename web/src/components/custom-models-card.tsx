@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings → Model providers → Custom model servers.
+ * Settings → Providers → Custom model servers.
  *
  * Edits Pi's models.json through the backend: one card per provider, a table
  * of models with pricing. Hand-written providers (not created here) are shown
@@ -24,6 +24,8 @@ import {
   type CustomProvider,
   type CustomProviderListing,
 } from "@/lib/custom-models";
+import { notifyProviderAuthChanged } from "@/lib/use-provider-auth";
+import { SettingsError } from "@/components/settings/primitives";
 
 interface ModelRow {
   id: string;
@@ -42,6 +44,8 @@ interface ProviderDraft {
   baseUrl: string;
   api: CustomModelApi;
   apiKey: string;
+  /** Mask of the key saved server-side; a blank field keeps it. */
+  savedKeyMask?: string;
   models: ModelRow[];
 }
 
@@ -72,6 +76,7 @@ function draftFrom(p: CustomProviderListing): ProviderDraft {
     baseUrl: p.baseUrl,
     api: p.api,
     apiKey: p.apiKey && p.apiKey !== "none" ? p.apiKey : "",
+    ...(p.apiKeySaved ? { savedKeyMask: p.apiKeyMasked || "••••" } : {}),
     models: p.models.map((m) => ({
       id: m.id,
       name: m.name ?? "",
@@ -121,7 +126,7 @@ export function providersFromDrafts(drafts: ProviderDraft[]): CustomProvider[] |
       ...(d.name.trim() ? { name: d.name.trim() } : {}),
       baseUrl: d.baseUrl.trim(),
       api: d.api,
-      ...(d.apiKey.trim() ? { apiKey: d.apiKey.trim() } : {}),
+      ...(d.apiKey.trim() ? { apiKey: d.apiKey.trim() } : d.savedKeyMask ? { keepApiKey: true } : {}),
       models,
     });
   }
@@ -185,6 +190,8 @@ export function CustomModelsCard() {
       setForeign(result.providers.filter((p) => !p.managed));
       setConfigured(result.configured);
       setDirty(false);
+      // The picker's direct-provider section lists custom servers too.
+      notifyProviderAuthChanged();
       const unreachable = Object.entries(result.configured).filter(([, ok]) => !ok).map(([id]) => id);
       setNotice(
         unreachable.length
@@ -223,11 +230,11 @@ export function CustomModelsCard() {
           }}
         >
           <PlusIcon className="size-3.5" />
-          Add server
+          Add model server
         </Button>
       </div>
 
-      {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+      <SettingsError className="mt-2">{error}</SettingsError>
       {notice && <p className="mt-2 text-xs text-muted-foreground">{notice}</p>}
       {loading && <p className="mt-2 text-xs text-muted-foreground">Loading…</p>}
 
@@ -295,11 +302,22 @@ export function CustomModelsCard() {
                 API key (literal, <code>$ENV_VAR</code>, or empty for a keyless server)
                 <Input
                   value={d.apiKey}
-                  placeholder="$LAB_VLLM_KEY"
+                  type={d.apiKey && !d.apiKey.startsWith("$") ? "password" : "text"}
+                  autoComplete="off"
+                  placeholder={d.savedKeyMask ? `Saved key ${d.savedKeyMask} — leave blank to keep it` : "$LAB_VLLM_KEY"}
                   className="mt-1 h-8 font-mono text-xs"
                   aria-label={`Server ${pi + 1} API key`}
                   onChange={(e) => edit(pi, { apiKey: e.target.value })}
                 />
+                {d.savedKeyMask && !d.apiKey && (
+                  <button
+                    type="button"
+                    className="mt-1 underline decoration-dotted"
+                    onClick={() => edit(pi, { savedKeyMask: undefined })}
+                  >
+                    Remove saved key
+                  </button>
+                )}
               </label>
             </div>
 

@@ -36,11 +36,14 @@ describe.skipIf(!enabled)("Modal live smoke", () => {
         "default",
         {
           command:
-            "python -c \"from pathlib import Path; " +
+            "python -c \"from pathlib import Path; import packaging; " +
+            "assert 24 <= int(packaging.__version__.split('.')[0]) < 26; " +
             "Path('modal-live-output.txt').write_text(" +
             "Path('modal-live-input.txt').read_text().upper()); " +
             "print('modal-live stdout marker')\"",
           instance: "cpu",
+          image: { pip: ["packaging>=24,<26"] },
+          cache: "none",
           timeoutSec: 120,
           filesIn: ["modal-live-input.txt"],
           filesOut: ["modal-live-output.txt"],
@@ -73,4 +76,3 @@ describe.skipIf(!enabled)("Modal live smoke", () => {
     200_000,
   );
 });
-

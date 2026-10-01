@@ -127,7 +127,7 @@ describe("SkillsPanel", () => {
 
     render(<SkillsPanel />);
     await screen.findByText("paperclip");
-    await userEvent.click(screen.getByRole("button", { name: /refresh/i }));
+    await userEvent.click(screen.getByRole("button", { name: /sync catalogue/i }));
 
     await waitFor(() => expect(syncSpy).toHaveBeenCalledOnce());
     await waitFor(() => expect(getSpy).toHaveBeenCalledTimes(2));
@@ -207,7 +207,7 @@ describe("SkillsPanel", () => {
     expect(await screen.findByText("shared-skill")).toBeInTheDocument();
     expect(screen.getByText(/Shadowed by a project skill/i)).toBeInTheDocument();
     // The catalogue is per project, so its refresh has nothing to do here.
-    expect(screen.getByRole("button", { name: /refresh/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /sync catalogue/i })).toBeDisabled();
   });
 
   it("previews a source and installs only after the trust box is ticked", async () => {

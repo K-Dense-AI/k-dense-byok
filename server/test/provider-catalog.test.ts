@@ -49,12 +49,15 @@ describe("provider catalogue covers Pi's built-in providers", () => {
 
   it("every Pi provider is a direct provider, an OAuth provider, or both", () => {
     // ollama / openai-compatible are Kady's own local registrations (models.ts).
+    // A provider with no chat models (TypeSafe ships only the Jev classifier)
+    // has nothing the picker or the agent could run, so it needs no row.
     const uncovered = piProviderIds.filter(
       (id) =>
         !isDirectProvider(id) &&
         !isSubscriptionProvider(id) &&
         id !== "ollama" &&
-        id !== "openai-compatible",
+        id !== "openai-compatible" &&
+        !(runtime.getModels(id).length === 0 && runtime.getAllModels(id).length > 0),
     );
     expect(uncovered).toEqual([]);
   });
@@ -160,9 +163,9 @@ describe("direct provider model resolution", () => {
     ["groq/llama-3.3-70b-versatile", "groq", "llama-3.3-70b-versatile"],
     ["huggingface/MiniMaxAI/MiniMax-M2", "huggingface", "MiniMaxAI/MiniMax-M2"],
     [
-      "fireworks/accounts/fireworks/models/deepseek-v4-flash-0731",
+      "fireworks/accounts/fireworks/models/deepseek-v4p1-flash",
       "fireworks",
-      "accounts/fireworks/models/deepseek-v4-flash-0731",
+      "accounts/fireworks/models/deepseek-v4p1-flash",
     ],
     [
       "cloudflare-workers-ai/@cf/deepseek-ai/deepseek-v4-flash-0731",
@@ -256,13 +259,13 @@ describe("direct provider authentication", () => {
   it("points at the right Settings tab when unconfigured", async () => {
     await expect(
       assertModelAuthentication(resolveModel("groq/llama-3.3-70b-versatile", registry), none as Runtime),
-    ).rejects.toThrowError(/Groq is not configured\. Add an API key under Settings → API keys/);
+    ).rejects.toThrowError(/Groq is not configured\. Add an API key under Settings → Providers/);
     await expect(
       assertModelAuthentication(resolveModel("anthropic/claude-opus-4-8", registry), none as Runtime),
-    ).rejects.toThrowError(/API keys or connect it under Settings → Model providers/);
+    ).rejects.toThrowError(/Add an API key or sign in under Settings → Providers/);
     await expect(
-      assertModelAuthentication(resolveModel("openai-codex/gpt-5.4", registry), none as Runtime),
-    ).rejects.toThrowError(/Connect it under Settings → Model providers/);
+      assertModelAuthentication(resolveModel("openai-codex/gpt-6-sol", registry), none as Runtime),
+    ).rejects.toThrowError(/Sign in under Settings → Providers/);
   });
 });
 
@@ -301,6 +304,15 @@ describe("direct provider billing", () => {
   it("bills OpenRouter and Radius OAuth logins like API keys", () => {
     expect(billingForProvider("openrouter", "oauth").billingMode).toBe("payg");
     expect(billingForProvider("radius", "oauth").billingMode).toBe("payg");
+  });
+
+  it("splits OpenAI and Meta by credential: subscription login vs payg key", () => {
+    for (const provider of ["openai", "meta"]) {
+      expect(billingForProvider(provider, "api_key").billingMode, provider).toBe("payg");
+      const oauth = billingForProvider(provider, "oauth");
+      expect(oauth.billingMode, provider).toBe("subscription");
+      expect(billingCountsTowardBudget(oauth)).toBe(false);
+    }
   });
 
   it("keeps the anthropic split: OAuth metered, API key payg", () => {

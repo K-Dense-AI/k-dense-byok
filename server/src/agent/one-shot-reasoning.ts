@@ -6,7 +6,7 @@
  * on purpose: `complete` is the raw provider stream, and when no reasoning
  * effort is given Pi's OpenAI-compatible adapter sends OpenRouter an explicit
  * `reasoning: { effort: "none" }` for any reasoning-capable model. Models whose
- * reasoning cannot be switched off (e.g. GPT-6 Astra, the default model)
+ * reasoning cannot be switched off (e.g. GPT-6 Astra)
  * reject that with `400 Reasoning is mandatory for this endpoint and cannot be
  * disabled`, so the one-shot features failed outright while ordinary chats —
  * which always carry the tab's thinking level — kept working.

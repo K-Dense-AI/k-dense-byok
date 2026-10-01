@@ -16,6 +16,20 @@ const e = (id: string, over: Partial<NotebookEntry> = {}): NotebookEntry => ({
 const kinds = (items: ReturnType<typeof buildTimeline>) => items.map((i) => i.kind);
 
 describe("buildTimeline", () => {
+  it("keeps divider keys unique when concurrent chats and runs interleave", () => {
+    const items = buildTimeline([
+      e("a", { sessionId: "s1", runId: "r1", timestamp: day(1) }),
+      e("b", { sessionId: "s2", runId: "r2", timestamp: day(1, 10) }),
+      e("c", { sessionId: "s1", runId: "r1", timestamp: day(1, 11) }),
+      e("d", { sessionId: "s1", runId: "r3", timestamp: day(1, 12) }),
+      e("e", { sessionId: "s1", runId: "r1", timestamp: day(1, 13) }),
+      e("f", { sessionId: "s1", runId: "r3", timestamp: day(2) }),
+    ], { withSessionDividers: true });
+    const keys = items.flatMap(item => item.kind === "entry" ? [] : [item.key]);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(items.filter(item => item.kind === "session")).toHaveLength(3);
+    expect(items.filter(item => item.kind === "run")).toHaveLength(3);
+  });
   it("returns an empty list for no entries", () => {
     expect(buildTimeline([])).toEqual([]);
   });

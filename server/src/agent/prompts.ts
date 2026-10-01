@@ -10,14 +10,15 @@
  * `argument-hint` (`<required> [optional]`). The body is the template; Kady's
  * `prompt-expansion.ts` performs the `$1`/`$ARGUMENTS` substitution.
  *
- * A handful of scientific templates are seeded into each project once (marker
- * file, so deletions stick); `restoreDefaultPromptTemplates` puts them back.
+ * Scientific templates are seeded per project and unchanged historic defaults
+ * upgrade by digest (marker-gated so deletions stick); `restoreDefaultPromptTemplates` puts them back.
  */
 import fs from "node:fs";
 import path from "node:path";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import { stripFrontmatterBlock } from "./prompt-expansion.ts";
+import { upgradeSeededText } from "./seeded-text.ts";
 
 export type PromptScope = "project" | "global";
 export const PROMPT_NAME_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
@@ -198,13 +199,13 @@ argument-hint: <file>
 
 Run a quality-control pass on \`$1\` before any modelling. Do not modify the file.
 
-1. Load it with the right reader for its format; report shape, column types and memory footprint.
+1. Inspect format, schema and file size before loading. Use metadata, streaming/chunks or a reproducible bounded sample when a full scan would exceed available memory/time. Report shape, column types, estimated memory footprint and exactly which checks covered the full dataset versus a sample; do not extrapolate sample counts as exact totals.
 2. Missing values per column (count and %), duplicated rows, constant columns, and obvious type problems (numbers stored as text, mixed date formats).
-3. Numeric columns: range, mean/median, and outliers beyond 3 MAD; flag impossible values (negative counts, percentages over 100, dates in the future).
+3. Numeric columns: range, mean/median and distribution-appropriate unusual-value checks. Use 3 MAD only when meaningful (handle zero MAD explicitly); a flagged value is not automatically erroneous. Establish units and domain constraints before calling negative values, percentages over 100 or future dates impossible. Do not remove or impute anything during QC.
 4. Categorical columns: cardinality and the top levels; flag near-duplicate spellings.
-5. If the data has a design (samples × conditions, replicates, batches), check the design is balanced and every expected sample is present.
+5. Identify the independent sampling unit, repeated measurements, replicates, conditions and batches. Compare observed samples with a supplied manifest/design, report balance without assuming imbalance is an error, and distinguish unknown expected samples from confirmed missing ones.
 
-Write the report to \`derived/qc_$1.md\` (create \`derived/\` if needed), log the key findings in the lab notebook as an observation, and end with a short list of issues that must be resolved before analysis.
+Create a report under \`derived/\` using \`qc_<safe-basename>_<unique-run-id>.md\`: derive the basename from the final filename component, keep only letters, digits, underscores and hyphens, and check for collisions. Never interpolate the input path or URI directly into an output path. Record the source location without credentials or signed query strings, inspection scope and limitations. Log the key findings in the lab notebook and separate blockers from non-blocking observations.
 `,
   },
   {
@@ -216,9 +217,9 @@ argument-hint: <file-or-result>
 
 Audit the statistical reasoning in \`$1\` as a sceptical methods reviewer.
 
-Check: the test or model matches the design and data type; independence and replication (technical vs biological replicates); multiple-testing correction where several comparisons are made; effect sizes and confidence intervals reported alongside p-values; sample sizes; assumptions (normality, variance, missingness mechanism) and whether they were checked; and whether any step depends on having looked at the outcome first.
+Establish the question/estimand, independent unit and study design first. Check only assumptions relevant to the actual model and inference: clustering/repeated measurements, technical vs biological replicates, missingness, multiplicity across the intended family, appropriate effect estimates and uncertainty, and outcome-informed choices. Do not require raw-data normality for every test or choose a method solely from an assumption-test p-value.
 
-Re-run the key computation yourself where possible and compare. Write findings to the lab notebook as a decision or observation with severity (blocker / concern / note), and propose the minimal fix for each blocker.
+Re-run the key computation where inputs and safe output destinations are available; otherwise label it unverified and explain what is missing. Cite the exact evidence for each finding, distinguish confirmed errors from concerns, and record severity (blocker = invalidates the requested conclusion; concern = material limitation; note = non-blocking context). Propose the minimal fix for each blocker.
 `,
   },
   {
@@ -230,8 +231,8 @@ argument-hint: <figure>
 
 Audit the figure \`$1\`.
 
-1. Find the script and data that produced it (use the provenance panel or search the sandbox); state them explicitly.
-2. Re-derive the plotted numbers from the data and confirm they match the figure (axis ranges, group counts, error-bar definitions).
+1. Use available read/grep/find tools to locate the producing script and data. Inspect relevant \`.kady/provenance/<sessionId>/steps.jsonl\` records and notebook citations when available; match exact paths and recorded versions. A filename match or an inferred/harvest-time edge does not prove that the current file produced this figure. State identified inputs and any uncertain or stale links.
+2. When the producing data and transformations are available, re-derive the plotted numbers in a fresh output directory and compare axis ranges, group counts and error-bar definitions. Otherwise provide a visual-only audit and mark numerical correspondence unverified; do not invent values read from an image.
 3. Check labels, units, legends and colour choices for accessibility; flag truncated axes or dual axes that exaggerate effects.
 4. Note anything the caption claims that the data does not show.
 
@@ -244,9 +245,9 @@ Report as a lab-notebook observation citing the figure and its inputs, and regen
 description: Review the methods used so far for reproducibility
 ---
 
-Review everything done in this project so far as if writing the Methods section for a paper.
+Review the methods relevant to this chat's requested result/deliverable. Use notebook_search and relevant provenance records to identify that scope; for an explicit project-wide request, cover the project and state any bounds or omitted records. Do not rerun every historical analysis merely to review it.
 
-List each analysis step with its inputs, parameters, software versions (from the environment snapshot) and outputs. Flag steps that are not reproducible from the sandbox alone: manual edits, undocumented parameters, results with no producing script, and files whose provenance is unknown or stale. Propose the specific changes (scripts, seeds, logging) that would make each flagged step reproducible.
+List planned, attempted, completed and unverified steps separately, with evidence references. Read relevant \`.kady/provenance/<sessionId>/steps.jsonl\` records and their \`.kady/environments/<environmentId>.json\` snapshots using available file tools; preserve snapshot timing and never substitute today's environment for an unrecorded historical one. Report inputs, parameters, versions and full output paths only where supported. Flag undocumented manual edits, missing scripts and unknown/stale lineage, distinguishing inaccessible evidence from a confirmed omission. Propose specific remedies.
 
 Write the review to the lab notebook as a decision entry and offer to generate a Methods draft.
 `,
@@ -258,9 +259,13 @@ description: Re-run a script from scratch and compare its outputs with the exist
 argument-hint: <script>
 ---
 
-Replicate \`$1\` independently.
+Check computational reproducibility of \`$1\`. A rerun of the same data is not an independent scientific replication.
 
-Copy any raw inputs it needs from \`user_data/\` into \`derived/replicate/\` (never modify the originals), run the script there with the same parameters, and compare every output file against the current version byte-for-byte and, for tables and figures, value-by-value with a tolerance you state. Report exact matches, numerical drift, and outright differences with the most likely cause (random seed, environment, data version).
+Identify the script's actual inputs from its configuration and recorded provenance. Verify access on the BYOK host: inputs may be browser uploads in \`user_data/\`, other project files, host/mounted paths, or data locations accessible through configured tools/connectors. Do not require a new upload or assume every input lives in \`user_data/\`. If a source is inaccessible, report it and ask only blocking questions before running.
+
+Before running, inspect the script, imported helpers and configuration for output paths and side effects, including absolute paths and remote writes. Changing the working directory alone does not isolate a script. Create a fresh \`derived/replicate/<unique-run-id>/\` directory and redirect every write there using supported configuration or a documented copy of the script. If writes cannot be safely redirected, report the blocker before execution. Do not overwrite originals or previously generated results.
+
+Capture a read-only comparison baseline before execution: copy the expected original outputs when feasible and record hashes, source paths, parameters, seeds and available environment versions. Stage only necessary inputs. Run with the same scientific parameters; disclose any unavoidable differences. Compare output inventories, byte hashes where meaningful, and semantic table values/plot source data with justified absolute/relative tolerances chosen before inspecting differences. Separate metadata/formatting differences from numerical differences. Missing/extra outputs are findings. Diagnose causes only with evidence; label untested explanations as hypotheses. Save the baseline manifest, run logs and comparison table in the new run directory.
 
 Log the outcome in the lab notebook and link the comparison table.
 `,
@@ -271,18 +276,33 @@ function seedMarker(paths: ProjectPaths): string {
   return path.join(paths.kadyDir, "prompts-seeded");
 }
 
-/** One-time seeding into a project (marker-gated so deletions stick). */
+// Canonical SHA-256 of the previously shipped bodies, including frontmatter.
+// Keep historic digests when changing defaults; never infer an edit from a name.
+const PREVIOUS_TEMPLATE_DIGESTS: Record<string, string[]> = {
+  qc: ["8e858d6ae8c8806e3a016f5158debaa73140cade0cac5af590f88a4a97dc633d"],
+  "stats-check": ["fe0e0f0e3400f96c97ab76208757b78748aae816a8d623dd72d20ed0546de03c"],
+  "figure-audit": ["043ec013badbbc1f5eac315b4b613b166a6a85fd7e1b1558cf3f20e6d1dbb112"],
+  "methods-review": ["1b54e12a144a4a5b9a7628d911bd581058bc15ee8309e9862cb2e5f362932b63"],
+  replicate: ["7ae7cf27e62c7841fd606522fe8c1333af1df3ee0dd4ef7c07a8079d1a945291"],
+};
+
+/** Seed once, then upgrade only unchanged shipped versions; deletions stick. */
 export function seedPromptTemplates(paths: ProjectPaths): number {
-  if (fs.existsSync(seedMarker(paths))) return 0;
+  const seeded = fs.existsSync(seedMarker(paths));
   const dir = promptsDir(paths, "project");
   fs.mkdirSync(dir, { recursive: true });
   let written = 0;
   for (const template of SEEDED_TEMPLATES) {
     const file = path.join(dir, `${template.name}.md`);
-    if (fs.existsSync(file)) continue;
+    if (fs.existsSync(file)) {
+      if (upgradeSeededText(file, template.content, PREVIOUS_TEMPLATE_DIGESTS[template.name] ?? [])) written++;
+      continue;
+    }
+    if (seeded) continue;
     fs.writeFileSync(file, template.content, "utf-8");
     written++;
   }
+  if (seeded) return written;
   fs.mkdirSync(paths.kadyDir, { recursive: true });
   fs.writeFileSync(seedMarker(paths), new Date().toISOString() + "\n", "utf-8");
   return written;

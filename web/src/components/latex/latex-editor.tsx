@@ -34,7 +34,7 @@ import { forceLinting, linter, lintGutter, type Diagnostic } from "@codemirror/l
 import { useTheme } from "next-themes";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangleIcon, LoaderCircleIcon, SparklesIcon } from "lucide-react";
-import { LatexToolbar, type Engine, type SnippetAction } from "./latex-toolbar";
+import { LatexToolbar, type Engine, type SnippetAction, type LatexViewMode } from "./latex-toolbar";
 import { LogPanel, type LogFilter } from "./log-panel";
 import { OutlinePanel } from "./outline-panel";
 import { LatexPdfPane } from "./latex-pdf-pane";
@@ -44,6 +44,8 @@ import type { PdfSyncClick, PdfSyncHighlight } from "@/components/pdf-viewer/pdf
 const AUTOCOMPILE_KEY = "kady:latex:autocompile";
 const OUTLINE_KEY = "kady:latex:outline";
 const SPELLCHECK_KEY = "kady:latex:spellcheck";
+const VIEW_KEY = "kady:latex:view";
+const SPLIT_KEY = "kady:latex:split";
 
 const LATEX_BASIC_SETUP = {
   lineNumbers: true,
@@ -63,6 +65,7 @@ export interface LatexEditorProps {
   onSave: (content: string) => Promise<boolean>;
   onCompile: (path: string, engine?: string) => Promise<LatexCompileResult>;
   onDiscard: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onOpenFile?: (path: string) => void;
 }
 
@@ -78,6 +81,7 @@ export function LatexEditor({
   onSave,
   onCompile,
   onDiscard,
+  onDirtyChange,
   onOpenFile,
 }: LatexEditorProps) {
   const projectId = useProjectScopeId();
@@ -86,6 +90,7 @@ export function LatexEditor({
   const lastSavedRef = useRef(initialContent);
   const viewRef = useRef<EditorView | null>(null);
   const [isDirty, setIsDirty] = useState(false);
+  useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
   // CodeMirror's `value` is controlled: handing it new text replaces the doc.
   // The sandbox poll rewrites `initialContent` every few seconds, so binding
   // the prop directly let a background refresh wipe unsaved edits mid-sentence.
@@ -96,13 +101,26 @@ export function LatexEditor({
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const savePromiseRef = useRef<Promise<boolean> | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [compiling, setCompiling] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
   const compilingRef = useRef(false);
   const [engine, setEngine] = useState<Engine>(() => {
     const p = parseMagicComments(initialContent).program;
     return isValidEngine(p) ? p : "pdflatex";
   });
   const [pdfPath, setPdfPath] = useState<string | null>(null);
+  const pdfDocRef = useRef<Text | null>(null);
+  const [previewStale, setPreviewStale] = useState(false);
+  const [compileFailed, setCompileFailed] = useState(false);
+  const [diagnosticsStale, setDiagnosticsStale] = useState(false);
+  const [compileTarget, setCompileTarget] = useState(path);
+  const [compileErrors, setCompileErrors] = useState<string[]>([]);
+  const [viewMode, setViewMode] = useState<LatexViewMode>(() => {
+    const value = typeof localStorage !== "undefined" ? localStorage.getItem(VIEW_KEY) : null;
+    return value === "source" || value === "pdf" ? value : "split";
+  });
   const [reloadToken, setReloadToken] = useState(0);
   const pdfPathRef = useRef<string | null>(null);
   useEffect(() => { pdfPathRef.current = pdfPath; }, [pdfPath]);
@@ -115,7 +133,10 @@ export function LatexEditor({
   const [errorCount, setErrorCount] = useState(0);
   const [warningCount, setWarningCount] = useState(0);
   const [logOpen, setLogOpen] = useState(false);
-  const [splitPct, setSplitPct] = useState(50);
+  const [splitPct, setSplitPct] = useState(() => {
+    const value = typeof localStorage !== "undefined" ? Number(localStorage.getItem(SPLIT_KEY)) : 50;
+    return value >= 25 && value <= 75 ? value : 50;
+  });
   const [wordCount, setWordCount] = useState(() => proseWordCount(initialContent));
   const [autoCompile, setAutoCompile] = useState(
     () => typeof localStorage !== "undefined" && localStorage.getItem(AUTOCOMPILE_KEY) === "1",
@@ -134,6 +155,10 @@ export function LatexEditor({
   // `applied` is the doc right after the AI change landed — finishReview uses
   // it to detect manual edits made during the review window.
   const [aiReview, setAiReview] = useState<{ original: string; applied: string; costUsd: number } | null>(null);
+  const aiReviewRef = useRef(aiReview);
+  aiReviewRef.current = aiReview;
+  const diskContentRef = useRef(diskContent);
+  diskContentRef.current = diskContent;
   const aiAbortRef = useRef<AbortController | null>(null);
   // Abort any in-flight assist request when the editor unmounts (tab switch,
   // file close) so the fetch doesn't outlive the component.
@@ -142,6 +167,17 @@ export function LatexEditor({
   // swap the whole extensions array (which forces a full root reconfigure).
   const lockComp = useMemo(() => new Compartment(), []);
   const mergeComp = useMemo(() => new Compartment(), []);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showSyncNotice = useCallback((msg: string) => {
+    setSyncNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setSyncNotice(null), 6000);
+  }, []);
+
+  const changeViewMode = useCallback((mode: LatexViewMode) => {
+    setViewMode(mode);
+    localStorage.setItem(VIEW_KEY, mode);
+  }, []);
 
   // --- spell check ------------------------------------------------------
   const [spellcheck, setSpellcheck] = useState(
@@ -231,6 +267,10 @@ export function LatexEditor({
   const handleChange = useCallback((value: string) => {
     contentRef.current = value;
     setIsDirty(value !== lastSavedRef.current);
+    setSaved(false);
+    const doc = viewRef.current?.state.doc;
+    setPreviewStale(!!pdfDocRef.current && (!doc || !pdfDocRef.current.eq(doc)));
+    setDiagnosticsStale(!!diagRef.current && (!doc || !diagRef.current.doc.eq(doc)));
     if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
     wordCountTimer.current = setTimeout(() => {
       setWordCount(proseWordCount(value));
@@ -242,6 +282,7 @@ export function LatexEditor({
       if (wordCountTimer.current) clearTimeout(wordCountTimer.current);
       if (cursorTimer.current) clearTimeout(cursorTimer.current);
       if (noticeTimer.current) clearTimeout(noticeTimer.current);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
     },
     [],
   );
@@ -259,6 +300,19 @@ export function LatexEditor({
     setOutline(parseOutline(next));
   }, []);
 
+  const keepEditorContent = useCallback(() => {
+    const disk = diskContentRef.current;
+    if (disk === null) return;
+    // The retained document must be compared with the actual disk version,
+    // including when undo has restored the editor's old saved text.
+    lastSavedRef.current = disk;
+    const current = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    setIsDirty(current !== disk);
+    setSaved(false);
+    diskContentRef.current = null;
+    setDiskContent(null);
+  }, []);
+
   // The file changed underneath us — usually the agent editing the same .tex.
   // Adopt it silently when there is nothing to lose, otherwise let the user
   // choose rather than deciding for them.
@@ -274,7 +328,7 @@ export function LatexEditor({
       setDiskContent(null);
       return;
     }
-    if (current === lastSavedRef.current) {
+    if (current === lastSavedRef.current && !aiAbortRef.current && !aiReviewRef.current) {
       applyDiskContent(initialContent);
       return;
     }
@@ -286,59 +340,106 @@ export function LatexEditor({
   autoCompileRef.current = autoCompile;
 
   const doSave = useCallback(async (): Promise<boolean> => {
-    const content = viewRef.current?.state.doc.toString() ?? contentRef.current;
-    setSaving(true);
-    const ok = await onSave(content);
-    setSaving(false);
-    if (ok) {
-      lastSavedRef.current = content;
-      contentRef.current = content;
-      setIsDirty(false);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
+    if (aiAbortRef.current || aiReviewRef.current) {
+      showSyncNotice("Finish the AI edit review before saving or compiling");
+      return false;
     }
-    return ok;
-  }, [onSave]);
+    if (diskContentRef.current !== null) {
+      showSyncNotice("Choose Load disk version or Keep mine before saving");
+      return false;
+    }
+    // Serialize keyboard/button saves; never let an older request overwrite
+    // a newer one or mark keystrokes made during the request as saved.
+    while (savePromiseRef.current) await savePromiseRef.current;
+    if (aiAbortRef.current || aiReviewRef.current || diskContentRef.current !== null) return false;
+    const content = viewRef.current?.state.doc.toString() ?? contentRef.current;
+    if (content === lastSavedRef.current) return true;
+    setSaving(true);
+    const promise = Promise.resolve().then(() => onSave(content)).catch((error: unknown) => {
+      showSyncNotice(error instanceof Error ? error.message : "Could not save document");
+      return false;
+    });
+    savePromiseRef.current = promise;
+    try {
+      const ok = await promise;
+      if (ok) {
+        lastSavedRef.current = content;
+        const current = viewRef.current?.state.doc.toString() ?? contentRef.current;
+        setIsDirty(current !== content);
+        setSaved(current === content);
+        if (savedTimer.current) clearTimeout(savedTimer.current);
+        savedTimer.current = setTimeout(() => setSaved(false), 1500);
+      } else showSyncNotice("Could not save document. Your edits are still in the editor.");
+      return ok;
+    } finally {
+      savePromiseRef.current = null;
+      setSaving(false);
+    }
+  }, [onSave, showSyncNotice]);
 
   const handleCompile = useCallback(async () => {
     if (compilingRef.current) return;
     compilingRef.current = true;
     setCompiling(true);
     try {
-      const docText = viewRef.current?.state.doc.toString() ?? contentRef.current;
+      const ok = await doSave();
+      if (!ok) return;
+      const snapshot = viewRef.current?.state.doc ?? null;
+      const docText = snapshot?.toString() ?? contentRef.current;
       if (docText !== lastSavedRef.current) {
-        const ok = await doSave();
-        if (!ok) return;
+        showSyncNotice("Source changed while saving. Compile again to include your latest edits.");
+        return;
       }
       const magic = parseMagicComments(docText);
       const target = magic.root ? resolveRelative(path, magic.root) : path;
+      setCompileTarget(target);
       const result = await onCompile(target, engine);
       setLogText(result.log);
+      setCompileErrors(result.errors);
+      setCompileFailed(!result.success);
       void refreshBibKeys();
-      const snapshot = viewRef.current?.state.doc ?? null;
-      const items = parseCompileDiagnostics(result.log ?? "", name);
+      const items = parseCompileDiagnostics(result.diagnostics_log ?? result.log ?? "", path, target);
       if (snapshot) diagRef.current = { doc: snapshot, items };
+      const stale = !!snapshot && !!viewRef.current && !snapshot.eq(viewRef.current.state.doc);
+      setDiagnosticsStale(stale);
       setErrorCount(items.filter((i) => i.severity === "error").length || result.errors.length);
       setWarningCount(items.filter((i) => i.severity === "warning").length);
       if (viewRef.current) forceLinting(viewRef.current);
       setSynctexOk(result.synctex);
       if (result.success && result.pdf_path) {
+        pdfDocRef.current = snapshot;
+        setPreviewStale(stale);
+        setSyncHighlight(null);
         setPdfPath(result.pdf_path);
         setReloadToken((k) => k + 1);
         setLogOpen(false);
       } else {
         setLogOpen(true);
       }
+    } catch (error) {
+      diagRef.current = null;
+      setDiagnosticsStale(false);
+      const message = error instanceof Error ? error.message : "Compilation failed";
+      setLogText(message);
+      setCompileErrors([message]);
+      setCompileFailed(true);
+      setSynctexOk(false);
+      setErrorCount(1);
+      setLogOpen(true);
     } finally {
       compilingRef.current = false;
       setCompiling(false);
     }
-  }, [doSave, onCompile, path, engine, name, refreshBibKeys]);
+  }, [doSave, onCompile, path, engine, refreshBibKeys, showSyncNotice]);
 
   const handleSave = useCallback(async () => {
+    if (compilingRef.current) {
+      showSyncNotice("Compilation is in progress. Save again when it finishes.");
+      return;
+    }
     const ok = await doSave();
     if (ok && autoCompileRef.current) void handleCompile();
-  }, [doSave, handleCompile]);
+  }, [doSave, handleCompile, showSyncNotice]);
 
   const handleSaveRef = useRef(handleSave);
   const handleCompileRef = useRef(handleCompile);
@@ -356,6 +457,7 @@ export function LatexEditor({
 
   // --- snippet inserts ------------------------------------------------------
   const handleSnippet = useCallback((action: SnippetAction) => {
+    if (aiAbortRef.current) return;
     const view = viewRef.current;
     if (!view) return;
     if (action.kind === "wrap") {
@@ -390,6 +492,7 @@ export function LatexEditor({
   trackCursorRef.current = trackCursor;
 
   const jumpToLine = useCallback((line: number) => {
+    setViewMode((mode) => mode === "pdf" ? "split" : mode);
     const view = viewRef.current;
     if (!view) return;
     const ln = view.state.doc.line(Math.max(1, Math.min(line, view.state.doc.lines)));
@@ -400,17 +503,15 @@ export function LatexEditor({
     view.focus();
   }, []);
 
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showSyncNotice = useCallback((msg: string) => {
-    setSyncNotice(msg);
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setSyncNotice(null), 4000);
-  }, []);
-
   const jumpToPdf = useCallback(async () => {
     const view = viewRef.current;
     const pdf = pdfPathRef.current;
     if (!view || !pdf) return;
+    if (compilingRef.current || !pdfDocRef.current?.eq(view.state.doc) || !synctexOk) {
+      showSyncNotice("Recompile before jumping between source and PDF");
+      return;
+    }
+    setViewMode((mode) => mode === "source" ? "split" : mode);
     const line = view.state.doc.lineAt(view.state.selection.main.head).number;
     // Claim the token before the await: if a newer jump starts while this one
     // is in flight, the stale response is dropped instead of winning the race.
@@ -422,7 +523,7 @@ export function LatexEditor({
       return;
     }
     setSyncHighlight({ ...box, token });
-  }, [path, projectId, showSyncNotice]);
+  }, [path, projectId, showSyncNotice, synctexOk]);
   const jumpToPdfRef = useRef(jumpToPdf);
   jumpToPdfRef.current = jumpToPdf;
 
@@ -434,6 +535,10 @@ export function LatexEditor({
     async (pos: PdfSyncClick) => {
       const pdf = pdfPathRef.current;
       if (!pdf) return;
+      if (compilingRef.current || !synctexOk || !viewRef.current || !pdfDocRef.current?.eq(viewRef.current.state.doc)) {
+        showSyncNotice("Recompile before jumping between source and PDF");
+        return;
+      }
       const loc = await fetchSynctexInverse(pdf, pos.page, pos.x, pos.y, projectId);
       if (loc === "unavailable" || loc === null || !loc.file) {
         showSyncNotice("No source location found");
@@ -445,14 +550,14 @@ export function LatexEditor({
       }
       // Switching tabs unmounts this editor and its unsaved CodeMirror doc —
       // never follow a cross-file jump over unsaved edits.
-      if (isDirty) {
+      if (contentRef.current !== lastSavedRef.current || aiAbortRef.current || aiReviewRef.current) {
         showSyncNotice(`Source is in ${loc.file}:${loc.line} — save (${modKey}S) to follow`);
         return;
       }
       onOpenFile?.(loc.file);
       showSyncNotice(`Source is in ${loc.file}:${loc.line}`);
     },
-    [path, projectId, jumpToLine, onOpenFile, showSyncNotice, isDirty, modKey],
+    [path, projectId, jumpToLine, onOpenFile, showSyncNotice, modKey, synctexOk],
   );
 
   const toggleOutline = useCallback(() => {
@@ -464,15 +569,14 @@ export function LatexEditor({
 
   // --- AI assist: review flow + edit/fix flows ------------------------------
   const startReview = useCallback(
-    (from: number, to: number, expected: string, replacement: string, costUsd: number) => {
+    (from: number, to: number, expected: Text, replacement: string, costUsd: number) => {
       const view = viewRef.current;
       if (!view) return;
       // `from`/`to` were captured before the AI round-trip. The editable lock
       // only blocks direct input — programmatic edits (snippet buttons,
       // spellcheck fixes, external file refresh) can still move the doc — so
-      // refuse to apply unless the range still holds exactly the text the AI
-      // was asked to replace.
-      if (to > view.state.doc.length || view.state.sliceDoc(from, to) !== expected) {
+      // refuse if any of the source context changed during the round-trip.
+      if (!expected.eq(view.state.doc) || aiReviewRef.current) {
         showSyncNotice("Document changed during the AI request — edit not applied");
         return;
       }
@@ -481,7 +585,10 @@ export function LatexEditor({
       view.dispatch({
         effects: mergeComp.reconfigure(unifiedMergeView({ original, mergeControls: true })),
       });
-      setAiReview({ original, applied: view.state.doc.toString(), costUsd });
+      const review = { original, applied: view.state.doc.toString(), costUsd };
+      aiReviewRef.current = review;
+      setAiReview(review);
+      setViewMode((mode) => mode === "pdf" ? "split" : mode);
       view.dispatch({ effects: EditorView.scrollIntoView(from, { y: "center" }) });
     },
     [mergeComp, showSyncNotice],
@@ -500,6 +607,7 @@ export function LatexEditor({
         }
       }
       view?.dispatch({ effects: mergeComp.reconfigure([]) });
+      aiReviewRef.current = null;
       setAiReview(null);
       viewRef.current?.focus();
     },
@@ -512,16 +620,37 @@ export function LatexEditor({
     async (
       payload: Record<string, unknown>,
       onError: (msg: string) => void,
+      source: string,
     ): Promise<LatexAssistResult | null> => {
+      if (aiAbortRef.current || aiReviewRef.current || savePromiseRef.current || compilingRef.current) {
+        onError("Finish the current save, compilation, or AI review before starting another edit");
+        return null;
+      }
       setAiBusy(true);
       const ctrl = new AbortController();
       aiAbortRef.current = ctrl;
       try {
-        return await postLatexAssist(
+        // Included chapters often lack a preamble. Give the model the root's
+        // definitions without expanding the editable selection beyond this file.
+        if (!payload.preamble) {
+          const root = parseMagicComments(source).root;
+          if (root) {
+            const rootSource = await readSandboxFile(resolveRelative(path, root), projectId);
+            if (rootSource) payload = { ...payload, preamble: extractPreamble(rootSource) };
+          }
+        }
+        if (ctrl.signal.aborted) return null;
+        const result = await postLatexAssist(
           model ? { ...payload, model } : payload,
           ctrl.signal,
           projectId,
         );
+        if (ctrl.signal.aborted) return null;
+        if (result.status === "needs_context") {
+          onError(`More context needed: ${result.message}`);
+          return null;
+        }
+        return result;
       } catch (err) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           onError(err instanceof LatexAssistError ? err.message : "AI request failed");
@@ -532,7 +661,7 @@ export function LatexEditor({
         if (aiAbortRef.current === ctrl) aiAbortRef.current = null;
       }
     },
-    [model, projectId],
+    [model, path, projectId],
   );
 
   const runAiEdit = useCallback(
@@ -540,6 +669,7 @@ export function LatexEditor({
       const view = viewRef.current;
       if (!view || aiBusy) return;
       const { from, to } = view.state.selection.main;
+      const snapshot = view.state.doc;
       const selection = view.state.sliceDoc(from, to);
       setAiError(null);
       const res = await requestAssist(
@@ -548,10 +678,11 @@ export function LatexEditor({
           preamble: extractPreamble(view.state.doc.toString()),
         },
         setAiError,
+        snapshot.toString(),
       );
-      if (!res) return;
+      if (!res || res.status !== "replacement") return;
       setAiPopover(null);
-      startReview(from, to, selection, res.replacement, res.costUsd);
+      startReview(from, to, snapshot, res.replacement, res.costUsd);
     },
     [name, aiBusy, requestAssist, startReview],
   );
@@ -571,12 +702,12 @@ export function LatexEditor({
       setAiPopover(null);
       const doc = view.state.doc.toString();
       const payload = buildFixPayload(doc, name, line, message);
-      const res = await requestAssist(payload, showSyncNotice);
-      if (!res) return;
+      const res = await requestAssist(payload, showSyncNotice, doc);
+      if (!res || res.status !== "replacement") return;
       const { from, to } = lineRangeToOffsets(
         doc, payload.context.startLine, payload.context.endLine,
       );
-      startReview(from, to, payload.context.text, res.replacement, res.costUsd);
+      startReview(from, to, snap.doc, res.replacement, res.costUsd);
     },
     [name, aiBusy, requestAssist, startReview, showSyncNotice],
   );
@@ -586,12 +717,17 @@ export function LatexEditor({
   const openAiPopover = useCallback(() => {
     const view = viewRef.current;
     if (!view) return false;
-    if (aiBusy) {
-      showSyncNotice("An AI request is already in flight");
+    if (aiAbortRef.current || aiReviewRef.current || savePromiseRef.current || compilingRef.current) {
+      showSyncNotice("Finish the current save, compilation, or AI review before starting another edit");
       return true;
     }
     const { from, to, head } = view.state.selection.main;
-    if (from === to) return false;
+    setViewMode((mode) => mode === "pdf" ? "split" : mode);
+    if (from === to) {
+      showSyncNotice("Select some LaTeX source, then choose Edit with AI");
+      view.focus();
+      return true;
+    }
     // coordsAtPos is null when the head is outside the rendered viewport
     // (e.g. after Cmd+A in a long doc) — fall back to a top-center anchor
     // instead of silently swallowing the keystroke.
@@ -601,10 +737,10 @@ export function LatexEditor({
     setAiPopover(
       coords
         ? { x: coords.left, y: coords.bottom }
-        : { x: rect.left + rect.width / 2 - 160, y: rect.top + 40 },
+        : { x: rect.width ? rect.left + rect.width / 2 - 160 : window.innerWidth / 2 - 160, y: rect.top + 40 },
     );
     return true;
-  }, [aiBusy, showSyncNotice]);
+  }, [showSyncNotice]);
   const openAiPopoverRef = useRef(openAiPopover);
   openAiPopoverRef.current = openAiPopover;
 
@@ -702,6 +838,16 @@ export function LatexEditor({
       document.removeEventListener("mouseup", onUp);
     };
   }, [dragging]);
+  useEffect(() => {
+    if (!dragging) localStorage.setItem(SPLIT_KEY, String(splitPct));
+  }, [splitPct, dragging]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [isDirty]);
 
   return (
     <div className="flex h-full flex-col">
@@ -714,10 +860,19 @@ export function LatexEditor({
         onEngineChange={setEngine}
         onCompile={handleCompile}
         onSave={handleSave}
-        onDiscard={onDiscard}
+        onDiscard={() => {
+          if (contentRef.current !== lastSavedRef.current || aiAbortRef.current || aiReviewRef.current) setConfirmClose(true);
+          else onDiscard();
+        }}
         errorCount={errorCount}
         warningCount={warningCount}
         hasPdf={pdfPath !== null}
+        previewStale={previewStale}
+        compileFailed={compileFailed}
+        editingLocked={aiBusy || aiReview !== null}
+        viewMode={viewMode}
+        onViewModeChange={changeViewMode}
+        onAiEdit={openAiPopover}
         hasLog={logText !== null}
         logOpen={logOpen}
         onToggleLog={() => setLogOpen((v) => !v)}
@@ -730,126 +885,151 @@ export function LatexEditor({
         onToggleOutline={toggleOutline}
         spellcheck={spellcheck}
         onToggleSpellcheck={toggleSpellcheck}
-        syncAvailable={synctexOk && pdfPath !== null}
+        syncAvailable={synctexOk && pdfPath !== null && !previewStale && !compiling}
         onJumpToPdf={jumpToPdf}
         onAskKady={askKady}
       />
+      {confirmClose && (
+        <div role="alertdialog" aria-label="Close LaTeX editor" className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-3 py-2 text-xs">
+          <span className="flex-1">Close without saving? Unsaved edits and any AI review will be lost.</span>
+          <button onClick={() => setConfirmClose(false)} className="rounded border px-2 py-1">Keep editing</button>
+          <button onClick={onDiscard} className="rounded border px-2 py-1 text-red-600">Close without saving</button>
+        </div>
+      )}
+      {syncNotice && <div role="status" className="shrink-0 border-b bg-blue-500/10 px-3 py-1 text-[11px] text-blue-700 dark:text-blue-300">{syncNotice}</div>}
+      {logText !== null && <div className="shrink-0 truncate border-b px-3 py-1 text-[10px] text-muted-foreground" title={compileTarget}>Compile target: {compileTarget}</div>}
 
       <div className={cn("flex flex-1 min-h-0", dragging && "select-none")}>
-        {outlineOpen && (
+        {outlineOpen && viewMode !== "pdf" && (
           <OutlinePanel items={outline} currentLine={cursorLine} onJump={jumpToLine} />
         )}
 
-        {/* Editor pane */}
-        <div className="flex min-w-0 flex-col overflow-hidden" style={{ width: `${splitPct}%` }}>
-          {breadcrumb.length > 0 && (
-            <div className="flex shrink-0 items-center gap-1 truncate border-b bg-muted/20 px-3 py-1 text-[10px] text-muted-foreground">
-              {breadcrumb.map((b, i) => (
-                <span key={`${b.line}`} className="flex items-center gap-1 truncate">
-                  {i > 0 && <span className="text-muted-foreground/40">›</span>}
-                  <button className="truncate hover:text-foreground" onClick={() => jumpToLine(b.line)}>
-                    {b.title}
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-          {aiBusy && !aiPopover && (
-            <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
-              <LoaderCircleIcon className="size-3 animate-spin" />
-              AI fix in progress — editor locked
-              <span className="flex-1" />
-              <button
-                onClick={() => aiAbortRef.current?.abort()}
-                className="rounded border px-2 py-0.5 hover:bg-muted"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          {aiReview && (
-            <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
-              <SparklesIcon className="size-3" />
-              AI edit applied — review the highlighted chunks
-              {aiReview.costUsd > 0 && <span className="text-muted-foreground">· ${aiReview.costUsd.toFixed(4)}</span>}
-              <span className="flex-1" />
-              <button onClick={() => finishReview(false)} className="rounded bg-violet-600 px-2 py-0.5 text-white hover:bg-violet-700">
-                Keep all
-              </button>
-              <button onClick={() => finishReview(true)} className="rounded border px-2 py-0.5 hover:bg-muted">
-                Revert all
-              </button>
-            </div>
-          )}
-          {diskContent !== null && (
-            <div className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-3 py-1 text-[11px] text-amber-800 dark:text-amber-300">
-              <AlertTriangleIcon className="size-3" />
-              This file changed on disk while you were editing
-              <span className="flex-1" />
-              <button
-                onClick={() => applyDiskContent(diskContent)}
-                className="rounded border px-2 py-0.5 hover:bg-muted"
-              >
-                Load disk version
-              </button>
-              <button
-                onClick={() => setDiskContent(null)}
-                className="rounded border px-2 py-0.5 hover:bg-muted"
-              >
-                Keep mine
-              </button>
-            </div>
-          )}
-          <div className="relative flex-1 min-h-0">
-            <div className="absolute inset-0">
-              <CodeMirror
-                value={openedContentRef.current}
-                onChange={handleChange}
-                onCreateEditor={(view) => { viewRef.current = view; }}
-                extensions={extensions}
-                theme={resolvedTheme === "dark" ? githubDark : githubLight}
-                height="100%"
-                className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
-                basicSetup={LATEX_BASIC_SETUP}
-              />
+        <div className="flex min-w-0 flex-1">
+          {/* Editor pane */}
+          <div className={cn("min-w-0 flex-col overflow-hidden", viewMode === "pdf" ? "hidden" : "flex")} style={{ width: viewMode === "source" ? "100%" : `${splitPct}%` }}>
+            {breadcrumb.length > 0 && (
+              <div className="flex shrink-0 items-center gap-1 truncate border-b bg-muted/20 px-3 py-1 text-[10px] text-muted-foreground">
+                {breadcrumb.map((b, i) => (
+                  <span key={`${b.line}`} className="flex items-center gap-1 truncate">
+                    {i > 0 && <span className="text-muted-foreground/40">›</span>}
+                    <button className="truncate hover:text-foreground" onClick={() => jumpToLine(b.line)}>
+                      {b.title}
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {aiBusy && !aiPopover && (
+              <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
+                <LoaderCircleIcon className="size-3 animate-spin" />
+                AI fix in progress — editor locked
+                <span className="flex-1" />
+                <button
+                  onClick={() => aiAbortRef.current?.abort()}
+                  className="rounded border px-2 py-0.5 hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {aiReview && (
+              <div className="flex shrink-0 items-center gap-2 border-b bg-violet-500/10 px-3 py-1 text-[11px] text-violet-700 dark:text-violet-300">
+                <SparklesIcon className="size-3" />
+                AI edit applied — review the highlighted chunks
+                {aiReview.costUsd > 0 && <span className="text-muted-foreground">· ${aiReview.costUsd.toFixed(4)}</span>}
+                <span className="flex-1" />
+                <button onClick={() => finishReview(false)} className="rounded bg-violet-600 px-2 py-0.5 text-white hover:bg-violet-700">
+                  Keep all
+                </button>
+                <button onClick={() => finishReview(true)} className="rounded border px-2 py-0.5 hover:bg-muted">
+                  Revert all
+                </button>
+              </div>
+            )}
+            {diskContent !== null && (
+              <div className="flex shrink-0 items-center gap-2 border-b bg-amber-500/10 px-3 py-1 text-[11px] text-amber-800 dark:text-amber-300">
+                <AlertTriangleIcon className="size-3" />
+                This file changed on disk while you were editing
+                <span className="flex-1" />
+                <button
+                  onClick={() => applyDiskContent(diskContent)}
+                  disabled={aiBusy || aiReview !== null}
+                  className="rounded border px-2 py-0.5 hover:bg-muted"
+                >
+                  Load disk version
+                </button>
+                <button
+                  onClick={keepEditorContent}
+                  className="rounded border px-2 py-0.5 hover:bg-muted"
+                >
+                  Keep mine
+                </button>
+              </div>
+            )}
+            <div className="relative flex-1 min-h-0">
+              <div className="absolute inset-0">
+                <CodeMirror
+                  value={openedContentRef.current}
+                  onChange={handleChange}
+                  onCreateEditor={(view) => { viewRef.current = view; }}
+                  extensions={extensions}
+                  theme={resolvedTheme === "dark" ? githubDark : githubLight}
+                  height="100%"
+                  className="h-full text-xs [&_.cm-editor]:h-full [&_.cm-scroller]:overflow-auto"
+                  basicSetup={LATEX_BASIC_SETUP}
+                />
+              </div>
             </div>
           </div>
 
-          <LogPanel
-            log={logText ?? ""}
-            open={logOpen}
-            onClose={closeLog}
-            filter={logFilter}
-            onFilterChange={setLogFilter}
-            fileName={name}
-            onFixError={fixWithAi}
-          />
-        </div>
-
-        {/* Resize divider */}
-        <div
-          ref={dividerRef}
-          className="group relative z-10 flex w-1 shrink-0 cursor-col-resize items-center justify-center bg-border transition-colors hover:bg-blue-400 active:bg-blue-500"
-          onMouseDown={() => setDragging(true)}
-        >
-          <div className="h-8 w-0.5 rounded-full bg-muted-foreground/20 transition-colors group-hover:bg-blue-400" />
-        </div>
-
-        <div className="flex min-w-0 flex-1 flex-col bg-muted/5">
-          {syncNotice && (
-            <div className="shrink-0 border-b bg-blue-500/10 px-3 py-1 text-[11px] text-blue-700 dark:text-blue-300">
-              {syncNotice}
+          {/* Resize divider */}
+          {viewMode === "split" && (
+            <div
+              ref={dividerRef}
+              role="separator"
+              aria-label="Resize source and PDF panes"
+              aria-orientation="vertical"
+              aria-valuenow={Math.round(splitPct)}
+              aria-valuemin={25}
+              aria-valuemax={75}
+              tabIndex={0}
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                event.preventDefault();
+                setSplitPct((pct) => Math.max(25, Math.min(75, pct + (event.key === "ArrowLeft" ? -5 : 5))));
+              }}
+              className="group relative z-10 flex w-1 shrink-0 cursor-col-resize items-center justify-center bg-border transition-colors hover:bg-blue-400 active:bg-blue-500"
+              onMouseDown={() => setDragging(true)}
+            >
+              <div className="h-8 w-0.5 rounded-full bg-muted-foreground/20 transition-colors group-hover:bg-blue-400" />
             </div>
           )}
-          <LatexPdfPane
-            pdfPath={pdfPath}
-            reloadToken={reloadToken}
-            syncHighlight={syncHighlight}
-            onSyncClick={handleSyncClick}
-            modKey={modKey}
-          />
+
+          <div className={cn("min-w-0 flex-1 flex-col bg-muted/5", viewMode === "source" ? "hidden" : "flex")}>
+            {pdfPath && (previewStale || compileFailed) && <div className="shrink-0 border-b bg-amber-500/10 px-3 py-1 text-[11px] text-amber-800 dark:text-amber-300">{compileFailed ? "Compilation failed. Preview is from the last successful build." : "Source has changed. Compile to update the PDF."}</div>}
+            <LatexPdfPane
+              pdfPath={pdfPath}
+              reloadToken={reloadToken}
+              syncHighlight={syncHighlight}
+              onSyncClick={handleSyncClick}
+              modKey={modKey}
+            />
+          </div>
         </div>
       </div>
+      <LogPanel
+        log={logText ?? ""}
+        open={logOpen}
+        onClose={closeLog}
+        filter={logFilter}
+        onFilterChange={setLogFilter}
+        fileName={path}
+        compileTarget={compileTarget}
+        errors={compileErrors}
+        stale={diagnosticsStale || compiling}
+        onJump={jumpToLine}
+        onFixError={aiBusy || aiReview ? undefined : fixWithAi}
+      />
 
       {aiPopover && (
         <AiEditPopover

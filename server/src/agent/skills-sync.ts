@@ -815,7 +815,22 @@ export function syncAllProjectSkillsFromRemote(options?: {
  * Start a non-blocking launch sync and repeat at the configured daily cadence.
  * The timer is unref'd so it cannot keep the backend alive during shutdown.
  */
+/**
+ * `KADY_SKILLS_AUTO_SYNC=0` turns off the launch + daily catalogue update.
+ * Unedited catalogue skills are otherwise replaced in place from upstream
+ * `main`, which change-controlled installs may not want: skills are agent
+ * instructions and scripts. Manual updates from Settings still work.
+ */
+export function skillAutoSyncEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.KADY_SKILLS_AUTO_SYNC?.trim().toLowerCase();
+  return !(raw === "0" || raw === "false" || raw === "off" || raw === "no");
+}
+
 export function startAutomaticSkillSync(logger: SyncLogger): () => void {
+  if (!skillAutoSyncEnabled()) {
+    logger.info({}, "automatic skill catalogue sync disabled (KADY_SKILLS_AUTO_SYNC)");
+    return () => {};
+  }
   const run = (): void => {
     void syncAllProjectSkillsFromRemote()
       .then(({ projects }) => {

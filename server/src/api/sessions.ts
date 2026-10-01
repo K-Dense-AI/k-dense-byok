@@ -52,6 +52,7 @@ import {
 } from "../agent/notebook-annotations.ts";
 import { MethodsDraftError, runMethodsDraft } from "../agent/methods-draft.ts";
 import { runBroker, type RunHandle } from "../agent/run-broker.ts";
+import { deferSessionMessages } from "../agent/session-message-gate.ts";
 import {
   claimRun,
   executeRun,
@@ -449,7 +450,7 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
     },
   );
 
-  app.get<{ Params: { id: string }; Querystring: { after?: string } }>(
+  app.get<{ Params: { id: string }; Querystring: { after?: string; runId?: string } }>(
     "/sessions/:id/run/events",
     async (req, reply) => {
       const rawAfter = req.query.after;
@@ -462,6 +463,12 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
       if (!handle) {
         reply.code(404);
         return { detail: "No retained run for this session" };
+      }
+      // A new system/user run can replace the retained handle after the client
+      // reads /run/state. Sequence cursors belong to one run, never its successor.
+      if (req.query.runId !== undefined && req.query.runId !== handle.runId) {
+        reply.code(409);
+        return { detail: "The retained run changed; refresh its state before reconnecting", runId: handle.runId };
       }
       streamRun(req, reply, handle, after);
     },
@@ -555,60 +562,71 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
         reply.code(404);
         return { detail: "No such session" };
       }
-      if (session.isStreaming || isRunClaimed(projectId, sessionId)) {
+      // Claim before billing/auth awaits, just like a chat run. Pi's compact()
+      // aborts existing work, so a second compaction must never enter it.
+      const claim = session.isStreaming || session.isCompacting
+        ? null
+        : claimRun(projectId, sessionId);
+      if (!claim) {
         reply.code(409);
         return { detail: "Wait for the current run to finish before compacting", reason: "streaming" };
       }
-      const instructions =
-        typeof req.body?.instructions === "string" ? req.body.instructions.slice(0, 2_000) : undefined;
-      const billing = session.model
-        ? await billingForModel(session.model, getModelRuntime())
-        : { provider: "unknown", authType: "none" as const, billingMode: "payg" as const };
-      const budget = isBudgetExceeded(projectId);
-      if (billingCountsTowardBudget(billing) && budget.exceeded) {
-        reply.code(402);
-        return {
-          detail:
-            `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
-            `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project settings.`,
-          reason: "budget",
-        };
-      }
-      const before = snapshot(session);
-      let result: Awaited<ReturnType<typeof session.compact>>;
+      const resumeMessages = deferSessionMessages(session, projectId);
       try {
-        result = await session.compact(instructions);
-      } catch (err) {
-        const message = (err as Error).message;
-        // Pi refuses when every message fits inside `keepRecentTokens`; that
-        // is a normal state, not a failure.
-        if (/nothing to compact/i.test(message)) {
-          reply.code(409);
+        const instructions =
+          typeof req.body?.instructions === "string" ? req.body.instructions.slice(0, 2_000) : undefined;
+        const billing = session.model
+          ? await billingForModel(session.model, getModelRuntime())
+          : { provider: "unknown", authType: "none" as const, billingMode: "payg" as const };
+        const budget = isBudgetExceeded(projectId);
+        if (billingCountsTowardBudget(billing) && budget.exceeded) {
+          reply.code(402);
           return {
-            detail: "Nothing to compact yet: the whole conversation still fits inside the recent-context window.",
-            reason: "too_small",
+            detail:
+              `Project spend limit reached ($${budget.totalUsd.toFixed(2)} / ` +
+              `$${(budget.limitUsd ?? 0).toFixed(2)}). Raise the limit in project settings.`,
+            reason: "budget",
           };
         }
-        reply.code(502);
-        return { detail: `Compaction failed: ${message}` };
+        const before = snapshot(session);
+        let result: Awaited<ReturnType<typeof session.compact>>;
+        try {
+          result = await session.compact(instructions);
+        } catch (err) {
+          const message = (err as Error).message;
+          // Pi refuses when every message fits inside `keepRecentTokens`; that
+          // is a normal state, not a failure.
+          if (/nothing to compact/i.test(message)) {
+            reply.code(409);
+            return {
+              detail: "Nothing to compact yet: the whole conversation still fits inside the recent-context window.",
+              reason: "too_small",
+            };
+          }
+          reply.code(502);
+          return { detail: `Compaction failed: ${message}` };
+        }
+        const entry = recordRun({
+          sessionId,
+          projectId,
+          model: session.model ? modelReference(session.model) : "unknown",
+          role: "agent",
+          before: emptySnapshot(),
+          after: snapshotDelta(before, snapshot(session)),
+          billing,
+        });
+        return {
+          ok: true,
+          tokensBefore: result.tokensBefore,
+          estimatedTokensAfter: result.estimatedTokensAfter ?? null,
+          costUsd: entry?.costUsd ?? 0,
+          billingMode: billing.billingMode,
+          contextUsage: contextUsageForClient(session) ?? null,
+        };
+      } finally {
+        claim.release();
+        resumeMessages();
       }
-      const entry = recordRun({
-        sessionId,
-        projectId,
-        model: session.model ? modelReference(session.model) : "unknown",
-        role: "agent",
-        before: emptySnapshot(),
-        after: snapshotDelta(before, snapshot(session)),
-        billing,
-      });
-      return {
-        ok: true,
-        tokensBefore: result.tokensBefore,
-        estimatedTokensAfter: result.estimatedTokensAfter ?? null,
-        costUsd: entry?.costUsd ?? 0,
-        billingMode: billing.billingMode,
-        contextUsage: contextUsageForClient(session) ?? null,
-      };
     },
   );
 

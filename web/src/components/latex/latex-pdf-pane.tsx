@@ -47,6 +47,7 @@ export const LatexPdfPane = memo(function LatexPdfPane({
       syncHighlight={syncHighlight}
       onSyncClick={onSyncClick}
       hideAnnotationUi
+      initialFitWidth
       className="flex-1 min-h-0"
     />
   );

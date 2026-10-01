@@ -87,7 +87,10 @@ describe("interview tool", () => {
     const run = t.execute("call-2", QUESTIONS, undefined, undefined, noCtx);
     resolveInterview("proj", "sess", "call-2", { cancelled: true });
     const result = await run;
-    expect((result.content[0] as { text: string }).text).toContain("dismissed");
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain("dismissed");
+    expect(text).toContain("required authorization is missing, report that blocker");
+    expect(text).not.toContain("Proceed with your recommended options");
     expect(result.details).toEqual({ cancelled: true });
   });
 

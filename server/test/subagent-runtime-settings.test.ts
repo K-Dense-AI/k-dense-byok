@@ -3,12 +3,13 @@ import path from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import { isExternalCliAgent, listBuiltinAgents } from "../src/agent/agent-files.ts";
 import { seedSubagentRuntimeSettings } from "../src/agent/subagent-runtime-settings.ts";
-import { PROJECTS_ROOT } from "../src/config.ts";
+import { PROJECTS_ROOT, KADY_PI_AGENT_DIR } from "../src/config.ts";
 import { ensureProjectExists } from "../src/projects.ts";
 
 beforeEach(() => {
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
+  fs.rmSync(path.join(KADY_PI_AGENT_DIR, "extensions", "subagent"), { recursive: true, force: true });
 });
 
 type Settings = {
@@ -37,7 +38,7 @@ describe("isExternalCliAgent", () => {
       expect.arrayContaining(["researcher", "reviewer", "scout", "worker"]),
     );
     expect(isExternalCliAgent({ extra: { type: "external-cli" } })).toBe(false);
-    expect(isExternalCliAgent({ extra: { runner: "", type: "external-cli" } })).toBe(true);
+    expect(isExternalCliAgent({ extra: { runner: { type: "external-cli" } } })).toBe(true);
     expect(isExternalCliAgent({})).toBe(false);
   });
 });
@@ -47,7 +48,9 @@ describe("seedSubagentRuntimeSettings", () => {
     const paths = ensureProjectExists("default");
     expect(seedSubagentRuntimeSettings(paths)).toBe(true);
     const settings = readSettings(paths.sandbox);
-    expect(settings.subagents?.forceTopLevelAsync).toBe(true);
+    const configFile = path.join(KADY_PI_AGENT_DIR, "extensions", "subagent", "config.json");
+    expect(JSON.parse(fs.readFileSync(configFile, "utf8")).forceTopLevelAsync).toBe(true);
+    expect(settings.subagents?.forceTopLevelAsync).toBeUndefined();
     for (const name of externalCli) {
       expect(settings.subagents?.agentOverrides?.[name]?.disabled).toBe(true);
     }
@@ -62,6 +65,9 @@ describe("seedSubagentRuntimeSettings", () => {
     const dir = path.join(paths.sandbox, ".pi");
     fs.mkdirSync(dir, { recursive: true });
     const [enabled, ...rest] = externalCli;
+    const configFile = path.join(KADY_PI_AGENT_DIR, "extensions", "subagent", "config.json");
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(configFile, JSON.stringify({ forceTopLevelAsync: false, concurrency: 3 }));
     fs.writeFileSync(
       path.join(dir, "settings.json"),
       JSON.stringify({
@@ -78,7 +84,8 @@ describe("seedSubagentRuntimeSettings", () => {
     expect(seedSubagentRuntimeSettings(paths)).toBe(true);
     const settings = readSettings(paths.sandbox);
     expect(settings.packages).toEqual(["keep-me"]);
-    expect(settings.subagents?.forceTopLevelAsync).toBe(false);
+    expect(settings.subagents?.forceTopLevelAsync).toBeUndefined();
+    expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({ forceTopLevelAsync: false, concurrency: 3 });
     expect(settings.subagents?.agentOverrides?.[enabled]).toEqual({ disabled: false, tools: ["read"] });
     expect(settings.subagents?.agentOverrides?.researcher).toEqual({ tools: ["read", "notebook"] });
     for (const name of rest) {

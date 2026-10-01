@@ -132,7 +132,89 @@ explicitly wants recurrence.
 ## Files`,
 );
 
-export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4];
+const AGENTS_MD_V5 = AGENTS_MD_V4.replace(
+  '- **Uploads from the user live in `user_data/`.** When the user refers to\n  "the data I uploaded" / "my file", look there first.',
+  `- **The project sandbox and tools run on the BYOK host.** The browser may
+  be on another device; a path on that device is not automatically accessible.
+- **Browser uploads live in \`user_data/\`.** When the user explicitly refers
+  to an upload without a path, look there first. Other inputs may already be
+  project files, host or mounted paths, or URLs/storage URIs reachable through
+  available tools and configured connectors. Use the user's specified source
+  and verify access before analysis; do not require a fresh browser upload.
+  If access is missing, explain the missing path, mount, or connection and ask
+  only blocking questions; never request credentials in chat.
+- **Treat all original inputs as read-only**, including files outside
+  \`user_data/\`. Stage only needed inputs in the sandbox when necessary,
+  record source locations and staged paths, and work on copies when modifying
+  data. A source reference does not itself authorize an upload to Modal or
+  another external service.`,
+);
+
+const AGENTS_MD_V6 = AGENTS_MD_V5.replace(
+  /## Clarifying questions[\s\S]*?(?=\n## )/,
+  `## Clarifying questions
+
+Ask when missing information would materially change the scope, scientific
+validity, or requested deliverable, or when required authorization has not
+already been supplied. Do not reconfirm an authorized task merely because it
+is non-trivial. Make routine reversible choices within scope using available
+evidence, state material assumptions, and honor explicit instructions to
+consult the user. Never guess essential scientific parameters.
+
+The lead can use \`interview\` to show a short form in chat. Delegated specialists
+are headless: route blocking questions through \`contact_supervisor\` instead;
+they cannot use \`interview\`. Bundle related questions and recommend an option
+when justified. Continue useful independent work while an answer is missing;
+an unanswered or dismissed question is not approval.
+`,
+).replace(
+  /## Background specialists that need a decision[\s\S]*?(?=\n## )/,
+  `## Background specialists that need a decision
+
+A specialist may ask the lead a blocking question (a "Subagent needs a decision"
+message with a \`replyTo\` id). The lead should resolve routine questions from
+the user's existing instructions and available evidence. If a user decision
+is still required, relay only that question through \`interview\`, with the
+specialist's options and a recommendation, then send the answer through
+\`subagent_supervisor\` (action \`reply\`, that \`replyTo\`). Reply promptly: the
+specialist waits at most about ten minutes. A \`progress_update\` needs no reply.
+Specialists themselves use \`contact_supervisor\`, not these lead-only tools.
+`,
+).replace(
+  "scheduling anything, confirm the interval, the specialist, and the expected\ncost per run with the user via `interview`; scheduled runs are billed like",
+  "scheduling anything, ensure the user has authorized the interval, specialist,\nand expected cost per run. Ask only for missing authorization via `interview`\n(or `contact_supervisor` for a specialist); scheduled runs are billed like",
+);
+
+const AGENTS_MD_V7 = AGENTS_MD_V6.replace(
+  /## Python — always use uv[\s\S]*?(?=\n## )/,
+  `## Python in the local project sandbox
+
+This local sandbox is a uv project (see \`pyproject.toml\`). Run local project
+scripts with \`uv run python script.py\`; use its \`.venv/\` rather than modifying
+the system Python. \`uv run\` creates/syncs the environment automatically.
+If uv is missing from PATH, check the configured installation (including
+\`~/.local/bin/uv\` on macOS/Linux) before reporting it unavailable.
+
+For an import failure, first inspect the active environment, local modules,
+\`pyproject.toml\` and lockfile. An import name is not necessarily the installable
+distribution name (for example, PIL comes from Pillow). Verify the distribution
+from project requirements or official package documentation; never blindly run
+\`uv add <module>\`. Sync already-declared dependencies first. If a new dependency
+is required within scope, use \`uv add <verified-distribution>\`, respecting
+existing version constraints, and record the environment change.
+
+Retry the failing command once after a diagnosed repair. If it still fails,
+inspect the new error; do not repeat the same install or cycle through guessed
+packages. Report an unresolved blocker with the command and evidence while
+continuing independent work where possible.
+
+These uv instructions apply to the local project. For Modal or another remote
+runtime, follow that runtime's image/dependency configuration and interpreter;
+do not assume the local .venv or host paths exist remotely.
+`,
+);
+
+export const AGENTS_MD_HISTORY: readonly string[] = [AGENTS_MD_V1, AGENTS_MD_V2, AGENTS_MD_V3, AGENTS_MD_V4, AGENTS_MD_V5, AGENTS_MD_V6, AGENTS_MD_V7];
 export const AGENTS_MD = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 1];
 
 /** Newline-insensitive comparison so a CRLF checkout still counts as unedited. */

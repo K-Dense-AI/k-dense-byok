@@ -1,127 +1,91 @@
 # Basic usage
 
-This guide covers everything you need for day-to-day work with Kady, your AI research assistant. It assumes you've already [installed the app](./installation.md) and have it open at [http://localhost:3000](http://localhost:3000).
+Kady works in a project containing your files, chats and research records.
+The tools run on the **BYOK backend host**, which may differ from the device
+running your browser.
 
-## Your first session
+## Start a task
 
-1. **Create a project.** Each project is a self-contained workspace with its own files, chat history, and settings. Think of one project per study, paper, or analysis.
-2. **Upload your data** (optional). Drag files into the file browser on the left, or drop them directly onto the message box. CSVs, PDFs, notebooks, genomics tables, molecular structures, mass spectra, imaging volumes — [60+ scientific formats](./file-previews.md) are recognized and previewable.
-3. **Ask for what you want in plain language.** For example:
-   - *"Run a differential expression analysis on counts.csv comparing treated vs control, and plot a volcano plot."*
-   - *"Summarize the methods sections of these three PDFs and compare their statistical approaches."*
-   - *"Find recent literature on CRISPR off-target prediction and write a one-page overview with citations."*
+1. Create or open a project and connect a model in **Settings → Providers**.
+2. Select the model, thinking level and compute beside the composer.
+3. Supply data and describe the question, study design and expected outputs.
+4. Review tool activity, generated files and the notebook as work proceeds.
 
-Kady works like a researcher at a computer: it reads and writes files, runs code, searches the web, and reports back. You'll see its progress live in the chat, and any files it produces appear in the file browser, ready to preview or download.
+For example: “Compare treated and control samples in `counts.csv`; genes are
+rows. Check the design and QC, save the analysis script, and plot the results.”
+Kady can read/write files, execute code, search sources, use enabled skills and
+[delegate to specialists](sub-agents.md). It may ask blocking questions through
+an inline form. Generated claims and structured result cards still need review.
 
-## How Kady works on a task
+## Workspace and chats
 
-- **It asks before it assumes.** When a task is ambiguous, Kady pauses and shows an interactive question form right in the chat — multiple choice with recommended answers, free text, even image upload. Confirm its suggestions in one click or skip the form entirely.
-- **It runs real code.** Analyses happen in your project's sandbox using Python (managed automatically with [uv](https://docs.astral.sh/uv/)). You can ask to see the code, modify it, or re-run it.
-- **It activates the right skills.** 149 pre-installed scientific skills cover genomics, proteomics, drug discovery, materials science, and more. Kady picks the relevant ones automatically — you don't need to choose.
-- **It can delegate to specialists.** Kady has a built-in team of 21 scientific sub-agents — a `citation-checker` that verifies every reference, a `statistical-reviewer` that audits your analysis, a `peer-reviewer` that writes a journal-style report, and 18 more. Kady delegates on its own for heavy or parallel work, or you can name one yourself: *"have the citation-checker go through manuscript.md"*. See [Sub-agents](./sub-agents.md).
-- **It can search the web and read sources.** Kady (and every sub-agent) can search the web, fetch and read pages, PDFs, and entire GitHub repositories, and even understand YouTube videos — out of the box, no extra key required. Optional Exa, Perplexity, and Gemini keys unlock the direct providers (see [Installation → Optional API keys](./installation.md#6-optional-api-keys)).
-- **It presents structured scientific results.** Meaningful tables, statistical tests, plots, quality-control checks, dataset schemas, citations, molecules, and artifact bundles can appear as typed cards in the chat. Plot and file cards link to the underlying sandbox artifacts, so you can open the complete result in the center preview. These cards structure values reported by the agent; they are not an independent verification pass.
+The file browser is on the left, previews/editors in the center and chat on the
+right. Drag dividers to resize or use the header buttons to hide either side.
+Click a file to [preview or edit it](file-previews.md).
 
-## The interface
+A project supports up to **10 chat tabs**, each with its own history and model.
+They share project files and budget, so concurrent work can affect the same
+outputs. Closing a chat tab inside Kady aborts its active turn; browser refresh
+or closing the browser only detaches the view. Reopening reconnects while the
+backend remains running. Backend restarts end ordinary active turns; saved
+history remains available from Chat history.
 
-Kady's workspace has three columns: the **file browser** on the left, the **file preview / editor** in the center, and the **chat** on the right. Drag the dividers between columns to resize them. The two panel buttons in the header (next to the Settings gear) collapse the left and right panels independently — each button is highlighted while its panel is open — so you can give the center pane the full window width. That's especially useful when writing LaTeX or studying a large figure. Your choice is remembered across restarts, and a hidden chat keeps running in the background.
+During a run, **Steer** supplies text guidance and **Follow up** queues a later
+message. Images sent mid-run use follow-up rather than steering. The client
+queue holds up to five messages. **Stop** ends the current turn.
 
-### Chat tabs — up to 10 parallel chats
+Paste, drop or select images to send them directly to a vision-capable model.
+Other file attachments use sandbox uploads. Sending data to hosted models,
+connectors or remote compute can transfer it off the backend host.
 
-Click `+` in the chat tab strip to open a new chat in the same project. Each tab keeps its own message history, model choice, attached files, and cost meter — but all tabs share the project's files, so results from one chat are immediately available in the others. Tabs keep working in the background while you switch between them. Double-click a tab title to rename it; closing a tab cancels any work it had running.
+## Workflows
 
-### Choosing a model
+Open the workflow library, choose a template, fill its fields and click
+**Run workflow**. It runs in the active chat. A **Needs user data** badge means
+the task needs inputs; it does not require a fresh browser upload.
 
-Use the model dropdown in the input bar. Any message can use a tool-capable model from OpenRouter (OpenAI, Anthropic, Google, xAI, Qwen, and more), a connected Pi OAuth provider, [any direct Pi provider](./model-selection.md#direct-api-key-providers) you hold a key for (Anthropic, OpenAI, Google Gemini, Groq, Mistral, DeepSeek, Azure, Bedrock, Vertex, Cloudflare, [NVIDIA NIM](./model-selection.md#nvidia-nim-models), and more), or a free local model through [Ollama](./local-models-ollama.md). To add direct subscription models, open **Settings → Model providers** and connect ChatGPT Plus/Pro, Claude Pro/Max, GitHub Copilot, xAI, or Kimi Code through the browser, device-code, or manual flow shown. The lead agent and its specialists share that Kady login. Different tabs can use different models. A **thinking-level** chip next to the model picker sets how much the model reasons on each run (default *High*); it is unavailable for Ollama and Fusion. See [Model selection](./model-selection.md) for model refs and billing behavior.
+### Workflow data locations
 
-### Files
+The launch dialog supports combined input sources:
 
-- **Upload:** drag files into the file browser or onto the input bar.
-- **Reference:** type `@filename` in a message to point Kady at a specific file.
-- **Preview:** click any file for a built-in viewer — code, Markdown (with math and diagrams), CSVs, PDFs, images, and Jupyter notebooks, plus a broad set of scientific formats: genomics (FASTA/FASTQ, VCF, BED/GFF/SAM, alignments, phylogenetic trees), chemistry (SMILES/MOL/SDF 2D depictions, interactive 3D PDB/mmCIF structures), mass spectra (mzML/MGF/JCAMP), data arrays (AnnData, HDF5, Parquet, NumPy, NetCDF), and bio-imaging (DICOM, NIfTI, TIFF). See the [full list](./file-previews.md).
-- **Download:** grab any result straight from the file browser.
-
-### Workflow templates
-
-Open the workflows panel to browse **326 ready-to-run templates across 22 disciplines** — genomics, drug discovery, finance, astrophysics, and more. Pick one, fill in the blanks, and click Launch; it runs in the currently active chat tab. Want to add your own? See [Contributing workflows](./contributing-workflows.md).
-
-### Remote compute jobs
-
-After adding a Modal token pair in **Settings → API keys**, use the compute
-picker beside the composer to choose a cloud CPU or GPU. Short `modal_run` jobs
-block the current agent turn, while durable jobs can run in the background,
-survive a backend restart, and be inspected or cancelled from the center-panel
-**Compute** tab. Inputs are validated before upload, outputs are installed
-atomically into the local sandbox, and estimated spend is reserved against the
-project cap before resources start. See [Durable Modal compute](./modal-compute.md).
-
-### Lab Notebook, Compute, and Provenance
-
-The center panel has two pinned tabs next to file previews: **Lab Notebook**, where Kady and its specialists log hypotheses, methods, observations, and decisions as they work (see [Living Lab Notebook](./lab-notebook.md)), and **Compute**, which lists the project's Modal jobs. Every file preview also has a **Provenance** button showing which tool call produced the file, what it read, and whether the bytes have changed since a notebook entry cited them (see [Provenance](./provenance.md)).
-
-### Scientific databases
-
-Kady can query **229 scientific and financial databases** across 18 categories — Biomedical & Health, Chemistry & Materials, Scholarly Publications, Stock Market, Earth & Climate, Astronomy & Space, and more. Just ask (*"look up this compound in PubChem"*); Kady knows how to reach them. A few databases need their own free API key, listed in `.env.example`.
-
-### LaTeX editor
-
-Open any `.tex` file and click **Edit** for a split-pane editor with live PDF compilation. It includes a choice of engine (pdfLaTeX, XeLaTeX, LuaLaTeX), a section outline with click-to-jump, forward and inverse SyncTeX (jump between a source line and its spot in the PDF), autocomplete and spell check, a compile log with inline error and warning diagnostics, quick-insert snippets, and a word count. AI assist is built in: press `Cmd/Ctrl+K` to rewrite a selection from an instruction, or click **Fix with AI** on a compile error — each change lands as a diff you can keep or revert. Collapse the file browser and chat (the panel buttons in the header) to give the editor and PDF the full window.
-
-### Other input options
-
-- **Voice input** — dictate your message instead of typing. Browser-native speech needs no model credential; the server-side fallback remains OpenRouter-only.
-- **Steer or follow up while Kady works** — press Enter to steer the live run (delivered before the next model call, text only) or ⌥↵ to queue a follow-up that Kady handles inside the same run once it has finished its current work (images allowed). Both show up above the composer until delivered; Stop hands undelivered text back to you.
-- **Message queue** — messages that miss a run (it ended as you typed) wait in an editable client-side queue, up to 5, and run in order as new turns.
-
-## Costs and budgets
-
-The cost pill in the header shows the active tab's session spend (`sess`) and the project total across every tab (`proj`), with token details in its popover. You can set an optional hard spend cap per project in Settings.
-
-- OpenRouter pay-as-you-go and Anthropic OAuth's Pi-documented metered extra per-token usage count toward the cap.
-- OpenAI Codex, GitHub Copilot, and xAI subscription runs track tokens and a list-price reference, but do not treat that reference as project spend. Their quotas and overages are managed by the provider, so this does not mean the usage is free or unlimited. NVIDIA NIM and the prepaid Qwen/Xiaomi token plans get the same treatment: they bill provider-managed credits or a plan quota rather than per-token dollars, so Kady records tokens without counting USD spend. Every other direct provider key (Anthropic, OpenAI, Groq, Azure, Bedrock, …) is pay-as-you-go at Pi's list price and counts toward the cap.
-- Local Ollama usage does not add model spend. Modal compute remains separately estimated and counted.
-
-## Host resource monitor
-
-The pill next to the cost pill shows live machine-wide CPU, RAM and GPU usage, with a hover card breaking out the Kady backend's own share plus free disk space on the projects volume.
-
-GPU readings come from whichever vendor tool is on `PATH`, tried in this order:
-
-| Tool | Covers |
+| Location | How to supply it |
 |---|---|
-| `nvidia-smi` | NVIDIA, all platforms |
-| `amd-smi` | AMD, ROCm 6 and newer |
-| `rocm-smi` | AMD, older ROCm |
-| `ioreg` | Apple Silicon (utilization only — unified memory has no separate VRAM pool) |
+| Existing project data | Use the default project file/folder picker. Files become attachments; folders become relative references without enumerating all contents. |
+| Browser device | Upload files or folders and wait for completion. Folder structure is retained. |
+| Backend host or mounted volume | Enter a host path, one per line. Relative paths refer to the project sandbox; container paths must exist inside the container. |
+| Remote storage | Enter an HTTPS URL or storage URI that the host's tools/connectors can access. A URI does not configure credentials. |
 
-The first tool that answers wins, so a dual-vendor machine reports the NVIDIA card. If none is installed the GPU segment is simply hidden. Some AMD drivers — ROCm on Windows in particular — report VRAM but no utilization counter; the hover card then meters VRAM and says so, while the collapsed pill stays utilization-only.
+Paths and URLs are references for the agent to resolve, not automatically
+imported or verified data. The workflow instructs Kady to check access before
+analysis, preserve originals and save outputs in the project sandbox. Avoid
+secrets and signed URLs in these fields: references persist in chat. A reference
+alone does not authorize remote upload.
 
-This monitor is **display-only**. Nothing in Kady routes work based on it: local tools always run locally, and Modal compute is used only when you pick a remote instance in the compute selector or the agent calls a `modal_*` tool.
+To expose host data in previews, put or mount it in a visible subdirectory of
+`projects/<projectId>/sandbox/` (under `KADY_PROJECTS_ROOT` if overridden).
+External paths may be accessible to the agent's shell but are not served by the
+sandbox preview API; escaping symlinks are refused. Files placed directly on
+disk do not receive upload provenance, and external paths are not automatically
+covered by the [raw-data guard](data-guard.md).
+
+## Records, compute and cost
+
+- **Lab Notebook** records authored hypotheses, methods, observations and decisions; see [the notebook guide](lab-notebook.md).
+- **Provenance** in a file's preview shows observed execution and file lineage; see [Provenance](provenance.md).
+- **Compute** lists durable [Modal jobs](modal-compute.md), their logs, outputs and controls. Background jobs require explicit cancellation and can survive a stopped chat or backend restart.
+- **Automation** provides [schedules, missions and specialist controls](automation.md).
+- The header cost pill shows session and project usage. Set the project's spend limit in **Settings → General → General & budget**; [billing rules](model-selection.md#billing-and-budgets) determine what counts.
+- The host resource pill displays machine CPU/RAM/GPU activity. It does not automatically route tasks to local or remote compute.
 
 ## Settings
 
-Click the gear icon in the top-right to:
+| Group | Panels |
+|---|---|
+| Models | Providers, Defaults, Fusion |
+| Project | General, Skills, Prompt templates, Specialists, Connectors |
+| Workspace | Services, Appearance |
 
-- connect supported subscriptions under **Model providers**,
-- manage your **API keys** (OpenRouter, every direct Pi model provider, Modal, and optional search keys),
-- browse, enable, install, write, and edit **[Skills](./skill-management.md)**,
-- view, edit, enable, and create **[Specialists](./sub-agents.md)** (sub-agents),
-- connect external tools under **Connectors** — **[MCP servers](./mcp-servers.md)** for GitHub, reference managers, databases, and hundreds more, with a built-in connection tester,
-- manage **[Fusion](./openrouter-fusion.md)** presets,
-- change the **Appearance**.
-
-Disabling a skill, specialist, or connector is non-destructive; it takes effect in new chat tabs.
-
-## Tips for good results
-
-- **Give context.** "Analyze my data" works, but "Compare expression between the 3 treated and 3 control samples in counts.csv; genes are rows" works much better.
-- **Work iteratively.** Ask for a first pass, look at the output, then refine — just like working with a colleague.
-- **Use projects to stay organized.** One project per paper or study keeps files and chat history together.
-- **Check the rough edges.** This is a beta — see [Known limitations](./limitations.md) for what to watch out for.
-
-### Settings dialog size
-
-The Settings dialog opens at about 1040×720 (smaller on small screens) and
-can be resized by dragging its bottom-right corner; arrow keys on the handle
-nudge it, double-click resets the default. The size is remembered per
-browser.
+General includes project metadata/budget, agent instructions, raw-data guard and
+context compaction, each saved separately. Skills, specialist definitions and
+connector edits generally apply to **new chat tabs**; active sessions keep their
+loaded configuration. Provider credentials and local server addresses apply live.

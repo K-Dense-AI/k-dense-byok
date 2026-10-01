@@ -10,6 +10,7 @@
  *   --no-browser  don't open the UI in a browser once it's up
  */
 import { spawn, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -36,6 +37,14 @@ const fail = (msg) => {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Owner-only files by default: `.env`, project data, venvs and logs must not
+// be readable by other accounts on a shared workstation or login node. The
+// services inherit this umask. KADY_UMASK (octal, e.g. 027) overrides it.
+if (!isWin) {
+  const configured = process.env.KADY_UMASK?.trim();
+  process.umask(configured && /^[0-7]{3,4}$/.test(configured) ? parseInt(configured, 8) : 0o077);
+}
 
 /** Run a command to completion, streaming output. Returns the exit code. */
 function run(cmd, args, opts = {}) {
@@ -155,12 +164,35 @@ function setupEnv() {
       );
     }
   }
+  // Holds API keys; a copied .env.example or a hand-made file is 0644.
+  if (!isWin && !flags.check) {
+    for (const file of [rootEnv, legacyEnv]) {
+      try {
+        if (fs.existsSync(file)) fs.chmodSync(file, 0o600);
+      } catch {
+        /* not ours to change (e.g. a read-only mount); nothing else depends on it */
+      }
+    }
+  }
   // The backend re-loads these itself (server/src/env.ts); loading them here
   // covers the frontend (NEXT_PUBLIC_* vars) and the launcher's own checks.
   // override:true = .env beats stale ambient shell exports, matching the old
   // `set -a; source .env` behavior for both spawned services.
   if (applyEnvFile(rootEnv, { override: true })) log("Loading environment from .env...");
   else if (applyEnvFile(legacyEnv, { override: true })) log("Loading environment from kady_agent/.env...");
+  // Directories created before the umask above existed (0755) would still
+  // let other accounts walk into project data; closing the roots covers all
+  // of it. Skipped when KADY_UMASK deliberately opens permissions.
+  if (!isWin && !flags.check && !process.env.KADY_UMASK) {
+    const projectsRoot = path.resolve(repoRoot, expandHome(process.env.KADY_PROJECTS_ROOT || "projects"));
+    for (const dir of [projectsRoot, path.join(os.homedir(), ".kady")]) {
+      try {
+        if (fs.statSync(dir).isDirectory()) fs.chmodSync(dir, 0o700);
+      } catch {
+        /* missing or not ours */
+      }
+    }
+  }
 }
 
 function expandHome(value) {
@@ -213,6 +245,7 @@ const DIRECT_PROVIDER_ENV_VARS = [
   "AWS_ACCESS_KEY_ID",
   "CLOUDFLARE_API_KEY",
   "XAI_API_KEY",
+  "META_API_KEY",
   "NVIDIA_API_KEY",
   "DEEPSEEK_API_KEY",
   "MISTRAL_API_KEY",
@@ -558,6 +591,36 @@ log("");
 const BACKEND_PORT = Number(process.env.KADY_PORT || 8000);
 const FRONTEND_PORT = Number(process.env.KADY_FRONTEND_PORT || 3000);
 
+// Network exposure. Both services stay on loopback unless the user binds the
+// backend elsewhere on purpose (KADY_HOST); `next dev` alone would listen on
+// every interface. Mirrors isExposedBind() in server/src/cors.ts.
+const isLoopback = (h) =>
+  ["localhost", "127.0.0.1", "::1", "[::1]"].includes(h.trim().toLowerCase()) ||
+  /^127(\.\d{1,3}){3}$/.test(h.trim());
+const BACKEND_HOST = process.env.KADY_HOST || "127.0.0.1";
+const backendExposed = !isLoopback(BACKEND_HOST);
+const FRONTEND_HOST =
+  process.env.KADY_FRONTEND_HOST || (backendExposed ? BACKEND_HOST : "127.0.0.1");
+
+// Access token (server/src/auth.ts): required when the backend is exposed or
+// KADY_REQUIRE_AUTH=1. Generated per launch unless KADY_AUTH_TOKEN pins one;
+// the browser receives it in the URL fragment, which never leaves the browser.
+const authFlag = (process.env.KADY_REQUIRE_AUTH || "").trim().toLowerCase();
+const authRequired = ["1", "true", "yes", "on"].includes(authFlag)
+  ? true
+  : ["0", "false", "no", "off"].includes(authFlag)
+    ? false
+    : Boolean(process.env.KADY_AUTH_TOKEN?.trim()) || backendExposed;
+if (authRequired && (process.env.KADY_AUTH_TOKEN?.trim().length ?? 0) < 16) {
+  process.env.KADY_AUTH_TOKEN = crypto.randomBytes(24).toString("base64url");
+}
+// Tells the backend the launcher prints the tokenized link itself.
+process.env.KADY_LAUNCHER = "1";
+const uiUrl = `http://localhost:${FRONTEND_PORT}`;
+const uiLaunchUrl = authRequired
+  ? `${uiUrl}/#kady-token=${encodeURIComponent(process.env.KADY_AUTH_TOKEN)}`
+  : uiUrl;
+
 await freePort(BACKEND_PORT, "backend");
 await freePort(FRONTEND_PORT, "app UI");
 
@@ -571,7 +634,7 @@ log("Starting services...");
 log("");
 startService(`Backend on port ${BACKEND_PORT} (Pi agent, TypeScript)`, "server", ["run", "start"]);
 startService(`Frontend on port ${FRONTEND_PORT} (Next.js UI)`, "web", [
-  "run", "dev", "--", "-p", String(FRONTEND_PORT),
+  "run", "dev", "--", "-p", String(FRONTEND_PORT), "-H", FRONTEND_HOST,
 ]);
 
 process.on("SIGINT", () => stopAll(0));
@@ -589,9 +652,16 @@ if (!shuttingDown) {
   log("");
   log("============================================");
   log("  All services running!");
-  log(`  UI: http://localhost:${FRONTEND_PORT}`);
+  log(`  UI: ${uiLaunchUrl}`);
+  if (authRequired) {
+    log("  (access token required — open this exact link; it changes each launch");
+    log("   unless KADY_AUTH_TOKEN is set)");
+  }
+  if (backendExposed) {
+    log(`  ${sym.warn} KADY_HOST=${BACKEND_HOST}: the Kady API is reachable from other machines.`);
+  }
   log("  Press Ctrl+C to stop everything");
   log("============================================");
-  openBrowser(`http://localhost:${FRONTEND_PORT}`);
+  openBrowser(uiLaunchUrl);
 }
 // The children hold the event loop open; nothing more to await.

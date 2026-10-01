@@ -1,10 +1,24 @@
 import { describe, it, expect } from "vitest";
 import {
   fileCategory,
+  flattenFolders,
   rawFileUrl,
   sciSummaryUrl,
   sciRenderUrl,
 } from "./use-sandbox";
+
+describe("sandbox folder choices", () => {
+  it("includes nested and empty folders, excluding the sandbox root and files", () => {
+    expect(flattenFolders({ name: "sandbox", path: "", type: "directory", children: [
+      { name: "study", path: "study", type: "directory", children: [
+        { name: "raw", path: "study/raw", type: "directory", children: [] },
+        { name: "counts.csv", path: "study/counts.csv", type: "file" },
+      ] },
+      { name: "empty", path: "empty", type: "directory" },
+    ] })).toEqual(["study", "study/raw", "empty"]);
+    expect(flattenFolders(null)).toEqual([]);
+  });
+});
 
 describe("fileCategory — chemistry & structures", () => {
   it("classifies 2D molecule formats", () => {
@@ -105,5 +119,30 @@ describe("sci url builders", () => {
     expect(
       sciRenderUrl("a.nii", "imaging", 5, "coronal", "project-a"),
     ).toContain("project=project-a");
+  });
+});
+
+describe("new scientific data formats", () => {
+  it("dispatches scientific arrays and data tables without loading binary text", async () => {
+    const { getViewerDef } = await import("./viewers/registry");
+    for (const name of ["cube.MAT", "counts.mtx", "sky.fits", "sky.fit", "sky.fts"]) {
+      expect(fileCategory(name)).toBe("arraydata");
+      expect(getViewerDef(fileCategory(name))?.loadMode).toBe("none");
+    }
+    for (const name of ["data.arrow", "data.feather", "data.ipc", "data.jsonl", "data.ndjson", "study.sqlite", "study.sqlite3", "study.db"]) {
+      expect(fileCategory(name)).toBe("datatable");
+      expect(getViewerDef(fileCategory(name))?.canEditSource).toBe(false);
+    }
+    for (const name of ["report.DOCX", "slides.PPTX", "study.XLSX"]) {
+      expect(fileCategory(name)).toBe("office");
+      expect(getViewerDef(fileCategory(name))?.loadMode).toBe("none");
+    }
+    expect(fileCategory("config.json")).toBe("text");
+  });
+  it("encodes dataset keys and slice indices with project scope", () => {
+    const url = new URL(sciSummaryUrl("data.h5", "arrays", "owner", { key: "/a/b & c", slice: 3 }), "http://localhost");
+    expect(url.searchParams.get("key")).toBe("/a/b & c");
+    expect(url.searchParams.get("slice")).toBe("3");
+    expect(url.searchParams.get("project")).toBe("owner");
   });
 });

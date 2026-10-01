@@ -25,7 +25,7 @@ export interface AgentFile {
   /** pi-subagents per-agent persistent memory (`MEMORY.md` injected each run). */
   memory?: AgentMemory;
   /** Frontmatter keys the UI doesn't model; preserved on save. */
-  extra?: Record<string, string>;
+  extra?: Record<string, unknown>;
   systemPrompt: string;
 }
 
@@ -119,7 +119,7 @@ export async function setAgentEnabled(name: string, enabled: boolean): Promise<v
 }
 
 // ---------------------------------------------------------------------------
-// pi-subagents watchdog (Settings → Specialists → Watchdog)
+// pi-subagents watchdog (Settings → Project → Specialists → Watchdog)
 // ---------------------------------------------------------------------------
 
 export type WatchdogSeverity = "concern" | "blocker";
@@ -134,7 +134,7 @@ export interface WatchdogSettings {
   children: boolean;
   watchdogMd: boolean;
   stalemateRepeats: number;
-  /** Always false today: pi-subagents does not report the watchdog model's usage. */
+  /** True when the host meters watchdog model requests. */
   metered: boolean;
 }
 
@@ -155,4 +155,29 @@ export async function saveWatchdogSettings(
   const data = (await res.json().catch(() => null)) as (WatchdogSettings & { detail?: string }) | null;
   if (!res.ok || !data) throw new Error(data?.detail || `saveWatchdogSettings ${res.status}`);
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Default model for specialists (project `subagents.defaultModel`)
+// ---------------------------------------------------------------------------
+
+/** `null` = specialists without their own model inherit the chat's model. */
+export async function getSpecialistDefaultModel(): Promise<string | null> {
+  const res = await apiFetch("/agents/defaults");
+  if (!res.ok) throw new Error(`getSpecialistDefaultModel ${res.status}`);
+  const data = (await res.json()) as { defaultModel?: string | null };
+  return data.defaultModel ?? null;
+}
+
+export async function saveSpecialistDefaultModel(defaultModel: string | null): Promise<string | null> {
+  const res = await apiFetch("/agents/defaults", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ defaultModel }),
+  });
+  const data = (await res.json().catch(() => null)) as
+    | { defaultModel?: string | null; detail?: string }
+    | null;
+  if (!res.ok) throw new Error(data?.detail || `saveSpecialistDefaultModel ${res.status}`);
+  return data?.defaultModel ?? null;
 }

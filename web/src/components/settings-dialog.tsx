@@ -1,953 +1,143 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import dynamic from "next/dynamic";
+import {
+  BotIcon,
+  BrainCircuitIcon,
+  CloudIcon,
+  FolderCogIcon,
+  KeyIcon,
+  LayersIcon,
+  PaletteIcon,
+  PlugIcon,
+  SlashIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { useTheme } from "next-themes";
-import { cn } from "@/lib/utils";
-import {
-  KeyIcon,
-  PaletteIcon,
-  SunIcon,
-  MoonIcon,
-  MonitorIcon,
-  PlusIcon,
-  PencilIcon,
-  Trash2Icon,
-  BrainCircuitIcon,
-  LayersIcon,
-  BotIcon,
-  PlugIcon,
-  CheckCircle2Icon,
-  AlertCircleIcon,
-  LoaderCircleIcon,
-  ExternalLinkIcon,
-  CloudIcon,
-  ChevronRightIcon,
-  SlashIcon,
-} from "lucide-react";
-import { apiFetch } from "@/lib/projects";
-import { notifyModalCredentialsChanged } from "@/lib/modal-jobs";
-import {
-  FUSION_DEFAULTS_VERSION,
-  fusionJudgeModel,
-  fusionPanelModels,
-  loadFusionConfigs,
-  type StoredFusionConfig,
-} from "@/lib/fusion-presets";
-import dynamic from "next/dynamic";
-
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { notifyCapabilitiesChanged } from "@/lib/capability-events";
+import { useProjectScopeId } from "@/lib/projects";
 import {
-  DEFAULT_SETTINGS_DIALOG_SIZE,
-  SETTINGS_DIALOG_SIZE_KEY,
-  clampDialogSize,
-  readStoredDialogSize,
-  resizeFromCorner,
-  writeStoredDialogSize,
-  type DialogSize,
-} from "@/lib/dialog-size";
-const panelLoading = () => <div className="p-4 text-xs text-muted-foreground" role="status">Loading settings…</div>;
+  normalizeSettingsTab,
+  readLastSettingsTab,
+  writeLastSettingsTab,
+  type OpenSettingsRequest,
+  type SettingsTab,
+} from "@/lib/settings-nav";
+import { useProjects } from "@/lib/use-projects";
+import { cn } from "@/lib/utils";
+import { AppearancePanel } from "./settings/appearance-panel";
+import { FusionPanel } from "./settings/fusion-panel";
+import { useResizableDialog } from "./settings/use-resizable-dialog";
+
+const panelLoading = () => (
+  <div className="p-4 text-xs text-muted-foreground" role="status">
+    Loading settings…
+  </div>
+);
+const ProvidersPanel = dynamic(() => import("./settings/providers-panel").then((m) => m.ProvidersPanel), { loading: panelLoading });
+const DefaultsPanel = dynamic(() => import("./settings/defaults-panel").then((m) => m.DefaultsPanel), { loading: panelLoading });
+const ServicesPanel = dynamic(() => import("./settings/services-panel").then((m) => m.ServicesPanel), { loading: panelLoading });
+const ProjectSettingsPanel = dynamic(
+  () => import("./settings/project-settings-panel").then((m) => m.ProjectSettingsPanel),
+  { loading: panelLoading },
+);
 const SkillsPanel = dynamic(() => import("./skills-panel").then((m) => m.SkillsPanel), { loading: panelLoading });
 const PromptsPanel = dynamic(() => import("./prompts-panel").then((m) => m.PromptsPanel), { loading: panelLoading });
 const SubagentsPanel = dynamic(() => import("./subagents-panel").then((m) => m.SubagentsPanel), { loading: panelLoading });
 const ConnectorsPanel = dynamic(() => import("./connectors-panel").then((m) => m.ConnectorsPanel), { loading: panelLoading });
-const ProviderAuthPanel = dynamic(() => import("./provider-auth-panel").then((m) => m.ProviderAuthPanel), { loading: panelLoading });
-import {
-  PROVIDER_AUTH_CHANGED_EVENT,
-  notifyProviderAuthChanged,
-} from "@/lib/use-provider-auth";
 
-type CredentialStatus = Record<string, { set: boolean; masked: string | null }>;
-
-interface KeyDef {
-  /** Key into the `/credentials` status map. */
-  id: string;
-  bodyField: string;
+interface TabDef {
+  id: SettingsTab;
   label: string;
-  placeholder: string;
-  keysUrl?: string;
-  hint: string;
-  /** Password input + masked echo (default). Configuration values are shown in full. */
-  secret?: boolean;
-  /** Saving changes which model-picker sections exist, so re-probe providers. */
-  notifyProviders?: boolean;
+  icon: ComponentType<{ className?: string }>;
 }
 
-const KEY_DEFS: KeyDef[] = [
-  {
-    id: "openrouter",
-    bodyField: "openrouterApiKey",
-    label: "OpenRouter API key",
-    placeholder: "sk-or-v1-…",
-    keysUrl: "https://openrouter.ai/keys",
-    hint: "One pay-as-you-go account for hundreds of hosted models, plus OpenRouter Fusion and server-side speech. Optional if you use a direct provider key, a subscription, or local models — you can also sign in to OpenRouter under Model providers instead.",
-    notifyProviders: true,
-  },
-  {
-    id: "exa",
-    bodyField: "exaApiKey",
-    label: "Exa API key (optional)",
-    placeholder: "exa-…",
-    keysUrl: "https://dashboard.exa.ai/api-keys",
-    hint: "Direct Exa web + code search. Without it, web search still works via a free Exa fallback.",
-  },
-  {
-    id: "perplexity",
-    bodyField: "perplexityApiKey",
-    label: "Perplexity API key (optional)",
-    placeholder: "pplx-…",
-    keysUrl: "https://www.perplexity.ai/settings/api",
-    hint: "Synthesized web answers with citations as an alternative search provider.",
-  },
-  {
-    id: "gemini",
-    bodyField: "geminiApiKey",
-    label: "Gemini API key (optional)",
-    placeholder: "AIza…",
-    keysUrl: "https://aistudio.google.com/apikey",
-    hint: "Search fallback plus YouTube and video understanding for fetched links. The same key also unlocks Google Gemini models in the picker (it is GEMINI_API_KEY, which Pi's Google provider reads).",
-    notifyProviders: true,
-  },
+const MODEL_TABS: TabDef[] = [
+  { id: "providers", label: "Providers", icon: CloudIcon },
+  { id: "defaults", label: "Defaults", icon: SlidersHorizontalIcon },
+  { id: "fusion", label: "Fusion", icon: BrainCircuitIcon },
+];
+const PROJECT_TABS: TabDef[] = [
+  { id: "project", label: "General", icon: FolderCogIcon },
+  { id: "skills", label: "Skills", icon: LayersIcon },
+  { id: "prompts", label: "Prompt templates", icon: SlashIcon },
+  { id: "specialists", label: "Specialists", icon: BotIcon },
+  { id: "connectors", label: "Connectors", icon: PlugIcon },
+];
+const WORKSPACE_TABS: TabDef[] = [
+  { id: "services", label: "Services", icon: KeyIcon },
+  { id: "appearance", label: "Appearance", icon: PaletteIcon },
 ];
 
-function KeyRow({
-  def,
-  current,
-  onStatus,
-}: {
-  def: KeyDef;
-  current: { set: boolean; masked: string | null } | undefined;
-  onStatus: (status: CredentialStatus) => void;
-}) {
-  const [keyInput, setKeyInput] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+/** Tabs whose panels follow the globally active project (their API calls do). */
+const ACTIVE_PROJECT_TABS = new Set<SettingsTab>(["skills", "prompts", "specialists", "connectors"]);
 
-  const submit = useCallback(
-    async (value: string | null) => {
-      setSaving(true);
-      setError(null);
-      setSaved(false);
-      try {
-        const res = await apiFetch("/credentials", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ [def.bodyField]: value }),
-        });
-        const data = (await res.json().catch(() => null)) as
-          | (CredentialStatus & { detail?: string })
-          | null;
-        if (!res.ok) throw new Error(data?.detail || `Save failed (${res.status})`);
-        if (data) onStatus(data as CredentialStatus);
-        // Provider keys gate model-picker sections, so re-probe them.
-        if (def.notifyProviders) notifyProviderAuthChanged();
-        setKeyInput("");
-        setSaved(true);
-      } catch (exc) {
-        setError(exc instanceof Error ? exc.message : "Save failed");
-      } finally {
-        setSaving(false);
-      }
-    },
-    [def.bodyField, def.notifyProviders, onStatus],
-  );
+const DEFAULT_TAB: SettingsTab = "providers";
 
-  const secret = def.secret !== false;
-
+function TabGroup({ label, detail, tabs }: { label: string; detail?: string; tabs: TabDef[] }) {
   return (
-    <div className="flex flex-col gap-2">
-      <label className="text-xs font-medium">
-        {def.keysUrl ? (
-          <a
-            href={def.keysUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline"
-          >
-            {def.label}
-          </a>
-        ) : (
-          def.label
-        )}
-      </label>
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-      {current?.set && (
-        <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
-          <span>
-            {secret ? "Key set" : "Set"} —{" "}
-            <code className="font-mono break-all">{current.masked}</code>
-          </span>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto h-6 text-[11px] text-destructive hover:text-destructive"
-            disabled={saving}
-            onClick={() => void submit(null)}
-          >
-            Clear
-          </Button>
-        </div>
-      )}
-      <div className="flex items-center gap-2">
-        <Input
-          type={secret ? "password" : "text"}
-          value={keyInput}
-          autoComplete="off"
-          placeholder={
-            current?.set
-              ? `Replace ${secret ? "key" : "value"}${def.placeholder ? ` (${def.placeholder})` : ""}`
-              : def.placeholder
-          }
-          className="h-8 text-xs font-mono"
-          onChange={(e) => {
-            setKeyInput(e.target.value);
-            setSaved(false);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && keyInput.trim()) void submit(keyInput.trim());
-          }}
-        />
-        <Button
-          size="sm"
-          className="text-xs"
-          disabled={saving || !keyInput.trim()}
-          onClick={() => void submit(keyInput.trim())}
-        >
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
-      {saved && (
-        <p className="text-[11px] text-emerald-600 dark:text-emerald-400">
-          Saved. New runs use it immediately — no restart needed.
-        </p>
-      )}
-      <p className="text-[11px] text-muted-foreground leading-relaxed">{def.hint}</p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Direct model providers — every Pi API-key / cloud-credential provider, from
-// GET /providers. Field definitions (env vars, labels, secrecy) come from the
-// backend catalogue so adding a provider there needs no UI change.
-// ---------------------------------------------------------------------------
-
-interface DirectProviderField {
-  envVar: string;
-  label: string;
-  secret: boolean;
-  required: boolean;
-  placeholder?: string;
-  hint?: string;
-  isKey: boolean;
-  credentialId: string;
-  bodyField: string;
-}
-
-interface DirectProviderStatus {
-  id: string;
-  name: string;
-  sectionLabel: string;
-  hint: string;
-  keysUrl?: string;
-  billingMode: "payg" | "subscription";
-  billingNote: string;
-  oauth: boolean;
-  fields: DirectProviderField[];
-  configured: boolean;
-  authType: "api_key" | "oauth" | null;
-  source: string | null;
-  modelCount: number;
-}
-
-function fieldKeyDef(provider: DirectProviderStatus, field: DirectProviderField): KeyDef {
-  return {
-    id: field.credentialId,
-    bodyField: field.bodyField,
-    label: field.label,
-    placeholder: field.placeholder ?? (field.secret ? "…" : ""),
-    keysUrl: field.isKey ? provider.keysUrl : undefined,
-    hint: field.hint
-      ? `${field.hint} Stored as ${field.envVar} in .env.`
-      : `Stored as ${field.envVar} in .env.`,
-    secret: field.secret,
-    notifyProviders: true,
-  };
-}
-
-function DirectProvidersSection({
-  status,
-  onStatus,
-}: {
-  status: CredentialStatus | null;
-  onStatus: (status: CredentialStatus) => void;
-}) {
-  const [providers, setProviders] = useState<DirectProviderStatus[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [showAll, setShowAll] = useState(false);
-
-  const load = useCallback(async () => {
-    try {
-      const res = await apiFetch("/providers");
-      if (!res.ok) throw new Error(`Failed to load providers (${res.status})`);
-      const data = (await res.json()) as { providers?: DirectProviderStatus[] };
-      setProviders(Array.isArray(data.providers) ? data.providers : []);
-      setError(null);
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Failed to load providers");
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-    const onChanged = () => void load();
-    window.addEventListener(PROVIDER_AUTH_CHANGED_EVENT, onChanged);
-    return () => window.removeEventListener(PROVIDER_AUTH_CHANGED_EVENT, onChanged);
-  }, [load]);
-
-  const configuredCount = providers?.filter((p) => p.configured).length ?? 0;
-  const q = filter.trim().toLowerCase();
-  const visible = (providers ?? []).filter((p) => {
-    if (q) {
-      return (
-        p.name.toLowerCase().includes(q) ||
-        p.id.toLowerCase().includes(q) ||
-        p.fields.some((f) => f.envVar.toLowerCase().includes(q))
-      );
-    }
-    return showAll || p.configured;
-  });
-
-  const toggle = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-
-  return (
-    <fieldset className="rounded-xl border p-3.5">
-      <legend className="px-1 text-xs font-medium">Direct model providers</legend>
-      <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-        Every provider Pi supports natively — Anthropic, OpenAI, Google, Azure,
-        Bedrock, Vertex, Cloudflare, NVIDIA NIM, Groq, Mistral, DeepSeek,
-        Hugging Face, Fireworks, Together, and more. A configured provider gets
-        its own section in the model picker. Keys are stored in{" "}
-        <code className="rounded bg-muted px-1 py-0.5 text-[10px]">.env</code>{" "}
-        and picked up by new runs immediately.
-      </p>
-
-      {error && (
-        <div className="mb-3 rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-
-      <div className="mb-3 flex items-center gap-2">
-        <Input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Search providers (name or env var)…"
-          className="h-8 text-xs"
-          aria-label="Search direct model providers"
-        />
-        <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">
-          {providers ? `${configuredCount} configured` : "Loading…"}
-        </span>
-      </div>
-
-      {providers && visible.length === 0 ? (
-        <p className="text-[11px] text-muted-foreground">
-          {q
-            ? "No provider matches."
-            : "No direct provider configured yet. Show all to add one."}
-        </p>
-      ) : null}
-
-      <div className="flex flex-col gap-2">
-        {visible.map((provider) => {
-          const open = expanded.has(provider.id);
-          const keyField = provider.fields.find((f) => f.isKey);
-          const keySet = keyField ? Boolean(status?.[keyField.credentialId]?.set) : false;
-          return (
-            <div key={provider.id} className="rounded-lg border">
-              <button
-                type="button"
-                onClick={() => toggle(provider.id)}
-                aria-expanded={open}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-muted/40"
-              >
-                <ChevronRightIcon
-                  className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
-                  aria-hidden
-                />
-                <span className="font-medium">{provider.name}</span>
-                {provider.configured ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                    <CheckCircle2Icon className="size-3" aria-hidden />
-                    {provider.authType === "oauth"
-                      ? "Connected (OAuth)"
-                      : provider.source && !keySet
-                        ? `Configured via ${provider.source}`
-                        : "Configured"}
-                  </span>
-                ) : (
-                  <span className="rounded-full bg-muted px-1.5 py-px text-[10px] text-muted-foreground">
-                    Not configured
-                  </span>
-                )}
-                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">
-                  {provider.configured && provider.modelCount > 0
-                    ? `${provider.modelCount} model${provider.modelCount === 1 ? "" : "s"}`
-                    : provider.billingMode === "subscription"
-                      ? "plan / credits"
-                      : "pay-as-you-go"}
-                </span>
-              </button>
-              {open ? (
-                <div className="flex flex-col gap-4 border-t px-3 py-3">
-                  <p className="text-[11px] leading-relaxed text-muted-foreground">
-                    {provider.hint}
-                    {provider.oauth ? (
-                      <> You can also connect this provider by signing in under <span className="font-medium">Model providers</span>.</>
-                    ) : null}
-                  </p>
-                  {provider.fields.map((field) => (
-                    <KeyRow
-                      key={field.envVar}
-                      def={fieldKeyDef(provider, field)}
-                      current={status?.[field.credentialId]}
-                      onStatus={onStatus}
-                    />
-                  ))}
-                  <p className="text-[11px] leading-relaxed text-muted-foreground/80">
-                    {provider.billingNote}
-                  </p>
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-
-      {providers && !q ? (
-        <div className="mt-3 flex justify-end">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="text-xs"
-            onClick={() => setShowAll((v) => !v)}
-          >
-            {showAll
-              ? "Show configured only"
-              : `Show all ${providers.length} providers`}
-          </Button>
-        </div>
-      ) : null}
-    </fieldset>
-  );
-}
-
-type ModalConnectionState = "idle" | "testing" | "connected" | "error";
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
-
-function errorDetail(value: unknown): string | null {
-  const record = recordValue(value);
-  if (!record) return typeof value === "string" ? value : null;
-  for (const candidate of [
-    record.detail,
-    record.error,
-    record.message,
-    record.reason,
-  ]) {
-    if (typeof candidate === "string" && candidate.trim()) return candidate;
-    const nested = recordValue(candidate);
-    if (nested) {
-      const message = nested.message ?? nested.detail;
-      if (typeof message === "string" && message.trim()) return message;
-    }
-  }
-  return null;
-}
-
-function credentialStatusFromResponse(value: unknown): CredentialStatus | null {
-  const record = recordValue(value);
-  if (!record) return null;
-  const credentials = recordValue(record.credentials) ?? record;
-  return recordValue(credentials.modalTokenId) || recordValue(credentials.modalTokenSecret)
-    ? (credentials as CredentialStatus)
-    : null;
-}
-
-function modalConnectionFromResponse(value: unknown): {
-  status: string | null;
-  detail: string | null;
-} {
-  const record = recordValue(value);
-  if (!record) return { status: null, detail: null };
-  const connection =
-    recordValue(record.modal) ??
-    recordValue(record.modalConnection) ??
-    recordValue(record.validation);
-  const status =
-    (typeof connection?.status === "string" ? connection.status : null) ??
-    (typeof record.modalStatus === "string" ? record.modalStatus : null) ??
-    (record.modalConfigured === true ? "connected" : null);
-  return {
-    status,
-    detail: errorDetail(connection) ?? errorDetail(record),
-  };
-}
-
-function ModalCredentialPair({
-  status,
-  onStatus,
-}: {
-  status: CredentialStatus | null;
-  onStatus: (status: CredentialStatus) => void;
-}) {
-  const tokenIdStatus = status?.modalTokenId;
-  const tokenSecretStatus = status?.modalTokenSecret;
-  const existingConnected = Boolean(tokenIdStatus?.set && tokenSecretStatus?.set);
-  const existingPartial = Boolean(tokenIdStatus?.set) !== Boolean(tokenSecretStatus?.set);
-  const [tokenId, setTokenId] = useState("");
-  const [tokenSecret, setTokenSecret] = useState("");
-  const [connectionState, setConnectionState] = useState<ModalConnectionState>(
-    existingConnected ? "connected" : existingPartial ? "error" : "idle",
-  );
-  const [error, setError] = useState<string | null>(
-    existingPartial ? "Both Modal token fields must be set together." : null,
-  );
-
-  useEffect(() => {
-    if (tokenIdStatus?.set && tokenSecretStatus?.set) {
-      setConnectionState("connected");
-      setError(null);
-    } else if (Boolean(tokenIdStatus?.set) !== Boolean(tokenSecretStatus?.set)) {
-      setConnectionState("error");
-      setError("Both Modal token fields must be set together.");
-    }
-  }, [
-    tokenIdStatus?.set,
-    tokenSecretStatus?.set,
-  ]);
-
-  const savePair = useCallback(
-    async (clear = false) => {
-      if (!clear && (!tokenId.trim() || !tokenSecret.trim())) {
-        setConnectionState("error");
-        setError("Enter both the Modal token ID and token secret.");
-        return;
-      }
-      setConnectionState("testing");
-      setError(null);
-      try {
-        const response = await apiFetch("/credentials", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            modalTokenId: clear ? null : tokenId.trim(),
-            modalTokenSecret: clear ? null : tokenSecret.trim(),
-          }),
-        });
-        const body = await response.json().catch(() => null);
-        const connection = modalConnectionFromResponse(body);
-        if (
-          !response.ok ||
-          connection.status === "error" ||
-          connection.status === "invalid" ||
-          connection.status === "disconnected"
-        ) {
-          throw new Error(
-            connection.detail ??
-              errorDetail(body) ??
-              (response.ok
-                ? "Modal rejected this token pair."
-                : `Modal connection failed (${response.status})`),
-          );
-        }
-        const nextStatus = credentialStatusFromResponse(body);
-        if (nextStatus) onStatus(nextStatus);
-        setTokenId("");
-        setTokenSecret("");
-        setConnectionState(clear ? "idle" : "connected");
-        notifyModalCredentialsChanged();
-      } catch (cause) {
-        setConnectionState("error");
-        setError(cause instanceof Error ? cause.message : "Modal connection failed");
-      }
-    },
-    [onStatus, tokenId, tokenSecret],
-  );
-
-  return (
-    <fieldset className="rounded-xl border p-3.5">
-      <legend className="px-1 text-xs font-medium">
-        <a
-          href="https://modal.com/settings/tokens"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 hover:underline"
-        >
-          Modal compute
-          <ExternalLinkIcon className="size-3" />
-        </a>
-      </legend>
-      <p className="mb-3 text-[11px] leading-relaxed text-muted-foreground">
-        Save and validate the token ID and secret as one pair. The pair enables durable CPU and
-        GPU jobs without restarting Kady.
-      </p>
-
+    <>
       <div
-        role={connectionState === "error" ? "alert" : "status"}
-        className={cn(
-          "mb-3 flex items-center gap-2 rounded-md border px-2.5 py-2 text-[11px]",
-          connectionState === "testing" &&
-            "border-blue-500/30 bg-blue-500/5 text-blue-700 dark:text-blue-300",
-          connectionState === "connected" &&
-            "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300",
-          connectionState === "error" &&
-            "border-destructive/30 bg-destructive/5 text-destructive",
-          connectionState === "idle" && "bg-muted/20 text-muted-foreground",
-        )}
+        role="presentation"
+        className="w-full truncate px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground first:pt-0"
+        title={detail ? `${label} · ${detail}` : label}
       >
-        {connectionState === "testing" ? (
-          <LoaderCircleIcon className="size-3.5 animate-spin" />
-        ) : connectionState === "connected" ? (
-          <CheckCircle2Icon className="size-3.5" />
-        ) : connectionState === "error" ? (
-          <AlertCircleIcon className="size-3.5" />
-        ) : (
-          <span className="size-2 rounded-full bg-muted-foreground/40" />
-        )}
-        <span className="min-w-0 flex-1">
-          {connectionState === "testing"
-            ? "Testing Modal connection…"
-            : connectionState === "connected"
-              ? "Connected — Modal compute is ready."
-              : connectionState === "error"
-                ? error ?? "Modal connection failed."
-                : "Not connected"}
-        </span>
-        {(tokenIdStatus?.set || tokenSecretStatus?.set) && connectionState !== "testing" ? (
-          <span className="hidden shrink-0 font-mono text-[10px] sm:inline">
-            {tokenIdStatus?.masked ?? "ID missing"} · {tokenSecretStatus?.masked ?? "secret missing"}
-          </span>
-        ) : null}
+        {label}
+        {detail ? <span className="normal-case tracking-normal"> · {detail}</span> : null}
       </div>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="space-y-1.5 text-[11px] font-medium">
-          <span>Token ID</span>
-          <Input
-            type="password"
-            value={tokenId}
-            autoComplete="off"
-            placeholder={tokenIdStatus?.set ? "Replace ak-…" : "ak-…"}
-            className="h-8 font-mono text-xs"
-            onChange={(event) => {
-              setTokenId(event.target.value);
-              if (connectionState === "error") {
-                setConnectionState(existingConnected ? "connected" : "idle");
-                setError(null);
-              }
-            }}
-          />
-        </label>
-        <label className="space-y-1.5 text-[11px] font-medium">
-          <span>Token Secret</span>
-          <Input
-            type="password"
-            value={tokenSecret}
-            autoComplete="off"
-            placeholder={tokenSecretStatus?.set ? "Replace as-…" : "as-…"}
-            className="h-8 font-mono text-xs"
-            onChange={(event) => {
-              setTokenSecret(event.target.value);
-              if (connectionState === "error") {
-                setConnectionState(existingConnected ? "connected" : "idle");
-                setError(null);
-              }
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && tokenId.trim() && tokenSecret.trim()) {
-                void savePair();
-              }
-            }}
-          />
-        </label>
-      </div>
-      <div className="mt-3 flex justify-end gap-2">
-        {(tokenIdStatus?.set || tokenSecretStatus?.set) ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={connectionState === "testing"}
-            onClick={() => void savePair(true)}
-            className="text-xs text-destructive hover:text-destructive"
-          >
-            Clear pair
-          </Button>
-        ) : null}
-        <Button
-          type="button"
-          size="sm"
-          disabled={
-            connectionState === "testing" || !tokenId.trim() || !tokenSecret.trim()
-          }
-          onClick={() => void savePair()}
-          className="text-xs"
-        >
-          {connectionState === "testing" ? "Testing…" : "Save & test"}
-        </Button>
-      </div>
-    </fieldset>
-  );
-}
-
-function ApiKeysPanel() {
-  const [statusState, setStatusState] = useState<CredentialStatus | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await apiFetch("/credentials");
-      if (!res.ok) throw new Error(`Failed to load (${res.status})`);
-      setStatusState((await res.json()) as CredentialStatus);
-    } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "Failed to load credentials");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <div>
-        <h3 className="text-sm font-medium">API keys</h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          K-Dense BYOK is bring-your-own-key. Keys stay on this machine (saved
-          to <code className="rounded bg-muted px-1 py-0.5 text-[11px]">.env</code>)
-          — nothing is sent to K-Dense. Bring an OpenRouter key, a key for any
-          Pi provider below, a subscription (Model providers tab), or run local
-          models. The search keys are optional: web search, page fetching, and
-          GitHub reading work without any of them.
-        </p>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {error}
-        </div>
-      )}
-
-      {loading ? (
-        <p className="text-xs text-muted-foreground">Loading…</p>
-      ) : (
-        <div className="flex flex-col gap-5">
-          {KEY_DEFS.map((def) => (
-            <KeyRow
-              key={def.id}
-              def={def}
-              current={statusState?.[def.id]}
-              onStatus={setStatusState}
-            />
-          ))}
-          <DirectProvidersSection status={statusState} onStatus={setStatusState} />
-          <ModalCredentialPair status={statusState} onStatus={setStatusState} />
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Other keys (e.g.{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
-              OLLAMA_BASE_URL
-            </code>
-            ,{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">
-              GITHUB_TOKEN
-            </code>
-            ) are still read from{" "}
-            <code className="rounded bg-muted px-1 py-0.5 text-[10px]">.env</code>{" "}
-            at startup.
-          </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function AppearancePanel() {
-  const { theme, setTheme } = useTheme();
-
-  const options: { value: string; label: string; icon: typeof SunIcon }[] = [
-    { value: "light", label: "Light", icon: SunIcon },
-    { value: "dark", label: "Dark", icon: MoonIcon },
-    { value: "system", label: "System", icon: MonitorIcon },
-  ];
-
-  return (
-    <div className="flex h-full flex-col gap-4 overflow-y-auto">
-      <div>
-        <h3 className="text-sm font-medium">Appearance</h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Choose how K-Dense BYOK looks. System follows your operating
-          system&apos;s theme.
-        </p>
-      </div>
-
-      <div className="flex gap-2">
-        {options.map((opt) => {
-          const Icon = opt.icon;
-          const active = theme === opt.value;
-          return (
-            <Button
-              key={opt.value}
-              variant={active ? "default" : "outline"}
-              size="sm"
-              onClick={() => setTheme(opt.value)}
-              className={cn("flex-1 gap-1.5 text-xs")}
-            >
-              <Icon className="size-3.5" />
-              {opt.label}
-            </Button>
-          );
-        })}
-      </div>
-    </div>
+      {tabs.map(({ id, label: tabLabel, icon: Icon }) => (
+        <TabsTrigger key={id} value={id} className="w-full justify-start gap-2 px-3 text-xs">
+          <Icon className="size-3.5" />
+          {tabLabel}
+        </TabsTrigger>
+      ))}
+    </>
   );
 }
 
 /**
- * Persisted size for the Settings dialog plus a drag handle for its corner.
- * The dialog is centered by Radix, so the handle grows the box on both sides.
+ * Scroll `section` (an element id inside the panel) into view. Panels are
+ * lazy and load their data first, so poll briefly instead of assuming the
+ * element exists on the first frame.
  */
-function useResizableDialog(open: boolean): {
-  size: DialogSize | null;
-  handleProps: {
-    onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void;
-    onPointerMove: (event: React.PointerEvent<HTMLDivElement>) => void;
-    onPointerUp: (event: React.PointerEvent<HTMLDivElement>) => void;
-    onDoubleClick: () => void;
-    onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void;
-  };
-} {
-  const [size, setSize] = useState<DialogSize | null>(null);
-  // Latest committed size for event handlers: persisting from inside a state
-  // updater runs at flush time and can overwrite a reset that happened later.
-  const sizeRef = useRef<DialogSize | null>(null);
+function useScrollToSection(container: React.RefObject<HTMLElement | null>, section: string | undefined, nonce: number) {
   useEffect(() => {
-    sizeRef.current = size;
-  }, [size]);
-  const drag = useRef<{ pointerId: number; startX: number; startY: number; start: DialogSize } | null>(null);
-  const viewport = () => ({ width: window.innerWidth, height: window.innerHeight });
-
-  useEffect(() => {
-    if (!open || typeof window === "undefined") return;
-    let stored: DialogSize | null = null;
-    try {
-      stored = readStoredDialogSize(window.localStorage, SETTINGS_DIALOG_SIZE_KEY);
-    } catch {
-      stored = null;
-    }
-    setSize(clampDialogSize(stored ?? DEFAULT_SETTINGS_DIALOG_SIZE, viewport()));
-    const onResize = () => setSize((current) => (current ? clampDialogSize(current, viewport()) : current));
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [open]);
-
-  const persist = (next: DialogSize) => {
-    try {
-      writeStoredDialogSize(window.localStorage, SETTINGS_DIALOG_SIZE_KEY, next);
-    } catch {
-      /* not remembered */
-    }
-  };
-
-  return {
-    size,
-    handleProps: {
-      onPointerDown: (event) => {
-        if (!size) return;
-        event.preventDefault();
-        event.currentTarget.setPointerCapture(event.pointerId);
-        drag.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, start: size };
-      },
-      onPointerMove: (event) => {
-        const state = drag.current;
-        if (!state || state.pointerId !== event.pointerId) return;
-        setSize(resizeFromCorner(state.start, event.clientX - state.startX, event.clientY - state.startY, viewport()));
-      },
-      onPointerUp: (event) => {
-        const state = drag.current;
-        if (!state || state.pointerId !== event.pointerId) return;
-        drag.current = null;
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        if (sizeRef.current) persist(sizeRef.current);
-      },
-      onDoubleClick: () => {
-        drag.current = null;
-        const next = clampDialogSize(DEFAULT_SETTINGS_DIALOG_SIZE, viewport());
-        sizeRef.current = next;
-        setSize(next);
-        persist(next);
-      },
-      onKeyDown: (event) => {
-        if (!size) return;
-        const step = event.shiftKey ? 64 : 16;
-        const delta: Record<string, [number, number]> = {
-          ArrowRight: [step, 0],
-          ArrowLeft: [-step, 0],
-          ArrowDown: [0, step],
-          ArrowUp: [0, -step],
-        };
-        const move = delta[event.key];
-        if (!move) return;
-        event.preventDefault();
-        const next = clampDialogSize({ width: size.width + move[0], height: size.height + move[1] }, viewport());
-        setSize(next);
-        persist(next);
-      },
-    },
-  };
+    if (!section || !/^[\w-]+$/.test(section)) return;
+    let attempts = 0;
+    const timer = window.setInterval(() => {
+      attempts += 1;
+      const target = container.current?.querySelector<HTMLElement>(`#${section}`);
+      if (target) {
+        target.scrollIntoView({ block: "start", behavior: "smooth" });
+        window.clearInterval(timer);
+      } else if (attempts > 40) {
+        window.clearInterval(timer);
+      }
+    }, 50);
+    return () => window.clearInterval(timer);
+  }, [container, section, nonce]);
 }
 
-export function SettingsDialog({
-  open,
-  onOpenChange,
-}: {
+export interface SettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-}) {
+  /**
+   * Where to land. The host (page.tsx / project-view.tsx) listens for
+   * `openSettings()` events — including links inside this dialog — and
+   * passes each as a new object, so a repeated deep link re-applies.
+   */
+  request?: OpenSettingsRequest | null;
+}
+
+export function SettingsDialog({ open, onOpenChange, request }: SettingsDialogProps) {
   // Skills / prompt templates edited here feed the composer's pickers, which
   // fetch once per project — announce a change when the dialog closes.
   const handleOpenChange = useCallback(
@@ -958,115 +148,121 @@ export function SettingsDialog({
     [onOpenChange],
   );
   const { size, handleProps } = useResizableDialog(open);
+  const { projects, activeProjectId } = useProjects();
+  const scopeProjectId = useProjectScopeId();
+
+  const [tab, setTab] = useState<SettingsTab>(() => readLastSettingsTab() ?? DEFAULT_TAB);
+  const [targetProjectId, setTargetProjectId] = useState<string | null>(null);
+  const [section, setSection] = useState<string | undefined>(undefined);
+  const [nonce, setNonce] = useState(0);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
+  const apply = useCallback((next: OpenSettingsRequest) => {
+    const nextTab = normalizeSettingsTab(next.tab);
+    if (nextTab) setTab(nextTab);
+    setTargetProjectId(next.projectId ?? null);
+    setSection(next.section);
+    setNonce((value) => value + 1);
+  }, []);
+
+  // A request from the opener (page.tsx / project-view.tsx).
+  useEffect(() => {
+    if (open && request) apply(request);
+  }, [apply, open, request]);
+
+  // Plain reopen: keep the last tab but drop a previous deep link's target.
+  useEffect(() => {
+    if (!open) {
+      setTargetProjectId(null);
+      setSection(undefined);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    writeLastSettingsTab(tab);
+  }, [tab]);
+
+  useScrollToSection(contentRef, section, nonce);
+
+  const projectId = targetProjectId ?? scopeProjectId;
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? id;
+  const showsOtherProject = ACTIVE_PROJECT_TABS.has(tab) && projectId !== activeProjectId;
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className={cn(
-          "flex flex-col gap-0 p-0 overflow-hidden sm:max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)]"
-        )}
+        className={cn("flex max-h-[calc(100dvh-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[calc(100vw-2rem)]")}
         style={size ? { width: size.width, height: size.height } : undefined}
         data-testid="settings-dialog"
       >
-        <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogHeader className="border-b px-6 pb-4 pt-6">
           <DialogTitle>Settings</DialogTitle>
           <DialogDescription className="text-xs">
-            Configure your workspace preferences.
+            Models, this project, and the services Kady connects to.
           </DialogDescription>
         </DialogHeader>
 
         <Tabs
-          defaultValue="api-keys"
+          value={tab}
+          onValueChange={(value) => {
+            const next = normalizeSettingsTab(value);
+            if (next) {
+              setTab(next);
+              setSection(undefined);
+            }
+          }}
           orientation="vertical"
-          className="flex-1 min-h-0 flex flex-row gap-0"
+          className="flex min-h-0 flex-1 flex-row gap-0"
         >
           <TabsList
             variant="line"
-            className="w-44 shrink-0 overflow-y-auto border-r rounded-none px-2 py-3 items-start justify-start"
+            className="w-48 shrink-0 items-start justify-start overflow-y-auto rounded-none border-r px-2 py-3"
           >
-            <TabsTrigger
-              value="model-providers"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <CloudIcon className="size-3.5" />
-              Model providers
-            </TabsTrigger>
-            <TabsTrigger
-              value="api-keys"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <KeyIcon className="size-3.5" />
-              API keys
-            </TabsTrigger>
-            <TabsTrigger
-              value="skills"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <LayersIcon className="size-3.5" />
-              Skills
-            </TabsTrigger>
-            <TabsTrigger
-              value="prompts"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <SlashIcon className="size-3.5" />
-              Prompt templates
-            </TabsTrigger>
-            <TabsTrigger
-              value="specialists"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <BotIcon className="size-3.5" />
-              Specialists
-            </TabsTrigger>
-            <TabsTrigger
-              value="connectors"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <PlugIcon className="size-3.5" />
-              Connectors
-            </TabsTrigger>
-            <TabsTrigger
-              value="fusion"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <BrainCircuitIcon className="size-3.5" />
-              Fusion
-            </TabsTrigger>
-            <TabsTrigger
-              value="appearance"
-              className="justify-start gap-2 px-3 text-xs w-full"
-            >
-              <PaletteIcon className="size-3.5" />
-              Appearance
-            </TabsTrigger>
+            <TabGroup label="Models" tabs={MODEL_TABS} />
+            <TabGroup label="Project" detail={projectName(projectId)} tabs={PROJECT_TABS} />
+            <TabGroup label="Workspace" tabs={WORKSPACE_TABS} />
           </TabsList>
 
-          <TabsContent value="model-providers" className="min-w-0 flex-1 min-h-0 p-5">
-            <ProviderAuthPanel />
-          </TabsContent>
-          <TabsContent value="api-keys" className="min-w-0 flex-1 min-h-0 p-5">
-            <ApiKeysPanel />
-          </TabsContent>
-          <TabsContent value="skills" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
-            <SkillsPanel />
-          </TabsContent>
-          <TabsContent value="prompts" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
-            <PromptsPanel />
-          </TabsContent>
-          <TabsContent value="specialists" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
-            <SubagentsPanel />
-          </TabsContent>
-          <TabsContent value="connectors" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
-            <ConnectorsPanel />
-          </TabsContent>
-          <TabsContent value="appearance" className="min-w-0 flex-1 min-h-0 p-5">
-            <AppearancePanel />
-          </TabsContent>
-          <TabsContent value="fusion" className="min-w-0 flex-1 min-h-0 p-5 overflow-y-auto">
-            <FusionPanel />
-          </TabsContent>
+          <div ref={contentRef} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+            {showsOtherProject ? (
+              <div className="mx-5 mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px]" role="note">
+                Showing the current project, <b>{projectName(activeProjectId)}</b>. Open{" "}
+                <b>{projectName(projectId)}</b> to edit its skills, prompt templates, specialists and connectors.
+              </div>
+            ) : null}
+            <TabsContent value="providers" className="min-w-0 p-5">
+              <ProvidersPanel section={section} />
+            </TabsContent>
+            <TabsContent value="defaults" className="min-w-0 p-5">
+              <DefaultsPanel />
+            </TabsContent>
+            <TabsContent value="fusion" className="min-w-0 p-5">
+              <FusionPanel />
+            </TabsContent>
+            <TabsContent value="project" className="min-w-0 p-5">
+              <ProjectSettingsPanel projectId={projectId} />
+            </TabsContent>
+            <TabsContent value="skills" className="min-w-0 p-5">
+              <SkillsPanel />
+            </TabsContent>
+            <TabsContent value="prompts" className="min-w-0 p-5">
+              <PromptsPanel />
+            </TabsContent>
+            <TabsContent value="specialists" className="min-w-0 p-5">
+              <SubagentsPanel />
+            </TabsContent>
+            <TabsContent value="connectors" className="min-w-0 p-5">
+              <ConnectorsPanel />
+            </TabsContent>
+            <TabsContent value="services" className="min-w-0 p-5">
+              <ServicesPanel />
+            </TabsContent>
+            <TabsContent value="appearance" className="min-w-0 p-5">
+              <AppearancePanel />
+            </TabsContent>
+          </div>
         </Tabs>
-              <div
+        <div
           {...handleProps}
           role="separator"
           aria-label="Resize settings"
@@ -1082,195 +278,5 @@ export function SettingsDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Fusion configs panel (stored in localStorage, auto-populates model list)
-// ---------------------------------------------------------------------------
-const FUSION_SKELETON = JSON.stringify(
-  {
-    model: "openrouter/fusion",
-    reasoning_effort: "high",
-    plugins: [
-      {
-        id: "fusion",
-        preset: "general-high",
-        analysis_models: [],
-        model: "",
-        max_tool_calls: 8,
-      },
-    ],
-  },
-  null,
-  2,
-);
-
-function FusionPanel() {
-  const [configs, setConfigs] = useState<StoredFusionConfig[]>(() => loadFusionConfigs());
-  const [newName, setNewName] = useState("");
-  const [newConfig, setNewConfig] = useState(FUSION_SKELETON);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editConfig, setEditConfig] = useState("");
-  const [showAdd, setShowAdd] = useState(false);
-
-  const save = (next: StoredFusionConfig[]) => {
-    setConfigs(next);
-    localStorage.setItem("fusionConfigs", JSON.stringify(next));
-    window.dispatchEvent(new Event("fusion-configs-changed"));
-  };
-
-  // `configs` is initialised from loadFusionConfigs(), which already merges in
-  // new built-in presets when the stored defaults version is behind. Persist that
-  // seed/migration once (no setState here, so no cascading renders).
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("fusionConfigs");
-      const storedVersion = Number(localStorage.getItem("fusionConfigsVersion") || "0");
-      if (!raw || storedVersion < FUSION_DEFAULTS_VERSION) {
-        localStorage.setItem("fusionConfigs", JSON.stringify(configs));
-        localStorage.setItem("fusionConfigsVersion", String(FUSION_DEFAULTS_VERSION));
-        window.dispatchEvent(new Event("fusion-configs-changed"));
-      }
-    } catch {}
-  }, [configs]);
-
-  const add = () => {
-    if (!newName.trim()) return;
-    const entry = {
-      id: crypto.randomUUID(),
-      name: newName.trim(),
-      config: newConfig,
-    };
-    save([...configs, entry]);
-    setNewName("");
-    setNewConfig(FUSION_SKELETON);
-    setShowAdd(false);
-  };
-
-  const remove = (id: string) => {
-    if (editingId === id) { setEditingId(null); setEditConfig(""); }
-    save(configs.filter((c) => c.id !== id));
-  };
-
-  const startEdit = (c: { id: string; config: string }) => {
-    setEditingId(c.id);
-    setEditConfig(c.config);
-  };
-  const cancelEdit = () => { setEditingId(null); setEditConfig(""); };
-  const saveEdit = () => {
-    if (!editingId) return;
-    const next = configs.map((c) => (c.id === editingId ? { ...c, config: editConfig } : c));
-    save(next);
-    cancelEdit();
-  };
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h3 className="text-sm font-medium">Fusion Configurations</h3>
-        <p className="text-xs text-muted-foreground mt-1">
-          Create named OpenRouter Fusion setups. They appear at the top of the model selector.
-          Paste the full Fusion request body (see OpenRouter Fusion docs).
-        </p>
-      </div>
-
-      <div className="pt-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-sm"
-          onClick={() => setShowAdd((v) => !v)}
-        >
-          Add Fusion config +
-        </Button>
-        {showAdd && (
-          <div className="mt-2">
-            <Input
-              placeholder="Config name (e.g. Research Fusion)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="mb-2"
-            />
-            <Textarea
-              value={newConfig}
-              onChange={(e) => setNewConfig(e.target.value)}
-              className="font-mono text-xs h-32"
-            />
-            <Button onClick={add} className="mt-2" size="sm">
-              <PlusIcon className="size-3.5 mr-1" /> Add
-            </Button>
-            <a
-              href="https://openrouter.ai/docs/guides/features/plugins/fusion"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block mt-3 text-[11px] text-muted-foreground hover:underline"
-            >
-              OpenRouter Fusion API docs →
-            </a>
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-3">
-        {configs.length === 0 && (
-          <p className="text-xs text-muted-foreground">No Fusion configs yet.</p>
-        )}
-        {configs.map((c) => {
-          const isEditing = editingId === c.id;
-          let summary = null;
-          if (!isEditing) {
-            try {
-              const p = JSON.parse(c.config);
-              const panel = fusionPanelModels(p).join(", ");
-              const judge = fusionJudgeModel(p) ?? "-";
-              const r = p.reasoning_effort || "-";
-              const t = p.temperature ?? "default";
-              summary = (
-                <div className="mt-1 text-[10px] text-muted-foreground">
-                  <div>Panel: {panel}</div>
-                  <div>Judge: {judge}</div>
-                  <div>Reasoning: {r} • Temp: {t}</div>
-                </div>
-              );
-            } catch {
-              summary = <div className="mt-1 text-[10px] text-muted-foreground">Invalid config</div>;
-            }
-          }
-          return (
-            <div key={c.id} className="rounded border p-3 text-xs">
-              <div className="flex items-center justify-between">
-                <div className="font-medium">{c.name}</div>
-                <div className="flex gap-1">
-                  {!isEditing && (
-                    <Button variant="ghost" size="icon" onClick={() => startEdit(c)}>
-                      <PencilIcon className="size-3.5" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" onClick={() => remove(c.id)}>
-                    <Trash2Icon className="size-3.5" />
-                  </Button>
-                </div>
-              </div>
-              {isEditing ? (
-                <>
-                  <Textarea
-                    value={editConfig}
-                    onChange={(e) => setEditConfig(e.target.value)}
-                    className="font-mono text-xs h-32 mt-2"
-                  />
-                  <div className="flex gap-2 mt-2">
-                    <Button size="sm" onClick={saveEdit}>Save</Button>
-                    <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
-                  </div>
-                </>
-              ) : (
-                summary
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }

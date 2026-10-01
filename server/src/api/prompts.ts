@@ -1,3 +1,4 @@
+import { seedSubagentResources } from "../agent/subagent-resources.ts";
 /**
  * Prompt-template endpoints (Settings → Prompt templates, composer slash menu).
  * Scoped like skills: project via `X-Project-Id`, template scope via `?scope=`.
@@ -39,6 +40,7 @@ export async function registerPromptRoutes(app: FastifyInstance): Promise<void> 
   const paths = () => {
     const p = activePaths();
     seedPromptTemplates(p);
+    seedSubagentResources(p);
     return p;
   };
 

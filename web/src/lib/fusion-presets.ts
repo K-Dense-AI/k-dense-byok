@@ -8,10 +8,9 @@
 // the judge `model`, and `max_tool_calls`. `reasoning_effort` (and optional
 // `temperature`) are top-level request params.
 //
-// The four multi-model panels below are the configurations OpenRouter reported
-// as tested in "Fusion beats Frontier"
-// (https://openrouter.ai/blog/announcements/fusion-beats-frontier/); Exaflop is
-// our own panel. All are judged by Opus 4.8 at xhigh reasoning.
+// Models verified against https://openrouter.ai/api/v1/models on 2026-09-29.
+// These are curated panels, not benchmarked combinations. Keep exact model ids
+// so the picker and server can price every panel and judge consistently.
 
 export interface StoredFusionConfig {
   id: string;
@@ -24,7 +23,7 @@ export interface StoredFusionConfig {
 
 // Bump when the built-in defaults below change so existing installs re-seed them.
 // User-added configs are preserved during migration (see settings-dialog).
-export const FUSION_DEFAULTS_VERSION = 4;
+export const FUSION_DEFAULTS_VERSION = 5;
 
 function fusionBody(b: {
   preset: string;
@@ -49,100 +48,69 @@ function fusionBody(b: {
   return JSON.stringify(body, null, 2);
 }
 
-const JUDGE = "anthropic/claude-opus-4.8";
+// Opus 5.5 works on the panel but returned HTTP 400 as Fusion judge in live
+// checks on 2026-09-29. Astra succeeded with the identical panel and settings.
+const JUDGE = "openai/gpt-6-astra";
 
+// Keep ids stable so saved selections continue to resolve after a model refresh.
 export const DEFAULT_FUSION_CONFIGS: StoredFusionConfig[] = [
   {
     id: "fable5-gpt55",
-    name: "Fable 5 + GPT-5.5",
-    note: "69.0% DRACO — beats every individual model",
-    config: fusionBody({
-      preset: "general-high",
-      analysis_models: ["anthropic/claude-fable-5", "openai/gpt-5.5"],
-      judge: JUDGE,
-      reasoning_effort: "xhigh",
-      temperature: 1,
-      max_tool_calls: 16,
-    }),
+    name: "Fable 5.1 + GPT-6 Astra",
+    note: "Frontier pair; synthesized by GPT-6 Astra. Unbenchmarked combination.",
+    config: fusionBody({ preset: "general-high", analysis_models: ["anthropic/claude-fable-5.1", "openai/gpt-6-astra"], judge: JUDGE, reasoning_effort: "xhigh", max_tool_calls: 16 }),
   },
   {
     id: "opus48-gpt55-gemini31pro",
-    name: "Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro",
-    note: "68.3% DRACO (deep research)",
-    config: fusionBody({
-      preset: "general-high",
-      analysis_models: [
-        "anthropic/claude-opus-4.8",
-        "openai/gpt-5.5",
-        "google/gemini-3.1-pro-preview",
-      ],
-      judge: JUDGE,
-      reasoning_effort: "xhigh",
-      temperature: 1,
-      max_tool_calls: 16,
-    }),
+    name: "Opus 5.5 + GPT-6 Astra + Gemini 3.1 Pro",
+    note: "Three-provider research panel; synthesized by GPT-6 Astra. Unbenchmarked combination.",
+    config: fusionBody({ preset: "general-high", analysis_models: ["anthropic/claude-opus-5.5", "openai/gpt-6-astra", "google/gemini-3.1-pro-preview"], judge: JUDGE, reasoning_effort: "high", max_tool_calls: 16 }),
   },
   {
     id: "opus48-gpt55",
-    name: "Opus 4.8 + GPT-5.5",
-    note: "67.6% DRACO",
-    config: fusionBody({
-      preset: "general-high",
-      analysis_models: ["anthropic/claude-opus-4.8", "openai/gpt-5.5"],
-      judge: JUDGE,
-      reasoning_effort: "xhigh",
-      temperature: 1,
-      max_tool_calls: 16,
-    }),
+    name: "Opus 5.5 + GPT-6.1 Sol",
+    note: "General research and coding pair; synthesized by GPT-6 Astra. Unbenchmarked combination.",
+    config: fusionBody({ preset: "general-high", analysis_models: ["anthropic/claude-opus-5.5", "openai/gpt-6.1-sol"], judge: JUDGE, reasoning_effort: "xhigh", max_tool_calls: 16 }),
   },
   {
     id: "opus48-opus48",
-    name: "Opus 4.8 + Opus 4.8",
-    note: "65.5% DRACO — +6.7 pts vs solo Opus 4.8 (synthesis-only lift)",
-    config: fusionBody({
-      preset: "general-high",
-      analysis_models: ["anthropic/claude-opus-4.8", "anthropic/claude-opus-4.8"], // two instances, intentional
-      judge: JUDGE,
-      reasoning_effort: "xhigh",
-      temperature: 1,
-      max_tool_calls: 16,
-    }),
+    name: "Opus 5.5 + Opus 5.5",
+    note: "Two independent model calls with GPT-6 Astra synthesis; not independent evidence.",
+    config: fusionBody({ preset: "general-high", analysis_models: ["anthropic/claude-opus-5.5", "anthropic/claude-opus-5.5"], judge: JUDGE, reasoning_effort: "xhigh", max_tool_calls: 16 }),
   },
   {
     id: "exaflop",
     name: "Exaflop",
-    note: "custom panel — gpt-5.5-pro + gemini 3.1 pro + fable 5, synthesized by opus 4.8",
-    config: fusionBody({
-      preset: "general-high",
-      analysis_models: [
-        "openai/gpt-5.5-pro",
-        "google/gemini-3.1-pro-preview",
-        "anthropic/claude-fable-5",
-      ],
-      judge: JUDGE,
-      reasoning_effort: "xhigh",
-      temperature: 1,
-      max_tool_calls: 16,
-    }),
+    note: "GPT-6 Astra Pro + Gemini 3.1 Pro + Fable 5.1; synthesized by GPT-6 Astra. Unbenchmarked combination.",
+    config: fusionBody({ preset: "general-high", analysis_models: ["openai/gpt-6-astra-pro", "google/gemini-3.1-pro-preview", "anthropic/claude-fable-5.1"], judge: JUDGE, reasoning_effort: "high", max_tool_calls: 16 }),
   },
   {
     id: "budget-fusion",
-    name: "Gemini 3.5 Flash + Kimi K2.6 + DeepSeek V4 Pro",
-    note: "budget — predecessor panel (Gemini 3 Flash) scored 64.7% DRACO, within ~1% of Fable 5",
-    config: fusionBody({
-      preset: "general-budget",
-      analysis_models: [
-        "google/gemini-3.5-flash",
-        "moonshotai/kimi-k2.6",
-        "deepseek/deepseek-v4-pro",
-      ],
-      judge: JUDGE,
-      reasoning_effort: "xhigh",
-      temperature: 1,
-      max_tool_calls: 16,
-    }),
+    name: "Gemini 3.8 Flash + Kimi K3 + DeepSeek V4.1 Flash",
+    note: "Lower-cost panel; synthesized by GPT-6 Astra. Unbenchmarked combination.",
+    config: fusionBody({ preset: "general-budget", analysis_models: ["google/gemini-3.8-flash", "moonshotai/kimi-k3", "deepseek/deepseek-v4.1-flash"], judge: JUDGE, reasoning_effort: "high", max_tool_calls: 16 }),
   },
 ];
+
+// Exact previous defaults let migration distinguish a shipped preset from a
+// user's edited copy. Whitespace-only edits are still the same configuration.
+const PREVIOUS_DEFAULTS = [
+  ["fable5-gpt55", "Fable 5 + GPT-5.5", ["anthropic/claude-fable-5", "openai/gpt-5.5"]],
+  ["opus48-gpt55-gemini31pro", "Opus 4.8 + GPT-5.5 + Gemini 3.1 Pro", ["anthropic/claude-opus-4.8", "openai/gpt-5.5", "google/gemini-3.1-pro-preview"]],
+  ["opus48-gpt55", "Opus 4.8 + GPT-5.5", ["anthropic/claude-opus-4.8", "openai/gpt-5.5"]],
+  ["opus48-opus48", "Opus 4.8 + Opus 4.8", ["anthropic/claude-opus-4.8", "anthropic/claude-opus-4.8"]],
+  ["exaflop", "Exaflop", ["openai/gpt-5.5-pro", "google/gemini-3.1-pro-preview", "anthropic/claude-fable-5"]],
+  ["budget-fusion", "Gemini 3.5 Flash + Kimi K2.6 + DeepSeek V4 Pro", ["google/gemini-3.5-flash", "moonshotai/kimi-k2.6", "deepseek/deepseek-v4-pro"]],
+].map(([id, name, panel]) => ({
+  id: id as string, name: name as string,
+  config: fusionBody({ preset: id === "budget-fusion" ? "general-budget" : "general-high", analysis_models: panel as string[], judge: "anthropic/claude-opus-4.8", reasoning_effort: "xhigh", temperature: 1, max_tool_calls: 16 }),
+}));
+
+function samePreset(a: StoredFusionConfig, b: { name: string; config: string }): boolean {
+  if (a.name !== b.name) return false;
+  try { return JSON.stringify(JSON.parse(a.config)) === JSON.stringify(JSON.parse(b.config)); }
+  catch { return a.config === b.config; }
+}
 
 /**
  * Panel (analysis) model ids for a parsed Fusion body. Reads the real-schema
@@ -193,14 +161,25 @@ export const JUDGE_CALLS_PER_TURN = 2;
 const RETIRED_DEFAULT_IDS = new Set(["research-fusion", "frontier-council", "budget-trio"]);
 
 /**
- * Refresh the built-in presets while preserving genuinely user-added configs.
- * User configs use random uuids, so they never collide with built-in/retired ids.
+ * Refresh shipped presets while retaining user-added and user-edited configs.
+ * An edited built-in gets a separate stable id so it can coexist with the new
+ * default and is not overwritten on the next refresh.
  */
 export function mergeWithDefaults(stored: StoredFusionConfig[]): StoredFusionConfig[] {
   const builtinIds = new Set(DEFAULT_FUSION_CONFIGS.map((d) => d.id));
-  const userConfigs = stored.filter(
-    (c) => !builtinIds.has(c.id) && !RETIRED_DEFAULT_IDS.has(c.id),
-  );
+  const usedIds = new Set([...builtinIds, ...stored.map((c) => c.id)]);
+  const userConfigs: StoredFusionConfig[] = [];
+  for (const config of stored) {
+    if (RETIRED_DEFAULT_IDS.has(config.id)) continue;
+    if (!builtinIds.has(config.id)) { userConfigs.push(config); continue; }
+    const shipped = [...DEFAULT_FUSION_CONFIGS, ...PREVIOUS_DEFAULTS].filter((d) => d.id === config.id);
+    if (shipped.some((d) => samePreset(config, d))) continue;
+    let id = `custom-${config.id}`;
+    let suffix = 2;
+    while (usedIds.has(id)) id = `custom-${config.id}-${suffix++}`;
+    usedIds.add(id);
+    userConfigs.push({ ...config, id });
+  }
   return [...DEFAULT_FUSION_CONFIGS, ...userConfigs];
 }
 

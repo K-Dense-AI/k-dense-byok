@@ -32,7 +32,7 @@ export function buildTimeline(
     if (opts.withSessionDividers && e.sessionId && e.sessionId !== prevSession) {
       out.push({
         kind: "session",
-        key: `s-${e.sessionId}`,
+        key: `s-${e.sessionId}-${e.id}`,
         sessionId: e.sessionId,
         name: opts.sessionNames?.get(e.sessionId) ?? e.sessionId,
       });
@@ -46,7 +46,7 @@ export function buildTimeline(
         const d = new Date(e.timestamp);
         out.push({
           kind: "day",
-          key: `d-${e.sessionId ?? ""}-${dk}`,
+          key: `d-${e.sessionId ?? ""}-${dk}-${e.id}`,
           label: d.toLocaleDateString(undefined, {
             weekday: "short",
             month: "short",
@@ -59,7 +59,7 @@ export function buildTimeline(
     }
     if (e.runId) {
       if (prevRun !== null && e.runId !== prevRun) {
-        out.push({ kind: "run", key: `r-${e.sessionId ?? ""}-${e.runId}`, runId: e.runId });
+        out.push({ kind: "run", key: `r-${e.sessionId ?? ""}-${e.runId}-${e.id}`, runId: e.runId });
       }
       prevRun = e.runId;
     }

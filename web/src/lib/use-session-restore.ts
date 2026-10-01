@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 import type { SessionLoadOutcome } from "@/lib/use-agent";
 
+export const SESSION_RESTORE_RETRY_MS = 1_000;
+
 /**
  * Reopen the stored session a chat tab was mounted with.
  *
@@ -32,13 +34,21 @@ export function useSessionRestore({
       return;
     }
     let cancelled = false;
-    void loadSession(target).then((outcome) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const restore = async () => {
+      const outcome = await loadSession(target).catch(() => "retry" as const);
       if (cancelled) return;
+      if (outcome === "retry") {
+        timer = setTimeout(restore, SESSION_RESTORE_RETRY_MS);
+        return;
+      }
       setReady(true);
       if (outcome === "gone") onUnavailable(target);
-    });
+    };
+    void restore();
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [loadSession, onUnavailable, target]);
 

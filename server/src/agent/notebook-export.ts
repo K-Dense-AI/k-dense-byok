@@ -11,6 +11,7 @@ import type { NotebookAnnotation } from "./notebook-annotations.ts";
 import { nextExperimentsText } from "../../../web/src/lib/next-experiments.ts";
 import { planHistoryText } from "../../../web/src/lib/notebook-plans.ts";
 import { resultReferenceText } from "../../../web/src/lib/notebook-result-links.ts";
+import { notebookExecutionText } from "../../../web/src/lib/notebook-execution.ts";
 
 const LABEL: Record<NotebookEntryType, string> = {
   hypothesis: "Hypothesis",
@@ -124,6 +125,7 @@ export function notebookToMarkdown(
     const superseder = thread?.supersededBy ? byId.get(thread.supersededBy) : undefined;
     if (superseder) lines.push(`_⚠ superseded by “${superseder.title}”_`);
     if (e.scope) lines.push(`**Applicability (authored):** ${e.scope}`);
+    if (e.execution || e.type === "method") lines.push(notebookExecutionText(e.execution));
     if (e.revisitWhen) lines.push(`**Revisit when (condition, not an automatic action):** ${e.revisitWhen}`);
     if (e.outcome) lines.push(`**Outcome:** ${e.outcome} (null results and technical failures do not automatically refute a hypothesis)`);
     if (e.limitations?.length) lines.push("**Limitations:**", ...e.limitations.map((x) => `- ${x}`));

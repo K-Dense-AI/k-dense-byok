@@ -12,6 +12,8 @@
  * kady-notebook package, whose entries are harvested on completion.
  */
 import { Type, type Static } from "typebox";
+import { NotebookExecutionSchema } from "../../pi-packages/kady-notebook/execution-schema.ts";
+import { normalizeNotebookExecution } from "../../../web/src/lib/notebook-execution.ts";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { resolvePaths } from "../projects.ts";
 import { stripSandboxRoot } from "./events.ts";
@@ -86,6 +88,7 @@ export const NotebookParams = Type.Object({
   revisitWhen: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: "What new data, controls or changed assumptions would justify revisiting this finding or rejected method? This is a condition, not an automatic action." })),
   outcome: Type.Optional(Type.Union([Type.Literal("signal"), Type.Literal("null"), Type.Literal("inconclusive"), Type.Literal("technical-failure")], { description: "Distinguish scientific outcomes from technical failures. A null or inconclusive result is not automatically evidence against a hypothesis." })),
   analysisPlan: Type.Optional(AnalysisPlanSchema),
+  execution: Type.Optional(NotebookExecutionSchema),
   robustness: Type.Optional(RobustnessDraftSchema),
   nextExperiments: Type.Optional(NextExperimentsSchema),
   results: Type.Optional(NotebookResultsSchema),
@@ -108,7 +111,7 @@ export function makeNotebookTool(
     label: "Notebook",
     description: [
       "Log an entry to your living lab notebook — the scientist watching you works from it.",
-      "Record your real reasoning as you go: a `hypothesis` when you form an idea to test, a `method` before/after you run an analysis, an `observation` when you get a result, and a `decision` when a result makes you change course.",
+      "Record concise scientific rationale and evidence at meaningful milestones: a `hypothesis` to test, a `method` with explicit execution state, an `observation` for a result, and a `decision` when evidence changes your approach. Do not log private internal deliberation or duplicate measurements already saved in result cards.",
       "Attach `artifacts` (sandbox-relative paths) whenever an entry corresponds to a figure, table, or script you just wrote — they become clickable links in the notebook.",
       "Every call returns the new entry's id. When a later result bears on an earlier entry, link them: `relatesTo: <id>` with a `stance` (supports/refutes/neutral). To correct an earlier entry, log a new one with `supersedes: <id>` — history is append-only.",
       "No user response is required; the server captures bounded citation identities and the run continues. Log liberally at natural milestones rather than in one dump at the end.",
@@ -117,6 +120,7 @@ export function makeNotebookTool(
       "notebook: log a structured hypothesis/method/observation/decision entry to the live lab notebook",
     promptGuidelines: [
       "Keep a running lab notebook: call `notebook` at natural milestones — when forming a hypothesis, before and after running an analysis, and whenever a result changes your plan.",
+      "For procedures, set execution.status to planned, attempted, completed or unverified. Before running use planned; after a failed/partial/cancelled run use attempted and retain the failure. Completed requires execution.evidence with the command/run id, observed output/exit and exact evidence paths. Missing evidence means unverified. Append a linked follow-up after execution; do not let a plan entry imply completion. Scientific outcome and execution status are separate, and your report is not independent verification.",
       "Prefer several small, timely entries over one big summary at the end; the user watches the notebook fill in as you work.",
       "Attach `artifacts` for any entry tied to a file you wrote (figure, table, script) so the notebook links to the real output.",
       "Use evidence: [{entryId, relation, rationale}] to connect observations to hypotheses or decisions. Relations are supports/challenges/inconclusive/context. Preserve disagreements and record limitations. A technical failure is not negative scientific evidence; a non-significant result does not automatically refute a hypothesis. Repeated analyses of the same dataset are not independent replications.",
@@ -159,6 +163,7 @@ export function makeNotebookTool(
         relatesTo: params.relatesTo, stance: params.stance, supersedes: params.supersedes,
         ...(params.evidence ? { evidence: normalizeEvidenceLinks(params.evidence) } : {}),
         limitations: params.limitations, outcome: params.outcome,
+        execution: normalizeNotebookExecution(params.execution),
         scope: params.scope, revisitWhen: params.revisitWhen,
         ...(analysisPlan ? { analysisPlan } : {}),
         ...(robustness ? { robustness } : {}),

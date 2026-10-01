@@ -611,7 +611,7 @@ export const FileTreePanel = memo(function FileTreePanel({
         </div>
       )}
       {/* Header */}
-      <div className="flex items-center justify-between border-b px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-1 border-b px-3 py-2.5">
         <div className="flex items-center gap-2">
           <InfoTooltip
             content={
@@ -635,7 +635,7 @@ export const FileTreePanel = memo(function FileTreePanel({
             </div>
           </InfoTooltip>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex flex-wrap items-center gap-0.5">
           <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
           {/* @ts-expect-error -- webkitdirectory is non-standard but supported in all major browsers */}
           <input ref={dirInputRef} type="file" webkitdirectory="" className="hidden" onChange={handleFileChange} />

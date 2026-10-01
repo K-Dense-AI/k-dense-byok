@@ -18,6 +18,9 @@ class FakeSession {
   cost = 0;
   compactCalls: (string | undefined)[] = [];
   failCompact = false;
+  delivered: string[] = [];
+  async sendCustomMessage(message: { content: string }) { this.delivered.push(message.content); }
+  async sendUserMessage(content: string) { this.delivered.push(content); }
   subscribe(): () => void {
     return () => {};
   }
@@ -66,11 +69,13 @@ import { buildApp } from "../src/index.ts";
 import { PROJECTS_ROOT } from "../src/config.ts";
 import { createProject, resolvePaths } from "../src/projects.ts";
 import { recordRun } from "../src/cost/ledger.ts";
-import { claimRun } from "../src/agent/run-pipeline.ts";
+import { claimRun, isRunClaimed } from "../src/agent/run-pipeline.ts";
+import { getModelRuntime, pinSession, unpinSession } from "../src/agent/session-registry.ts";
 
 const app = await buildApp();
 
 beforeEach(() => {
+  vi.clearAllMocks();
   fakeSessions.clear();
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
@@ -137,6 +142,10 @@ describe("POST /sessions/:id/compact", () => {
     res = await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(), payload: {} });
     expect(res.statusCode).toBe(502);
     expect(costRows("default", "c1")).toHaveLength(0);
+    expect(isRunClaimed("default", "c1")).toBe(false);
+    expect(unpinSession).toHaveBeenCalledWith("default", "c1");
+    s.failCompact = false;
+    expect((await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(), payload: {} })).statusCode).toBe(200);
   });
 
   it("402s when the project cap is reached", async () => {
@@ -147,6 +156,87 @@ describe("POST /sessions/:id/compact", () => {
     const res = await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(p.id), payload: {} });
     expect(res.statusCode).toBe(402);
     expect(res.json()).toMatchObject({ reason: "budget" });
+    expect(isRunClaimed(p.id, "c1")).toBe(false);
+    expect(unpinSession).toHaveBeenCalledWith(p.id, "c1");
+  });
+
+  it.each(["authentication", "summary"])("excludes compaction and chat runs while awaiting %s", async (stage) => {
+    const p = createProject({ name: "Exclusive compaction" });
+    const s = new FakeSession();
+    fakeSessions.set("c1", s);
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    if (stage === "authentication") {
+      vi.mocked(getModelRuntime).mockReturnValueOnce({ checkAuth: async () => {
+        entered();
+        await gate;
+        return { type: "api_key", source: "test" };
+      } } as never);
+    } else {
+      const compact = s.compact.bind(s);
+      vi.spyOn(s, "compact").mockImplementationOnce(async (instructions) => {
+        entered();
+        await gate;
+        return compact(instructions);
+      });
+    }
+    const first = app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(p.id), payload: {} }).then((response) => response);
+    try {
+      await started;
+      expect(isRunClaimed(p.id, "c1")).toBe(true);
+      expect(pinSession).toHaveBeenCalledWith(p.id, "c1");
+      const second = await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(p.id), payload: {} });
+      expect(second.statusCode).toBe(409);
+      const run = await app.inject({ method: "POST", url: "/sessions/c1/run", headers: headers(p.id), payload: { message: "Continue" } });
+      expect(run.statusCode).toBe(409);
+    } finally {
+      release();
+      await first;
+    }
+    expect((await first).statusCode).toBe(200);
+    expect(s.compactCalls).toHaveLength(1);
+    expect(costRows(p.id, "c1")).toHaveLength(1);
+    expect(isRunClaimed(p.id, "c1")).toBe(false);
+    expect(unpinSession).toHaveBeenCalledWith(p.id, "c1");
+  });
+
+  it("releases the compaction claim after authentication fails so a retry succeeds", async () => {
+    const p = createProject({ name: "Retry compaction" });
+    fakeSessions.set("c1", new FakeSession());
+    vi.mocked(getModelRuntime).mockReturnValueOnce({ checkAuth: async () => { throw new Error("Auth unavailable"); } } as never);
+    const failed = await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(p.id), payload: {} });
+    expect(failed.statusCode).toBe(500);
+    expect(isRunClaimed(p.id, "c1")).toBe(false);
+    expect(unpinSession).toHaveBeenCalledWith(p.id, "c1");
+    const retried = await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(p.id), payload: {} });
+    expect(retried.statusCode).toBe(200);
+  });
+
+  it.each([false, true])("replays extension notices and messages after compaction releases its claim (fails=%s)", async (fails) => {
+    const p = createProject({ name: "Deferred extension work" });
+    const s = new FakeSession();
+    fakeSessions.set("c1", s);
+    const originalCustom = s.sendCustomMessage;
+    const originalUser = s.sendUserMessage;
+    const deliveries: Promise<void>[] = [];
+    const compact = s.compact.bind(s);
+    s.compact = async () => {
+      deliveries.push(s.sendCustomMessage({ content: "Completion notice" }));
+      deliveries.push(s.sendUserMessage("Follow-up work"));
+      await Promise.resolve();
+      expect(s.delivered).toEqual([]);
+      if (fails) throw new Error("Compaction unavailable");
+      return compact();
+    };
+    const response = await app.inject({ method: "POST", url: "/sessions/c1/compact", headers: headers(p.id), payload: {} });
+    expect(response.statusCode).toBe(fails ? 502 : 200);
+    await Promise.all(deliveries);
+    expect(s.delivered).toEqual(["Completion notice", "Follow-up work"]);
+    expect(s.sendCustomMessage).toBe(originalCustom);
+    expect(s.sendUserMessage).toBe(originalUser);
+    expect(isRunClaimed(p.id, "c1")).toBe(false);
   });
 });
 

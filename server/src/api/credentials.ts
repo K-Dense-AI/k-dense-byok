@@ -9,8 +9,8 @@
  *                          and update process.env so in-flight sessions (and
  *                          the child `pi` processes pi-subagents spawns, which
  *                          inherit our environment) pick them up without a
- *                          restart. The OpenRouter key is additionally pushed
- *                          into the shared ModelRuntime.
+ *                          restart. Saving a model key selects API-key auth
+ *                          by removing any previous stored Pi credential.
  *
  * Managed keys: OpenRouter (model calls and cross-browser speech
  * transcription); every direct Pi model provider from
@@ -23,7 +23,8 @@
  * understanding — and GEMINI_API_KEY is the same variable Pi's `google`
  * provider reads, so it also enables Gemini models); and the Modal
  * remote-compute token pair (MODAL_TOKEN_ID + MODAL_TOKEN_SECRET) that enables
- * the `modal_run` tool.
+ * the `modal_run` tool; and the local model-server URLs (OLLAMA_BASE_URL,
+ * OPENAI_COMPATIBLE_BASE_URL), which re-register those providers on change.
  *
  * Keys are stored exactly where the app already expects them (repo-root
  * `.env`, plaintext, on the user's own machine) — we are removing friction,
@@ -32,8 +33,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { FastifyInstance } from "fastify";
+import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
+import { registerLocalProviders } from "../agent/models.ts";
 import {
   DIRECT_PROVIDERS,
   providerKeyBodyField,
@@ -60,22 +63,52 @@ interface ManagedKey {
    * short (`global`, `us-east-1`).
    */
   secret?: boolean;
-  /** Hook run after set/clear (e.g. push into ModelRuntime). */
-  onChange?: (key: string | null) => Promise<void>;
+  /** Format check for a non-empty value; returns an error message or null. */
+  validate?: (value: string) => string | null;
+  /** Hook run after set/clear (e.g. select the model authentication method). */
+  onChange?: (key: string | null, runtime: ModelRuntime) => Promise<void>;
 }
 
-/** Mirror a key into Pi's runtime credential so `checkAuth` flips immediately. */
+/** Select environment-key auth in every Pi process, including after restart. */
 function runtimeKeyHook(providerIds: readonly string[]): ManagedKey["onChange"] {
-  return async (key) => {
+  return async (key, runtime) => {
     for (const providerId of providerIds) {
-      try {
-        if (key) await getModelRuntime().setRuntimeApiKey(providerId, key);
-        else await getModelRuntime().removeRuntimeApiKey(providerId);
-      } catch {
-        /* Runtime refresh failure does not undo the persisted environment change. */
-      }
+      // An explicit key save switches away from a stored OAuth/API-key
+      // credential. Runtime-only overrides would mask later sign-ins and
+      // disagree with child processes and restarted servers. Clearing an
+      // ambient key must leave an independently connected OAuth login intact.
+      if (key) await runtime.logout(providerId);
+      else await runtime.removeRuntimeApiKey(providerId);
     }
   };
+}
+
+/** Accept only an absolute http(s) URL, so a typo fails here instead of at the first model call. */
+function httpUrl(envVar: string): ManagedKey["validate"] {
+  return (value) => {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch {
+      return `${envVar} must be an http(s) URL`;
+    }
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? null
+      : `${envVar} must be an http(s) URL`;
+  };
+}
+
+/**
+ * Re-register the local model servers after their base URL changed (or was
+ * cleared back to the default). config.ts reads both URLs per call, so this
+ * only refreshes Pi's provider registration.
+ */
+async function localProvidersHook(_key: string | null, runtime: ModelRuntime): Promise<void> {
+  try {
+    registerLocalProviders(runtime);
+  } catch {
+    /* Runtime refresh failure does not undo the persisted environment change. */
+  }
 }
 
 const BASE_MANAGED_KEYS: ManagedKey[] = [
@@ -93,13 +126,30 @@ const BASE_MANAGED_KEYS: ManagedKey[] = [
   // be set for modalConfigured() to flip true and the modal_run tool to register.
   { id: "modalTokenId", bodyField: "modalTokenId", envVar: "MODAL_TOKEN_ID" },
   { id: "modalTokenSecret", bodyField: "modalTokenSecret", envVar: "MODAL_TOKEN_SECRET" },
+  // Local model servers: configuration, not secrets, so echoed in full.
+  {
+    id: "ollamaBaseUrl",
+    bodyField: "ollamaBaseUrl",
+    envVar: "OLLAMA_BASE_URL",
+    secret: false,
+    validate: httpUrl("OLLAMA_BASE_URL"),
+    onChange: localProvidersHook,
+  },
+  {
+    id: "openaiCompatibleBaseUrl",
+    bodyField: "openaiCompatibleBaseUrl",
+    envVar: "OPENAI_COMPATIBLE_BASE_URL",
+    secret: false,
+    validate: httpUrl("OPENAI_COMPATIBLE_BASE_URL"),
+    onChange: localProvidersHook,
+  },
 ];
 
 /**
  * Add one managed entry per direct-provider env var. A variable already
  * managed (GEMINI_API_KEY via `gemini`; MOONSHOT_API_KEY shared by two
  * Moonshot endpoints; CLOUDFLARE_* shared by both Cloudflare providers) keeps
- * its first id/bodyField and only gains the extra runtime push, so the
+ * its first id/bodyField and only gains the extra auth-selection hook, so the
  * Settings UI and `/providers` can address every field by env var.
  */
 function buildManagedKeys(): ManagedKey[] {
@@ -141,9 +191,9 @@ function buildManagedKeys(): ManagedKey[] {
     const previous = entry.onChange;
     const push = runtimeKeyHook(providerIds);
     entry.onChange = previous
-      ? async (key) => {
-          await previous(key);
-          await push!(key);
+      ? async (key, runtime) => {
+          await previous(key, runtime);
+          await push!(key, runtime);
         }
       : push;
   }
@@ -191,26 +241,32 @@ function mask(key: string): string {
   return `${key.slice(0, 4)}…${key.slice(-4)}`;
 }
 
-/** Upsert (or remove) a KEY=value line in `.env`, preserving other lines and
+/** Upsert a KEY=value line in `.env`, preserving other lines and
  *  comments. Creates the file if missing. Values are quoted only when needed. */
-function persistEnv(name: string, value: string | null): void {
+function persistEnv(name: string, value: string): void {
   let lines: string[] = [];
   try {
     lines = fs.readFileSync(credentialEnvPath, "utf-8").split("\n");
-  } catch {
-    lines = [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const isAssignment = (l: string, key: string) =>
-    l.trim().startsWith(`${key}=`) && !l.trim().startsWith("#");
+  const isAssignment = (l: string, key: string) => {
+    const match = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/.exec(l);
+    return match?.[1] === key;
+  };
   // Drop any existing assignment for this key.
   lines = lines.filter((l) => !isAssignment(l, name));
-  if (value !== null) {
-    const needsQuote = /[\s#"']/.test(value);
-    const rendered = needsQuote ? `"${value.replace(/"/g, '\\"')}"` : value;
-    // Keep a trailing newline tidy: append before any trailing blank lines.
-    while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
-    lines.push(`${name}=${rendered}`);
-  }
+  // applyKey rejects these first; this is the last line of defence, since a
+  // line break here would let a value write its own NODE_OPTIONS= line.
+  const invalid = invalidEnvValue(value);
+  if (invalid) throw new Error(invalid);
+  // env-file.mjs has no escapes: a quoted value ends at its closing quote,
+  // so pick the quote character the value does not contain.
+  const needsQuote = /[\s#"'\\]/.test(value);
+  const rendered = !needsQuote ? value : value.includes('"') ? `'${value}'` : `"${value}"`;
+  // Keep a trailing newline tidy: append before any trailing blank lines.
+  while (lines.length && lines[lines.length - 1].trim() === "") lines.pop();
+  lines.push(`${name}=${rendered}`);
   fs.mkdirSync(path.dirname(credentialEnvPath), { recursive: true });
   fs.writeFileSync(credentialEnvPath, lines.join("\n") + "\n", { encoding: "utf-8", mode: 0o600 });
   // `mode` only applies when the file is created; tighten an existing one too.
@@ -234,28 +290,66 @@ function status() {
   return out;
 }
 
-async function applyKey(spec: ManagedKey, raw: string | null): Promise<string | null> {
-  const key = typeof raw === "string" ? raw.trim() : "";
-  if (key === "") {
-    // Clear: drop from process.env and .env.
-    for (const name of [spec.envVar, ...(spec.envAliases ?? [])]) delete process.env[name];
-    persistEnv(spec.envVar, null);
-    await spec.onChange?.(null);
-    return null;
+/**
+ * Why `value` cannot be stored in `.env`, or null. Control characters would
+ * start a new assignment (a pasted `"sk-…\nNODE_OPTIONS=--import=…"` runs code
+ * on the next launch), and the parser has no escape for a value holding both
+ * quote characters.
+ */
+export function invalidEnvValue(value: string): string | null {
+  if (/[\x00-\x1f\x7f]/.test(value)) {
+    return "That value contains a line break or control character; paste the key on its own.";
   }
+  if (value.includes('"') && value.includes("'")) {
+    return "That value contains both single and double quotes, which cannot be stored in .env.";
+  }
+  return null;
+}
+
+function validateKey(spec: ManagedKey, raw: unknown): string | null {
+  if (raw !== null && typeof raw !== "string") {
+    return `${spec.bodyField} must be a string, or null to clear it.`;
+  }
+  const key = typeof raw === "string" ? raw.trim() : "";
+  if (key === "") return null;
+  const invalid = invalidEnvValue(key);
+  if (invalid) return invalid;
+  const malformed = spec.validate?.(key);
+  if (malformed) return malformed;
   // Basic sanity check — we don't hard-reject on format (providers change
   // formats), just guard against pasted junk. Configuration values are exempt
   // (`global`, `us-east-1`, a short resource name).
   if (spec.secret !== false && key.length < 8) {
     return "That key looks too short to be valid.";
   }
-  process.env[spec.envVar] = key;
-  persistEnv(spec.envVar, key);
-  await spec.onChange?.(key);
   return null;
 }
 
-export async function registerCredentialRoutes(app: FastifyInstance): Promise<void> {
+async function applyKey(spec: ManagedKey, raw: string | null, runtime: ModelRuntime): Promise<string | null> {
+  const invalid = validateKey(spec, raw);
+  if (invalid) return invalid;
+  const key = typeof raw === "string" ? raw.trim() : "";
+  if (key === "") {
+    // Empty assignments also shadow stale shell/legacy/server .env values
+    // on restart; removing the line would silently resurrect those keys.
+    for (const name of [spec.envVar, ...(spec.envAliases ?? [])]) {
+      persistEnv(name, "");
+      delete process.env[name];
+    }
+    await spec.onChange?.(null, runtime);
+    return null;
+  }
+  persistEnv(spec.envVar, key);
+  process.env[spec.envVar] = key;
+  await spec.onChange?.(key, runtime);
+  return null;
+}
+
+export async function registerCredentialRoutes(
+  app: FastifyInstance,
+  options: { runtime?: ModelRuntime } = {},
+): Promise<void> {
+  const runtime = options.runtime ?? getModelRuntime();
   app.get("/credentials", async () => status());
 
   app.put<{ Body: Record<string, string | null | undefined> }>(
@@ -266,6 +360,15 @@ export async function registerCredentialRoutes(app: FastifyInstance): Promise<vo
         reply.code(400);
         const fields = MANAGED_KEYS.map((s) => s.bodyField).join(", ");
         return { detail: `Provide at least one of: ${fields} (a string, or null to clear)` };
+      }
+      // Validate everything before changing anything, so one bad field does
+      // not leave the others half-applied.
+      for (const spec of provided) {
+        const error = validateKey(spec, req.body?.[spec.bodyField] ?? null);
+        if (error) {
+          reply.code(400);
+          return { detail: error };
+        }
       }
 
       // Modal is one logical credential represented by two variables. Build
@@ -309,7 +412,7 @@ export async function registerCredentialRoutes(app: FastifyInstance): Promise<vo
         }
       }
       for (const spec of provided) {
-        const error = await applyKey(spec, req.body?.[spec.bodyField] ?? null);
+        const error = await applyKey(spec, req.body?.[spec.bodyField] ?? null, runtime);
         if (error) {
           reply.code(400);
           return { detail: error };

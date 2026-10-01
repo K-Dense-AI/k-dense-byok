@@ -14,6 +14,7 @@
  * process; server/test/notebook-package.test.ts asserts field parity.
  */
 import { Type } from "typebox";
+import { NotebookExecutionSchema } from "./execution-schema.ts";
 import { AnalysisPlanSchema, NotebookResultsSchema } from "./plan-schema.ts";
 import { NextExperimentsSchema } from "./next-experiments-schema.ts";
 import { RobustnessDraftSchema } from "./robustness-schema.ts";
@@ -76,6 +77,7 @@ export const NotebookParams = Type.Object({
   revisitWhen: Type.Optional(Type.String({ minLength: 1, maxLength: 2000, description: "What new data, controls or changed assumptions would justify revisiting this finding or rejected method? This is a condition, not an automatic action." })),
   outcome: Type.Optional(Type.Union([Type.Literal("signal"), Type.Literal("null"), Type.Literal("inconclusive"), Type.Literal("technical-failure")], { description: "Distinguish scientific outcomes from technical failures. A null or inconclusive result is not automatically evidence against a hypothesis." })),
   analysisPlan: Type.Optional(AnalysisPlanSchema),
+  execution: Type.Optional(NotebookExecutionSchema),
   robustness: Type.Optional(RobustnessDraftSchema),
   nextExperiments: Type.Optional(NextExperimentsSchema),
   results: Type.Optional(NotebookResultsSchema),
@@ -92,7 +94,7 @@ export const notebookChildTool: ToolDefinition<typeof NotebookParams> = {
   label: "Notebook",
   description: [
     "Log an entry to the shared living lab notebook as you work.",
-    "Record your real reasoning: a `hypothesis` when you form an idea to test, a `method` before/after you run something, an `observation` for a result, a `decision` when a result changes your plan.",
+    "Record concise scientific rationale and evidence at meaningful milestones: a hypothesis to test, a method with explicit execution state, an observation for a result, and a decision when evidence changes your approach. Do not log private internal deliberation or duplicate saved measurements.",
     "Attach `artifacts` (sandbox-relative paths) whenever an entry corresponds to a figure, table, or script you wrote.",
     "Every call returns the new entry's id. When a later result bears on an earlier entry, link them: `relatesTo: <id>` with a `stance` (supports/refutes/neutral). To correct an earlier entry, log a new one with `supersedes: <id>` — history is append-only.",
     "This does NOT block; it returns immediately and your run continues. Log liberally at natural milestones.",
@@ -101,6 +103,7 @@ export const notebookChildTool: ToolDefinition<typeof NotebookParams> = {
     "notebook: log a hypothesis/method/observation/decision entry to the shared lab notebook",
   promptGuidelines: [
     "Keep a running lab notebook: call `notebook` at natural milestones as you work, not in one dump at the end.",
+    "For procedures, set execution.status to planned, attempted, completed or unverified. Before running use planned; failed/partial/cancelled execution is attempted. Completed requires execution.evidence naming the command/run id, observed output/exit and exact log/result paths; otherwise use unverified. Append a linked follow-up after execution. Scientific outcome is separate from execution, and an authored report is not independent verification.",
     "Attach `artifacts` for any entry tied to a file you wrote so the notebook links to real output.",
     "Use notebook_search to retrieve relevant prior work before repeating analyses. Record scope and revisitWhen for decisions, rejected methods and null/inconclusive outcomes. Cite original sources rather than copying old text into a new finding.",
     "Use evidence: [{entryId, relation, rationale}] to connect observations to hypotheses or decisions. Relations are supports/challenges/inconclusive/context. Preserve disagreements and record limitations. Technical failures are not negative scientific evidence; null results do not automatically refute hypotheses. Repeated analyses are not independent replications.",
@@ -133,6 +136,9 @@ export default function (pi: ExtensionAPI): void {
   // in-process notebook tool — register only in child processes to avoid a
   // duplicate tool name.
   if (!process.env.PI_SUBAGENT_CHILD) return;
+  registerChildNotebook(pi);
+}
+export function registerChildNotebook(pi: ExtensionAPI): void {
   pi.registerTool(notebookChildTool);
   pi.registerTool(notebookSearchTool(callMemoryApi));
 }

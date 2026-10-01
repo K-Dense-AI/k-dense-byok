@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { isWithin } from "../sandbox-fs.ts";
+import { apiRelative, isWithin } from "../sandbox-fs.ts";
+import { matchProtected } from "../agent/bash-classifier.ts";
+import { readGuardPolicy } from "../agent/guard-policy.ts";
 import type { ModalRemoteSandbox } from "./adapter.ts";
 import { ModalJobError, type ModalTransferFile } from "./types.ts";
 
@@ -45,23 +47,47 @@ export function normalizeTransferPath(raw: string): string {
   return normalized;
 }
 
-function safeLocal(sandboxRoot: string, rel: string): string {
+function assertTransferIdentity(realRoot: string, real: string, rel: string): string {
+  if (!isWithin(realRoot, real)) {
+    throw new ModalTransferError("SYMLINK_ESCAPE", `Path resolves through a symlink outside the project sandbox: ${rel}`, 403);
+  }
+  const canonicalRel = apiRelative(realRoot, real);
+  if (canonicalRel) normalizeTransferPath(canonicalRel); // includes reserved roots, even through aliases
+  return canonicalRel;
+}
+
+function safeLocal(sandboxRoot: string, rel: string): { target: string; canonicalRel: string } {
+  normalizeTransferPath(rel);
   const target = path.resolve(sandboxRoot, ...rel.split("/"));
   if (!isWithin(sandboxRoot, target)) {
     throw new ModalTransferError("PATH_ESCAPE", `Path escapes the project sandbox: ${rel}`, 403);
   }
   const realRoot = fs.realpathSync(sandboxRoot);
   let existing = target;
-  while (!fs.existsSync(existing)) {
-    const parent = path.dirname(existing);
-    if (parent === existing) break;
-    existing = parent;
+  while (true) {
+    try { fs.lstatSync(existing); break; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      const parent = path.dirname(existing);
+      if (parent === existing) throw error;
+      existing = parent;
+    }
   }
-  const realExisting = fs.realpathSync(existing);
-  if (!isWithin(realRoot, realExisting)) {
+  // lstat above deliberately treats a dangling symlink as existing; realpath
+  // then rejects it instead of silently checking only its parent directory.
+  const realTarget = path.resolve(fs.realpathSync(existing), apiRelative(existing, target));
+  return { target, canonicalRel: assertTransferIdentity(realRoot, realTarget, rel) };
+}
+
+/** All producers (lead, child and API) obey the current project's raw-data guard. */
+export function validateOutputTarget(sandboxRoot: string, rel: string): string {
+  const { target, canonicalRel } = safeLocal(sandboxRoot, rel);
+  const policy = readGuardPolicy(sandboxRoot);
+  const protectedPath = [rel, canonicalRel].find((p) => matchProtected(p, policy.protectedPaths));
+  if (protectedPath !== undefined) {
     throw new ModalTransferError(
-      "SYMLINK_ESCAPE",
-      `Path resolves through a symlink outside the project sandbox: ${rel}`,
+      "PROTECTED_OUTPUT",
+      `Modal output ${rel} would mutate a protected project path (${protectedPath}). Write results to an unprotected output directory.`,
       403,
     );
   }
@@ -99,9 +125,7 @@ export function planInputs(sandboxRoot: string, requested: string[]): LocalInput
 
   const addFile = (local: string, rel: string) => {
     const real = fs.realpathSync(local);
-    if (!isWithin(realRoot, real)) {
-      throw new ModalTransferError("SYMLINK_ESCAPE", `Symlink escapes the project sandbox: ${rel}`, 403);
-    }
+    assertTransferIdentity(realRoot, real, rel);
     const stat = fs.statSync(real);
     if (!stat.isFile()) {
       throw new ModalTransferError("UNSUPPORTED_INPUT", `Input is not a regular file: ${rel}`);
@@ -124,9 +148,7 @@ export function planInputs(sandboxRoot: string, requested: string[]): LocalInput
   const walk = (local: string, rel: string) => {
     const lst = fs.lstatSync(local);
     const real = fs.realpathSync(local);
-    if (!isWithin(realRoot, real)) {
-      throw new ModalTransferError("SYMLINK_ESCAPE", `Symlink escapes the project sandbox: ${rel}`, 403);
-    }
+    assertTransferIdentity(realRoot, real, rel);
     const stat = lst.isSymbolicLink() ? fs.statSync(real) : lst;
     if (stat.isFile()) {
       addFile(local, rel);
@@ -151,7 +173,7 @@ export function planInputs(sandboxRoot: string, requested: string[]): LocalInput
 
   for (const raw of requested) {
     const rel = normalizeTransferPath(raw);
-    const local = safeLocal(sandboxRoot, rel);
+    const local = safeLocal(sandboxRoot, rel).target;
     if (!fs.existsSync(local)) {
       throw new ModalTransferError("INPUT_MISSING", `Required input does not exist: ${rel}`, 404);
     }
@@ -298,7 +320,7 @@ export async function verifyStagedInputs(
     if (options.required) {
       throw new ModalTransferError(
         "REMOTE_VERIFY_UNAVAILABLE",
-        "The image has no python3, so uploaded inputs cannot be verified; approved work requires verification",
+        "The image has no python3, so uploaded inputs cannot be verified; job execution requires verification",
         422,
       );
     }
@@ -475,6 +497,7 @@ export async function collectOutputs(args: {
     if (RESERVED_ROOTS.has(file.path.split("/")[0])) {
       throw new ModalTransferError("RESERVED_PATH", `Output path is reserved for application state: ${file.path}`, 403);
     }
+    validateOutputTarget(args.sandboxRoot, file.path);
   }
   const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
   const maxFiles = Math.min(args.maxFiles ?? MAX_TRANSFER_FILES, MAX_TRANSFER_FILES);
@@ -525,7 +548,7 @@ export async function collectOutputs(args: {
     if (args.requireHashes) {
       throw new ModalTransferError(
         "REMOTE_VERIFY_UNAVAILABLE",
-        "The image has no python3, so outputs cannot be hashed remotely; approved work requires verification",
+        "The image has no python3, so outputs cannot be hashed remotely; job execution requires verification",
         422,
       );
     }
@@ -565,7 +588,7 @@ export async function collectOutputs(args: {
   // failure while copying installs nothing and the sandbox keeps its previous
   // versions. Renames after successful copies are the residual window.
   const finals = manifest.map((file) => {
-    const final = safeLocal(args.sandboxRoot, file.path);
+    const final = validateOutputTarget(args.sandboxRoot, file.path);
     let existing: fs.Stats | undefined;
     try {
       existing = fs.lstatSync(final);
@@ -580,10 +603,13 @@ export async function collectOutputs(args: {
   const pendingTmp = new Set<string>();
   try {
     for (const { file, final, incoming } of finals) {
+      validateOutputTarget(args.sandboxRoot, file.path);
       fs.mkdirSync(path.dirname(final), { recursive: true });
       fs.copyFileSync(path.join(args.stagingDir, ...file.path.split("/")), incoming);
       pendingTmp.add(incoming);
     }
+    // Recheck after asynchronous downloads/copies, before the first install.
+    for (const { file } of finals) validateOutputTarget(args.sandboxRoot, file.path);
     for (const { final, incoming } of finals) {
       await renameWithRetry(incoming, final);
       pendingTmp.delete(incoming);

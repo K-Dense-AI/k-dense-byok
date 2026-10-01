@@ -56,6 +56,58 @@ export interface CustomProviderListing extends CustomProvider {
   managed: boolean;
 }
 
+/**
+ * What GET /custom-models returns: a literal key is never echoed (like
+ * GET /credentials), only whether one is saved and a recognizable mask. An
+ * `$ENV_VAR` reference is not a secret and is returned as written.
+ */
+export interface PublicCustomProvider extends Omit<CustomProviderListing, "apiKey"> {
+  apiKey?: string;
+  apiKeySaved?: boolean;
+  apiKeyMasked?: string;
+}
+
+/** Submitted provider: `keepApiKey` re-uses the saved key the UI never saw. */
+export interface CustomProviderInput extends CustomProvider {
+  keepApiKey?: boolean;
+}
+
+const ENV_REF_RE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*|\{[A-Za-z_][A-Za-z0-9_]*\})$/;
+
+/** Pi reads `apiKey` as a template (`$VAR`, `${VAR}`) or, with a leading `!`, a shell command. */
+export function isEnvReference(value: string): boolean {
+  return ENV_REF_RE.test(value);
+}
+
+/**
+ * Store a value typed into the UI the way Pi will read it back verbatim: a
+ * whole-value `$VAR` stays a reference; anything else is a literal, so `$`
+ * becomes `$$` and a leading `!` becomes `$!`. Otherwise a pasted key with a
+ * `$` in it would be mangled, and `!curl …` would run as a shell command
+ * whenever the model's auth resolves. Command-backed keys (`!op read …`) are
+ * still supported in a hand-written models.json.
+ */
+export function encodeApiKeyForPi(value: string): string {
+  if (isEnvReference(value)) return value;
+  const escaped = value.replace(/\$/g, "$$$$");
+  return escaped.startsWith("!") ? `$${escaped}` : escaped;
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 8) return "••••";
+  return `${key.slice(0, 4)}…${key.slice(-4)}`;
+}
+
+/** Listing safe to send to the browser. */
+export function publicCustomProviders(agentDir = KADY_PI_AGENT_DIR): PublicCustomProvider[] {
+  return listCustomProviders(agentDir).map(({ apiKey, ...rest }) => {
+    if (!apiKey || apiKey === "none") return rest;
+    if (isEnvReference(apiKey)) return { ...rest, apiKey };
+    if (apiKey.startsWith("!")) return { ...rest, apiKeySaved: true, apiKeyMasked: "(shell command)" };
+    return { ...rest, apiKeySaved: true, apiKeyMasked: maskKey(apiKey.replace(/\$([$!])/g, "$1")) };
+  });
+}
+
 export function modelsJsonPath(agentDir = KADY_PI_AGENT_DIR): string {
   return path.join(agentDir, "models.json");
 }
@@ -150,10 +202,10 @@ export function customProviderName(providerId: string, agentDir = KADY_PI_AGENT_
 }
 
 /** Validate a submitted provider list; returns normalized providers or an error string. */
-export function validateCustomProviders(input: unknown): CustomProvider[] | string {
+export function validateCustomProviders(input: unknown): CustomProviderInput[] | string {
   if (!Array.isArray(input)) return "providers must be an array";
   if (input.length > MAX_PROVIDERS) return `at most ${MAX_PROVIDERS} custom providers`;
-  const out: CustomProvider[] = [];
+  const out: CustomProviderInput[] = [];
   const seen = new Set<string>();
   for (const raw of input) {
     const p = asRecord(raw);
@@ -172,6 +224,12 @@ export function validateCustomProviders(input: unknown): CustomProvider[] | stri
     }
     const apiKey = typeof p.apiKey === "string" ? p.apiKey.trim() : "";
     if (apiKey.length > 512) return `provider "${id}": apiKey is too long`;
+    if (/[\x00-\x1f\x7f]/.test(apiKey)) return `provider "${id}": apiKey contains control characters`;
+    // The access token is inherited by child processes, not a provider key.
+    if (isEnvReference(apiKey) && /^\$\{?KADY_/.test(apiKey)) {
+      return `provider "${id}": apiKey may not reference Kady's own variables`;
+    }
+    const keepApiKey = !apiKey && p.keepApiKey === true;
     if (!Array.isArray(p.models) || p.models.length === 0) return `provider "${id}": at least one model is required`;
     if (p.models.length > MAX_MODELS_PER_PROVIDER) return `provider "${id}": at most ${MAX_MODELS_PER_PROVIDER} models`;
     const models: CustomModelDefinition[] = [];
@@ -219,7 +277,8 @@ export function validateCustomProviders(input: unknown): CustomProvider[] | stri
       ...(typeof p.name === "string" && p.name.trim() ? { name: p.name.trim() } : {}),
       baseUrl,
       api: api as CustomModelApi,
-      ...(apiKey ? { apiKey } : {}),
+      ...(apiKey ? { apiKey: encodeApiKeyForPi(apiKey) } : {}),
+      ...(keepApiKey ? { keepApiKey } : {}),
       models,
     });
   }
@@ -231,7 +290,7 @@ export function validateCustomProviders(input: unknown): CustomProvider[] | stri
  * provider and other top-level key. Returns the resulting listing, or null if
  * models.json is malformed (left untouched — the caller reports 409).
  */
-export function writeCustomProviders(providers: CustomProvider[], agentDir = KADY_PI_AGENT_DIR): CustomProviderListing[] | null {
+export function writeCustomProviders(providers: CustomProviderInput[], agentDir = KADY_PI_AGENT_DIR): CustomProviderListing[] | null {
   const file = readJson(modelsJsonPath(agentDir));
   if (file === null) return null;
   const managed = managedIds(agentDir);
@@ -245,13 +304,15 @@ export function writeCustomProviders(providers: CustomProvider[], agentDir = KAD
       // Never silently take over a hand-written provider.
       return null;
     }
+    const saved = asRecord(existing[p.id]).apiKey;
+    const apiKey = p.apiKey || (p.keepApiKey && typeof saved === "string" ? saved : "");
     next[p.id] = {
       ...(p.name ? { name: p.name } : {}),
       baseUrl: p.baseUrl,
       api: p.api,
       // Pi only lists models of providers whose auth resolved: keyless servers
       // need a placeholder, exactly like Kady's own ollama registration.
-      apiKey: p.apiKey || "none",
+      apiKey: apiKey || "none",
       models: p.models.map((m) => ({
         id: m.id,
         ...(m.name ? { name: m.name } : {}),
@@ -263,12 +324,18 @@ export function writeCustomProviders(providers: CustomProvider[], agentDir = KAD
       })),
     };
   }
-  fs.mkdirSync(agentDir, { recursive: true });
+  fs.mkdirSync(agentDir, { recursive: true, mode: 0o700 });
   const target = modelsJsonPath(agentDir);
   const tmp = `${target}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify({ ...file, providers: next }, null, 2) + "\n", "utf-8");
+  // Holds API keys, like auth.json next to it: owner-only.
+  fs.writeFileSync(tmp, JSON.stringify({ ...file, providers: next }, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
   fs.renameSync(tmp, target);
-  fs.writeFileSync(manifestPath(agentDir), JSON.stringify({ managed: providers.map((p) => p.id) }, null, 2) + "\n", "utf-8");
+  try {
+    fs.chmodSync(target, 0o600);
+  } catch {
+    // Windows ACLs do not map to POSIX modes.
+  }
+  fs.writeFileSync(manifestPath(agentDir), JSON.stringify({ managed: providers.map((p) => p.id) }, null, 2) + "\n", { encoding: "utf-8", mode: 0o600 });
   idCache = null;
   return listCustomProviders(agentDir);
 }

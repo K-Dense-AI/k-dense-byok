@@ -1,145 +1,69 @@
-# Known Limitations
+# Current limitations
 
-K-Dense BYOK is in beta. Kady is a single flat agent on the [Pi coding-agent SDK](https://pi.dev) with file/shell tools and a `subagent` delegation tool (pi-subagents). The limitations worth knowing are below.
+## Models and tools
 
-## Skills depend on model quality
+Tool execution and skill use depend on the selected model. A model can ignore
+instructions, misuse tools or report unsupported conclusions. Check consequential
+outputs against code, data and observed [provenance](provenance.md).
 
-Scientific skills are markdown procedures (`SKILL.md`) the agent discovers in its sandbox and follows with its tools. How faithfully that happens depends on the selected model:
+Providers may refuse a whole request, including enabled skill descriptions.
+Kady surfaces refusal guidance, but a suggested trigger is not a verified current
+provider rule. Review unnecessary skills in Settings, open a new chat after
+changes, or choose another available model. Model availability and quotas are
+controlled by the provider.
 
-- **Skill activation is not always reliable.** Models sometimes skip a relevant skill, use it partially, or misinterpret the skill's instructions - especially complex multi-step skills that require strict adherence to a procedure.
-- **Tool-calling consistency varies across models.** Some models occasionally drop tool calls or call tools with incorrect arguments, which can stall a task or produce incomplete results.
-- **Long-context degradation.** When a skill injects a large amount of context (detailed protocols, multiple reference databases), models may lose track of earlier instructions.
-- **Structured output can drift.** For skills that require specific output formats (tables, JSON, citations), models sometimes deviate from the requested structure.
-
-These are limitations of the selected model, not of K-Dense BYOK itself; as model tool calling improves, skill execution improves automatically.
-
-**Workarounds:**
-
-- If a skill isn't behaving as expected, try **re-running the task** - results can vary between runs.
-- Try a different model in the dropdown. OpenRouter entries advertise `tools` support, while connected subscription entries come from Pi's live provider catalogue; tool-calling quality still varies across both.
-
-## Some models refuse the skills index
-
-Anthropic's Mythos-class models run a safety classifier over the whole request before generating anything. On **Claude Fable 5** that classifier rejects a request whose system prompt lists certain seeded scientific skills — the refusal fires on the skill *description* alone, with nothing sensitive in the conversation at all.
-
-What you see is a run that fails immediately, reporting `Provider finish_reason: content_filter` and zero input tokens. A refusal carries no token usage, so nothing is billed. It happens on the lead agent and on subagents alike (children inherit the lead's model), and it is not a K-Dense bug — the same request refuses when sent straight to the provider.
-
-Skills verified to trigger it individually on `anthropic/claude-fable-5` (2026-08-27), all bio-design or pathogen adjacent:
-
-`adaptyv` · `diffdock` · `ginkgo-cloud-lab` · `glycoengineering` · `pathogen-variant-surveillance` · `phylogenetics` · `tamarind`
-
-**Workarounds:**
-
-- **Switch the chat's model.** Claude Opus 4.8, Claude Sonnet 5, and GPT-5.5 accept the same prompt. If subagents were the ones failing, note they inherit the lead's model unless a specialist pins its own in its frontmatter.
-- **Disable the skills you don't need** under Settings → Skills, then open a new chat tab — a live session keeps the skills it already loaded.
-
-When a run fails this way, the error in the chat names the triggering skills that are currently enabled, so you do not have to bisect them by hand. That list is empirical and providers retune their classifiers, so treat it as a starting point rather than a fixed set.
-
-## Ollama / small local models
-
-Local models served through Ollama are supported end-to-end, but they amplify the caveats above:
-
-- Tool-calling fidelity is noticeably weaker on sub-frontier models.
-- Skills that rely on multi-tool choreography (running scripts, chaining edits, structured output) are the most fragile.
-
-If a task loops or ignores its skill, try a **larger local model** (or temporarily switch to a frontier OpenRouter or connected subscription model) before assuming the workflow is broken. See [Local models with Ollama](./local-models-ollama.md).
-
-## Pi subscription providers
-
-Kady supports Pi OAuth for OpenAI Codex (ChatGPT Plus/Pro), Anthropic (Claude Pro/Max), GitHub Copilot, and xAI, with these boundaries:
-
-- **Provider limits are external.** Kady cannot read remaining subscription quota, premium requests, overage settings, or plan eligibility. A successful OAuth login does not mean usage is free or unlimited.
-- **Reference price is not an invoice.** For OpenAI Codex, Copilot, and xAI, Kady tracks tokens and Pi's list-price equivalent but excludes it from project spend caps. Check the provider for actual quota or overage status.
-- **Anthropic OAuth is different.** Pi documents third-party Claude subscription access as metered extra per-token usage. Kady treats that amount as project spend and applies the cap.
-- **Direct-provider entries require OAuth.** Ambient OpenAI, Anthropic, Copilot, or xAI API keys are not presented as subscription access; use OpenRouter for the supported API-key path.
-- **Some features still require OpenRouter.** Fusion and server-side speech transcription are not authorized by subscription logins.
+[Fusion](openrouter-fusion.md) has no local file/shell tools. Local server
+compatibility depends on tool-calling support. Server-side speech transcription
+and Fusion still require an OpenRouter key.
 
 ## Local shell trust boundary
 
-Kady's agent intentionally has a powerful local shell so it can install scientific packages, run analyses, and create artifacts. The shell runs as your operating-system user; it is not an OS-level security boundary. File permissions such as `0600` prevent other users from reading credentials, but cannot prevent a process running as you from reading your own `.env`, `~/.kady`, or other local secrets.
+Tools run as the backend host's OS user. The project sandbox is a workspace,
+not process isolation: a same-user shell can read other accessible files and
+credentials. API tokens and owner-only file permissions protect other boundaries,
+not the agent from its own account. Use a separate account/container/VM for
+adversarial content or stronger credential isolation.
 
-Kady instructs newly created project agents never to inspect or transmit credentials, but instructions are not a substitute for isolation against malicious prompt injection. Do not ask Kady to process adversarial files with secrets accessible to the same account. Use an OS sandbox, container, VM, or separate user account when working with untrusted content or when a stronger credential boundary is required.
+The [raw-data guard](data-guard.md) recognizes common destructive patterns; it
+cannot inspect every script's effects. Keep backups. Skills and persistent
+specialist memory are instructions with the agent's permissions. Third-party
+installed skills require review and are not automatically updated; catalogue
+skills follow the [catalogue sync policy](skill-management.md).
 
-- **The raw-data guard is heuristic.** It blocks recognizable mutations of protected paths and pauses recognizable destructive shell commands ([details](./data-guard.md)), for Kady and for background specialists. It does not parse shell semantics or inspect what a script does internally, so it reduces ordinary agent mistakes rather than enforcing a boundary. Keep backups of irreplaceable raw data.
+## Cost and data handling
 
-### Installed skills are instructions, not data
+- Project caps use recorded prices and estimates, not provider invoices. Concurrent/in-flight model calls can overshoot; quotas and overages remain external.
+- Local-model $0 accounting does not cover a paid hosted gateway. Use a priced custom server for that case.
+- External-CLI specialists bypass Kady's ledger and cap and are disabled by default.
+- Hosted models, web search, connectors and Modal can receive task data. A local installation or local preview does not make every workflow offline.
 
-A skill is a procedure the agent follows using that same shell, so installing one from a third-party source widens this boundary to whoever wrote it. Kady requires an explicit acknowledgement before an install and shows the parsed skills first, but it does not audit their contents: review a source you do not already trust, and prefer pinning a branch or tag. Installed skills are deliberately never auto-updated — a new version is flagged and waits for you, because silently pulling changed instructions into a running project is worse than a stale skill. See [Skill management](./skill-management.md).
+See [billing](model-selection.md#billing-and-budgets) and [Security](security.md).
 
-## Tabbed chats
+## Sessions, specialists and automation
 
-- **Hard cap of 10 tabs per project.** This keeps the browser snappy and
-  bounds the number of parallel SSE streams to the backend. Close an
-  existing tab before opening a new one once you hit the limit.
-- **Refresh recovery requires the backend to stay running.** Browser refreshes
-  and browser-tab closes preserve project workspaces, chat tabs, drafts,
-  queues, and live turns. Stopping or restarting the Kady backend still ends
-  in-flight turns; completed conversation history remains on disk and can be
-  reopened from Chat history.
-- **Workflows launch into the active tab.** If you have a long-running
-  turn streaming in tab A and click Launch on a workflow while tab B is
-  active, the workflow runs in tab B. Switch to the tab you want to
-  receive the workflow before launching.
+- Ten chat tabs per project; all share project files, so concurrent edits can conflict.
+- Browser reconnect preserves active turns only while the backend stays running. Backend restarts end ordinary active turns; Modal has separate recovery.
+- Skills, specialist definitions and MCP configuration generally apply to new chats. Specialists can use MCP, but explicit tool restrictions still apply.
+- Child questions go through the lead with a timeout. Specialist memory and watchdog findings are model-authored and can be wrong. Watchdog failures can be silent; inspect its status command.
+- Schedules require the server. Missed slots follow catch-up policy, and overlapping fires are skipped. Panel management needs an available resident session.
 
-## Web access
+## Research records
 
-Native web access ([pi-web-access](https://github.com/nicobailon/pi-web-access)) gives Kady and the sub-agents `web_search` and `fetch_content` (pages, PDFs, GitHub repos, YouTube). A few edges:
+The notebook is authored; provenance observes bounded effects. Neither verifies
+scientific claims or captures complete execution IO. Nested child work is not
+harvested, and retrospective hashes do not prove citation-time identity.
+Compaction summaries can omit details. Artifact versions overwritten before
+retention cannot be reconstructed from hashes. See [Notebook](lab-notebook.md),
+[Provenance](provenance.md) and [Evidence packages](evidence-packages.md).
 
-- **No key = shared fallback.** Without an Exa / Perplexity / Gemini key (Settings → API keys), searches go through a free Exa fallback that can rate-limit under heavy use. Adding any one key removes that bottleneck.
-- **Video understanding needs a Gemini key.** YouTube and local-video analysis are only available once `GEMINI_API_KEY` is set.
-- **PDF extraction is text-only.** Scanned PDFs without a text layer are not OCRed.
-- **Web access for sub-agents applies to new chat tabs**, same as agent and MCP edits below.
+## External services and platform boundaries
 
-## Sub-agents
+Web search without a key uses a shared fallback that can rate-limit; video
+understanding needs Gemini. PDF text extraction does not OCR scanned pages.
+Modal cost is estimated, multi-GPU work stays within one sandbox, and remote
+package inventories/per-job egress controls are incomplete; see [Modal](modal-compute.md).
 
-Sub-agent delegation ([docs](./sub-agents.md)) works end-to-end, with a couple of edges:
-
-- **Sub-agents can't use MCP tools yet.** Tools from connected [MCP servers](./mcp-servers.md) are available to Kady itself but not to the sub-agents it spawns. Making them available to sub-agents is on the roadmap.
-- **Per-agent model overrides must name an available model.** If you set a model on an agent in Settings → Specialists, use an id from the model dropdown; an unrecognized id falls back to the default model rather than failing.
-- **Sub-agents ask through Kady, with a timeout.** A background specialist can pause and ask for a decision (pi-subagents' `contact_supervisor`). The request reaches the chat as a "Subagent needs a decision" card, Kady relays it to you with the interview form and answers the specialist. The specialist waits at most ten minutes, then continues with an error; a closed browser still lets the server adopt the turn, but nobody answers until a tab is open. Specialists do not get the `interview` tool themselves.
-- **Specialist memory is self-written.** Per-agent `MEMORY.md` files are instructions the model wrote for itself, injected into later runs. They are not verified and are a prompt-injection surface; review or clear them from Settings → Specialists.
-- **Watchdog spend is invisible.** pi-subagents does not report the watchdog model's usage, so its calls are not ledgered and do not count toward the spend cap ([details](./watchdog.md)).
-- **External-CLI specialists bypass Kady's accounting.** pi-subagents ships `claude-code`, `codex-exec`, `cursor-agent` and their `-writer` variants, which shell out to a locally installed and authenticated Claude Code, Codex, or Cursor CLI. They run outside Kady's model runtime, cost ledger, and spend cap, so they are disabled by default; enable them in Settings → Specialists only if you understand that their usage is billed by that CLI's own account.
-- **Changes apply to new chat tabs.** Agents edited in Settings (and MCP server changes) take effect in tabs opened afterwards; already-running tabs keep the setup they started with.
-
-## Schedules
-
-- **Timers live in the server.** A schedule fires only while the Kady server is running; a due slot missed during downtime runs once at the next boot when `catchUp` is `latest`. Runs are skipped, not queued, when the previous one is still going.
-- **The cap acts after the fact.** A schedule fire cannot be gated when it runs. Kady checks the cap when a schedule is created or run by hand, pauses active schedules once a project is over its limit, and resumes them when it clears — but the run that crossed the line is ledgered, not prevented.
-- **Panel actions run through the resident session.** Pause, resume, run-now and delete call pi-subagents' own management actions with no model involved; if the resident session cannot be opened (for example no model is configured), those buttons fail with an error while the chat path still works.
-
-## Modal compute
-
-Modal jobs are durable, restart-recoverable, available to sub-agents, and
-tracked in the center-panel Compute tab. The remaining boundaries are:
-
-- **Displayed cost is an estimate.** Modal does not expose a generally available
-  per-sandbox final invoice API. K-Dense reserves worst-case estimated cost and
-  reconciles it to elapsed resource time on every terminal path.
-- **Multi-GPU is single-sandbox.** K-Dense can request multiple GPUs and run
-  bounded groups of independent jobs, but it does not orchestrate multi-node
-  distributed training.
-- **The local sandbox remains canonical.** Remote Volumes cache dependencies,
-  models, and reference data; they are not a second copy of the project
-  workspace.
-- **Security scope is narrower than provenance scope.** Remote jobs do not
-  receive model credentials by default; fine-grained egress policy and per-job
-  secrets remain future work. Provenance does cover remote work: every terminal
-  Modal job is recorded as a `compute` step with the transfer layer's own
-  input/output hashes (see [Provenance](./provenance.md)), though the remote
-  image's installed packages are not enumerated the way the local venv's are.
-
-See [Durable Modal compute](./modal-compute.md) for lifecycle and recovery details.
-
-## Native Windows has less mileage
-
-The app runs natively on Windows 10/11 (no WSL needed) and goes through the same test suite as macOS/Linux, but it has had less real-world use — if you hit something Windows-specific, please [open a GitHub issue](https://github.com/K-Dense-AI/k-dense-byok/issues). Git for Windows is required there because the agent's shell tool uses Git Bash. WSL remains a supported alternative.
-
-## Context compaction
-
-- **The summary is model-written.** Kady prepends a state block derived from its own stores (plan, notebook entries, result ids, environment), but the narrative part is generated by the chat model and can still paraphrase or omit detail. Check the lab notebook and provenance log for the authoritative record.
-- **Compacting aborts nothing but is not free.** "Compact now" is refused while a run streams; the summary call is billed to the session like a turn.
-
-## Not built in
-
-First-party literature/regulatory search, document conversion, browser automation, and automated citation verification are not built into Kady. Many of these can be added by connecting an [MCP server](./mcp-servers.md); the `citation-checker` specialist covers reference checking with the web tools. Record-keeping is covered by per-artifact [provenance](./provenance.md), the notebook's [Methods draft](./lab-notebook.md#methods-draft), and [evidence packages](./evidence-packages.md); none of these verifies scientific claims on your behalf.
+Native Windows requires Git Bash. Scientific previews have format/size limits;
+see [File previews](file-previews.md). Dedicated literature/regulatory search,
+document conversion and browser automation require appropriate tools/connectors.
+Citation checking by a specialist is not automatic independent verification.

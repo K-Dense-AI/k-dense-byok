@@ -265,19 +265,19 @@ export function makeInterviewTool(
     label: "Interview",
     description: [
       "Present the user with an interactive form of questions in the chat and wait for their answers.",
-      "Use this liberally and early to ask clarifying questions: before starting any non-trivial or ambiguous task, when multiple reasonable approaches exist, before expensive/long-running or destructive work, and whenever you would otherwise have to assume. Asking is always better than guessing.",
+      "Use this when missing information would materially change the scope, scientific validity, or requested deliverable, or when required authorization has not already been given. Resolve routine reversible choices using the user's instructions and available evidence; state material assumptions.",
       "Prefer ONE interview with several focused questions over many separate calls. For every single/multi question, set `recommended` to your best suggestion (with `conviction`) so the user can simply confirm.",
       'Question types: "single" (pick one), "multi" (pick many), "text" (free text), "image" (user uploads images, returned to you), "info" (non-interactive context panel).',
       "Use `content` to show code/diff/Markdown and `media` to show images, tables, Mermaid diagrams, or charts alongside a question.",
-      "The result is a JSON array of {id, value} responses; uploaded images follow as image blocks. If the user dismisses the form, proceed with your recommendations.",
+      "The result is a JSON array of {id, value} responses; uploaded images follow as image blocks. If the user dismisses an optional question, proceed with a stated reasonable assumption. Dismissal is not approval for an action requiring authorization and does not supply essential missing scientific parameters.",
     ].join("\n"),
     promptSnippet:
       "interview: ask the user clarifying questions through an interactive form and get structured answers",
     promptGuidelines: [
-      "Ask clarifying questions as much as possible: whenever a request is ambiguous, underspecified, or has competing approaches, call the `interview` tool BEFORE doing the work — do not silently assume.",
-      "For any non-trivial task, open with a short interview that confirms scope, inputs, and the user's preferred approach (include your recommendations so confirming is one click).",
-      "Mid-task, when you hit a fork in the road (parameter choices, trade-offs, which dataset/file to use), pause and interview the user instead of picking arbitrarily.",
-      "When a background specialist asks for a decision (a `subagent_supervisor_request` message), relay its question to the user with `interview` (include the child's options), then answer the child with `subagent_supervisor` (action reply, the given replyTo) — promptly, the child is blocked while it waits.",
+      "Use `interview` for blocking ambiguity or required authorization that is not already supplied. Do not reconfirm an authorized task merely because it is non-trivial or offers several reasonable approaches.",
+      "Make routine reversible choices within scope using available evidence, state material assumptions, and continue useful work that does not depend on a missing answer. Never guess essential scientific parameters.",
+      "Bundle blocking questions in one short interview and include recommended options when justified. Honor explicit user instructions to consult them on particular decisions.",
+      "When a background specialist asks for a decision (`subagent_supervisor_request`), resolve it from existing instructions and evidence if possible; otherwise use `interview` for the blocking user decision. Reply promptly with `subagent_supervisor` (action reply, the given replyTo). Progress updates need no reply, and unanswered requests are not approval.",
     ],
     parameters: InterviewParams,
     // Blocks on user input — never run it concurrently with other tools.
@@ -338,8 +338,9 @@ export function makeInterviewTool(
               text:
                 "The user dismissed the interview without answering any question. " +
                 "Do not claim or imply that the user chose, provided, confirmed, or approved any option. " +
-                "Proceed with your recommended options, explicitly state the assumptions you made, " +
-                "and do not re-open the same interview.",
+                "For optional questions, proceed with a reasonable stated assumption. " +
+                "If an essential scientific parameter or required authorization is missing, report that blocker " +
+                "and continue only independent work. Do not re-open the same interview.",
             },
           ],
           details: { cancelled: true },

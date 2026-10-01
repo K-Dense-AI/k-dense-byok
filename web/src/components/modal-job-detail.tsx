@@ -436,6 +436,13 @@ export function ModalJobDetail({
             </div>
           ) : null}
 
+          {job.cleanupPending || job.conservativeCost ? (
+            <section role="status" className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+              {job.cleanupPending ? <p>Remote cleanup is pending. The sandbox may remain active until its timeout.</p> : null}
+              {job.conservativeCost ? <p>The full reservation is counted as a conservative cost estimate because the remote lifetime could not be confirmed.</p> : null}
+            </section>
+          ) : null}
+
           {(job.status === "failed" || job.status === "lost" || job.error) ? (
             <section className="rounded-lg border border-destructive/30 bg-destructive/5 p-3">
               <div className="flex items-start gap-2">

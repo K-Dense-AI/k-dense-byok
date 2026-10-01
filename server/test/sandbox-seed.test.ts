@@ -57,6 +57,25 @@ describe("seedSandboxFiles", () => {
 });
 
 describe("AGENTS.md versioned re-seed", () => {
+  it("upgrades the previous instructions without changing customized projects", async () => {
+    const { AGENTS_MD, AGENTS_MD_HISTORY } = await import("../src/sandbox-seed.ts");
+    const paths = ensureProjectExists("seed-host");
+    const previous = AGENTS_MD_HISTORY[AGENTS_MD_HISTORY.length - 2];
+    fs.writeFileSync(agentsMd("seed-host"), previous);
+    seedSandboxFiles(paths);
+    expect(fs.readFileSync(agentsMd("seed-host"), "utf-8")).toBe(AGENTS_MD);
+    expect(AGENTS_MD).toContain("The browser may");
+    expect(AGENTS_MD).toContain("Browser uploads live in `user_data/`");
+    expect(AGENTS_MD).toContain("host or mounted paths");
+    expect(AGENTS_MD).toContain("contact_supervisor");
+    expect(AGENTS_MD).toContain("Do not reconfirm an authorized task");
+    expect(AGENTS_MD).not.toContain("Use it as much as possible");
+    expect(AGENTS_MD).not.toContain("Before starting any non-trivial task");
+    fs.writeFileSync(agentsMd("seed-host"), previous + "\nLab-specific instructions\n");
+    seedSandboxFiles(paths);
+    expect(fs.readFileSync(agentsMd("seed-host"), "utf-8")).toBe(previous + "\nLab-specific instructions\n");
+  });
+
   it("upgrades a file that still equals an older shipped version and reports status", async () => {
     const { AGENTS_MD, AGENTS_MD_HISTORY, agentsMdStatus, restoreAgentsMd } = await import("../src/sandbox-seed.ts");
     const paths = ensureProjectExists("seed-v");

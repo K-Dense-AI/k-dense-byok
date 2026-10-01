@@ -18,6 +18,7 @@ import { buildNvidiaModel, nvidiaExtraModelIds } from "../agent/models.ts";
 import {
   customModelForClient,
   listCustomProviders,
+  publicCustomProviders,
   validateCustomProviders,
   writeCustomProviders,
 } from "../agent/custom-models.ts";
@@ -70,7 +71,7 @@ export interface DirectProviderStatus {
   keysUrl?: string;
   billingMode: DirectProviderDefinition["billingMode"];
   billingNote: string;
-  /** Also connectable under Settings → Model providers. */
+  /** Also connectable by signing in (Settings → Providers). */
   oauth: boolean;
   fields: DirectProviderField[];
   /** Pi resolved a credential for this provider (key, cloud creds, or OAuth). */
@@ -176,12 +177,15 @@ export async function registerModelProviderRoutes(
           return {
             ...definition,
             connected,
+            // `connected` means OAuth specifically. OpenRouter also accepts
+            // API keys stored by Pi, which are absent from GET /credentials.
+            configured: status.auth !== undefined && !status.needsReauth,
             needsReauth: status.needsReauth,
             credentialType: status.stored?.type ?? status.auth?.type ?? null,
             source: status.auth?.source ?? null,
             loginLabel: provider?.auth.oauth?.loginLabel ?? null,
             modelCount,
-            // Lets the UI say "or paste a key under API keys" for dual providers.
+            // Lets Settings → Providers offer both sign-in and a key for dual providers.
             apiKeyAlternative: directProvider(definition.id) !== undefined ||
               definition.id === "openrouter",
           };
@@ -202,12 +206,16 @@ export async function registerModelProviderRoutes(
         if (!definition.listModels) continue;
         const status = await manager.providerStatus(definition.id);
         // Only OAuth-connected providers are listed here. A provider that also
-        // takes an API key (anthropic, xai, kimi-coding) is listed by
+        // takes an API key (openai, anthropic, xai, kimi-coding, meta) is listed by
         // /providers/models instead when it is key-configured, so each model
         // appears once, under the billing its credential implies.
         if (status.auth?.type !== "oauth" || status.needsReauth) continue;
-        const available = await runtime.getAvailable(definition.id);
-        models.push(...available.map((model) => modelForClient(model, definition)));
+        try {
+          const available = await runtime.getAvailable(definition.id);
+          models.push(...available.map((model) => modelForClient(model, definition)));
+        } catch {
+          // A failed gateway/catalogue must not hide other connected models.
+        }
       }
       return { models };
     } catch (error) {
@@ -295,7 +303,7 @@ export async function registerModelProviderRoutes(
 
   // Custom model servers (Pi models.json). Kady manages only the providers it
   // wrote; hand-written ones are listed read-only.
-  app.get("/custom-models", async () => ({ providers: listCustomProviders(options.customModelsDir) }));
+  app.get("/custom-models", async () => ({ providers: publicCustomProviders(options.customModelsDir) }));
 
   app.put<{ Body: { providers?: unknown } }>("/custom-models", async (req, reply) => {
     const validated = validateCustomProviders(req.body?.providers ?? []);
@@ -321,7 +329,7 @@ export async function registerModelProviderRoutes(
     for (const provider of written) {
       configured[provider.id] = (await safeCheckAuth(runtime, provider.id)) !== undefined;
     }
-    return { providers: written, configured };
+    return { providers: publicCustomProviders(options.customModelsDir), configured };
   });
 
   // NVIDIA NIM model discovery — kept as an alias of the generic route for

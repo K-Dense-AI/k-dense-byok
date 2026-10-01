@@ -39,6 +39,7 @@ export interface ModalInstance {
   cpu: number | null;
   memoryMiB: number | null;
   pricePerHour: number;
+  gpuPricePerHour?: number;
   defaultImage?: string;
   vramGiB?: number | null;
   tier?: string;
@@ -120,6 +121,9 @@ export interface ModalJobSummary {
   spentEstimatedUsd: number;
   reservedEstimatedUsd: number;
   committedEstimatedUsd: number;
+  cleanupPending?: boolean;
+  accountingPending?: boolean;
+  conservativeCost?: boolean;
   inputTransfers: ModalTransferEntry[];
   outputTransfers: ModalTransferEntry[];
   artifacts: ModalArtifact[];
@@ -275,6 +279,7 @@ export function parseModalInstance(value: unknown): ModalInstance | null {
       0,
       numberValue(value.pricePerHour, value.price_per_hour, value.hourlyRate) ?? 0,
     ),
+    gpuPricePerHour: numberValue(value.gpuPricePerHour, recordValue(value.pricing).gpuPerHour) ?? undefined,
     ...(stringValue(value.defaultImage, value.default_image)
       ? { defaultImage: stringValue(value.defaultImage, value.default_image)! }
       : {}),
@@ -606,6 +611,11 @@ export function parseModalJob(value: unknown): ModalJobSummary | null {
       isRecord(wrapped.failure) ? wrapped.failure.message : null,
     ),
     spentEstimatedUsd,
+    cleanupPending: wrapped.cleanupUncertain === true || wrapped.approvalCleanupUncertain === true ||
+      (Array.isArray(wrapped.orphanedSandboxIds) && wrapped.orphanedSandboxIds.length > 0) ||
+      (isModalJobTerminal(status) && Boolean(wrapped.sandboxId) && !wrapped.sandboxTerminatedAt),
+    accountingPending: accounting.reconciled === false,
+    conservativeCost: accounting.conservative === true,
     reservedEstimatedUsd,
     committedEstimatedUsd:
       explicitCommitted || spentEstimatedUsd + reservedEstimatedUsd,

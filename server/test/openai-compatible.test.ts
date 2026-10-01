@@ -186,11 +186,10 @@ describe("GET /openai-compatible/models", () => {
   });
 
   /**
-   * config.ts reads the environment once at import, so the route has to be
-   * loaded fresh per test with the base URL already pointing at the fake server.
+   * config.ts reads the base URL per request (Settings can change it live), so
+   * stubbing the environment before the first request is enough.
    */
   async function buildRoutes(envBaseUrl: string | undefined) {
-    vi.resetModules();
     if (envBaseUrl === undefined) {
       vi.stubEnv("OPENAI_COMPATIBLE_BASE_URL", "");
     } else {

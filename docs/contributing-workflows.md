@@ -1,6 +1,6 @@
 # Contributing Workflows
 
-The workflow library lives in a single JSON file at `web/src/data/workflows.json`. Adding or improving a workflow is one of the easiest ways to contribute to the project - no backend code required.
+The workflow library lives in a single JSON file at `web/src/data/workflows.json`. Add or edit templates there; the UI renders them without backend changes.
 
 ## Workflow structure
 
@@ -21,13 +21,15 @@ Each workflow is a JSON object with these fields:
 }
 ```
 
-Set `requiresFiles` to `true` when the workflow needs user-uploaded data (datasets, manuscripts, images, etc.). These workflows display a "Files" badge on the card and show an upload button in the launch dialog so users can add files to the sandbox before running.
+Set `requiresFiles` to `true` when the workflow needs user-supplied data (datasets, manuscripts, images, etc.). These workflows display a "Needs user data" badge. This describes the task's inputs, not how they must be transferred. Every launch dialog defaults to the project sandbox's file and folder picker, with browser uploads and host paths or data URLs also available; inputs can be combined. An upload is never a prerequisite when the data is already accessible to BYOK.
+
+The launcher adds shared data-access guidance from `web/src/lib/workflow-inputs.ts`: tools run on the BYOK host, inputs must be checked before analysis, originals stay unchanged, and outputs go into the project sandbox for preview/download. Host paths and URLs are references for the agent to resolve using available tools and configured access; the form does not import or verify them itself. Existing project files are passed as chat attachments without re-uploading their bytes. Selected folders are sandbox-relative references in the prompt, without enumerating their contents as attachments. See [workflow data locations](./basic-usage.md#workflow-data-locations) for deployment examples.
 
 ## How to add a workflow
 
 1. Open `web/src/data/workflows.json`.
 2. Add your workflow object anywhere in the array (it will be grouped by `category` automatically).
-3. Pick a `category` from the existing 22 disciplines:
+3. Pick an existing `category`:
 
    `paper`, `visual`, `data`, `literature`, `grants`, `scicomm`, `genomics`, `proteomics`, `cellbio`, `chemistry`, `drugdiscovery`, `physics`, `materials`, `clinical`, `neuro`, `ecology`, `finance`, `social`, `math`, `ml`, `engineering`, `astro`
 
@@ -40,6 +42,7 @@ Set `requiresFiles` to `true` when the workflow needs user-uploaded data (datase
 - Write prompts with **numbered steps** so the agent follows a clear procedure.
 - **Do not name skills.** The agent discovers and loads the skills it needs from what is installed; a hard-coded name can point at a skill the user has disabled or removed.
 - Mark placeholders as `"required": true` only when the workflow genuinely can't run without them.
+- Say **supplied data/files**, not "uploaded data": BYOK can run on a workstation, server, VM, or container separate from the browser. "Local" compute means the BYOK host; never assume it is the user's laptop. Avoid hard-coded laptop paths or an exclusive `user_data/` lookup.
 - Keep descriptions under ~120 characters so they display well on the card.
 
-Submit your addition as a pull request. We review and merge workflow contributions quickly.
+Check that placeholders match the prompt and launch the workflow with representative inputs before submitting a pull request.

@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as lib from "@/lib/automation";
 import { AutomationPanel } from "./automation-panel";
+vi.mock("./subagent-fleet-panel", () => ({ SubagentFleetPanel: () => null }));
 
 afterEach(() => vi.restoreAllMocks());
 

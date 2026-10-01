@@ -25,6 +25,7 @@ import {
 } from "@/lib/modal-jobs";
 import { useModalCatalog, useModalJobs } from "@/lib/use-modal-jobs";
 import { cn, formatUsd } from "@/lib/utils";
+import { SettingsLink } from "@/components/settings-link";
 
 type StatusFilter = ModalJobStatus | "all";
 
@@ -263,8 +264,11 @@ export function ModalJobsPanel({
 
       {!catalog?.modalConfigured ? (
         <div className="shrink-0 border-b bg-amber-500/5 px-4 py-2 text-[11px] text-amber-800 dark:text-amber-300">
-          Modal is not connected. Existing job history remains available; connect a token pair in
-          Settings → API keys to submit or retry jobs.
+          Modal is not connected. Existing job history remains available; connect a token pair in{" "}
+          <SettingsLink tab="services" section="modal">
+            Settings → Services
+          </SettingsLink>{" "}
+          to submit or retry jobs.
         </div>
       ) : null}
 

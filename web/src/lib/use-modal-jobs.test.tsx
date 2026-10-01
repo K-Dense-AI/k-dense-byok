@@ -134,6 +134,18 @@ describe("Modal data hooks", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("keeps polling terminal jobs until cleanup and accounting have settled", async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse({ id: "job-settling", state: "succeeded", sandboxId: "sb-1", accounting: { reconciled: false } }))
+      .mockResolvedValueOnce(jsonResponse({ id: "job-settling", state: "succeeded", sandboxId: "sb-1", sandboxTerminatedAt: Date.now(), accounting: { reconciled: true, estimatedCostUsd: 0.01 } }));
+    const { result } = renderHook(() => useModalJob("job-settling", { projectId: "project-a", activePollMs: 5 }));
+    await waitFor(() => expect(result.current.job?.spentEstimatedUsd).toBe(0.01));
+    expect(result.current.job?.cleanupPending).toBe(false);
+    expect(result.current.job?.accountingPending).toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("gives up on a detail poll that keeps failing", async () => {
     fetchMock.mockRejectedValue(new Error("gone"));
     const { result } = renderHook(() =>

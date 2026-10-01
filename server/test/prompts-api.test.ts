@@ -49,7 +49,7 @@ describe("prompt templates", () => {
     let res = await app.inject({ method: "GET", url: "/prompts", headers: h(projectId) });
     expect(res.statusCode).toBe(200);
     const names = (res.json() as { name: string }[]).map((t) => t.name);
-    expect(names).toEqual(SEEDED_TEMPLATES.map((t) => t.name).sort());
+    expect(names).toEqual([...SEEDED_TEMPLATES.map((t) => t.name), "council", "gather-context-and-clarify", "parallel-cleanup", "parallel-research", "parallel-review", "review-loop"].sort());
     const qc = (res.json() as Array<{ name: string; argumentHint?: string; description: string; scope: string; seeded?: boolean }>).find((t) => t.name === "qc")!;
     expect(qc).toMatchObject({ scope: "project", argumentHint: "<file>", seeded: true });
     expect(qc.description).toMatch(/Quality-control/);

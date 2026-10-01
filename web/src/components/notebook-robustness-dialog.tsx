@@ -6,6 +6,7 @@ import { apiFetch } from "@/lib/projects";
 import { latestFrozenPlan, type AnalysisPlanHistory } from "@/lib/notebook-plans";
 import { normalizeRobustnessDraft, summarizeRobustness, robustnessText, type RobustnessDraft, type RobustnessPreview, type RobustnessWorkflow } from "@/lib/notebook-robustness";
 import type { NotebookEntry } from "@/lib/notebook";
+import { SettingsLink } from "@/components/settings-link";
 
 const field = "w-full rounded-md border bg-background px-2 py-1.5 text-xs";
 const activeStates = new Set(["awaiting-admission", "queued", "preparing", "running", "collecting"]);
@@ -117,7 +118,7 @@ export function NotebookRobustnessDialog({ entry, sessionId, projectId, onOpenFi
       <DialogHeader><DialogTitle>Stress-test this finding</DialogTitle><DialogDescription>Review defensible alternatives before execution. This runs your script remotely on Modal using the exact reviewed file snapshots; it is not an automatic significance search or independent replication.</DialogDescription></DialogHeader>
       {error && <p role="alert" className="rounded border border-destructive/30 p-2 text-sm text-destructive">{error}</p>}
       {loadErrors.map((e, i) => <p key={i} role="alert" className="text-xs text-destructive">Some history is unavailable: {e}</p>)}
-      <div className="flex flex-wrap items-center gap-2 text-xs"><Button size="xs" variant="outline" disabled={busy} onClick={() => setRefresh((n) => n + 1)}>Refresh context/history</Button>{busy && <span role="status">Working…</span>}{!configured && <span>Configure Modal credentials in Settings before approval.</span>}</div>
+      <div className="flex flex-wrap items-center gap-2 text-xs"><Button size="xs" variant="outline" disabled={busy} onClick={() => setRefresh((n) => n + 1)}>Refresh context/history</Button>{busy && <span role="status">Working…</span>}{!configured && <span>Configure Modal credentials in <SettingsLink tab="services" section="modal">Settings → Services</SettingsLink> before approval.</span>}</div>
       {mode === "history" && <div className="space-y-4">
         {!frozen && <p>Freeze an analysis plan first using the hypothesis's Analysis plan control, then refresh here.</p>}
         {frozen && <p className="text-xs">Latest local frozen plan: revision {frozen.revision}. New work must be reviewed against this revision; existing workflows retain their original plan.</p>}

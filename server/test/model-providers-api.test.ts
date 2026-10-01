@@ -129,6 +129,7 @@ describe("model-provider routes", () => {
       expect.objectContaining({
         id: "openai-codex",
         connected: false,
+        configured: false,
         needsReauth: true,
       }),
     );
@@ -137,5 +138,33 @@ describe("model-provider routes", () => {
       url: "/model-providers/models",
     });
     expect(models.json().models).toEqual([]);
+  });
+
+  it("reports an OpenRouter API key stored by Pi as configured", async () => {
+    const authRuntime = runtime();
+    authRuntime.checkAuth = vi.fn(async (id) => id === "openrouter"
+      ? { type: "api_key" as const, source: "stored credential" }
+      : undefined);
+    authRuntime.listCredentials = vi.fn(async () => [{ providerId: "openrouter", type: "api_key" as const }]);
+    const { app } = await appWithRuntime(authRuntime);
+    const response = await app.inject({ method: "GET", url: "/model-providers" });
+    expect(response.json().providers).toContainEqual(expect.objectContaining({
+      id: "openrouter", connected: false, configured: true,
+      credentialType: "api_key", source: "stored credential",
+    }));
+  });
+
+  it("keeps other OAuth models when one provider's catalogue fails", async () => {
+    const authRuntime = runtime();
+    authRuntime.checkAuth = vi.fn(async () => ({ type: "oauth" as const, source: "OAuth" }));
+    authRuntime.getAuth = vi.fn(async () => ({ auth: { apiKey: "test-key" }, source: "OAuth" }));
+    authRuntime.getAvailable = vi.fn(async (id) => {
+      if (id === "openai") throw new Error("Catalogue unavailable");
+      return id === "openai-codex" ? [model(id, "gpt-test")] : [];
+    });
+    const { app } = await appWithRuntime(authRuntime);
+    const response = await app.inject({ method: "GET", url: "/model-providers/models" });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().models).toContainEqual(expect.objectContaining({ id: "openai-codex/gpt-test" }));
   });
 });

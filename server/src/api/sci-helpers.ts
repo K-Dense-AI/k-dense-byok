@@ -16,7 +16,7 @@ import path from "node:path";
 import { execFile } from "node:child_process";
 import { HELPERS_DIR, helperPython } from "../helpers-env.ts";
 
-export type SciKind = "chem" | "structure" | "massspec" | "arrays" | "imaging";
+export type SciKind = "chem" | "structure" | "massspec" | "arrays" | "imaging" | "tables";
 
 const KIND_TO_SCRIPT: Record<string, string> = {
   chem: "chem_helper.py",
@@ -24,6 +24,7 @@ const KIND_TO_SCRIPT: Record<string, string> = {
   massspec: "massspec_helper.py",
   arrays: "arrays_helper.py",
   imaging: "imaging_helper.py",
+  tables: "tables_helper.py",
 };
 
 /** Wall-clock ceiling for a single preview helper invocation. */
@@ -79,6 +80,7 @@ export interface HelperResult {
 
 /** Absolute helper script path for a known kind, or null if the kind is unrecognized. */
 export function sciHelperFor(kind: string): { script: string } | null {
+  if (!Object.hasOwn(KIND_TO_SCRIPT, kind)) return null;
   const file = KIND_TO_SCRIPT[kind];
   if (!file) return null;
   return { script: path.join(HELPERS_DIR, file) };

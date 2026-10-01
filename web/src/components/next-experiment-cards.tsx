@@ -2,13 +2,14 @@
 import { memorySourceKey } from "@/lib/notebook-memory";
 import type { NextExperimentBinding } from "@/lib/next-experiments";
 import { API_BASE } from "@/lib/projects";
+import { withApiToken } from "@/lib/api-auth";
 import { orderedExperiments, resolveExperimentSource, NEXT_EXPERIMENT_NOTICE, type NextExperimentPlan, type ExperimentSourceRef } from "@/lib/next-experiments";
 function Sources({ refs, projectId, sessionId, sourceDigests }: { refs: ExperimentSourceRef[]; projectId: string; sessionId: string; sourceDigests?: NextExperimentBinding["sourceDigests"] }) {
   return <span className="flex flex-wrap gap-2 text-[10px] text-muted-foreground">{refs.map((ref, i) => {
     const source = resolveExperimentSource(ref, sessionId);
     const digest = sourceDigests?.find((s) => memorySourceKey(s.source) === memorySourceKey(source))?.digest;
     const url = `${API_BASE.replace(/\/+$/, "")}/projects/${encodeURIComponent(projectId)}/notebook/memory/record?project=${encodeURIComponent(projectId)}&source=${encodeURIComponent(JSON.stringify(source))}${digest ? `&expectedDigest=${digest}` : ""}`;
-    return <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted" title={JSON.stringify(source)}>Read source {i + 1} · {source.kind}</a>;
+    return <a key={i} href={withApiToken(url)} target="_blank" rel="noopener noreferrer" className="underline decoration-dotted" title={JSON.stringify(source)}>Read source {i + 1} · {source.kind}</a>;
   })}</span>;
 }
 export function NextExperimentCards({ plan, projectId, sessionId, actions, sourceDigests }: {

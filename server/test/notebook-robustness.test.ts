@@ -50,7 +50,8 @@ describe("bounded robustness workflows", () => {
   it("previews exact snapshots and quotes without admitting work or reserving money", async () => {
     const p = await prepare();
     expect(p.inputFiles).toHaveLength(2); expect(p.generatedFiles).toHaveLength(2);
-    expect(p.totalReservationUsd).toBeCloseTo(2 * 0.1 / 6);
+    // Two 2-core/4-GiB sandboxes, 600 seconds plus 60 seconds transfer headroom.
+    expect(p.totalReservationUsd).toBeCloseTo(2 * 0.379872 * 660 / 3600, 8);
     expect(p.scriptSource).toContain("Trusted test fixture");
     expect(fake.prepared).toBe(0); expect(manager.list(project)).toEqual([]); expect(listComputeReservations(project)).toEqual([]);
     await expect(service.approve(project, source, p.id, { digest: p.digest })).rejects.toMatchObject({ code: "APPROVAL_REQUIRED" });

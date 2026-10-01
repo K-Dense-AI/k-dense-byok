@@ -6,6 +6,8 @@
  * ?project query / kady-project cookie), and registers the route plugins.
  */
 import "./env.ts";
+import { registerSubagentRoutes } from "./api/subagents.ts";
+import { registerSubagentMeterRoutes } from "./api/subagent-meter.ts";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,11 +15,15 @@ import fastifyCors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyRequest } from "fastify";
 import { DEFAULT_PROJECT_ID, HOST, PORT, modalConfigured } from "./config.ts";
-import { isCorsOriginAllowed } from "./cors.ts";
-import { ensureProjectExists, getProject } from "./projects.ts";
+import { isCorsOriginAllowed, isExposedBind } from "./cors.ts";
+import { registerRequestGuard } from "./request-guard.ts";
+import { ensureAuthToken, redactAuthFromUrl, registerAuth } from "./auth.ts";
+import { ensureProjectExists, getProject, listProjects } from "./projects.ts";
+import { recoverSubagentUsage } from "./agent/subagent-meter.ts";
 import { withActiveProject } from "./scope.ts";
 import { registerProjectRoutes } from "./api/projects.ts";
 import { registerSessionRoutes } from "./api/sessions.ts";
+import { registerOfficeRoutes } from "./api/office.ts";
 import { registerSandboxRoutes } from "./api/sandbox.ts";
 import { registerSkillRoutes } from "./api/skills.ts";
 import { registerPromptRoutes } from "./api/prompts.ts";
@@ -27,6 +33,7 @@ import { bootSchedulerSessions, configureScheduler, onScheduleActivity, startSch
 import { registerSystemRoutes } from "./api/system.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
+import { registerAppSettingsRoutes } from "./api/app-settings.ts";
 import { registerAgentRoutes } from "./api/agents.ts";
 import { registerSpeechRoutes } from "./api/speech.ts";
 import { registerModalRoutes } from "./api/modal.ts";
@@ -74,20 +81,39 @@ function resolveProjectId(req: FastifyRequest): string {
 
 export async function buildApp() {
   const app = Fastify({
-    logger: { level: process.env.LOG_LEVEL ?? "info" },
+    logger: {
+      level: process.env.LOG_LEVEL ?? "info",
+      serializers: {
+        // Fastify's default, minus the access token a URL may carry.
+        req: (req) => ({
+          method: req.method,
+          url: redactAuthFromUrl(req.url),
+          host: req.host,
+          remoteAddress: req.ip,
+          remotePort: req.socket?.remotePort,
+        }),
+      },
+    },
     // Inline image attachments ride the JSON run body as base64 (up to 12 ×
     // 5MB, see agent/prompt-images.ts); Fastify's default 1MB limit would
     // reject them.
     bodyLimit: 96 * 1024 * 1024,
   });
 
+  // Before CORS: a refused Host/Origin must not reach any handler, and a
+  // preflight from a foreign page is refused outright (request-guard.ts).
+  registerRequestGuard(app);
+
   await app.register(fastifyCors, {
     origin: (origin, cb) => {
       cb(null, isCorsOriginAllowed(origin));
     },
     credentials: true,
-    exposedHeaders: ["ETag", "X-Project-Fallback", "X-Content-SHA256"],
+    exposedHeaders: ["ETag", "X-Project-Fallback", "X-Content-SHA256", "X-Office-Read-Only", "X-Kady-Auth"],
   });
+
+  // After CORS so a 401 still carries the headers the UI needs to read it.
+  registerAuth(app);
 
   await app.register(multipart, { limits: { fileSize: 1024 * 1024 * 1024 } });
 
@@ -120,9 +146,26 @@ export async function buildApp() {
         projectId = DEFAULT_PROJECT_ID;
       }
       ensureProjectExists(projectId);
-    } catch {
+    } catch (err) {
+      // Failure to open a known project (permissions, unavailable storage,
+      // malformed paths) must not turn an intended edit into a default-project
+      // edit. The same rule as the unknown-project branch applies here.
+      if ((req.method !== "GET" && req.method !== "HEAD") || projectId === DEFAULT_PROJECT_ID) {
+        req.log.error({ err, projectId }, "could not establish requested project scope");
+        reply.code(503).send({
+          detail: `Could not open project: ${projectId}`,
+          reason: "project_unavailable",
+        });
+        return;
+      }
+      reply.header("X-Project-Fallback", projectId);
       projectId = DEFAULT_PROJECT_ID;
-      ensureProjectExists(projectId);
+      try {
+        ensureProjectExists(projectId);
+      } catch (fallbackError) {
+        done(fallbackError instanceof Error ? fallbackError : new Error(String(fallbackError)));
+        return;
+      }
     }
     withActiveProject(projectId, () => done());
   });
@@ -142,13 +185,17 @@ export async function buildApp() {
   await registerNextExperimentRoutes(app);
   await registerNotebookRobustnessRoutes(app);
   await registerSandboxRoutes(app);
+  await registerOfficeRoutes(app);
   await registerSkillRoutes(app);
   await registerPromptRoutes(app);
   await registerAutomationRoutes(app);
   await registerSystemRoutes(app);
   await registerMcpRoutes(app);
   await registerCredentialRoutes(app);
+  await registerAppSettingsRoutes(app);
   await registerAgentRoutes(app);
+  await registerSubagentMeterRoutes(app);
+  await registerSubagentRoutes(app);
   await registerSpeechRoutes(app);
   await registerModalRoutes(app);
   await registerModelProviderRoutes(app);
@@ -158,6 +205,10 @@ export async function buildApp() {
   // whose accounting write was interrupted by a prior shutdown.
   await modalJobManager.recoverAllProjects();
   await notebookRobustness.recoverAll();
+  for (const project of listProjects()) {
+    try { recoverSubagentUsage(project.id); }
+    catch (error) { app.log.error({ err: error, projectId: project.id }, "Specialist accounting recovery failed; new child requests remain blocked until repaired"); }
+  }
 
   return app;
 }
@@ -184,10 +235,17 @@ if (isMain) {
   process.on("unhandledRejection", (reason) => {
     console.error("[server] unhandled promise rejection", reason);
   });
+  // Owner-only files when started without the launcher (which sets this for
+  // both services): project data and keys stay private on shared hosts.
+  if (process.platform !== "win32" && !process.env.KADY_LAUNCHER) {
+    const configured = process.env.KADY_UMASK?.trim();
+    process.umask(configured && /^[0-7]{3,4}$/.test(configured) ? parseInt(configured, 8) : 0o077);
+  }
   // Before anything makes an outbound request: Node's fetch ignores
   // HTTP_PROXY/HTTPS_PROXY on its own, so a proxied network would otherwise
   // only be used by the child `pi` processes that run subagents.
   const proxy = configureHttpProxy();
+  const tokenSuppliedAtBoot = (process.env.KADY_AUTH_TOKEN?.trim().length ?? 0) >= 16;
   syncHelperVenv(); // best-effort; previews degrade gracefully if it fails
   const app = await buildApp();
   // Durable pi-subagents schedules fire from a resident session per project;
@@ -209,6 +267,27 @@ if (isMain) {
     .listen({ port: PORT, host: HOST })
     .then((addr) => {
       app.log.info(`kady-server listening on ${addr}`);
+      const token = ensureAuthToken();
+      if (isExposedBind()) {
+        app.log.warn(
+          `KADY_HOST=${HOST} exposes the Kady API beyond this machine. Anyone who can ` +
+            "reach this port can run the agent (a shell as your user), read project " +
+            "data and change credentials" +
+            (token
+              ? "; an access token is required for every request."
+              : ", and KADY_REQUIRE_AUTH=0 has disabled the access token.") +
+            " Prefer the default 127.0.0.1 and an SSH tunnel.",
+        );
+      }
+      // The launcher prints its own UI link carrying the token; a backend
+      // started on its own says where to find it.
+      if (token && !process.env.KADY_LAUNCHER) {
+        // Like Jupyter: printed once to the terminal, never into the JSON log.
+        console.error(
+          `\n  Kady access token required. Open the UI with:\n` +
+            `    <ui-url>/#kady-token=${tokenSuppliedAtBoot ? "<your KADY_AUTH_TOKEN>" : token}\n`,
+        );
+      }
       startAutomaticSkillSync(app.log);
     })
     .catch((err) => {

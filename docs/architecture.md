@@ -1,181 +1,83 @@
 # Architecture
 
-This page explains how K-Dense BYOK runs on your computer. You do not need to read this to use the app - it is here if you are curious or troubleshooting.
+K-Dense BYOK runs two services on the backend host, launched by `start.mjs`
+through `start.sh` or `start.cmd`:
 
-## The two services
+| Service | Default port | Responsibility |
+|---|---|---|
+| Next.js / React frontend (`web/`) | 3000 | Project workspace, chat, editors and previews |
+| Fastify / TypeScript backend (`server/`) | 8000 | Pi sessions, tools, files, accounting and compute |
 
-The start script (`start.sh` on macOS/Linux, `start.cmd` on Windows — both thin wrappers around the cross-platform `start.mjs` launcher) launches two local services that work together:
+The backend embeds one Pi lead agent per session. It can delegate native Pi
+specialists, use web/MCP tools and submit durable Modal jobs. Model requests go
+directly to the configured provider. See [model access](model-selection.md) and
+[the security boundary](security.md).
 
-| Service | Port | What it does |
-|---------|------|--------------|
-| **Frontend** (Next.js) | 3000 | The web interface in your browser - chat, file browser, and file previews |
-| **Backend** (TypeScript + Pi SDK) | 8000 | The "brain" - runs Kady (a single Pi agent), manages your sandbox, files, sessions, and cost ledger |
+## Turn lifecycle
 
-The backend embeds the [Pi coding-agent SDK](https://pi.dev) and runs **one flat agent** with built-in file/shell tools, a `subagent` delegation tool (the [pi-subagents](https://github.com/nicobailon/pi-subagents) extension — see [Sub-agents](./sub-agents.md)), web search and fetch tools (pi-web-access), an `interview` tool for clarifying questions, the `notebook` tool behind the [Living Lab Notebook](./lab-notebook.md), PDF annotation tools, the durable [Modal compute](./modal-compute.md) tools, and any external tools you've connected via [MCP servers](./mcp-servers.md). Model calls go directly to **OpenRouter**, **NVIDIA NIM**, **Ollama** or another local OpenAI-compatible server, or a connected Pi OAuth provider (**OpenAI Codex, Anthropic, GitHub Copilot, or xAI**) — there is no separate proxy.
+1. A chat request supplies a session ID and project scope (`X-Project-Id`).
+2. The backend claims the session, resolves its model and starts a run.
+3. Pi events feed a server-owned run broker, the browser's SSE stream and the provenance recorder.
+4. Tool calls operate on the shared project sandbox. Child agents report usage and completion through the backend.
+5. The run drains provenance work, records cost and publishes terminal frames.
 
-When you send a message:
+A permanent session observer adopts extension-triggered turns as system runs
+through the same pipeline. Idle tabs discover and attach to them. Custom
+messages without a turn are published as notices.
 
-1. The frontend POSTs to the backend, tagged with the project id (`X-Project-Id`) and the chat tab's session id.
-2. The backend runs the Pi agent for that session; the agent uses its tools and may delegate to sub-agents (each sub-agent is a native Pi session inside a detached runner process that pi-subagents starts, working in the same sandbox, with usage ledgered under the parent session).
-3. Model calls go straight to the selected OpenRouter, NVIDIA NIM, Ollama, or authenticated Pi provider.
-4. A backend run broker sequences and buffers events (text, tool calls, cost)
-   and streams them to the browser over SSE. The broker, rather than an
-   individual browser connection, owns the live turn.
-5. Alongside the stream, a provenance recorder watches the same events and
-   appends one observed step per tool call (files read and written, with
-   hashes) — see [Provenance](./provenance.md).
+The broker survives browser disconnects, not backend restarts. Completed history
+is durable; active ordinary turns end on restart. Modal jobs have their own
+persistent lifecycle and [recovery](modal-compute.md#lifecycle-and-recovery).
 
-Heavy remote commands follow a separate durable path. The lead agent or a
-sub-agent submits a project-scoped Modal job to the backend job manager. The
-manager reserves budget, persists the job under `.kady/modal/`, owns the remote
-sandbox, streams bounded logs, and atomically brings declared outputs back into
-the local sandbox. Because the sandbox id and lifecycle are persisted, the
-manager can reconnect after a backend restart. See
-[Durable Modal compute](./modal-compute.md).
+## Session and project ownership
 
-## Chat tabs and sessions
+Each project supports up to ten chat tabs. A tab owns its history, model and run;
+all project tabs share files, notebook view, cost cap and compute jobs. Closing
+an in-app chat tab aborts its turn. Browser refresh only detaches/reconnects.
 
-Every chat tab in the UI is backed by its own backend **session**. A session
-is a single conversation: an id, an ordered list of messages, and a cost
-ledger. You can open up to 10 tabs in a project. The browser persists the tab
-layout and recoverable workspace state locally, while each tab's conversation
-is persisted on disk under that project.
+Settings changes that affect loaded tools, skills and specialist definitions
+apply to new sessions. A resident automation session keeps project schedules
+active while the server runs. Shared provider credentials are outside projects.
 
-What a tab owns (per-tab):
+## Storage
 
-- Message history (a Pi JSONL session file under `projects/<project>/sandbox/.pi/sessions/`).
-- The selected model.
-- Attached files for the next message and the queued-message buffer.
-- Cost ledger (`projects/<project>/sandbox/.kady/runs/<sessionId>/costs.jsonl`).
-- The live run subscription. Refreshing or closing the browser only detaches
-  that subscriber; reopening replays buffered frames and resumes the same
-  turn. Clicking Stop (or closing the chat tab inside Kady) explicitly aborts
-  that session's turn.
-
-What every tab in a project shares:
-
-- The sandbox (`projects/<project>/sandbox/`) — files written by one tab are
-  immediately visible to the others.
-- Project settings: the budget cap (`spendLimitUsd`) and the project-level
-  cost total shown in the header pill.
-- API keys and global preferences from the repo-root `.env`, plus the process-wide Kady Pi OAuth store shared by lead and child agents.
-- The Living Lab Notebook (project view), provenance log, and Modal job list — all read across every tab's session.
-
-### System-initiated runs
-
-Not every turn starts with a message you typed. The pi-subagents extension
-loaded into each session can inject a message on its own — a background
-specialist asking for a decision through `contact_supervisor`, a scheduled
-run's completion notice, a watchdog finding — and Pi then runs a turn on the
-idle session. A per-session observer (`server/src/agent/session-observer.ts`)
-adopts such a turn as a **system run**: it claims the session exactly like
-`POST /sessions/:id/run` does, opens a run in the broker with `origin:
-"system"`, and hands it to the same pipeline (`server/src/agent/run-pipeline.ts`),
-so it is streamed, provenance-recorded, cost-ledgered and abortable like any
-other run. Over the project cap the run is aborted (and its partial spend
-ledgered) instead of continuing unattended. A custom message appended without
-a turn is published as a short `kind: "notice"` run. Idle chat tabs probe
-`GET /sessions/:id/run/state?frames=0` every few seconds and attach when a run
-they did not start appears; those messages render as cards between the
-bubbles (and as `role: "system"` items in `GET /sessions/:id/history`).
-
-Two details keep system runs affordable and possible at all. Pi emits
-`session_start` only from `AgentSession.bindExtensions()`, so Kady calls it
-(headless `mode: "print"`) right after creating every session; without it
-pi-subagents never starts its supervisor channel, never registers the
-parent-side `subagent_supervisor` tool, and never resets per-session state.
-And a session that is cold-opened after a restart starts on the model it last
-ran with (a brand-new one on the model most recently used in a chat of the
-project) rather than the global default — user runs set the model per request
-anyway, but a system run uses whatever the session holds. A send that lands
-while a system run is streaming is not rejected: the tab adopts the live run
-and queues the message as a follow-up.
-
-Switching tabs in the UI is purely client-side; the backend doesn't need to
-know which tab is "active" because each request already carries its own
-session id. Inactive tabs stay mounted in the DOM (hidden with CSS) so a
-streaming turn keeps producing output even when you're looking at another
-tab. Browser refreshes remount the saved workspaces and reattach each active
-session through the run broker. This recovery boundary is process-local:
-restarting the backend ends active turns, while completed JSONL history and
-cost ledgers remain durable.
-
-## First-run setup
-
-The first time you start the app (`./start.sh` or `start.cmd`), it will automatically:
-
-- Install backend dependencies (`server/`) and frontend dependencies (`web/`)
-- Install [uv](https://docs.astral.sh/uv/) if missing - the Python manager Kady uses to run analyses in each sandbox
-- Create your `.env` from `.env.example` if you haven't yet, and warn if no OpenRouter key, NVIDIA key, stored subscription login, or local Ollama is immediately detectable (the UI still opens for provider setup)
-- Download the scientific skills catalogue into each project's `sandbox/.pi/skills/`
-
-Subsequent starts are much faster.
-
-## Project layout
-
-```
-k-dense-byok/
-├── start.mjs             ← The launcher that starts everything (cross-platform)
-├── start.sh / start.cmd  ← Thin macOS-Linux / Windows wrappers around it
-├── .env                  ← Optional API keys and overrides (gitignored)
-├── server/               ← Backend (TypeScript, Pi SDK)
-│   └── src/
-│       ├── index.ts          ← Fastify app, CORS, project-scope hook
-│       ├── projects.ts       ← Project registry + path resolution
-│       ├── agent/            ← Pi wiring: models, sessions, tools, events, skills, notebook
-│       ├── modal/            ← Durable Modal jobs, storage, resources, transfers
-│       ├── provenance/       ← Observed step recorder, sandbox scanner, lineage lookup
-│       ├── evidence/         ← Reviewer evidence packages
-│       ├── latex/            ← LaTeX compile, SyncTeX, AI assist
-│       ├── helpers/          ← Python helpers (uv venv) for scientific file previews
-│       ├── api/              ← Routes: projects, sessions (SSE), sandbox, notebook, skills, system
-│       └── cost/             ← Billing policy, ledger, and budget caps
-├── web/                  ← Frontend (the UI you see in your browser)
-├── docs/                 ← Extended documentation (this folder)
-└── projects/             ← All user work, one subdirectory per named project
-    ├── index.json        ← Project registry (names, tags, archived flag)
-    └── default/          ← The "Default" project
-        ├── project.json      ← Project metadata
-        └── sandbox/          ← Workspace (the Pi agent's cwd)
-            ├── .pi/skills/        ← Per-project scientific skills (disabled ones sit in .pi/skills-disabled/)
-            ├── .pi/agents/        ← Sub-agent definitions (one .md per specialist; disabled ones in .pi/agents-disabled/)
-            ├── .pi/mcp.json       ← MCP server connections for this project
-            ├── .pi/sessions/      ← Pi JSONL session files (one per chat tab)
-            ├── .kady/runs/<sessionId>/costs.jsonl        ← Per-session cost ledger
-            ├── .kady/notebook/<sessionId>.jsonl          ← Living Lab Notebook entries (+ annotation sidecars, plans)
-            ├── .kady/provenance/<sessionId>/steps.jsonl  ← Observed step provenance
-            ├── .kady/environments/<id>.json              ← Content-addressed environment snapshots
-            ├── .kady/evidence/                           ← Reviewer evidence packages and version vault
-            └── .kady/modal/jobs/<jobId>/                 ← Durable compute state + logs
+```text
+projects/
+  index.json
+  <projectId>/
+    project.json
+    sandbox/
+      user_data/                         uploads
+      .pi/sessions/                      Pi conversation JSONL
+      .pi/skills/                        enabled project skills
+      .pi/agents/                        specialist definitions
+      .pi/prompts/                       prompt templates
+      .pi/mcp.json                       project connectors
+      .kady/runs/<sessionId>/costs.jsonl  usage ledger
+      .kady/notebook/                     entries, annotations and reviewed plans
+      .kady/provenance/                   observed tool steps
+      .kady/environments/                 environment snapshots
+      .kady/evidence/                     reviewer packages and retained versions
+      .kady/modal/                        jobs, logs and verified output staging
 ```
 
-The OAuth store intentionally sits outside this tree at `~/.kady/pi-agent/auth.json` by default, so tokens are not copied into projects or session files.
+`KADY_PROJECTS_ROOT` relocates projects. The shared Pi directory defaults to
+`~/.kady/pi-agent/` and holds auth, global skills/prompts/connectors and defaults.
+`KADY_PI_AGENT_DIR` relocates it; explicit `PI_CODING_AGENT_DIR` takes precedence.
+Keys saved through Settings live in the repo-root `.env`.
 
-## Provider authentication
+## Source map
 
-**Settings → Model providers** drives Pi's OAuth implementations through backend flow endpoints. Depending on the provider, the dialog presents a browser link, device code, or manual prompt. Connected models are read from Pi's live provider registry. Providers that also take an API key (Anthropic, xAI, Kimi) accept either credential; OpenAI Codex, GitHub Copilot, and Radius are OAuth-only.
+| Area | Entry points |
+|---|---|
+| Server and scope | [`index.ts`](../server/src/index.ts), [`scope.ts`](../server/src/scope.ts), [`projects.ts`](../server/src/projects.ts) |
+| Agent lifecycle | [`session-registry.ts`](../server/src/agent/session-registry.ts), [`run-pipeline.ts`](../server/src/agent/run-pipeline.ts), [`session-observer.ts`](../server/src/agent/session-observer.ts) |
+| Model access and accounting | [`models.ts`](../server/src/agent/models.ts), [`provider-catalog.ts`](../server/src/agent/provider-catalog.ts), [`cost/`](../server/src/cost/) |
+| Specialists and MCP | [`subagent-control.ts`](../server/src/agent/subagent-control.ts), [`kady-child-runtime`](../server/pi-packages/kady-child-runtime/), [`mcp.ts`](../server/src/agent/mcp.ts) |
+| Notebook and provenance | [`notebook.ts`](../server/src/agent/notebook.ts), [`provenance/`](../server/src/provenance/), [`evidence/`](../server/src/evidence/) |
+| Remote compute | [`modal-tool.ts`](../server/src/agent/modal-tool.ts), [`modal/`](../server/src/modal/) |
+| File previews | [`sandbox.ts`](../server/src/api/sandbox.ts), [`helpers/`](../server/src/helpers/), [`registry.ts`](../web/src/lib/viewers/registry.ts) |
+| Settings | [`settings-dialog.tsx`](../web/src/components/settings-dialog.tsx), [`settings/`](../web/src/components/settings/) |
 
-The backend creates one process-wide Pi `ModelRuntime` with its auth path set to Kady's store. `server/src/env.ts` defaults `PI_CODING_AGENT_DIR` to `~/.kady/pi-agent`, or to `KADY_PI_AGENT_DIR` when that override is set. An explicitly supplied `PI_CODING_AGENT_DIR` takes precedence and can intentionally point Kady at the same directory as a standalone Pi installation. The subagent runner process inherits it, so lead agents and subagents use the same file-locked `auth.json`.
-
-## Model selection and routing
-
-Each chat tab picks one model. Model refs from the picker look like
-`openrouter/<vendor>/<model>`, `ollama/<name>`, `openai-compatible/<id>`, or
-`<pi-provider>/<model-id>` for every other built-in Pi provider — `nvidia/…`,
-`anthropic/…`, `openai/…`, `groq/…`, `amazon-bedrock/…`, `cloudflare-workers-ai/@cf/…`,
-and so on; the id after the prefix is kept verbatim because many contain slashes.
-These canonical `provider/model` refs are also used by ledgers and subagents.
-The backend resolves them to Pi `Model` objects (`server/src/agent/models.ts`):
-OpenRouter uses `OPENROUTER_API_KEY` (or an OpenRouter sign-in), Ollama points at
-`OLLAMA_BASE_URL`, and every other provider uses the credential Pi resolves for it —
-an API key or cloud configuration from `server/src/agent/provider-catalog.ts`
-(managed in Settings → API keys), or an OAuth login from `provider-auth.ts`.
-There is no proxy — Pi calls the provider directly. OpenRouter
-Fusion and the server-side speech transcription fallback remain OpenRouter-only.
-See
-[Local models with Ollama](./local-models-ollama.md) and
-[Model selection](./model-selection.md).
-
-## Usage accounting and budgets
-
-Pi supplies token usage and a model-price-derived USD value for lead and child runs. The central billing policy records OpenRouter and Anthropic OAuth (`metered_oauth`) values as spend. OpenAI Codex, GitHub Copilot, and xAI OAuth runs instead record tokens and a list-price reference with `costUsd: 0`, so they do not consume the Kady project cap; their real quotas and overages remain provider-managed. NVIDIA NIM and the prepaid Qwen/Xiaomi token plans are classified the same way — they bill provider-managed credits or a plan quota rather than per-token USD, so tokens are recorded without cap-counted spend. Every other direct API-key provider (Anthropic, OpenAI, Google, Azure, Bedrock, Groq, …) is `payg` at Pi's list price and counts toward the cap; an OpenRouter or Radius OAuth sign-in bills like a key. Ollama and OpenAI-compatible local servers are `local` at $0, while Modal compute reserves and then settles its estimated cost. This accounting avoids calling subscription usage free while keeping the project cap limited to charges Kady can meter.
+For development commands, SDK integration constraints and release mechanics,
+see [AGENTS.md](../AGENTS.md). For UI invariants, see [Performance](performance.md).

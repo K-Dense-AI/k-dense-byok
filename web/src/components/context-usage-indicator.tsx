@@ -1,10 +1,11 @@
 "use client";
 
-import { GaugeIcon, ScissorsIcon } from "lucide-react";
+import { GaugeIcon, ScissorsIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { cn, formatCompactTokens } from "@/lib/utils";
 import type { ContextUsage } from "@/lib/use-agent";
+import { openSettings } from "@/lib/settings-nav";
 
 export function ContextUsageIndicator({
   usage,
@@ -93,6 +94,24 @@ export function ContextUsageIndicator({
           className="inline-flex h-7 items-center rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
         >
           <ScissorsIcon className="size-3.5" aria-hidden />
+        </button>
+      </InfoTooltip>
+      <InfoTooltip
+        content={
+          <>
+            <b>Compaction settings</b>
+            <br />
+            Automatic compaction and how much recent context it keeps, for every chat in this project.
+          </>
+        }
+      >
+        <button
+          type="button"
+          onClick={() => openSettings({ tab: "project", section: "context" })}
+          aria-label="Compaction settings"
+          className="inline-flex h-7 items-center rounded-md px-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <SlidersHorizontalIcon className="size-3.5" aria-hidden />
         </button>
       </InfoTooltip>
     </span>

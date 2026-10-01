@@ -13,13 +13,15 @@ export const PROVIDER_AUTH_CHANGED_EVENT = "kady:provider-auth-changed";
 export type ProviderBillingMode = "metered_oauth" | "subscription" | "payg";
 
 export interface ModelProviderStatus {
-  /** Pi provider id: openai-codex, anthropic, github-copilot, xai, kimi-coding, openrouter, radius. */
+  /** Pi provider id: openai, openai-codex, anthropic, github-copilot, xai, kimi-coding, meta, openrouter, radius. */
   id: string;
   name: string;
   accountLabel: string;
   billingMode: ProviderBillingMode;
   billingNote: string;
   connected: boolean;
+  /** Pi can resolve a key or OAuth credential, including keys in auth.json. */
+  configured?: boolean;
   needsReauth?: boolean;
   credentialType: "oauth" | "api_key" | null;
   source: string | null;

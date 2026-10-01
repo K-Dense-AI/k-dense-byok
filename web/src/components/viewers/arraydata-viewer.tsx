@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { sciSummaryUrl } from "@/lib/use-sandbox";
+import { fileCategory, sciSummaryUrl } from "@/lib/use-sandbox";
 import { fetchSciJson, isAbortError } from "@/lib/sci-fetch";
 import type { ViewerProps } from "@/lib/viewers/registry";
+import DataTable, { type TableSummary } from "./data-table";
+import { ArrayVisualization, formatNumber, type ArrayPlot } from "./data-plots";
 
 // ---------------------------------------------------------------------------
 // Shapes (mirrors server/src/helpers/arrays_helper.py's JSON output)
@@ -10,7 +12,7 @@ import type { ViewerProps } from "@/lib/viewers/registry";
 
 interface TreeNode {
   path: string;
-  type: "group" | "dataset";
+  type: "group" | "dataset" | "link";
   shape?: number[];
   dtype?: string;
   attrs?: Record<string, string>;
@@ -23,20 +25,6 @@ interface TreeSummary {
   truncated: boolean;
 }
 
-interface ColumnInfo {
-  name: string;
-  dtype: string;
-}
-interface TableSummary {
-  format: string;
-  kind: "table";
-  file_size: number;
-  num_rows: number;
-  num_columns: number;
-  columns: ColumnInfo[];
-  head: (string | null)[][];
-}
-
 interface ArrayInfo {
   name: string;
   shape: number[];
@@ -44,7 +32,7 @@ interface ArrayInfo {
   min: number | null;
   max: number | null;
   mean: number | null;
-  preview: (number | string)[];
+  preview: (number | string | null)[];
 }
 interface NdarraySummary {
   format: string;
@@ -71,7 +59,15 @@ interface VariablesSummary {
   global_attrs: Record<string, string>;
 }
 
-type ArraysSummary = TreeSummary | TableSummary | NdarraySummary | VariablesSummary;
+interface DatasetInfo { key: string; name: string; shape: number[]; dtype: string; unavailable?: string }
+type ArraysSummary = (TreeSummary | TableSummary | NdarraySummary | VariablesSummary) & {
+  datasets?: DatasetInfo[];
+  selected?: string;
+  plot?: ArrayPlot | null;
+  plot_note?: string;
+  value_preview?: string[];
+  truncated?: boolean;
+};
 
 // ---------------------------------------------------------------------------
 // Small shared bits
@@ -84,11 +80,6 @@ function Stat({ label, value }: { label: string; value: string }) {
       <div className="font-mono text-xs">{value}</div>
     </div>
   );
-}
-
-function fmtNum(v: number | null): string {
-  if (v == null) return "—";
-  return Number.isInteger(v) ? String(v) : v.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function fmtBytes(n: number): string {
@@ -150,54 +141,6 @@ function TreeView({ summary }: { summary: TreeSummary }) {
 }
 
 // ---------------------------------------------------------------------------
-// kind:"table" (Parquet)
-// ---------------------------------------------------------------------------
-
-function TableView({ summary }: { summary: TableSummary }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-3 border-b bg-background/95 px-4 py-2 text-xs">
-        <span className="font-semibold">
-          {summary.num_rows.toLocaleString()} rows · {summary.num_columns} cols
-        </span>
-      </div>
-      <div className="flex-1 overflow-auto">
-        <table className="w-full border-collapse text-xs">
-          <thead>
-            <tr>
-              {summary.columns.map((c) => (
-                <th
-                  key={c.name}
-                  className="sticky top-0 border-b bg-muted px-3 py-1.5 text-left font-semibold whitespace-nowrap"
-                >
-                  {c.name}
-                  <span className="ml-1 font-normal text-muted-foreground">{c.dtype}</span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {summary.head.map((row, ri) => (
-              <tr key={ri} className="border-b border-muted/50 hover:bg-muted/20">
-                {row.map((cell, ci) => (
-                  <td
-                    key={ci}
-                    className="max-w-[280px] truncate px-3 py-1 text-muted-foreground"
-                    title={cell ?? ""}
-                  >
-                    {cell ?? ""}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // kind:"ndarray" (npy/npz)
 // ---------------------------------------------------------------------------
 
@@ -213,16 +156,16 @@ function NdarrayView({ summary }: { summary: NdarraySummary }) {
             </span>
           </div>
           <div className="mb-2 flex flex-wrap gap-2">
-            <Stat label="min" value={fmtNum(arr.min)} />
-            <Stat label="max" value={fmtNum(arr.max)} />
-            <Stat label="mean" value={fmtNum(arr.mean)} />
+            <Stat label="min" value={formatNumber(arr.min)} />
+            <Stat label="max" value={formatNumber(arr.max)} />
+            <Stat label="mean" value={formatNumber(arr.mean)} />
           </div>
           <div className="overflow-x-auto rounded bg-muted/20 p-2">
             <p className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-              preview{arr.preview.length > 0 ? ` (first ${arr.preview.length})` : ""}
+              displayed values{arr.preview.length > 0 ? ` (first ${arr.preview.length})` : ""}
             </p>
             <p className="whitespace-pre-wrap break-all font-mono text-[11px]">
-              {arr.preview.length > 0 ? arr.preview.join(", ") : "(empty)"}
+              {arr.preview.length > 0 ? arr.preview.map(value => value ?? "—").join(", ") : "(empty)"}
             </p>
           </div>
         </div>
@@ -306,59 +249,91 @@ function VariablesView({ summary }: { summary: VariablesSummary }) {
 // Root viewer
 // ---------------------------------------------------------------------------
 
-export default function ArrayDataViewer({ path, projectId }: ViewerProps) {
+export default function ArrayDataViewer(props: ViewerProps) {
+  // Selection belongs to a file and project, including when an open tab is reused.
+  return <DataPreview key={`${props.projectId}:${props.path}`} {...props} />;
+}
+
+function DataPreview({ path, projectId }: ViewerProps) {
   const [summary, setSummary] = useState<ArraysSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [key, setKey] = useState<string | undefined>();
+  const [slice, setSlice] = useState(0);
+  const [retry, setRetry] = useState(0);
+  const [completedRequest, setCompletedRequest] = useState<string | null>(null);
+  const kind = (fileCategory(path) === "datatable" || /\.xlsx$/i.test(path)) ? "tables" : "arrays";
+  const requestId = JSON.stringify([kind, key, slice, retry]);
+  const loading = completedRequest !== requestId;
 
   useEffect(() => {
     const ac = new AbortController();
-    setSummary(null);
-    setError(null);
-    fetchSciJson<ArraysSummary>(sciSummaryUrl(path, "arrays", projectId), { signal: ac.signal })
-      .then((d) => {
-        if (!ac.signal.aborted) setSummary(d);
-      })
-      .catch((e) => {
-        if (!isAbortError(e)) setError(String(e.message ?? e));
-      });
+    fetchSciJson<ArraysSummary>(sciSummaryUrl(path, kind, projectId, { key, slice }), { signal: ac.signal })
+      .then((data) => { if (!ac.signal.aborted) { setSummary(data); setError(null); } })
+      .catch((e) => { if (!ac.signal.aborted && !isAbortError(e)) setError(String(e.message ?? e)); })
+      .finally(() => { if (!ac.signal.aborted) setCompletedRequest(requestId); });
     return () => ac.abort();
-  }, [path, projectId]);
+  }, [path, projectId, kind, key, slice, retry, requestId]);
 
-  if (error) {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
-        <p className="font-medium">Array data preview failed</p>
-        <p className="max-w-md text-xs">{error}</p>
-      </div>
-    );
-  }
+  const collections = summary?.kind === "table" ? summary.collections : undefined;
+  const selection = key ?? summary?.selected ?? "";
+  const activeDataset = summary?.datasets?.find(dataset => dataset.key === selection);
+  // A slice may use exact text when its integers cannot be plotted safely.
+  // Keep navigation available so the user can still inspect other slices.
+  const sliceCount = summary?.plot?.slices ?? activeDataset?.shape.slice(0, -2).reduce((count, size) => count * size, 1) ?? 1;
+  const shownArrays = summary?.kind === "ndarray" && activeDataset
+    ? { ...summary, arrays: summary.arrays.filter(array => array.name === activeDataset.name) } : null;
 
-  if (!summary) {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="size-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full flex-col overflow-auto">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2 text-xs shrink-0">
+  return <div className="flex h-full flex-col overflow-auto" aria-busy={loading}>
+    {summary && <>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2 text-xs">
         <span className="font-semibold">{summary.format}</span>
-        <span className="text-muted-foreground">·</span>
         <span className="text-muted-foreground">{fmtBytes(summary.file_size)}</span>
       </div>
-      <div className="flex-1 overflow-auto">
-        {summary.kind === "tree" && <TreeView summary={summary} />}
-        {summary.kind === "table" && <TableView summary={summary} />}
-        {summary.kind === "ndarray" && <NdarrayView summary={summary} />}
-        {summary.kind === "variables" && <VariablesView summary={summary} />}
-        {!(["tree", "table", "ndarray", "variables"] as string[]).includes(summary.kind) && (
-          <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
-            Unrecognized array format{summary.kind ? ` (kind: ${summary.kind})` : ""}.
-          </div>
-        )}
+      <div className="flex flex-wrap items-center gap-3 px-4 pt-3 text-xs">
+        {collections && collections.length > 0 && <label className="flex min-w-0 items-center gap-2">
+          {summary.format === "xlsx" ? "Sheet" : "Table"}
+          <select aria-label={summary.format === "xlsx" ? "Sheet" : "Table"} className="min-w-0 max-w-80 rounded border bg-background px-2 py-1.5"
+            value={selection} disabled={loading} onChange={e => { setKey(e.target.value); setSlice(0); }}>
+            {collections.map(name => <option key={name} value={name}>{name}</option>)}
+          </select>
+        </label>}
+        {summary.datasets && summary.datasets.length > 0 && <label className="flex min-w-0 items-center gap-2">Dataset
+          <select aria-label="Dataset" className="min-w-0 max-w-96 rounded border bg-background px-2 py-1.5" value={selection}
+            disabled={loading} onChange={e => { setKey(e.target.value); setSlice(0); }}>
+            {summary.datasets.map(dataset => <option key={dataset.key} value={dataset.key}>
+              {dataset.name || "Array"} · [{dataset.shape.join(" × ")}] · {dataset.dtype}
+            </option>)}
+          </select>
+        </label>}
+        {Number.isSafeInteger(sliceCount) && sliceCount > 1 && <div className="flex items-center gap-2">
+          <button aria-label="Previous slice" className="rounded border px-2 py-1 disabled:opacity-40" disabled={loading || slice === 0} onClick={() => setSlice(slice - 1)}>←</button>
+          <label className="flex items-center gap-2">Slice
+            <input aria-label="Slice" className="w-20 rounded border bg-background px-2 py-1" type="number" min={0} max={sliceCount - 1}
+              value={slice} disabled={loading} onChange={e => {
+                const value = Number(e.target.value);
+                if (Number.isSafeInteger(value) && value >= 0 && value < sliceCount) setSlice(value);
+              }} />
+          </label>
+          <span className="text-muted-foreground">of {sliceCount} (zero-based)</span>
+          <button aria-label="Next slice" className="rounded border px-2 py-1 disabled:opacity-40" disabled={loading || slice >= sliceCount - 1} onClick={() => setSlice(slice + 1)}>→</button>
+        </div>}
       </div>
-    </div>
-  );
+    </>}
+    {loading ? <div role="status" className="flex flex-1 items-center justify-center gap-2 p-8 text-xs text-muted-foreground">
+      <div className="size-4 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />Loading preview…
+    </div> : error ? <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center text-sm text-muted-foreground">
+      <p className="font-medium">Data preview failed</p><p className="max-w-md text-xs">{error}</p>
+      <button className="mt-2 rounded border px-3 py-1 text-xs" onClick={() => setRetry(retry + 1)}>Retry preview</button>
+    </div> : summary && <div className="flex-1 overflow-auto">
+      {summary.plot && <div className="p-4 pb-0"><ArrayVisualization plot={summary.plot} /></div>}
+      {summary.plot_note && <p className="px-4 pt-4 text-xs text-muted-foreground">{summary.plot_note}</p>}
+      {!!summary.value_preview?.length && <p className="break-all px-4 pt-2 font-mono text-xs">Values: {summary.value_preview.join(", ")}</p>}
+      {summary.kind === "tree" && <TreeView summary={summary} />}
+      {summary.kind === "table" && <DataTable key={summary.selected ?? "table"} summary={summary} />}
+      {summary.kind === "ndarray" && <NdarrayView summary={shownArrays ?? summary} />}
+      {summary.kind === "variables" && <VariablesView summary={summary} />}
+      {summary.truncated && summary.kind === "ndarray" && <p className="px-4 pb-4 text-xs text-muted-foreground">Dataset list limited to the first 100 entries.</p>}
+      {summary.kind === "table" && summary.collections_truncated && <p className="px-4 pb-4 text-xs text-muted-foreground">Sheet/table list limited to the first 100 entries.</p>}
+    </div>}
+  </div>;
 }

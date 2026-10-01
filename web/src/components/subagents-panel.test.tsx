@@ -1,10 +1,13 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as agentsLib from "@/lib/agents";
 import * as useProjects from "@/lib/use-projects";
 import { SubagentsPanel } from "@/components/subagents-panel";
 
+beforeEach(() => {
+  vi.spyOn(agentsLib, "getSpecialistDefaultModel").mockResolvedValue(null);
+});
 afterEach(() => vi.restoreAllMocks());
 
 const watchdog = (overrides: Partial<agentsLib.WatchdogSettings> = {}): agentsLib.WatchdogSettings => ({
@@ -16,7 +19,7 @@ const watchdog = (overrides: Partial<agentsLib.WatchdogSettings> = {}): agentsLi
   children: false,
   watchdogMd: true,
   stalemateRepeats: 3,
-  metered: false,
+  metered: true,
   ...overrides,
 });
 
@@ -40,7 +43,7 @@ describe("SubagentsPanel toggle", () => {
 });
 
 describe("WatchdogCard", () => {
-  it("shows the unmetered warning, enables the watchdog and saves a model", async () => {
+  it("shows the metering explanation, enables the watchdog and saves a model", async () => {
     vi.spyOn(useProjects, "useProjects").mockReturnValue({
       activeProject: { id: "p1", name: "P1" },
       activeProjectId: "p1",
@@ -52,10 +55,11 @@ describe("WatchdogCard", () => {
       .mockImplementation(async (patch) => watchdog({ enabled: true, ...patch }));
 
     render(<SubagentsPanel />);
-    expect(await screen.findByText(/not metered by pi-subagents/)).toBeInTheDocument();
+    expect(await screen.findByText(/Watchdog reviews add model usage/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("switch", { name: "Enable watchdog" }));
     await waitFor(() => expect(save).toHaveBeenCalledWith({ enabled: true }));
-    const model = await screen.findByLabelText("Watchdog model");
+    await userEvent.click(await screen.findByRole("button", { name: "Type a model id for Watchdog model" }));
+    const model = screen.getByLabelText("Watchdog model");
     await userEvent.type(model, "openrouter/openai/gpt-5.5");
     await userEvent.tab();
     await waitFor(() => expect(save).toHaveBeenCalledWith({ model: "openrouter/openai/gpt-5.5" }));
@@ -109,5 +113,70 @@ describe("SubagentsPanel persistent memory", () => {
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(save).toHaveBeenCalled());
     expect(save.mock.calls[0][1]).toMatchObject({ memory: { scope: "user", path: "plain" } });
+  });
+});
+
+describe("SubagentsPanel confirmations and defaults", () => {
+  const mockProject = () =>
+    vi.spyOn(useProjects, "useProjects").mockReturnValue({
+      activeProject: { id: "p1", name: "P1" },
+      activeProjectId: "p1",
+    } as unknown as ReturnType<typeof useProjects.useProjects>);
+
+  it("asks before deleting a specialist", async () => {
+    mockProject();
+    vi.spyOn(agentsLib, "getWatchdogSettings").mockResolvedValue(watchdog());
+    vi.spyOn(agentsLib, "getAgents").mockResolvedValue([
+      { name: "plain", description: "no memory", source: "project", systemPrompt: "y", enabled: true },
+    ]);
+    const remove = vi.spyOn(agentsLib, "deleteAgent").mockResolvedValue();
+    render(<SubagentsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: "Delete plain" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    expect(remove).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Delete plain" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith("plain"));
+  });
+
+  it("asks before restoring the default roster", async () => {
+    mockProject();
+    vi.spyOn(agentsLib, "getWatchdogSettings").mockResolvedValue(watchdog());
+    vi.spyOn(agentsLib, "getAgents").mockResolvedValue([]);
+    const restore = vi.spyOn(agentsLib, "restoreDefaultAgents").mockResolvedValue([]);
+    render(<SubagentsPanel />);
+    await userEvent.click(await screen.findByRole("button", { name: /restore defaults/i }));
+    expect(restore).not.toHaveBeenCalled();
+    await userEvent.click(await screen.findByRole("button", { name: "Restore defaults" }));
+    await waitFor(() => expect(restore).toHaveBeenCalled());
+  });
+
+  it("saves the specialists' default model from a typed id", async () => {
+    mockProject();
+    vi.spyOn(agentsLib, "getWatchdogSettings").mockResolvedValue(watchdog());
+    vi.spyOn(agentsLib, "getAgents").mockResolvedValue([]);
+    const save = vi.spyOn(agentsLib, "saveSpecialistDefaultModel").mockImplementation(async (model) => model);
+    render(<SubagentsPanel />);
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Type a model id for Default specialist model" }),
+    );
+    await userEvent.type(screen.getByLabelText("Default specialist model"), "openrouter/openai/gpt-5.5{Enter}");
+    await waitFor(() => expect(save).toHaveBeenCalledWith("openrouter/openai/gpt-5.5"));
+  });
+
+  it("commits the watchdog cadence on blur, not per keystroke", async () => {
+    mockProject();
+    vi.spyOn(agentsLib, "getAgents").mockResolvedValue([]);
+    vi.spyOn(agentsLib, "getWatchdogSettings").mockResolvedValue(watchdog({ enabled: true }));
+    const save = vi
+      .spyOn(agentsLib, "saveWatchdogSettings")
+      .mockImplementation(async (patch) => watchdog({ enabled: true, ...patch }));
+    render(<SubagentsPanel />);
+    const cadence = await screen.findByLabelText("Watchdog cadence");
+    await userEvent.type(cadence, "50");
+    expect(save).not.toHaveBeenCalled();
+    await userEvent.tab();
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ cadenceEveryNTools: 50 }));
+    expect(save).toHaveBeenCalledTimes(1);
   });
 });

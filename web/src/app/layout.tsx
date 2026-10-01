@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ProjectProvider } from "@/lib/use-projects";
+import { ApiTokenGate } from "@/components/api-token-gate";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
             <TooltipProvider delayDuration={350}>{children}</TooltipProvider>
           </ProjectProvider>
           <Toaster />
+          <ApiTokenGate />
         </ThemeProvider>
       </body>
     </html>

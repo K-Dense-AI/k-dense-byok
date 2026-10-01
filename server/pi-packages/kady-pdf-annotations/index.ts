@@ -66,12 +66,13 @@ function result(value: unknown, details: Record<string, unknown> = {}) {
 }
 
 export function makeChildPdfAnnotationTools(
-  sandboxRoot = process.cwd(),
+  sandboxRoot: string | (() => string) = process.cwd(),
   author: PdfAnnotationAuthor | (() => PdfAnnotationAuthor) = childAuthor,
 ): ToolDefinition<any>[] {
   // Resolved per call: the child only learns its session at `session_start`,
   // after these tools were built.
   const resolveAuthor = typeof author === "function" ? author : () => author;
+  const root = () => typeof sandboxRoot === "function" ? sandboxRoot() : sandboxRoot;
   const add: ToolDefinition<typeof AddPdfAnnotationParams> = {
     name: "add_pdf_annotation",
     label: "Annotate PDF",
@@ -89,7 +90,7 @@ export function makeChildPdfAnnotationTools(
     ],
     parameters: AddPdfAnnotationParams,
     execute: async (_toolCallId, params: AddPdfAnnotationParamsT) => {
-      const annotation = await addPdfAnnotation(sandboxRoot, params, resolveAuthor());
+      const annotation = await addPdfAnnotation(root(), params, resolveAuthor());
       return result(annotation, { annotation });
     },
   };
@@ -101,7 +102,7 @@ export function makeChildPdfAnnotationTools(
       "List annotations already attached to a sandbox PDF, optionally filtered by page or author kind.",
     parameters: ListPdfAnnotationsParams,
     execute: async (_toolCallId, params: ListPdfAnnotationsParamsT) => {
-      const annotations = listPdfAnnotations(sandboxRoot, params);
+      const annotations = listPdfAnnotations(root(), params);
       return result(annotations, annotations);
     },
   };
@@ -113,7 +114,7 @@ export function makeChildPdfAnnotationTools(
       "Remove an expert-authored PDF annotation by id. User annotations are protected.",
     parameters: RemovePdfAnnotationParams,
     execute: async (_toolCallId, params: RemovePdfAnnotationParamsT) => {
-      const removed = await removePdfAnnotation(sandboxRoot, params);
+      const removed = await removePdfAnnotation(root(), params);
       return result(removed, removed);
     },
   };
@@ -125,8 +126,13 @@ export const pdfAnnotationChildTools = makeChildPdfAnnotationTools();
 
 export default function registerPdfAnnotationTools(pi: ExtensionAPI): void {
   if (!process.env.PI_SUBAGENT_CHILD) return;
+  registerChildPdfAnnotations(pi);
+}
+export function registerChildPdfAnnotations(pi: ExtensionAPI): void {
   const identity = trackSubagentChildIdentity(pi);
-  for (const tool of makeChildPdfAnnotationTools(process.cwd(), () => childAuthor(identity()))) {
+  let sandbox = process.cwd();
+  pi.on("session_start", (_event, ctx) => { sandbox = ctx.cwd; });
+  for (const tool of makeChildPdfAnnotationTools(() => sandbox, () => childAuthor(identity()))) {
     pi.registerTool(tool);
   }
 }

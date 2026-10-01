@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { API_BASE, apiFetch, useProjectScopeId } from "@/lib/projects";
+import { withApiToken } from "@/lib/api-auth";
 import type { ActivityItem } from "@/lib/use-agent";
 import { cn } from "@/lib/utils";
 
@@ -94,7 +95,7 @@ function fence(source: string, lang = ""): string {
  * pinned to the interview's project so background workspaces stay isolated. */
 function imageSrc(src: string, projectId: string): string {
   if (/^(https?:|data:|blob:)/.test(src)) return src;
-  return `${API_BASE}/sandbox/raw?path=${encodeURIComponent(src)}&project=${encodeURIComponent(projectId)}`;
+  return withApiToken(`${API_BASE}/sandbox/raw?path=${encodeURIComponent(src)}&project=${encodeURIComponent(projectId)}`);
 }
 
 function ChartMedia({ config }: { config: unknown }) {

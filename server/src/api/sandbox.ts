@@ -42,6 +42,9 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ANNDATA_HELPER = path.join(__dirname, "..", "helpers", "anndata_helper.py");
 const MAX_PREVIEW_BYTES = 512_000;
+// CSV renders only 250 rows at a time. Allow useful research tables without
+// lifting the tighter bound for unpaginated text/code previews.
+const MAX_CSV_PREVIEW_BYTES = 8_000_000;
 const TREE_EXCLUDED_DIRS = new Set(["__pycache__", "node_modules"]);
 
 function isTreeExcludedDir(name: string): boolean {
@@ -284,7 +287,6 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
 
   app.post("/sandbox/upload", async (req, reply) => {
     const paths = activePaths();
-    fs.mkdirSync(paths.uploadDir, { recursive: true });
     // Files stream straight to a staging dir instead of being buffered: with a
     // 1GB per-file limit, holding a whole multi-file upload in memory is an
     // easy out-of-memory kill for exactly the large datasets this is for.
@@ -316,6 +318,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       const saved: string[] = [];
       const savedAbs: string[] = [];
       const renamed: { from: string; to: string }[] = [];
+      const destinations: { temp: string; dest: string }[] = [];
       for (let i = 0; i < staged.length; i++) {
         const rel = (relPaths[i] ?? "").trim();
         let dest: string;
@@ -330,11 +333,17 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
           if (!safeName || safeName.startsWith(".")) continue;
           dest = path.join(paths.uploadDir, safeName);
         }
+        // Folder uploads can encounter existing symlinks, including user_data
+        // itself. Validate the entire batch before installing any files, so a
+        // rejected destination cannot leave an unreported partial upload.
+        destinations.push({ temp: staged[i].temp, dest: safePath(apiRelative(paths.sandbox, dest)) });
+      }
+      for (const { temp, dest } of destinations) {
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         // Re-uploading a name that already exists used to destroy the original
         // with no warning. Park the new copy beside it instead.
-        const finalDest = uniqueDestination(dest);
-        moveFile(staged[i].temp, finalDest);
+        const finalDest = safePath(apiRelative(paths.sandbox, uniqueDestination(dest)));
+        moveFile(temp, finalDest);
         if (finalDest !== dest) {
           renamed.push({
             from: apiRelative(paths.sandbox, dest),
@@ -349,6 +358,11 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       // not read as "no recorded provenance" downstream.
       await recordUpload(currentProjectId(), paths.sandbox, savedAbs, provenanceWarn(req));
       return { uploaded: saved, renamed };
+    } catch (err) {
+      if (err instanceof SandboxError) return handle(reply, err);
+      // Let Fastify retain multipart errors' HTTP status (for example 413
+      // when a folder exceeds its part limit), while finally clears staging.
+      throw err;
     } finally {
       fs.rmSync(stagingRoot, { recursive: true, force: true });
     }
@@ -365,7 +379,8 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       try {
         const stat = await file.stat({ bigint: true });
         if (!stat.isFile()) return reply.code(404).send("File not found");
-        if (stat.size > BigInt(MAX_PREVIEW_BYTES)) {
+        const maxBytes = path.extname(target).toLowerCase() === ".csv" ? MAX_CSV_PREVIEW_BYTES : MAX_PREVIEW_BYTES;
+        if (stat.size > BigInt(maxBytes)) {
           return reply.code(413).send("File too large to preview");
         }
         // Include inode + change time: atomic replacement and same-size edits
@@ -379,14 +394,14 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
         }
         // A file can grow after stat while an agent writes it. Bound the
         // actual read too, rather than allocating a newly huge dataset.
-        const buffer = Buffer.allocUnsafe(MAX_PREVIEW_BYTES + 1);
+        const buffer = Buffer.allocUnsafe(maxBytes + 1);
         let length = 0;
         while (length < buffer.length) {
           const { bytesRead } = await file.read(buffer, length, buffer.length - length, length);
           if (!bytesRead) break;
           length += bytesRead;
         }
-        if (length > MAX_PREVIEW_BYTES) return reply.code(413).send("File too large to preview");
+        if (length > maxBytes) return reply.code(413).send("File too large to preview");
         const content = buffer.subarray(0, length).toString("utf-8");
         // Don't let an in-place write during this read validate mixed bytes.
         if (version(await file.stat({ bigint: true })) === etag) reply.header("ETag", etag);
@@ -483,6 +498,16 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       // Stat-only: the bytes do not change in a rename, so the input hashes
       // are taken from the destination afterward instead of hashing twice.
       const priors = await collectPrior(sandboxRoot, srcPath, { hash: false });
+      // Another request can move/create the destination while provenance is
+      // being read. Recheck immediately before the synchronous rename, which
+      // otherwise replaces an existing file on POSIX.
+      safePath(src);
+      safePath(dest);
+      if (!fs.existsSync(srcPath)) throw new SandboxError(404, "Source not found");
+      if (fs.existsSync(destPath)) throw new SandboxError(409, "Destination already exists");
+      if (!fs.existsSync(path.dirname(destPath))) {
+        throw new SandboxError(404, "Destination parent directory not found");
+      }
       fs.renameSync(srcPath, destPath);
       const srcSidecar = srcPath + ".annotations.json";
       if (fs.existsSync(srcSidecar)) {
@@ -729,11 +754,18 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
   );
 
   // --- generic scientific-file previews (chem/structure/...) via Python helper ---
-  app.get<{ Querystring: { path: string; kind: string } }>("/sandbox/sci-summary", async (req, reply) => {
+  app.get<{ Querystring: { path: string; kind: string; key?: string; slice?: string } }>("/sandbox/sci-summary", async (req, reply) => {
     try {
       if (!sciHelperFor(req.query.kind)) {
         reply.code(400);
         return { detail: `Unknown kind: ${req.query.kind}` };
+      }
+      const { key, slice } = req.query;
+      if ((key !== undefined && (typeof key !== "string" || key.length > 1024 || key.includes("\0"))) ||
+          (slice !== undefined && (!/^\d+$/.test(slice) || !Number.isSafeInteger(Number(slice)))) ||
+          ((key !== undefined || slice !== undefined) && !["arrays", "tables"].includes(req.query.kind))) {
+        reply.code(400);
+        return { detail: "Invalid scientific preview selection" };
       }
       const target = safePath(req.query.path);
       if (!fs.existsSync(target) || !fs.statSync(target).isFile()) {
@@ -742,6 +774,7 @@ export async function registerSandboxRoutes(app: FastifyInstance): Promise<void>
       }
       const res = await requestPreview(reply, {
         projectId: currentProjectId(), target, script: sciHelperFor(req.query.kind)!.script, command: "summarize",
+        params: key !== undefined || slice !== undefined ? [key ?? "", slice ?? "0"] : undefined,
       });
       reply.header("Cache-Control", "private, no-cache");
       if (res.timedOut) {
