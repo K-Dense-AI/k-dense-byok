@@ -8,6 +8,7 @@
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimePaths } from "./runtime-paths.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -19,8 +20,14 @@ export const REPO_ROOT = path.resolve(__dirname, "..", "..");
 export const PROJECTS_ROOT = path.resolve(
   process.env.KADY_PROJECTS_ROOT
     ? process.env.KADY_PROJECTS_ROOT
-    : path.join(REPO_ROOT, "projects"),
+    : runtimePaths().projects,
 );
+
+// A misdirected test command must never fall back to real user projects.
+// The normal Vitest configuration supplies an isolated temporary directory.
+if (process.env.VITEST && (!process.env.KADY_PROJECTS_ROOT || PROJECTS_ROOT === path.join(REPO_ROOT, "projects"))) {
+  throw new Error("Tests require an explicit isolated KADY_PROJECTS_ROOT. Run npm test --prefix server.");
+}
 
 /** App-scoped Pi configuration/auth directory, established by env.ts. */
 const rawPiAgentDir =
@@ -50,7 +57,7 @@ export const SKILLS_BRANCH = process.env.KADY_SKILLS_BRANCH ?? "main";
  */
 export const KADY_SKILLS_CACHE_DIR = path.resolve(
   process.env.KADY_SKILLS_CACHE_DIR?.trim() ||
-    path.join(os.homedir(), ".kady", "skills-cache"),
+    path.join(runtimePaths().cache, "skills-cache"),
 );
 
 export const DEFAULT_PROJECT_ID = "default";

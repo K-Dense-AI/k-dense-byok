@@ -112,6 +112,27 @@ for (const [name, mod] of [
       expect(mod.globToRegExp("reference").test("reference/genome.fa")).toBe(true);
       expect(mod.globToRegExp("data.??").test("data.gz")).toBe(true);
     });
+    it("protects Windows drive, UNC and Git Bash paths with case-insensitive matching", () => {
+      for (const sandboxRoot of ["C:\\Study Folder\\sandbox", "\\\\host\\share\\sandbox"]) {
+        const windows = { protectedGlobs: globs, sandboxRoot };
+        for (const target of [`${sandboxRoot}\\user_data\\a.csv`, `${sandboxRoot.toLowerCase()}/USER_DATA/a.csv`]) {
+          expect(mod.classifyFilePath(target, windows).kind).toBe("protected");
+          expect(mod.classifyBashCommand(`rm "${target}"`, windows).kind).toBe("protected");
+        }
+        expect(mod.classifyFilePath(`${sandboxRoot}-other/user_data/a.csv`, windows).kind).toBe("allow");
+      }
+      const windows = { protectedGlobs: globs, sandboxRoot: "C:\\Study Folder\\sandbox" };
+      expect(mod.classifyBashCommand('rm "/c/Study Folder/sandbox/user_data/a.csv"', windows).kind).toBe("protected");
+      expect(mod.classifyFilePath("D:/Study Folder/sandbox/user_data/a.csv", windows).kind).toBe("allow");
+    });
+    it("treats a leading shell escape as relative, not as a root", () => {
+      // bash runs `rm \user_data/a.csv` as `rm user_data/a.csv`.
+      for (const sandboxRoot of ["/home/u/proj/sandbox", "C:\\Study Folder\\sandbox"]) {
+        const options = { protectedGlobs: globs, sandboxRoot };
+        expect(mod.classifyBashCommand("rm \\user_data/a.csv", options).kind).toBe("protected");
+        expect(mod.classifyBashCommand("rm \\user_data\\a.csv", options).kind).toBe("protected");
+      }
+    });
   });
 }
 

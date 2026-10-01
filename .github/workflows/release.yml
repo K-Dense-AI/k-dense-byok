@@ -5,10 +5,15 @@ on:
     branches: [main]
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      fresh: ${{ steps.check.outputs.exists == 'false' }}
+      signed: ${{ steps.signing.outputs.configured }}
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -17,24 +22,106 @@ jobs:
       - name: Get version from server/package.json
         id: version
         run: |
-          VERSION=$(node -p "require('./server/package.json').version")
+          VERSION=$(node -e "const v=require('./server/package.json').version;if(!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(v))process.exit(1);process.stdout.write(v)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag exists
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+          if git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            # An upload failure can leave a draft. Retry only this same commit.
+            if [ "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA" ] && \
+               [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create release
-        if: steps.check.outputs.exists == 'false'
+      # Installers are published only when signed; signing.mjs and
+      # installer.mjs fail closed. Until the credentials exist, a version bump
+      # still tags and releases the source, as before installers existed.
+      # A partial set is a configuration mistake, so it fails here.
+      - name: Check signing configuration
+        id: signing
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          names="MACOS_CERTIFICATE_P12 MACOS_CERTIFICATE_PASSWORD MACOS_SIGN_IDENTITY APPLE_API_KEY_P8 APPLE_API_KEY_ID APPLE_API_ISSUER WINDOWS_CERTIFICATE_PFX WINDOWS_CERTIFICATE_PASSWORD"
+          missing=""
+          for name in $names; do [ -n "${!name}" ] || missing="$missing $name"; done
+          if [ -z "$missing" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          elif [ "$(echo $missing)" = "$names" ]; then
+            echo "::notice::Signing credentials are not configured; releasing source only."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Signing is partly configured. Missing secrets:$missing"
+            exit 1
+          fi
+
+  installers:
+    needs: version
+    if: needs.version.outputs.fresh == 'true' && needs.version.outputs.signed == 'true'
+    uses: ./.github/workflows/distributions.yml
+    with:
+      release: true
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  publish:
+    needs: [version, installers]
+    if: >-
+      always() && needs.version.outputs.fresh == 'true' &&
+      (needs.installers.result == 'success' ||
+       (needs.installers.result == 'skipped' && needs.version.outputs.signed == 'false'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        if: needs.version.outputs.signed == 'true'
+        with:
+          pattern: installers-*
+          path: dist/installers
+      - name: Collect installers and verify checksums
+        if: needs.version.outputs.signed == 'true'
+        run: node packaging/collect-release.mjs
+      - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+          SIGNED: ${{ needs.version.outputs.signed }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes
+          assets=() notes=()
+          if [ "$SIGNED" = "true" ]; then
+            assets=(dist/release/*)
+          else
+            notes=(--notes "Source release: signed desktop installers are not available for this version. Install from source as described in docs/installation.md.")
+          fi
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = "true" ]
+            [ ${#assets[@]} -eq 0 ] || gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" --title "$RELEASE_TAG" \
+              --generate-notes "${notes[@]}" --draft "${assets[@]}"
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false

@@ -7,6 +7,13 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
+// These HTTP tests use fake sessions; interpreter startup is not part of the
+// steering/abort contract. Real environment probes have their own coverage and
+// can take up to 15s on Windows, exceeding the HTTP test's timeout.
+vi.mock("../src/provenance/environment.ts", async (original) => ({
+  ...await original<Record<string, unknown>>(), captureEnvironment: async () => null,
+}));
+
 const fakeSessions = new Map<string, FakeSession>();
 
 class FakeSession {
@@ -153,16 +160,18 @@ import { resolvePaths } from "../src/projects.ts";
 
 const app = await buildApp();
 
-beforeEach(() => {
+beforeEach(async () => {
   fakeSessions.clear();
   runBroker.clear();
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
 });
 
 afterAll(async () => {
   await app.close();
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+  // Windows may briefly retain directory handles after child processes exit.
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 function steer(id: string, body: unknown, projectId = "default") {
@@ -554,7 +563,7 @@ describe("system-initiated runs vs POST /sessions/:id/run", () => {
       s.emit({ type: "agent_end" });
       s.isStreaming = false;
       s.emit({ type: "agent_settled" });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await runBroker.get("default", "s1")!.waitForCompletion();
       expect(runBroker.state("default", "s1").status).toBe("complete");
 
       const state = await app.inject({

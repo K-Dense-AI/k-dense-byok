@@ -12,15 +12,19 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { applyEnvFile } from "../../env-file.mjs";
+import { runtimePaths } from "./runtime-paths.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "..", "..");
 
 // Later files do not override earlier ones (existing env always wins), so
 // order is just discovery preference.
-applyEnvFile(path.join(repoRoot, ".env"));
-applyEnvFile(path.join(repoRoot, "kady_agent", ".env"));
-applyEnvFile(path.join(repoRoot, "server", ".env"));
+const runtime = runtimePaths();
+applyEnvFile(runtime.credentials);
+if (!runtime.packaged) {
+  applyEnvFile(path.join(repoRoot, "kady_agent", ".env"));
+  applyEnvFile(path.join(repoRoot, "server", ".env"));
+}
 
 // Keep Kady's Pi credentials/settings separate from the user's standalone Pi
 // CLI by default. The same environment variable is inherited by pi-subagents'
@@ -41,4 +45,4 @@ const expandedPiDir =
     : configuredPiDir.startsWith("~/") || configuredPiDir.startsWith("~\\")
       ? path.join(os.homedir(), configuredPiDir.slice(2))
       : configuredPiDir;
-process.env.PI_CODING_AGENT_DIR = path.resolve(repoRoot, expandedPiDir);
+process.env.PI_CODING_AGENT_DIR = path.resolve(runtime.packaged ? runtime.data : repoRoot, expandedPiDir);

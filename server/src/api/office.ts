@@ -49,7 +49,10 @@ async function run(args: string[]) {
   if (result.status !== 0) {
     const missing = /No module named/.test(result.stderr);
     throw new SandboxError(missing ? 503 : result.status === 5 ? 422 : 500,
-      missing ? "Office preview dependencies are unavailable. Restart Kady to finish helper setup." : result.stderr || "Office document processing failed");
+      missing ? process.env.KADY_PACKAGED === "1"
+        ? "Install scientific previews in Settings → Services, then reopen this document."
+        : "Office preview dependencies are unavailable. Restart Kady to finish helper setup."
+        : result.stderr || "Office document processing failed");
   }
   return JSON.parse(result.stdout);
 }

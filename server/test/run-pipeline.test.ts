@@ -7,6 +7,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
+// Pipeline tests control probe completion instead of starting host interpreters.
+const captureEnvironment = vi.hoisted(() => vi.fn(async (): Promise<null> => null));
+vi.mock("../src/provenance/environment.ts", async (original) => ({
+  ...await original<Record<string, unknown>>(), captureEnvironment,
+}));
+
 const pinSession = vi.fn();
 const unpinSession = vi.fn();
 vi.mock("../src/agent/session-registry.ts", () => ({
@@ -57,8 +63,9 @@ const costRows = (projectId: string, sessionId: string) => {
 };
 
 let projectId: string;
-beforeEach(() => {
-  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
+beforeEach(async () => {
+  // Windows may briefly retain directory handles after child processes exit.
+  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
   runBroker.clear();
   pinSession.mockClear();
@@ -222,7 +229,13 @@ describe("executeRun", () => {
     });
     opened.handle.requestAbort();
     const run = vi.fn(async () => {});
-    await executeRun(opened, { session, paths: resolvePaths(projectId), billing: payg, budgetPolicy: "refuse", log, run });
+    let finishProbe!: () => void;
+    captureEnvironment.mockImplementationOnce(() => new Promise<null>((resolve) => { finishProbe = () => resolve(null); }));
+    const executing = executeRun(opened, { session, paths: resolvePaths(projectId), billing: payg, budgetPolicy: "refuse", log, run });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(opened.handle.isComplete).toBe(false);
+    finishProbe();
+    await executing;
     expect(run).not.toHaveBeenCalled();
     expect(opened.handle.isComplete).toBe(true);
     expect(isRunClaimed(projectId, session.sessionId)).toBe(false);

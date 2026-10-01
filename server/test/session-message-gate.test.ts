@@ -9,9 +9,15 @@ import { sessionCostSummary } from "../src/cost/ledger.ts";
 import { runBroker } from "../src/agent/run-broker.ts";
 import { ProvenanceRecorder } from "../src/provenance/recorder.ts";
 
+// Keep message ordering independent of host Python/R startup. The recorder's
+// real queue/flush and the Pi message boundaries are still exercised below.
+vi.mock("../src/provenance/environment.ts", async (original) => ({
+  ...await original<Record<string, unknown>>(), captureEnvironment: async () => null,
+}));
+
 const projectId = "message-gate";
-afterEach(() => {
-  disposeProjectSessions(projectId);
+afterEach(async () => {
+  await disposeProjectSessions(projectId);
   vi.restoreAllMocks();
 });
 

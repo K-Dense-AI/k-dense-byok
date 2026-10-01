@@ -78,3 +78,29 @@ it("invalidates SQLite previews when the WAL changes without changing the main f
   await getPreview(request);
   expect(run).toHaveBeenCalledTimes(2);
 });
+
+it("invalidates installed-app previews when the helper environment is reinstalled", async () => {
+  vi.stubEnv("KADY_PACKAGED", "1");
+  vi.stubEnv("KADY_CACHE_DIR", root);
+  try {
+    const { helperEnvironmentDir } = await import("../src/helpers-env.ts");
+    const environment = helperEnvironmentDir();
+    expect(environment.startsWith(root)).toBe(true);
+    await fs.mkdir(environment, { recursive: true });
+    await fs.writeFile(path.join(environment, ".kady-ready"), "first install");
+    const target = path.join(root, "installed.npy");
+    const script = path.join(root, "installed.py");
+    await fs.writeFile(target, "array");
+    await fs.writeFile(script, "script");
+    run.mockReset().mockResolvedValue({ status: 0, stdout: "{}", stderr: "", timedOut: false });
+    const request = { projectId: "one", target, script, command: "summarize" as const };
+    await getPreview(request);
+    await getPreview(request);
+    expect(run).toHaveBeenCalledTimes(1);
+    // Retry setup removes and rewrites the marker (a new inode/ctime).
+    await fs.rm(path.join(environment, ".kady-ready"));
+    await fs.writeFile(path.join(environment, ".kady-ready"), "repaired");
+    await getPreview(request);
+    expect(run).toHaveBeenCalledTimes(2);
+  } finally { vi.unstubAllEnvs(); }
+});

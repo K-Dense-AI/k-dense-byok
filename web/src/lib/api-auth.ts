@@ -16,7 +16,7 @@ const HASH_PARAM = "kady-token";
 const QUERY_PARAM = "kady_token";
 export const AUTH_REQUIRED_EVENT = "kady:auth-required";
 
-function captureTokenFromLocation(): void {
+export function captureTokenFromLocation(): void {
   if (typeof window === "undefined") return;
   try {
     const hash = window.location.hash.replace(/^#/, "");

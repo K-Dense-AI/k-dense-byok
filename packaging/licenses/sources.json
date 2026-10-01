@@ -1,0 +1,11 @@
+{
+  "uv-MIT.txt": "https://raw.githubusercontent.com/astral-sh/uv/0.12.21/LICENSE-MIT",
+  "uv-Apache.txt": "https://raw.githubusercontent.com/astral-sh/uv/0.12.21/LICENSE-APACHE",
+  "dugite-native-GPL.txt": "https://raw.githubusercontent.com/desktop/dugite-native/v2.53.0-4/LICENSE.md",
+  "git-GPL.txt": "https://raw.githubusercontent.com/git/git/v2.53.0/COPYING",
+  "git-for-windows-GPL.txt": "https://raw.githubusercontent.com/git-for-windows/git/v2.56.0.windows.1/COPYING",
+  "Go-BSD.txt": "https://raw.githubusercontent.com/golang/go/go1.27.1/LICENSE",
+  "x-sys-BSD.txt": "https://raw.githubusercontent.com/golang/sys/v0.31.0/LICENSE",
+  "git-lfs-MIT.txt": "https://raw.githubusercontent.com/git-lfs/git-lfs/v3.7.1/LICENSE.md",
+  "git-credential-manager-MIT.txt": "https://raw.githubusercontent.com/git-ecosystem/git-credential-manager/v2.9.0/LICENSE"
+}

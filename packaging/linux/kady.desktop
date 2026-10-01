@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Kady
+Comment=K-Dense BYOK research assistant
+Exec=/opt/kady/kady
+Icon=kady
+Terminal=false
+Categories=Science;Education;
+StartupNotify=false
+Actions=Stop;
+
+[Desktop Action Stop]
+Name=Stop Kady
+Exec=/opt/kady/kady stop

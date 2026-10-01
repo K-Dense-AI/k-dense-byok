@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AUTH_REQUIRED_EVENT, getApiToken, setApiToken } from "@/lib/api-auth";
+import { AUTH_REQUIRED_EVENT, captureTokenFromLocation, getApiToken, setApiToken } from "@/lib/api-auth";
 
 export function ApiTokenGate() {
   const [open, setOpen] = useState(false);
@@ -25,12 +25,19 @@ export function ApiTokenGate() {
   const [hadToken, setHadToken] = useState(false);
 
   useEffect(() => {
+    // Next's initial hydration can restore the original fragment after the
+    // module-level capture. Clear it again after mounting and on navigation.
+    captureTokenFromLocation();
+    window.addEventListener("hashchange", captureTokenFromLocation);
     const onRequired = () => {
       setHadToken(Boolean(getApiToken()));
       setOpen(true);
     };
     window.addEventListener(AUTH_REQUIRED_EVENT, onRequired);
-    return () => window.removeEventListener(AUTH_REQUIRED_EVENT, onRequired);
+    return () => {
+      window.removeEventListener("hashchange", captureTokenFromLocation);
+      window.removeEventListener(AUTH_REQUIRED_EVENT, onRequired);
+    };
   }, []);
 
   const submit = () => {

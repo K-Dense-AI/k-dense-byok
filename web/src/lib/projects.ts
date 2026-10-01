@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react";
 import type { ProjectActivitySummary } from "@/lib/project-activity";
 import { noteAuthFailure, withApiTokenHeader } from "@/lib/api-auth";
+import { runtimeApiBase } from "@/lib/runtime-config";
 
 /**
  * Project types, storage, and the `apiFetch` wrapper used by every hook.
@@ -47,8 +48,7 @@ export interface ProjectPatchInput {
 
 export const DEFAULT_PROJECT_ID = "default";
 
-export const API_BASE =
-  process.env.NEXT_PUBLIC_ADK_API_URL ?? "http://localhost:8000";
+export const API_BASE = runtimeApiBase(typeof window === "undefined" ? undefined : window.__KADY_RUNTIME__);
 
 /**
  * Put long-lived SSE requests on a separate browser connection pool from

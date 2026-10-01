@@ -7,8 +7,8 @@ import { ensureSchedulerSession, listSchedules, onScheduleActivity, reconcileBud
 import { setScheduleActivityListener } from "../src/agent/subagent-bridge.ts";
 
 const projectId = "scheduler-resident-regression";
-afterEach(() => {
-  disposeProjectSessions(projectId);
+afterEach(async () => {
+  await disposeProjectSessions(projectId);
   setScheduleActivityListener(null);
   vi.restoreAllMocks();
 });
@@ -55,7 +55,7 @@ describe("resident schedule ownership with real Pi sessions", () => {
     expect(armed.size).toBe(0);
     await action(chat, { action: "schedule.resume", id: "later" });
     expect(armed.size).toBe(1);
-    disposeSession(projectId, chat.sessionId);
+    await disposeSession(projectId, chat.sessionId);
     await reconcileBudgetHolds(projectId);
     expect(listSchedules(projectId)).toMatchObject([{ id: "later", paused: false }]);
     expect(armed.size).toBe(1);
@@ -72,7 +72,7 @@ describe("resident schedule ownership with real Pi sessions", () => {
     });
     await ensureSchedulerSession(projectId);
     expect(armed.size).toBe(1);
-    disposeSession(projectId, scopedChat.sessionId);
+    await disposeSession(projectId, scopedChat.sessionId);
     await vi.waitFor(() => expect(armed.size).toBe(0));
   }, 30_000);
 });

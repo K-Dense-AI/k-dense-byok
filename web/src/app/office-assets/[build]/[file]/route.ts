@@ -10,7 +10,7 @@ const verified = new Map<string, string>();
 const hash = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
 async function asset(name: string): Promise<string> {
-  const root = process.env.KADY_OFFICE_ASSETS_DIR || path.join(os.homedir(), ".kady", "office-assets", OFFICE_BUILD);
+  const root = process.env.KADY_OFFICE_ASSETS_DIR || path.join(process.env.KADY_OFFICE_CACHE_DIR || path.join(os.homedir(), ".kady", "office-assets"), OFFICE_BUILD);
   const file = path.join(root, name), spec = OFFICE_ASSETS[name];
   await fs.promises.mkdir(root, { recursive: true });
   try {

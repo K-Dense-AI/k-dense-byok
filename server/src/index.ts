@@ -29,8 +29,9 @@ import { registerSkillRoutes } from "./api/skills.ts";
 import { registerPromptRoutes } from "./api/prompts.ts";
 import { registerAutomationRoutes } from "./api/automation.ts";
 import { setScheduleActivityListener } from "./agent/subagent-bridge.ts";
-import { bootSchedulerSessions, configureScheduler, onScheduleActivity, startSchedulerTick } from "./agent/scheduler.ts";
+import { bootSchedulerSessions, configureScheduler, onScheduleActivity, startSchedulerTick, stopSchedulerTick } from "./agent/scheduler.ts";
 import { registerSystemRoutes } from "./api/system.ts";
+import { registerInstallationRoutes } from "./api/installation.ts";
 import { registerMcpRoutes } from "./api/mcp.ts";
 import { registerCredentialRoutes } from "./api/credentials.ts";
 import { registerAppSettingsRoutes } from "./api/app-settings.ts";
@@ -38,7 +39,8 @@ import { registerAgentRoutes } from "./api/agents.ts";
 import { registerSpeechRoutes } from "./api/speech.ts";
 import { registerModalRoutes } from "./api/modal.ts";
 import { registerModelProviderRoutes } from "./api/model-providers.ts";
-import { setSessionObserver } from "./agent/session-registry.ts";
+import { abortProjectSessions, disposeProjectSessions, setSessionObserver } from "./agent/session-registry.ts";
+import { runBroker } from "./agent/run-broker.ts";
 import { attachSessionObserver } from "./agent/session-observer.ts";
 import { registerNextExperimentRoutes } from "./api/next-experiments.ts";
 import { registerEvidencePackageRoutes } from "./api/evidence-packages.ts";
@@ -190,6 +192,7 @@ export async function buildApp() {
   await registerPromptRoutes(app);
   await registerAutomationRoutes(app);
   await registerSystemRoutes(app);
+  await registerInstallationRoutes(app);
   await registerMcpRoutes(app);
   await registerCredentialRoutes(app);
   await registerAppSettingsRoutes(app);
@@ -246,8 +249,45 @@ if (isMain) {
   // only be used by the child `pi` processes that run subagents.
   const proxy = configureHttpProxy();
   const tokenSuppliedAtBoot = (process.env.KADY_AUTH_TOKEN?.trim().length ?? 0) >= 16;
-  syncHelperVenv(); // best-effort; previews degrade gracefully if it fails
+  // Installed apps offer asynchronous, retryable setup in Settings → Services.
+  if (process.env.KADY_PACKAGED !== "1") syncHelperVenv();
   const app = await buildApp();
+  let stopSkillSync = () => {};
+  let shuttingDown = false;
+  const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    app.log.info("Stopping local work and flushing run records");
+    const deadline = setTimeout(() => {
+      app.log.error("Graceful shutdown timed out");
+      process.exit(1);
+    }, 8000);
+    deadline.unref();
+    stopSchedulerTick();
+    stopSkillSync();
+    setSessionObserver(null);
+    // Fastify rejects new requests while existing SSE runs finish. Remote
+    // Modal jobs retain their durable state and recover on the next launch.
+    const closed = app.close();
+    try {
+      await Promise.all(listProjects().map(async ({ id }) => {
+        const runs = runBroker.activeForProject(id);
+        for (const run of runs) run.requestAbort();
+        await abortProjectSessions(id);
+        await Promise.all(runs.map(run => run.waitForCompletion()));
+        await disposeProjectSessions(id);
+      }));
+      await closed;
+      app.log.info("Kady shutdown complete");
+      clearTimeout(deadline);
+      process.exit(0);
+    } catch (error) {
+      app.log.error({ err: error }, "Kady shutdown failed");
+      process.exit(1);
+    }
+  };
+  process.once("SIGTERM", () => void shutdown());
+  process.once("SIGINT", () => void shutdown());
   // Durable pi-subagents schedules fire from a resident session per project;
   // open those hosts now and keep the budget hold reconciled (not in
   // buildApp: tests must not open Pi sessions).
@@ -288,7 +328,7 @@ if (isMain) {
             `    <ui-url>/#kady-token=${tokenSuppliedAtBoot ? "<your KADY_AUTH_TOKEN>" : token}\n`,
         );
       }
-      startAutomaticSkillSync(app.log);
+      stopSkillSync = startAutomaticSkillSync(app.log);
     })
     .catch((err) => {
       app.log.error(err);

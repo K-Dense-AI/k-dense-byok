@@ -1,0 +1,6 @@
+{
+  "name": "kady-distribution-tests",
+  "private": true,
+  "type": "module",
+  "devDependencies": { "playwright": "1.63.0" }
+}

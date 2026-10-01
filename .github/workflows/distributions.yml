@@ -1,0 +1,144 @@
+name: Distributions
+
+on:
+  workflow_call:
+    inputs:
+      release:
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      release:
+        description: Require production signing credentials
+        type: boolean
+        default: false
+  push:
+    branches-ignore: [main]
+    paths:
+      - 'packaging/**'
+      - 'server/**'
+      - 'web/**'
+      - '.github/workflows/distributions.yml'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: read
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: distributions-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ inputs.release != true }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Installer (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            target: darwin-arm64
+          - os: macos-15-intel
+            target: darwin-x64
+          - os: windows-2022
+            target: win32-x64
+          - os: ubuntu-22.04
+            target: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.21.0'
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            web/package-lock.json
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.27.1'
+          cache-dependency-path: packaging/launcher/go.sum
+      - name: Install build dependencies
+        run: |
+          npm ci --prefix server
+          npm ci --prefix web
+          npm ci --prefix packaging
+      - name: Install test browser
+        run: npm exec --prefix packaging -- playwright install --with-deps chromium
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.12.21'
+          enable-cache: true
+          cache-dependency-glob: server/src/helpers/uv.lock
+      - name: Install scientific test dependencies
+        run: uv sync --frozen --project server/src/helpers --python 3.12.14 --python-preference only-managed
+      - name: Check backend types
+        run: npm run typecheck --prefix server
+      - name: Test backend
+        run: npm test --prefix server
+      - name: Check frontend types
+        run: npm exec --prefix web -- tsc --noEmit -p web/tsconfig.json
+      - name: Test frontend
+        run: npm test --prefix web
+      - name: Test launcher
+        working-directory: packaging/launcher
+        run: go test -race ./...
+      - name: Build production bundle
+        run: node packaging/build.mjs
+      - name: Exercise installed runtime without developer credentials
+        env:
+          KADY_SMOKE_BROWSER: '1'
+          KADY_SMOKE_HELPERS: '1'
+        run: node packaging/smoke.mjs
+      - name: Install Linux package builder
+        if: runner.os == 'Linux'
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
+          sudo apt-get update
+          sudo apt-get install -y libarchive-tools
+      - name: Prepare signing credentials
+        if: inputs.release == true && runner.os != 'Linux'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
+        run: node packaging/signing.mjs
+      - name: Create installers
+        id: package
+        env:
+          KADY_RELEASE: ${{ inputs.release == true && '1' || '0' }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: node packaging/installer.mjs
+      - name: Verify actual installer payloads
+        run: node packaging/check-installers.mjs
+      - name: Remove signing material
+        if: always() && inputs.release == true && runner.os != 'Linux'
+        run: node packaging/signing.mjs --cleanup
+      - uses: actions/attest-build-provenance@v3
+        if: inputs.release == true
+        with:
+          subject-path: dist/${{ matrix.target }}/artifacts/*
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.package.outcome == 'success'
+        with:
+          name: installers-${{ matrix.target }}
+          path: dist/${{ matrix.target }}/artifacts/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: distribution-diagnostics-${{ matrix.target }}
+          path: dist/diagnostics/**
+          if-no-files-found: ignore
+          retention-days: 7
