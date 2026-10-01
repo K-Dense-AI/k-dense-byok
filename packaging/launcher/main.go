@@ -395,6 +395,16 @@ func serve(p paths) error {
 		gitExec = filepath.Join(p.Resources, "git", "mingw64", "libexec", "git-core")
 	}
 	pathEntries = append(pathEntries, os.Getenv("PATH"))
+	// Finder does not read shell startup files. Include standard optional-tool
+	// locations so Homebrew tools and MacTeX work from an application launch.
+	if runtime.GOOS == "darwin" {
+		pathEntries = append(pathEntries, "/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/local/sbin", "/Library/TeX/texbin")
+	}
+	if runtime.GOOS != "windows" {
+		if home, err := os.UserHomeDir(); err == nil {
+			pathEntries = append(pathEntries, filepath.Join(home, ".local", "bin"))
+		}
+	}
 	guardPath := filepath.ToSlash(filepath.Join(p.Resources, "guard.mjs"))
 	if runtime.GOOS == "windows" {
 		guardPath = "/" + guardPath

@@ -93,6 +93,8 @@ the checked-in helper lockfile. Environments are keyed by that lock in writable
 cache storage; partial installs are never reported as ready and can be retried.
 Office assets download on first use with the existing hash checks into the user
 cache. TeX and user-selected external CLI/MCP programs remain optional tools.
+On macOS, the launcher includes the standard Homebrew and MacTeX binary paths
+even when started from Finder, which does not load the user's shell startup files.
 
 ## Signing and releases
 

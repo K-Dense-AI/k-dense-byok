@@ -25,6 +25,11 @@ async function writable(root, enable) {
 }
 if (process.platform !== "win32") await writable(bundle, false);
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => /^(PATH|SYSTEMROOT|WINDIR|COMSPEC|PATHEXT|TEMP|TMP|HOME|USERPROFILE|LOCALAPPDATA|APPDATA|LANG|CI)$/i.test(key)));
+// A desktop launch has no developer shell's toolchain on PATH.
+for (const key of Object.keys(env)) if (key.toUpperCase() === "PATH") delete env[key];
+env.PATH = process.platform === "win32"
+  ? [env.SystemRoot || env.SYSTEMROOT || "C:\\Windows", path.join(env.SystemRoot || env.SYSTEMROOT || "C:\\Windows", "System32")].join(path.delimiter)
+  : "/usr/bin:/bin:/usr/sbin:/sbin";
 Object.assign(env, { KADY_DATA_DIR: data, KADY_CONFIG_DIR: path.join(temp, "config"), KADY_CACHE_DIR: path.join(temp, "cache"), PI_CODING_AGENT_DIR: path.join(temp, "pi"), KADY_SKILLS_AUTO_SYNC: "0", DEFAULT_MODEL_PROVIDER: "openai", DEFAULT_MODEL_ID: "gpt-4o-mini", OPENAI_API_KEY: "packaging-smoke-fixture" });
 // Occupied requested ports exercise fallback without terminating their owner.
 const occupied = http.createServer((_req, res) => res.end("untouched"));
