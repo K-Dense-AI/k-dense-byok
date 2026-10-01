@@ -55,7 +55,8 @@ fixed filesystem timing.
 ## Release boundary
 
 Apple signing/notarization and Windows Authenticode credentials are not
-configured in this repository. Public release builds require them and fail
-closed when they are absent. Unsigned CI preview artifacts do not establish
+configured in this repository. Installer builds for a release require them and
+fail closed when they are absent; until then, a version bump publishes a
+source-only release without installers. Unsigned CI preview artifacts do not establish
 Gatekeeper, SmartScreen, or signing validity on clean end-user machines.
 See [signing configuration](../../packaging/README.md#signing-and-releases).
