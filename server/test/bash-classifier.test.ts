@@ -125,6 +125,14 @@ for (const [name, mod] of [
       expect(mod.classifyBashCommand('rm "/c/Study Folder/sandbox/user_data/a.csv"', windows).kind).toBe("protected");
       expect(mod.classifyFilePath("D:/Study Folder/sandbox/user_data/a.csv", windows).kind).toBe("allow");
     });
+    it("treats a leading shell escape as relative, not as a root", () => {
+      // bash runs `rm \user_data/a.csv` as `rm user_data/a.csv`.
+      for (const sandboxRoot of ["/home/u/proj/sandbox", "C:\\Study Folder\\sandbox"]) {
+        const options = { protectedGlobs: globs, sandboxRoot };
+        expect(mod.classifyBashCommand("rm \\user_data/a.csv", options).kind).toBe("protected");
+        expect(mod.classifyBashCommand("rm \\user_data\\a.csv", options).kind).toBe("protected");
+      }
+    });
   });
 }
 

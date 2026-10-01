@@ -96,12 +96,18 @@ export function resolveSandboxPath(
   cwd: string,
   sandboxRoot?: string,
 ): string | null {
-  let value = stripQuotes(token).replace(/\\/g, "/");
+  let value = stripQuotes(token);
   if (!value || value.startsWith("~") || value.startsWith("$")) return null;
   const windows = isWindowsRoot(sandboxRoot);
-  // Git Bash can spell the same drive as /c/... while file tools use C:\\...
-  if (windows) value = value.replace(/^\/([a-z])\//i, "$1:/");
-  if (value.startsWith("/") || /^[a-z]:\//i.test(value)) {
+  // Backslashes are separators only beside a Windows sandbox, and a lone
+  // leading one is never a root: bash runs `\user_data/a.csv` as
+  // `user_data/a.csv`, so it stays relative (normalizeRel drops it).
+  if (windows && !/^\\(?!\\)/.test(value)) {
+    value = value.replace(/\\/g, "/");
+    // Git Bash can spell the same drive as /c/... while file tools use C:\\...
+    value = value.replace(/^\/([a-z])\//i, "$1:/");
+  }
+  if (value.startsWith("/") || (windows && /^[a-z]:\//i.test(value))) {
     if (!sandboxRoot) return null;
     const root = sandboxRoot.replace(/\\/g, "/").replace(/\/+$/, "");
     const comparable = windows ? value.toLowerCase() : value;
