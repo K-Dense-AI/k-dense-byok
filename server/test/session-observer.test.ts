@@ -7,6 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
+// These fake-session tests cover lifecycle/accounting, not host interpreters.
+vi.mock("../src/provenance/environment.ts", async (original) => ({
+  ...await original<Record<string, unknown>>(), captureEnvironment: async () => null,
+}));
+
 vi.mock("../src/agent/session-registry.ts", () => ({
   getModelRuntime: vi.fn(() => ({
     checkAuth: vi.fn(async () => ({ type: "api_key", source: "test" })),
