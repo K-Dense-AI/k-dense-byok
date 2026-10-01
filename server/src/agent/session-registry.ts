@@ -70,6 +70,7 @@ import {
   seedPdfAnnotationPackage,
 } from "./pdf-annotation-bridge.ts";
 import { LEAD_DEFAULT_TOOLS, LEAD_EXCLUDED_TOOLS } from "./tools.ts";
+import { registerPackagedShell } from "./packaged-shell.ts";
 import { seedSubagentRuntimeSettings } from "./subagent-runtime-settings.ts";
 
 // Entry points normally establish this in env.ts. Keep the registry safe when
@@ -363,6 +364,7 @@ async function build(
     settingsManager,
     additionalExtensionPaths: [subagentsExtensionPath()],
     extensionFactories: [
+      registerPackagedShell,
       makeSubagentLedgerExtension(
         projectId,
         () => holder.session?.sessionId ?? "",

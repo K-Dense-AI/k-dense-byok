@@ -101,7 +101,7 @@ jobs:
         run: |
           go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0
           sudo apt-get update
-          sudo apt-get install -y rpm2cpio cpio
+          sudo apt-get install -y libarchive-tools
       - name: Prepare signing credentials
         if: inputs.release == true && runner.os != 'Linux'
         env:
@@ -111,6 +111,7 @@ jobs:
           WINDOWS_CERTIFICATE_PFX: ${{ secrets.WINDOWS_CERTIFICATE_PFX }}
         run: node packaging/signing.mjs
       - name: Create installers
+        id: package
         env:
           KADY_RELEASE: ${{ inputs.release == true && '1' || '0' }}
           MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
@@ -128,6 +129,7 @@ jobs:
         with:
           subject-path: dist/${{ matrix.target }}/artifacts/*
       - uses: actions/upload-artifact@v4
+        if: always() && steps.package.outcome == 'success'
         with:
           name: installers-${{ matrix.target }}
           path: dist/${{ matrix.target }}/artifacts/*

@@ -36,10 +36,12 @@ const occupied = http.createServer((_req, res) => res.end("untouched"));
 await new Promise(resolve => occupied.listen(0, "127.0.0.1", resolve));
 env.KADY_PORT = String(occupied.address().port); env.KADY_FRONTEND_PORT = env.KADY_PORT;
 let pendingModelRequest = false;
+const modelToolResults = [];
 const model = http.createServer(async (req, res) => {
   if (req.url === "/v1/models") { res.setHeader("Content-Type", "application/json"); res.end(JSON.stringify({ data: [{ id: "packaging-smoke" }] })); return; }
   const chunks = []; for await (const chunk of req) chunks.push(chunk);
   const body = JSON.parse(Buffer.concat(chunks).toString());
+  modelToolResults.push(...body.messages.filter(message => message.role === "tool"));
   res.writeHead(200, { "Content-Type": "text/event-stream" });
   const send = data => res.write("data: " + JSON.stringify(data) + "\n\n");
   const hasResult = body.messages.some(m => m.role === "tool");
@@ -47,8 +49,10 @@ const model = http.createServer(async (req, res) => {
   if (userText.includes("PACKAGING_WAIT") && hasResult) { pendingModelRequest = true; res.flushHeaders(); return; }
   const childTask = userText.includes("PACKAGING_CHILD");
   const delegate = !childTask && userText.includes("PACKAGING_DELEGATE");
+  const childShell = childTask && process.platform === "win32";
   const tool = userText.includes("PACKAGING_SHELL") ? { name: "bash", arguments: JSON.stringify({ command: "node --version > packaging-node.txt && npm --version > packaging-npm.txt && uv --version > packaging-uv.txt && git --version > packaging-git.txt && rg --version > packaging-rg.txt && fd --version > packaging-fd.txt" }) }
     : delegate ? { name: "subagent", arguments: JSON.stringify({ workflowScript: "return runs.run('smoke-child', { agent: 'worker', task: 'PACKAGING_CHILD: Write packaging-child.txt with the exact text Packaged runtime verified.' })" }) }
+    : childShell ? { name: "bash", arguments: JSON.stringify({ command: "node --version && npm --version && uv --version && git --version && rg --version && fd --version && printf 'Packaged runtime verified.\\n' > packaging-child.txt" }) }
     : { name: "write", arguments: JSON.stringify({ path: childTask ? "packaging-child.txt" : "packaging-smoke.txt", content: "Packaged runtime verified.\n" }) };
   const delta = hasResult ? { content: "Packaged runtime verified." } : { tool_calls: [{ index: 0, id: "smoke_write", type: "function", function: tool }] };
   send({ id: "smoke", object: "chat.completion.chunk", model: "packaging-smoke", choices: [{ index: 0, delta, finish_reason: null }] });
@@ -105,6 +109,9 @@ try {
   const shellSession = await request("/sessions", { method: "POST" }).then(r => r.json());
   const shellRun = await request(`/sessions/${shellSession.id}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: "PACKAGING_SHELL: check the private command-line runtimes.", model: "openai/gpt-4o-mini" }), signal: AbortSignal.timeout(60_000) });
   const shellStream = await shellRun.text(); assert.equal(shellRun.status, 200, shellStream);
+  await fs.writeFile(path.join(temp, "shell-stream.txt"), shellStream);
+  const shellEvents = shellStream.split("\n").filter(line => line.startsWith("data: ")).map(line => JSON.parse(line.slice(6)));
+  assert.ok(shellEvents.some(event => event.type === "tool_end" && event.toolName === "bash" && !event.isError), shellStream);
   const sandbox = path.dirname(childFile);
   assert.match(await fs.readFile(path.join(sandbox, "packaging-node.txt"), "utf8"), /^v24\.21\.0/);
   assert.match(await fs.readFile(path.join(sandbox, "packaging-npm.txt"), "utf8"), /^\d+\.\d+/);
@@ -182,6 +189,7 @@ try {
   assert.notEqual(JSON.parse(await fs.readFile(path.join(data, "instance.json"), "utf8")).pid, restarted.pid, "stale state is recoverable");
   console.log("Packaged smoke passed: production assets, dynamic ports, authentication, single instance, private shell tools, real Pi lead/child execution, graceful active-run shutdown, crash recovery and data retention.");
 } catch (error) {
+  console.error("Fixture model tool results:", JSON.stringify(modelToolResults));
   try { console.error((await fs.readFile(path.join(data, "logs", "kady.log"), "utf8")).slice(-18000)); } catch {}
   throw error;
 } finally {
@@ -191,7 +199,7 @@ try {
   if (process.env.CI) {
     const diagnostics = path.join(repo, "dist", "diagnostics", String(Date.now()));
     await fs.mkdir(diagnostics, { recursive: true });
-    for (const file of [path.join(data, "logs/kady.log"), path.join(temp, "installed-settings.png"), path.join(temp, "browser-failure.png"), path.join(temp, "specialist-stream.txt")]) {
+    for (const file of [path.join(data, "logs/kady.log"), path.join(temp, "installed-settings.png"), path.join(temp, "browser-failure.png"), path.join(temp, "specialist-stream.txt"), path.join(temp, "shell-stream.txt")]) {
       try { await fs.copyFile(file, path.join(diagnostics, path.basename(file))); } catch { /* Failure can precede file creation. */ }
     }
   }

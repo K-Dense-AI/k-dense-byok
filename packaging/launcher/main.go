@@ -412,7 +412,7 @@ func serve(p paths) error {
 	guardian := (&url.URL{Scheme: "file", Path: guardPath}).String()
 	values := map[string]string{"KADY_PACKAGED": "1", "KADY_PROJECTS_ROOT": projectsRoot(p), "KADY_DATA_DIR": p.Data, "KADY_CONFIG_DIR": p.Config, "KADY_CACHE_DIR": p.Cache, "KADY_LAUNCHER": "1", "KADY_HOST": "127.0.0.1", "HOSTNAME": "127.0.0.1", "KADY_PORT": strconv.Itoa(api), "KADY_FRONTEND_PORT": strconv.Itoa(ui), "PORT": strconv.Itoa(ui), "KADY_API_URL": fmt.Sprintf("http://localhost:%d", api), "KADY_CONTROL_URL": s.Control, "KADY_AUTH_TOKEN": s.Token, "KADY_REQUIRE_AUTH": "1", "PATH": strings.Join(pathEntries, string(os.PathListSeparator)), "NODE_OPTIONS": "--import=" + guardian, "NODE_PATH": "", "NODE_ENV": "production", "GIT_EXEC_PATH": gitExec, "UV_CACHE_DIR": filepath.Join(p.Cache, "uv"), "UV_PYTHON_INSTALL_DIR": filepath.Join(p.Data, "python"), "UV_PYTHON_PREFERENCE": "only-managed", "KADY_OFFICE_CACHE_DIR": filepath.Join(p.Cache, "office-assets"), "NO_PROXY": envOr("NO_PROXY", "") + ",localhost,127.0.0.1,::1"}
 	if runtime.GOOS == "windows" {
-		values["PI_BASH_PATH"] = filepath.Join(p.Resources, "git", "bin", "bash.exe")
+		values["KADY_BASH_PATH"] = filepath.Join(p.Resources, "git", "bin", "bash.exe")
 	}
 	env := setEnv(os.Environ(), values)
 	children := []*exec.Cmd{}

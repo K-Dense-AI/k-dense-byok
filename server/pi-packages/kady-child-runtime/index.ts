@@ -7,8 +7,10 @@ import { registerChildNotebook } from "../kady-notebook/index.ts";
 import { registerChildModal } from "../kady-modal/index.ts";
 import { registerChildPdfAnnotations } from "../kady-pdf-annotations/index.ts";
 import { CHILD_OPERATING_GUIDANCE, setSubagentPromptSection } from "../../src/agent/subagent-prompts.ts";
+import { registerPackagedShell } from "../../src/agent/packaged-shell.ts";
 
 export default function (pi: ExtensionAPI) {
+  registerPackagedShell(pi);
   // A required runtime section reaches existing/custom personas, including
   // replace-mode agents and children with project context/skills disabled.
   pi.on("before_agent_start", (event) => {

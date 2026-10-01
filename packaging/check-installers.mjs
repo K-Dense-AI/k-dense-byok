@@ -35,15 +35,9 @@ try {
       const file = path.join(artifacts, `Kady-${version}-linux-x64.${format}`);
       if (format === "deb") await run("dpkg-deb", ["--extract", file, directory]);
       else if (format === "tar.gz") await run("tar", ["-xzf", file, "-C", directory]);
-      else {
-        await new Promise((resolve, reject) => {
-          const rpm = spawn("rpm2cpio", [file], { stdio: ["ignore", "pipe", "inherit"] });
-          const cpio = spawn("cpio", ["-idm", "--quiet", "--no-absolute-filenames"], { cwd: directory, stdio: ["pipe", "inherit", "inherit"] });
-          rpm.stdout.pipe(cpio.stdin);
-          const finished = child => new Promise((ok, fail) => { child.on("error", fail); child.on("exit", code => code === 0 ? ok() : fail(new Error("RPM extraction failed"))); });
-          Promise.all([finished(rpm), finished(cpio)]).then(resolve, reject);
-        });
-      }
+      // libarchive handles RPM's absolute members and missing parent directory
+      // entries while keeping extraction under the isolated destination.
+      else await run("bsdtar", ["-xf", file, "-C", directory]);
       await smoke(format === "tar.gz" ? directory : path.join(directory, "opt/kady"));
       // Keep peak disk use bounded while testing three complete distributions.
       await fs.rm(directory, { recursive: true, force: true });

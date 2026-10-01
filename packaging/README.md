@@ -20,7 +20,8 @@ npm run dist:installer
 ```
 
 Linux packaging additionally needs `nfpm` (the workflow installs its pinned
-version). Windows needs Inno Setup 6; `ISCC` can override its executable path.
+version), and payload checks use `bsdtar` from `libarchive-tools`. Windows needs
+Inno Setup 6; `ISCC` can override its executable path.
 `KADY_GO` and `NFPM` can select build tools outside PATH. Runtime archives are
 pinned by URL and SHA-256 in `runtimes.json`, downloaded into `dist/downloads`,
 and verified on every build. Changing a runtime requires reviewing that lock.
