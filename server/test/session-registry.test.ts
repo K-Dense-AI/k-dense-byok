@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { ensureProjectExists } from "../src/projects.ts";
-import { disposeProjectSessions, getSession } from "../src/agent/session-registry.ts";
+import { SHUTDOWN_GRACE_MS, disposeProjectSessions, getSession } from "../src/agent/session-registry.ts";
 import { subagentHost } from "../src/agent/subagent-control.ts";
 
 const projectId = "session-registry";
@@ -60,5 +60,26 @@ describe("cold session opens", () => {
     vi.spyOn(SessionManager, "list").mockResolvedValueOnce([]);
     expect(await getSession(projectId, paths, sessionId)).toBeNull();
     expect((await getSession(projectId, paths, sessionId))?.sessionId).toBe(sessionId);
+  }, 30_000);
+});
+
+describe("session release", () => {
+  it("disposes after the grace period when a shutdown handler never settles", async () => {
+    const { paths, sessionId } = savedSession();
+    const session = (await getSession(projectId, paths, sessionId))!;
+    const emit = vi.spyOn(session.extensionRunner, "emit").mockReturnValue(new Promise(() => {}));
+    const dispose = vi.spyOn(session, "dispose");
+    vi.useFakeTimers();
+    try {
+      const released = disposeProjectSessions(projectId);
+      await vi.advanceTimersByTimeAsync(SHUTDOWN_GRACE_MS - 1);
+      expect(dispose).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await released;
+      expect(emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
+      expect(dispose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   }, 30_000);
 });

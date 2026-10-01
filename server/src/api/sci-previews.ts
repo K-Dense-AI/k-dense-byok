@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { FastifyReply } from "fastify";
-import { HELPERS_DIR, helperPython } from "../helpers-env.ts";
+import { HELPERS_DIR, helperEnvironmentDir, helperPython } from "../helpers-env.ts";
 import { PreviewCache } from "../preview-cache.ts";
 import { runHelperScript, type HelperResult } from "./sci-helpers.ts";
 
@@ -42,7 +42,10 @@ async function version(request: PreviewRequest): Promise<string> {
     // A live SQLite database may have newer committed data in its WAL.
     ...(/\.(db|sqlite3?)$/i.test(request.target)
       ? [fileVersion(`${request.target}-wal`).catch(() => "missing-wal")] : []),
-    ...[helperPython(), path.join(HELPERS_DIR, "pyproject.toml"), path.join(HELPERS_DIR, ".venv", "pyvenv.cfg"), path.join(HELPERS_DIR, "uv.lock")]
+    // The installed app's environment lives outside HELPERS_DIR; its ready
+    // marker is rewritten by every successful (re)install.
+    ...[helperPython(), path.join(HELPERS_DIR, "pyproject.toml"), path.join(helperEnvironmentDir(), "pyvenv.cfg"),
+      path.join(helperEnvironmentDir(), ".kady-ready"), path.join(HELPERS_DIR, "uv.lock")]
       .map((file) => fileVersion(file).catch(() => "missing")),
   ]));
 }
