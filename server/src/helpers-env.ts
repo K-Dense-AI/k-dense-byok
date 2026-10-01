@@ -12,11 +12,20 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { findUv, firstRunnable } from "./binaries.ts";
+import { createHash } from "node:crypto";
+import { runtimePaths } from "./runtime-paths.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Absolute path to server/src/helpers (holds the Python CLIs + pyproject.toml). */
 export const HELPERS_DIR = path.join(__dirname, "helpers");
+
+export function helperEnvironmentDir(): string {
+  if (!runtimePaths().packaged) return path.join(HELPERS_DIR, ".venv");
+  const hash = createHash("sha256");
+  for (const file of ["pyproject.toml", "uv.lock"]) hash.update(fs.readFileSync(path.join(HELPERS_DIR, file)));
+  return path.join(runtimePaths().cache, "helpers", hash.digest("hex").slice(0, 20));
+}
 
 /** Interpreter for the Python helper CLIs. Prefers an explicit override, then the
  *  uv-managed helper venv, then a system Python. */
@@ -24,8 +33,8 @@ export function helperPython(): string {
   if (process.env.KADY_PYTHON) return process.env.KADY_PYTHON;
   const venvPy =
     process.platform === "win32"
-      ? path.join(HELPERS_DIR, ".venv", "Scripts", "python.exe")
-      : path.join(HELPERS_DIR, ".venv", "bin", "python");
+      ? path.join(helperEnvironmentDir(), "Scripts", "python.exe")
+      : path.join(helperEnvironmentDir(), "bin", "python");
   if (fs.existsSync(venvPy)) return venvPy;
   if (process.platform === "win32") return firstRunnable(["python", "py"]) ?? "python";
   return "python3";

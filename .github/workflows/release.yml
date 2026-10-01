@@ -5,10 +5,14 @@ on:
     branches: [main]
 
 jobs:
-  release:
+  version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      fresh: ${{ steps.check.outputs.exists == 'false' }}
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:
@@ -17,24 +21,64 @@ jobs:
       - name: Get version from server/package.json
         id: version
         run: |
-          VERSION=$(node -p "require('./server/package.json').version")
+          VERSION=$(node -e "const v=require('./server/package.json').version;if(!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(v))process.exit(1);process.stdout.write(v)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Check if tag exists
         id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: |
-          if git rev-parse "refs/tags/${{ steps.version.outputs.tag }}" >/dev/null 2>&1; then
+          if git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            # An upload failure can leave a draft. Retry only this same commit.
+            if [ "$(git rev-list -n 1 "$RELEASE_TAG")" = "$GITHUB_SHA" ] && \
+               [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = "true" ]; then
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create release
-        if: steps.check.outputs.exists == 'false'
+  installers:
+    needs: version
+    if: needs.version.outputs.fresh == 'true'
+    uses: ./.github/workflows/distributions.yml
+    with:
+      release: true
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  publish:
+    needs: [version, installers]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installers-*
+          path: dist/installers
+      - name: Collect installers and verify checksums
+        run: node packaging/collect-release.mjs
+      - name: Publish complete release
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
         run: |
-          gh release create "${{ steps.version.outputs.tag }}" \
-            --title "${{ steps.version.outputs.tag }}" \
-            --generate-notes
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" = "true" ]
+            gh release upload "$RELEASE_TAG" dist/release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" \
+              --target "$GITHUB_SHA" --title "$RELEASE_TAG" \
+              --generate-notes --draft dist/release/*
+          fi
+          gh release edit "$RELEASE_TAG" --draft=false

@@ -1,6 +1,39 @@
 # Installation
 
-## Requirements
+## Native installers
+
+The distribution workflow builds macOS DMGs (Apple Silicon and Intel), a
+Windows x64 installer, and Linux x64 DEB, RPM and portable archives. Signed
+installers will be attached to [GitHub releases](https://github.com/K-Dense-AI/k-dense-byok/releases).
+Before the first signed release, development builds are available as artifacts
+of the **Distributions** workflow; they are unsigned previews.
+
+- **macOS 13+:** open the DMG, drag Kady to Applications, then open Kady.
+- **Windows 10/11 x64:** run the installer, then use the Kady Start menu shortcut.
+- **Linux:** install the DEB/RPM and open Kady from the application menu, or
+  extract the portable archive and run `./kady`. The build baseline is Ubuntu
+  22.04; Alpine/musl is unsupported.
+
+Kady starts its local services and opens your default browser. Node.js, npm,
+Git and the Python installer are bundled. Scientific preview dependencies
+download when you select **Settings → Services → Install scientific previews**.
+Optional TeX distributions and external MCP/CLI programs are installed separately.
+
+Closing the browser leaves Kady running. **Settings → Services → Stop Kady**
+stops local work and schedules. Open the application again to return to it.
+Use **View logs** in the same panel for startup and runtime diagnostics.
+
+Projects live outside the application: under `~/Library/Application Support/Kady`
+on macOS, `%LOCALAPPDATA%\Kady` on Windows, and `$XDG_DATA_HOME/kady` (default
+`~/.local/share/kady`) on Linux. Upgrading or uninstalling the application keeps
+these files. Existing source-install users can stop their source instance and
+select its folder with **Use existing projects** in Services; this uses the
+original projects in place and preserves their sessions and budgets.
+
+Build instructions and release-signing configuration are in the
+[distribution guide](../packaging/README.md).
+
+## Install from source: requirements
 
 - macOS, Linux or Windows 10/11; WSL also works.
 - Node.js 22 or newer; **22.19+ recommended**. The macOS/Linux wrapper can install a missing Node through an existing Homebrew installation.
@@ -67,6 +100,12 @@ video understanding requires Gemini. [Modal compute](modal-compute.md) needs
 the token pair. Configure database credentials only when a task needs them.
 
 ## Updates
+
+For an installed application, choose **Download updates** in Services, stop
+Kady, and run the new installer (or replace the macOS app / portable directory).
+Keep the data directories. Updates do not replace files while Kady is running.
+
+For a source installation:
 
 Stop the app, run `git pull` from the repository, and start it again with the
 command above. Resolve any local Git changes before updating. The launcher

@@ -111,6 +111,11 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 ## Get started in 5 minutes
 
+Native installers that open Kady in your browser are being prepared for macOS,
+Windows and Linux. See the [installer guide](./docs/installation.md#native-installers)
+for development builds, supported platforms and data locations. The source
+installation below remains available.
+
 You need a compatible computer and at least one model source:
 
 1. A computer running **macOS, Linux, or Windows 10/11**.

@@ -16,6 +16,7 @@ import { useProjects } from "@/lib/use-projects";
 import { cn } from "@/lib/utils";
 import { KeyRow, useCredentialStatus, type CredentialStatus, type KeyDef } from "./key-row";
 import { SettingsCard, SettingsError, SettingsHeader } from "./primitives";
+import { InstallationCard } from "./installation-card";
 
 const SEARCH_KEY_DEFS: KeyDef[] = [
   {
@@ -404,6 +405,8 @@ export function ServicesPanel() {
       />
 
       <SettingsError>{error}</SettingsError>
+
+      <InstallationCard />
 
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading…</p>

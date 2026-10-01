@@ -11,7 +11,6 @@ __pycache__/
 # UV
 /uv.lock
 server/src/helpers/.venv/
-server/src/helpers/uv.lock
 
 # Node
 node_modules/
