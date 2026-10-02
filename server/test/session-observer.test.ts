@@ -7,6 +7,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
+// These fake-session tests cover lifecycle/accounting, not host interpreters.
+vi.mock("../src/provenance/environment.ts", async (original) => ({
+  ...await original<Record<string, unknown>>(), captureEnvironment: async () => null,
+}));
+
 vi.mock("../src/agent/session-registry.ts", () => ({
   getModelRuntime: vi.fn(() => ({
     checkAuth: vi.fn(async () => ({ type: "api_key", source: "test" })),
@@ -152,7 +157,7 @@ describe("session observer", () => {
     session.emit({ type: "agent_end" });
     session.isStreaming = false;
     session.emit({ type: "agent_settled" });
-    await flush();
+    await handle!.waitForCompletion();
 
     const state = handle!.state();
     expect(state.status).toBe("complete");
@@ -199,7 +204,7 @@ describe("session observer", () => {
     session.emit({ type: "agent_end" });
     session.isStreaming = false;
     session.emit({ type: "agent_settled" });
-    await flush();
+    await runBroker.get(projectId, session.sessionId)!.waitForCompletion();
     const handles = runBroker.activityForProject(projectId);
     expect(handles).toHaveLength(1);
     expect(runBroker.get(projectId, session.sessionId)!.state().status).toBe("complete");
@@ -248,8 +253,7 @@ describe("session observer", () => {
     session.emit({ type: "agent_start" });
     // Not inside the listener: nothing awaited yet.
     expect(session.aborted).toBe(0);
-    await flush();
-    expect(session.aborted).toBe(1);
+    await expect.poll(() => session.aborted).toBe(1);
     const handle = runBroker.get(capped.id, session.sessionId)!;
     expect(handle.activityState).toBe("blocked");
     expect(handle.state().run!.frames.some((f) => f.type === "error" && f.kind === "budget")).toBe(true);
@@ -259,7 +263,7 @@ describe("session observer", () => {
     session.emit({ type: "agent_end" });
     session.isStreaming = false;
     session.emit({ type: "agent_settled" });
-    await flush();
+    await handle.waitForCompletion();
     expect(handle.isComplete).toBe(true);
     expect(costRows(capped.id, session.sessionId)).toHaveLength(1);
   });
@@ -272,7 +276,7 @@ describe("session observer", () => {
     const handle = runBroker.get(projectId, session.sessionId)!;
     stop();
     detach = null;
-    await flush();
+    await handle.waitForCompletion();
     expect(handle.isComplete).toBe(true);
     const types = frameTypes(handle.state().run!.frames);
     expect(types).toContain("error");
@@ -292,7 +296,7 @@ describe("session observer", () => {
     session.emit({ type: "agent_end" });
     session.isStreaming = false;
     session.emit({ type: "agent_settled" });
-    await flush();
+    await runBroker.get(projectId, session.sessionId)!.waitForCompletion();
     expect(runBroker.get(projectId, session.sessionId)!.isComplete).toBe(true);
   });
 });

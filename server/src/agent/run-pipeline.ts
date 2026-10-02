@@ -294,6 +294,7 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
   const { projectId, sessionId } = claim;
   const { session, paths, log } = opts;
   let unsubscribePi: (() => void) | null = null;
+  let pendingProvenance: ProvenanceRecorder | null = null;
   try {
     // Usage tallied straight from turn_end events. getSessionStats() is
     // recomputed from the in-context messages, so auto-compaction mid-run can
@@ -315,6 +316,7 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
       getModel: () => (session.model ? modelReference(session.model) : undefined),
       onError: (err) => log.warn({ err }, "provenance recorder step failed"),
     });
+    pendingProvenance = provenance;
     // A provider refusal reaches the client as an opaque "Provider
     // finish_reason: content_filter". Attach what to do about it, naming the
     // enabled skills known to cause it — the classifier reads the system
@@ -409,6 +411,8 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
           await provenance.flush();
         } catch (err) {
           log.warn({ err }, "failed to flush provenance");
+        } finally {
+          pendingProvenance = null;
         }
         // Ledger in the finally: a run that threw mid-turn still spent real
         // tokens. The stats delta catches a partial turn that never reached
@@ -475,6 +479,13 @@ export async function executeRun(opened: OpenedRun, opts: ExecuteRunOptions): Pr
     }
   } finally {
     unsubscribePi?.();
+    // Refused/aborted admission skips the normal turn-finalization block, but
+    // its baseline scan and environment probes still own filesystem/process
+    // handles. Drain them before claiming the run has finished.
+    if (pendingProvenance) {
+      try { await pendingProvenance.flush(); }
+      catch (err) { log.warn({ err }, "failed to flush refused-run provenance"); }
+    }
     if (!handle.isComplete) {
       handle.publish({ type: "done" });
       handle.complete();

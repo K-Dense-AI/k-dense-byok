@@ -56,10 +56,17 @@ import * as fs from "node:fs"; // KADY_HOST_WATCHDOG_DIFF_IMPORT_V1`, 'KADY_HOST
     ['src/watchdog/diff-tool.js', '/** HEAD at reviewer launch, for tools that must be registered synchronously. */', `// KADY_HOST_WATCHDOG_DIFF_SCOPE_V2: do not expose an ancestor checkout's diff.
 function kadyScopedBaseline(cwd, baseline) {
     if (!baseline || !process.env.KADY_SUBAGENT_HOST_MODULE) return baseline;
+    // Native realpath expands Windows 8.3 short names (RUNNER~1) that Git never reports.
+    try { return path.relative(fs.realpathSync.native(baseline.root), fs.realpathSync.native(cwd)) === "" ? baseline : undefined; }
+    catch { return undefined; }
+}
+/** HEAD at reviewer launch, for tools that must be registered synchronously. */`, 'KADY_HOST_WATCHDOG_DIFF_SCOPE_V2', `// KADY_HOST_WATCHDOG_DIFF_SCOPE_V2: do not expose an ancestor checkout's diff.
+function kadyScopedBaseline(cwd, baseline) {
+    if (!baseline || !process.env.KADY_SUBAGENT_HOST_MODULE) return baseline;
     try { return fs.realpathSync(baseline.root) === fs.realpathSync(cwd) ? baseline : undefined; }
     catch { return undefined; }
 }
-/** HEAD at reviewer launch, for tools that must be registered synchronously. */`, 'KADY_HOST_WATCHDOG_DIFF_SCOPE_V2'],
+/** HEAD at reviewer launch, for tools that must be registered synchronously. */`],
     ['src/watchdog/diff-tool.js', '    return result.ok ? parseBaseline(result.stdout) : undefined;', '    return result.ok ? kadyScopedBaseline(cwd, parseBaseline(result.stdout)) : undefined; // KADY_HOST_WATCHDOG_DIFF_SYNC_V1', 'KADY_HOST_WATCHDOG_DIFF_SYNC_V1'],
     ['src/watchdog/diff-tool.js', '            resolve(error ? undefined : parseBaseline(stdout));', '            resolve(error ? undefined : kadyScopedBaseline(cwd, parseBaseline(stdout))); // KADY_HOST_WATCHDOG_DIFF_ASYNC_V1', 'KADY_HOST_WATCHDOG_DIFF_ASYNC_V1'],
     ['src/runs/background/scheduled-runs.js', 'function sanitizeTarget(params) {', `// KADY_HOST_SCHEDULE_MODEL_V1: schedule targets must retain the host-pinned model.
@@ -143,15 +150,17 @@ export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
             missing.push(specifier);`, 'KADY_HOST_CORE_NODE_ALIAS_V1'],
   ];
   // Check all anchors before mutating any file.
-  const writes = patches.map(([file, before, after, marker]) => {
+  const writes = patches.map(([file, before, after, marker, previous]) => {
     const target = path.join(root, file);
     const text = fs.readFileSync(target, 'utf8');
     if (text.includes(marker)) {
-      if (!text.includes(after)) throw new Error(`Modified Kady adapter in ${file}`);
-      return null;
+      if (text.includes(after)) return null;
+      // Upgrade an exact older host seam without accepting local modifications.
+      if (!previous || text.split(previous).length !== 2) throw new Error(`Modified Kady adapter in ${file}`);
+      return { target, before: previous, after };
     }
     if (text.split(before).length !== 2) throw new Error(`Subagent compatibility anchor changed: ${file}`);
-    return { target, text: text.replace(before, after) };
+    return { target, before, after };
   });
   // Several independent seams can share a file. Compose their replacements
   // instead of letting the last write discard earlier changes.
@@ -159,9 +168,8 @@ export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
   for (let i = 0; i < patches.length; i++) {
     const write = writes[i];
     if (!write) continue;
-    const [, before, after] = patches[i];
     const current = composed.get(write.target) ?? fs.readFileSync(write.target, 'utf8');
-    composed.set(write.target, current.replace(before, after));
+    composed.set(write.target, current.replace(write.before, write.after));
   }
   for (const [target, text] of composed) fs.writeFileSync(target, text);
 }

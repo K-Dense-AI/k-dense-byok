@@ -14,8 +14,15 @@ beforeEach(() => {
   vi.mocked(api.controlSpecialist).mockResolvedValue({ text: "Transcript and receipt" });
 });
 afterEach(() => { vi.clearAllMocks(); });
+async function renderFleet() {
+  let view!: ReturnType<typeof render>;
+  // Settle the mocked chats -> fleet promise chain before querying controls.
+  // Busy native CI runners can exceed findByRole's default one-second window.
+  await act(async () => { view = render(<SubagentFleetPanel projectId="p1" />); });
+  return view;
+}
 it("inspects the canonical child, sends guidance, and confirms a child stop", async () => {
-  const user = userEvent.setup(); render(<SubagentFleetPanel projectId="p1" />);
+  const user = userEvent.setup(); await renderFleet();
   await user.click(await screen.findByRole("button", { name: "Inspect Check units" }));
   expect(await screen.findByLabelText("Specialist transcript")).toHaveTextContent("Transcript and receipt");
   expect(api.controlSpecialist).toHaveBeenCalledWith("p1", "chat", "transcript", "run", undefined, 7);
@@ -29,7 +36,7 @@ it("inspects the canonical child, sends guidance, and confirms a child stop", as
 });
 it("offers resume for a terminal run", async () => {
   vi.mocked(api.getFleet).mockResolvedValue({ ...snapshot, asyncSnapshot: { runs: [{ id: "run", kind: "subagent", label: "Review", state: "paused" }] } });
-  const user = userEvent.setup(); render(<SubagentFleetPanel projectId="p1" />);
+  const user = userEvent.setup(); await renderFleet();
   await user.click(await screen.findByRole("button", { name: "Transcript & controls" }));
   await user.type(screen.getByLabelText("Instructions for this specialist"), "Continue analysis");
   await user.click(screen.getByRole("button", { name: "Resume with instructions" }));
@@ -38,7 +45,7 @@ it("offers resume for a terminal run", async () => {
 it("discards a transcript that arrives after switching project", async () => {
   let resolve!: (value: { text: string }) => void;
   vi.mocked(api.controlSpecialist).mockImplementation(() => new Promise((done) => { resolve = done; }));
-  const user = userEvent.setup(); const { rerender } = render(<SubagentFleetPanel projectId="p1" />);
+  const user = userEvent.setup(); const { rerender } = await renderFleet();
   await user.click(await screen.findByRole("button", { name: "Inspect Check units" }));
   rerender(<SubagentFleetPanel projectId="p2" />);
   await act(async () => { resolve({ text: "Stale private transcript" }); });

@@ -703,12 +703,12 @@ describe("Durable Modal transfer hardening", () => {
 
   it("verifies uploaded inputs remotely for ordinary jobs, not only approved ones", async () => {
     const fake = new FakeModal();
+    // Arm the fault before submission; polling for the sandbox can race a
+    // complete upload on fast filesystems.
+    fake.tamperUploads = true;
     fake.behaviors.push({ kind: "success" });
     const manager = new DurableModalJobManager(fake.factory);
     const job = manager.submit("default", { command: "work", filesIn: ["input.txt"] }, { sessionId: "s-upload", submittedBy: "api" });
-    const deadline = Date.now() + 3000;
-    while (fake.sandboxes.size === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
-    [...fake.sandboxes.values()][0]!.filesystem.tamperUploads = true;
     const terminal = await manager.wait("default", job.id, 3000);
     expect(terminal.state).toBe("failed");
     expect(terminal.error?.code).toBe("INPUT_CHANGED");
@@ -925,7 +925,7 @@ describe("Durable Modal manager safety nets", () => {
     expect(cancelled.accounting.reconciled).toBe(true);
     expect(sandbox.terminated).toBe(true);
     expect(listComputeReservations("default")).toEqual([]);
-  });
+  }, 20_000); // cancel allows up to 10s for the recovery worker to settle.
 
   it("cancelling while Modal is unconfigured still reconciles the hold", async () => {
     const store = new ModalJobStore();

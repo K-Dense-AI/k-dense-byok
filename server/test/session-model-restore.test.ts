@@ -43,8 +43,8 @@ describe("lastModelInSessionFile", () => {
 // Exercise the actual Pi construction path: synthesized models do not exist
 // in ModelRuntime.getModel(), even though they are valid Kady selections.
 const restoreProjectId = "synthetic-model-restore";
-afterEach(() => {
-  disposeProjectSessions(restoreProjectId);
+afterEach(async () => {
+  await disposeProjectSessions(restoreProjectId);
   vi.restoreAllMocks();
 });
 function savedLocal(provider: string, modelId: string) {

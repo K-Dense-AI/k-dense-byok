@@ -184,10 +184,15 @@ describe("workflow data sources", () => {
   it("clears data selections when switching workflows", () => {
     const onLaunch = vi.fn();
     render(<WorkflowsPanel onLaunch={onLaunch} availableFiles={["study.csv"]} availableFolders={["results"]} />);
+    // Exercise the real picker without repeatedly computing accessible names
+    // for the entire catalogue (particularly expensive in jsdom on CI).
+    fireEvent.change(screen.getByPlaceholderText("Search workflows..."), { target: { value: "Edit / Rewrite Manuscript" } });
     fireEvent.click(screen.getByRole("button", { name: /^Edit \/ Rewrite Manuscript/ }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "study.csv" }));
-    fireEvent.click(screen.getByRole("checkbox", { name: "results/" }));
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const firstDialog = within(screen.getByRole("dialog"));
+    fireEvent.click(firstDialog.getByRole("checkbox", { name: "study.csv" }));
+    fireEvent.click(firstDialog.getByRole("checkbox", { name: "results/" }));
+    fireEvent.click(firstDialog.getByRole("button", { name: "Cancel" }));
+    fireEvent.change(screen.getByPlaceholderText("Search workflows..."), { target: { value: "Write a Rebuttal" } });
     fireEvent.click(screen.getByRole("button", { name: /^Write a Rebuttal/ }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Run workflow" }));
     expect(onLaunch.mock.calls[0][2]).toEqual([]);

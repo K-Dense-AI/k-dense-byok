@@ -17,7 +17,7 @@ import { setHostMeter } from "../src/agent/subagent-host.mjs";
 import { sessionCostSummary } from "../src/cost/ledger.ts";
 
 beforeEach(() => { fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }); patchSubagents(); });
-afterEach(() => { disposeProjectSessions("runtime"); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(async () => { await disposeProjectSessions("runtime"); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const internal = (file: string) => import(pathToFileURL(path.join(subagentsPackageDir(), file)).href);
 
 it("binds the public RPC/preflight APIs with parent tool ceilings and required child packages", async () => {

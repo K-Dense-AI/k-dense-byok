@@ -98,23 +98,39 @@ export function resolveSandboxPath(
 ): string | null {
   let value = stripQuotes(token);
   if (!value || value.startsWith("~") || value.startsWith("$")) return null;
-  if (value.startsWith("/")) {
+  const windows = isWindowsRoot(sandboxRoot);
+  // Backslashes are separators only beside a Windows sandbox, and a lone
+  // leading one is never a root: bash runs `\user_data/a.csv` as
+  // `user_data/a.csv`, so it stays relative (normalizeRel drops it).
+  if (windows && !/^\\(?!\\)/.test(value)) {
+    value = value.replace(/\\/g, "/");
+    // Git Bash can spell the same drive as /c/... while file tools use C:\\...
+    value = value.replace(/^\/([a-z])\//i, "$1:/");
+  }
+  if (value.startsWith("/") || (windows && /^[a-z]:\//i.test(value))) {
     if (!sandboxRoot) return null;
     const root = sandboxRoot.replace(/\\/g, "/").replace(/\/+$/, "");
-    if (value.replace(/\/+$/, "") === root) return "";
-    if (!value.startsWith(root + "/")) return null;
+    const comparable = windows ? value.toLowerCase() : value;
+    const comparableRoot = windows ? root.toLowerCase() : root;
+    if (comparable.replace(/\/+$/, "") === comparableRoot) return "";
+    if (!comparable.startsWith(comparableRoot + "/")) return null;
     value = value.slice(root.length + 1);
     return normalizeRel(value);
   }
   return normalizeRel(cwd ? `${cwd}/${value}` : value);
 }
 
-export function matchProtected(rel: string, globs: readonly string[]): string | null {
+function isWindowsRoot(root?: string): boolean {
+  return !!root && /^(?:[a-z]:[\\/]|[\\/]{2})/i.test(root);
+}
+
+export function matchProtected(rel: string, globs: readonly string[], caseInsensitive = false): string | null {
   const normalized = normalizeRel(rel);
   if (normalized === null) return null;
   for (const glob of globs) {
     if (!glob.trim()) continue;
-    if (globToRegExp(glob).test(normalized)) return glob;
+    const pattern = globToRegExp(glob);
+    if ((caseInsensitive ? new RegExp(pattern.source, "i") : pattern).test(normalized)) return glob;
   }
   return null;
 }
@@ -240,7 +256,7 @@ export function classifyBashCommand(command: string, opts: ClassifyOptions): Bas
   const protectedHit = (token: string): { rel: string; glob: string } | null => {
     const rel = resolveSandboxPath(token, cwd, opts.sandboxRoot);
     if (rel === null) return null;
-    const glob = matchProtected(rel, globs);
+    const glob = matchProtected(rel, globs, isWindowsRoot(opts.sandboxRoot));
     return glob ? { rel, glob } : null;
   };
 
@@ -319,7 +335,7 @@ export function classifyBashCommand(command: string, opts: ClassifyOptions): Bas
     if (cmd === "git") {
       const sub = args.find((a) => !isFlag(a));
       const flags = args.filter(isFlag);
-      const cwdProtected = cwd ? matchProtected(cwd, globs) : null;
+      const cwdProtected = cwd ? matchProtected(cwd, globs, isWindowsRoot(opts.sandboxRoot)) : null;
       if (sub === "clean" && flags.some((f) => /^-[a-zA-Z]*f/.test(f) || f === "--force")) {
         if (cwdProtected) return { kind: "protected", path: cwd, glob: cwdProtected, detail: "git clean inside protected path" };
         if (!destructive) destructive = { kind: "destructive", detail: segment.trim() };
@@ -358,7 +374,7 @@ export function classifyFilePath(
 ): { kind: "allow" } | { kind: "protected"; path: string; glob: string } {
   const rel = resolveSandboxPath(filePath, "", opts.sandboxRoot);
   if (rel === null) return { kind: "allow" };
-  const glob = matchProtected(rel, opts.protectedGlobs);
+  const glob = matchProtected(rel, opts.protectedGlobs, isWindowsRoot(opts.sandboxRoot));
   return glob ? { kind: "protected", path: rel, glob } : { kind: "allow" };
 }
 
