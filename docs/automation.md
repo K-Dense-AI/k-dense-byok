@@ -11,8 +11,14 @@ and model. For example: “Every six hours, have the data validator re-check
 results and costs are recorded like other specialist work.
 
 The panel shows triggers, next run, outcomes and spend. Expand a schedule for
-its script/history; controls run now, pause/resume or delete it. Creation stays
-conversational.
+its script, pinned model, quiet setting and history; each completed fire shows
+the specialist's result text (kept by Kady from the completion, bounded).
+Controls run now, pause/resume or delete it. Creation stays conversational.
+
+**Run now** fires quietly: the panel shows the result, so the completion does
+not start a billed Kady turn on the hidden resident session. It is refused
+while the project is over its spend limit, and so is resuming a schedule held
+by the limit.
 
 A resident session keeps timers active without an open chat. **The backend must
 remain running.** With `catchUp: latest`, the latest missed slot runs on next
@@ -43,9 +49,10 @@ missions with token budgets remind the agent until closed or exhausted.
 ## Specialist fleet
 
 Choose a chat to inspect active specialists, models, tokens, elapsed time,
-tool activity and background compute. Open a run/child for its live transcript
-and steer/stop/resume controls. **Refresh chats** includes newly opened chats;
-plugin snapshot omissions are shown. Stop asks for confirmation.
+tool activity and background compute. **Scheduled runs** selects the resident
+session, where schedule fires run; the chat list refreshes every 15 seconds.
+Open a run/child for its live transcript and steer/stop/resume controls.
+Plugin snapshot omissions are shown. Stop asks for confirmation.
 
 An unfinished Modal job keeps its owning session's background-work state active.
 Use the [Compute tab](modal-compute.md) for job-specific cancellation and recovery.

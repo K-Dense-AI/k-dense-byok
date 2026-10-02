@@ -24,10 +24,14 @@ export function SubagentFleetPanel({ projectId }: { projectId: string }) {
   useEffect(() => { setSessions([]); setSessionId(""); }, [projectId]);
   useEffect(() => {
     let cancelled = false;
-    fleetSessions(projectId).then(({ sessions }) => {
+    const load = () => fleetSessions(projectId).then(({ sessions }) => {
       if (!cancelled) { setSessions(sessions); setSessionId((id) => sessions.some((s) => s.id === id) ? id : sessions[0]?.id || ""); }
     }).catch((e) => { if (!cancelled) setError(e.message); });
-    return () => { cancelled = true; };
+    void load();
+    // A chat started after this panel mounted (or the first schedule's host)
+    // would otherwise stay invisible until "Refresh chats".
+    const timer = setInterval(() => { if (!document.hidden) void load(); }, 15_000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, [projectId, sessionRefresh]);
   useEffect(() => {
     const current = ++generation.current;
@@ -73,7 +77,7 @@ export function SubagentFleetPanel({ projectId }: { projectId: string }) {
     ? node.id === selected.runId
     : node.control?.runId === selected.runId && node.control.index === selected.index);
   const isActive = Boolean(selectedNode && active(selectedNode.state));
-  const inspect = (target: Target) => { setSelected(target); setMessage(""); setStopping(null); };
+  const inspect = (target: Target) => { setSelected(target); setMessage(""); setStopping(null); setNotice(""); };
   const childRows = (children: FleetNode[]) => children.map((child) => <div key={child.id} className="space-y-1 pl-3">
     <div className="flex items-center justify-between gap-2 text-xs">
       <span>{child.label} · {child.state}{child.activity?.currentTool ? ` · ${child.activity.currentTool}` : ""}</span>

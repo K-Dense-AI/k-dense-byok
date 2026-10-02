@@ -2,8 +2,9 @@ import Fastify from "fastify";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { registerSubagentRoutes } from "../src/api/subagents.ts";
 import { withActiveProject } from "../src/scope.ts";
-const mocks = vi.hoisted(() => ({ rpc: vi.fn(), preflight: vi.fn(), session: vi.fn() }));
-vi.mock("../src/agent/session-registry.ts", () => ({ getSession: mocks.session, listSessions: async () => [] }));
+const mocks = vi.hoisted(() => ({ rpc: vi.fn(), preflight: vi.fn(), session: vi.fn(), resident: vi.fn() }));
+vi.mock("../src/agent/session-registry.ts", () => ({ getSession: mocks.session, listSessions: async () => [{ id: "chat-1", name: "QC chat", modified: new Date(0) }, { id: "host-1", modified: new Date(0) }] }));
+vi.mock("../src/agent/scheduler-state.ts", () => ({ schedulerSessionId: mocks.resident }));
 vi.mock("../src/agent/subagent-control.ts", () => ({ subagentHost: () => ({ rpc: mocks.rpc, preflight: mocks.preflight }) }));
 vi.mock("../src/modal/manager.ts", () => ({ modalJobManager: { list: () => [] } }));
 let app: ReturnType<typeof Fastify>;
@@ -36,4 +37,15 @@ it("passes only validated steering and catches transcript RPC failures", async (
   expect((await post("resume", { runId: "run", message: " " })).statusCode).toBe(400);
   mocks.rpc.mockImplementation(async (_method, params) => { if (params?.view) throw new Error("No transcript yet"); return snapshot; });
   expect((await post("transcript", { runId: "run" })).json()).toEqual({ detail: "No transcript yet" });
+});
+it("lists the hidden schedule host so scheduled runs can be inspected", async () => {
+  mocks.resident.mockReturnValue(null);
+  let res = await app.inject({ method: "GET", url: "/subagents/sessions", headers: { "x-project-id": "p1" } });
+  expect(res.json().sessions.map((s: { id: string }) => s.id)).toEqual(["chat-1", "host-1"]);
+  mocks.resident.mockReturnValue("host-1");
+  res = await app.inject({ method: "GET", url: "/subagents/sessions", headers: { "x-project-id": "p1" } });
+  expect(res.json().sessions).toEqual([
+    { id: "chat-1", name: "QC chat", modified: new Date(0).toISOString() },
+    { id: "host-1", name: "Scheduled runs", resident: true },
+  ]);
 });

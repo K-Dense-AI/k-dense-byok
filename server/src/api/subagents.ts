@@ -5,6 +5,7 @@ import { getSession, listSessions } from "../agent/session-registry.ts";
 import { subagentHost } from "../agent/subagent-control.ts";
 import { modalJobManager } from "../modal/manager.ts";
 import { isTerminalModalState } from "../modal/types.ts";
+import { schedulerSessionId } from "../agent/scheduler-state.ts";
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/;
 type Rec = Record<string, any>;
 export async function registerSubagentRoutes(app: FastifyInstance) {
@@ -13,7 +14,17 @@ export async function registerSubagentRoutes(app: FastifyInstance) {
     if (!ID.test(id) || !await getSession(projectId, resolvePaths(projectId), id)) throw new Error("Session not found");
     return subagentHost(projectId, id);
   }
-  app.get("/subagents/sessions", async () => ({ sessions: (await listSessions(resolvePaths(currentProjectId()))).map((s) => ({ id: s.id, name: s.name || s.firstMessage?.slice(0, 80) || "Chat", modified: s.modified })) }));
+  app.get("/subagents/sessions", async () => {
+    const paths = resolvePaths(currentProjectId());
+    // Schedule fires run on the resident session, which the chat list hides;
+    // list it once, labelled, so scheduled runs can be inspected, steered or
+    // stopped (it otherwise appeared as an anonymous "Chat").
+    const resident = schedulerSessionId(paths);
+    const sessions: Rec[] = (await listSessions(paths)).filter((s) => s.id !== resident)
+      .map((s) => ({ id: s.id, name: s.name || s.firstMessage?.slice(0, 80) || "Chat", modified: s.modified }));
+    if (resident && ID.test(resident)) sessions.push({ id: resident, name: "Scheduled runs", resident: true });
+    return { sessions };
+  });
   app.get<{ Params: { id: string } }>("/sessions/:id/subagents", async (req, reply) => {
     try {
       const h = await host(req.params.id);

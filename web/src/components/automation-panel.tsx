@@ -64,6 +64,7 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
   const [heldByBudget, setHeldByBudget] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   const { confirm, dialog } = useConfirm();
@@ -106,8 +107,12 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
       }
       setBusy(`${action}:${schedule.id}`);
       setError(null);
+      setNotice(null);
       try {
-        setSchedules(await scheduleAction(schedule.id, action, projectId));
+        const result = await scheduleAction(schedule.id, action, projectId);
+        setSchedules(result.schedules);
+        // Only a manual fire has news worth reading (started, or skipped as an overlap).
+        if (action === "run" && result.message) setNotice(result.message.split("\n")[0]);
       } catch (exc) {
         setError(exc instanceof Error ? exc.message : `Could not ${action} the schedule`);
       } finally {
@@ -120,7 +125,7 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
   const close = useCallback(
     async (mission: MissionView) => {
       const ok = await confirm({
-        title: `Close mission "${mission.title}"?`,
+        title: `Close mission "${missionLabel(mission)}"?`,
         description: "Marks it cancelled. Linked runs are not stopped.",
         confirmLabel: "Close mission",
       });
@@ -136,6 +141,13 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
     },
     [confirm, projectId],
   );
+
+  // "Run started" goes stale as soon as the row's own state catches up.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(null), 10_000);
+    return () => clearTimeout(timer);
+  }, [notice]);
 
   const openMissions = useMemo(() => missions.filter((m) => !["completed", "failed", "cancelled"].includes(m.status)), [missions]);
   const closedMissions = useMemo(() => missions.filter((m) => ["completed", "failed", "cancelled"].includes(m.status)), [missions]);
@@ -158,6 +170,7 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
         </Button>
       </div>
       {error && <p className="text-xs text-destructive">{error}</p>}
+      {notice && <p role="status" className="text-xs text-muted-foreground">{notice}</p>}
       {heldByBudget.length > 0 && (
         <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
           {heldByBudget.length} schedule{heldByBudget.length === 1 ? " is" : "s are"} held because the project
@@ -207,13 +220,13 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
                         ) : null}
                       </div>
                       <div className="truncate text-[11px] text-muted-foreground">
-                        {describeTrigger(s.trigger)}
+                        {describeTrigger(s.trigger, s.paused)}
                         {s.lastRun ? ` · last ${RUN_STATE_LABEL[s.lastRun.state]}` : ""}
                         {s.spendUsd > 0 ? ` · ${formatUsd(s.spendUsd)} spent` : ""}
                       </div>
                     </div>
                   </button>
-                  <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={`Run ${s.name} now`} disabled={rowBusy} onClick={() => void act(s, "run")}>
+                  <Button type="button" size="sm" variant="ghost" className="h-7 w-7 p-0" aria-label={`Run ${s.name} now`} title={s.heldByBudget ? "Held until the spend limit is raised" : `Run ${s.name} now`} disabled={rowBusy || s.heldByBudget} onClick={() => void act(s, "run")}>
                     {busy === `run:${s.id}` ? <Loader2Icon className="size-3.5 animate-spin" /> : <ZapIcon className="size-3.5" />}
                   </Button>
                   {s.paused ? (
@@ -233,18 +246,23 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
                   <div className="border-t px-3 py-2 text-[11px]">
                     <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-muted/40 p-2 font-mono text-[10px] leading-relaxed">{s.workflowScript}</pre>
                     <div className="mt-2 text-muted-foreground">
-                      catch-up: {s.catchUp}
+                      model: {s.model ?? "inherited from the project's latest chat model"}
+                      {s.quiet ? " · quiet (successful fires don't wake Kady)" : ""}
+                      {" · "}catch-up: {s.catchUp}
                       {s.timeoutMs ? ` · timeout ${Math.round(s.timeoutMs / 60000)} min` : ""}
                       {s.baseRef ? ` · base ${s.baseRef}` : ""}
                     </div>
                     {s.runs.length > 0 && (
                       <ul className="mt-2 flex flex-col gap-0.5">
                         {s.runs.map((r) => (
-                          <li key={r.id} className={cn("flex flex-wrap items-center gap-2", r.state.startsWith("failed") && "text-destructive")}>
+                          <li key={r.id} className={cn("flex flex-wrap items-center gap-x-2", r.state.startsWith("failed") && "text-destructive")}>
                             <span className="font-mono text-[10px] text-muted-foreground">{new Date(r.plannedAt).toLocaleString()}</span>
                             <span>{RUN_STATE_LABEL[r.state]}</span>
                             <span className="text-muted-foreground">({r.dueReason})</span>
-                            {r.error && <span className="truncate">{r.error}</span>}
+                            {r.error && <span className="w-full break-words">{r.error}</span>}
+                            {r.summary && !r.error && (
+                              <span className="w-full whitespace-pre-wrap break-words rounded bg-muted/40 px-2 py-1 text-[10px] text-foreground">{r.summary}</span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -286,7 +304,7 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
                 </div>
               </div>
               {!["completed", "failed", "cancelled"].includes(m.status) && (
-                <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]" aria-label={`Close mission ${m.title}`} disabled={busy === `close:${m.id}`} onClick={() => void close(m)}>
+                <Button type="button" size="sm" variant="ghost" className="h-7 text-[11px]" aria-label={`Close mission ${missionLabel(m)}`} disabled={busy === `close:${m.id}`} onClick={() => void close(m)}>
                   Close
                 </Button>
               )}

@@ -31,7 +31,7 @@ import { isBudgetExceeded, scheduleSpend } from "../cost/ledger.ts";
 import { listProjects, resolvePaths, type ProjectPaths } from "../projects.ts";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import { createSession, getSession, markSystemSession } from "./session-registry.ts";
-import { readSchedulerState, writeSchedulerState } from "./scheduler-state.ts";
+import { readScheduleOutcomes, readSchedulerState, writeSchedulerState } from "./scheduler-state.ts";
 import { subagentHost } from "./subagent-control.ts";
 
 export interface ScheduleView {
@@ -42,6 +42,10 @@ export interface ScheduleView {
     | { kind: "interval"; every: string; everyMs: number; anchorAt: string; nextRunAt: string };
   workflowScript: string;
   baseRef?: string;
+  /** Pinned model for every fire; absent means children inherit the resident session's. */
+  model?: string;
+  /** Successful timer fires complete without waking the host session. */
+  quiet: boolean;
   paused: boolean;
   heldByBudget: boolean;
   catchUp: "none" | "latest";
@@ -63,6 +67,8 @@ export interface ScheduleRunView {
   completedAt?: string;
   asyncId?: string;
   error?: string;
+  /** Result text Kady kept from the completion event (bounded). */
+  summary?: string;
 }
 
 export interface MissionView {
@@ -107,6 +113,7 @@ export function listSchedules(projectId: string): ScheduleView[] {
   if (!fs.existsSync(dir)) return [];
   const held = new Set(readSchedulerState(paths).heldByBudget);
   const spend = scheduleSpend(projectId);
+  const outcomes = new Map(readScheduleOutcomes(paths).map((o) => [o.asyncId, o.summary]));
   const out: ScheduleView[] = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
@@ -127,6 +134,7 @@ export function listSchedules(projectId: string): ScheduleView[] {
           ...(typeof r.completedAt === "string" ? { completedAt: r.completedAt } : {}),
           ...(typeof r.asyncId === "string" ? { asyncId: r.asyncId } : {}),
           ...(typeof r.error === "string" ? { error: r.error } : {}),
+          ...(typeof r.asyncId === "string" && outcomes.has(r.asyncId) ? { summary: outcomes.get(r.asyncId) } : {}),
         }),
       );
     const target = asRecord(record.target);
@@ -136,6 +144,8 @@ export function listSchedules(projectId: string): ScheduleView[] {
       trigger: asRecord(record.trigger) as ScheduleView["trigger"],
       workflowScript: typeof target.workflowScript === "string" ? target.workflowScript : "",
       ...(typeof target.baseRef === "string" ? { baseRef: target.baseRef } : {}),
+      ...(typeof target.model === "string" ? { model: target.model } : {}),
+      quiet: record.quiet === true,
       paused: record.paused === true,
       heldByBudget: held.has(record.id),
       catchUp: record.catchUp === "none" ? "none" : "latest",

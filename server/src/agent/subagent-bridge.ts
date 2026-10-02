@@ -36,6 +36,8 @@ import {
 } from "../cost/billing.ts";
 import { resolvePaths } from "../projects.ts";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
+import { recordScheduleOutcome } from "./scheduler-state.ts";
+import { isWithin } from "../sandbox-fs.ts";
 import { listAgents, settingsPinnedModels, subagentsPackageDir } from "./agent-files.ts";
 import { isProviderRefusal, providerRefusalGuidance } from "./model-refusal.ts";
 import { isOAuthOnlyProvider, modelReference } from "./models.ts";
@@ -89,8 +91,12 @@ const ASYNC_COMPLETE_EVENT = "subagent:async-complete";
 /** Subset of the async completion payload (the runner's result-file JSON). */
 interface AsyncCompletePayload {
   id?: string | null;
+  runId?: string | null;
   /** Present when pi-subagents fired the run from a durable schedule. */
   scheduleOrigin?: { id?: string; name?: string } | null;
+  success?: boolean;
+  /** The runner's result text ("agent:\noutput"); success output is not kept by pi-subagents. */
+  summary?: string;
   results?: Array<{
     agent?: string;
     model?: string;
@@ -98,7 +104,43 @@ interface AsyncCompletePayload {
     context?: string;
     usage?: {input?: number; output?: number; cacheRead?: number; cacheWrite?: number; cost?: number};
     modelAttempts?: SubagentModelAttempt[];
+    /** The child's final output file (workflow runs; inside the sandbox). */
+    artifactPaths?: { outputPath?: string };
   }>;
+}
+
+const OUTCOME_READ_BYTES = 4_096;
+
+/**
+ * Readable result text for a schedule fire. A workflow's `summary` is its
+ * return value serialized as JSON (temp paths, escaped newlines, truncated),
+ * so prefer each child's own output file when it sits in the sandbox.
+ */
+function scheduleOutcomeText(projectId: string, payload: AsyncCompletePayload): string | undefined {
+  const sandbox = resolvePaths(projectId).sandbox;
+  const outputs: string[] = [];
+  for (const result of payload.results ?? []) {
+    const file = result.artifactPaths?.outputPath;
+    if (typeof file !== "string") continue;
+    try {
+      const real = fs.realpathSync(file);
+      const root = fs.realpathSync(sandbox);
+      if (!isWithin(root, real)) continue;
+      const fd = fs.openSync(real, "r");
+      try {
+        const buffer = Buffer.alloc(OUTCOME_READ_BYTES);
+        const read = fs.readSync(fd, buffer, 0, OUTCOME_READ_BYTES, 0);
+        const text = buffer.subarray(0, read).toString("utf-8").trim();
+        if (text) outputs.push((payload.results!.length > 1 && result.agent ? `${result.agent}: ` : "") + text);
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      /* missing or unreadable output: fall back to the summary */
+    }
+  }
+  if (outputs.length) return outputs.join("\n\n");
+  return typeof payload.summary === "string" ? payload.summary : undefined;
 }
 
 /**
@@ -835,6 +877,18 @@ export function makeSubagentLedgerExtension(
     pi.events.on(ASYNC_COMPLETE_EVENT, (data: unknown) => {
       const payload = data as AsyncCompletePayload;
       recoverSubagentUsage(projectId);
+      // Same id precedence pi-subagents uses to match the fire in its history.
+      const asyncId = payload.runId ?? payload.id;
+      const outcome = payload.scheduleOrigin?.id && asyncId ? scheduleOutcomeText(projectId, payload) : undefined;
+      if (payload.scheduleOrigin?.id && asyncId && outcome) {
+        try {
+          recordScheduleOutcome(resolvePaths(projectId), {
+            asyncId, scheduleId: payload.scheduleOrigin.id, success: payload.success === true, summary: outcome,
+          });
+        } catch {
+          /* the panel then shows the state without a result; never fail the ledger */
+        }
+      }
       for (const [index, result] of (payload.results ?? []).entries()) {
         if (childIsMetered(projectId, result.sessionFile)) {
           if (payload.scheduleOrigin?.id) annotateMeteredChild(projectId, result.sessionFile, {

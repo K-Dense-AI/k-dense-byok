@@ -16,6 +16,8 @@ export interface ScheduleRunView {
   completedAt?: string;
   asyncId?: string;
   error?: string;
+  /** Result text kept from the completion event, when one arrived. */
+  summary?: string;
 }
 
 export interface ScheduleView {
@@ -26,6 +28,9 @@ export interface ScheduleView {
     | { kind: "interval"; every: string; everyMs: number; anchorAt: string; nextRunAt: string };
   workflowScript: string;
   baseRef?: string;
+  /** Pinned model; absent means fires inherit the resident session's model. */
+  model?: string;
+  quiet: boolean;
   paused: boolean;
   heldByBudget: boolean;
   catchUp: "none" | "latest";
@@ -74,11 +79,15 @@ export async function getSchedules(projectId?: string): Promise<SchedulesRespons
 
 export type ScheduleAction = "pause" | "resume" | "run" | "delete";
 
-export async function scheduleAction(id: string, action: ScheduleAction, projectId?: string): Promise<ScheduleView[]> {
+export async function scheduleAction(
+  id: string,
+  action: ScheduleAction,
+  projectId?: string,
+): Promise<{ schedules: ScheduleView[]; message: string }> {
   const res = await apiFetch(`/schedules/${encodeURIComponent(id)}/${action}`, { method: "POST" }, projectId);
   if (!res.ok) throw await failure(res, `schedule ${action}`);
-  const data = (await res.json()) as { schedules?: ScheduleView[] };
-  return data.schedules ?? [];
+  const data = (await res.json()) as { schedules?: ScheduleView[]; message?: string };
+  return { schedules: data.schedules ?? [], message: typeof data.message === "string" ? data.message : "" };
 }
 
 export async function getMissions(projectId?: string): Promise<MissionView[]> {
@@ -99,10 +108,13 @@ export async function closeMission(id: string, projectId?: string): Promise<Miss
   return data.missions ?? [];
 }
 
-/** Human form of a trigger: "every 6h · next 14:00" / "once at …". */
-export function describeTrigger(trigger: ScheduleView["trigger"]): string {
+/**
+ * Human form of a trigger: "every 6h · next 14:00" / "once at …". A paused
+ * schedule keeps a stored nextRunAt that will not fire, so it is not shown.
+ */
+export function describeTrigger(trigger: ScheduleView["trigger"], paused = false): string {
   if (trigger.kind === "interval") {
-    const next = trigger.nextRunAt ? ` · next ${new Date(trigger.nextRunAt).toLocaleString()}` : "";
+    const next = trigger.nextRunAt && !paused ? ` · next ${new Date(trigger.nextRunAt).toLocaleString()}` : "";
     return `every ${trigger.every}${next}`;
   }
   const at = trigger.nextRunAt ?? trigger.at;

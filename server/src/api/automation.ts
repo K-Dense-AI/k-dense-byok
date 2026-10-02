@@ -14,6 +14,7 @@ import {
   listSchedules,
 } from "../agent/scheduler.ts";
 import { readSchedulerState } from "../agent/scheduler-state.ts";
+import { isBudgetExceeded } from "../cost/ledger.ts";
 
 const SCHEDULE_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
@@ -40,12 +41,30 @@ export async function registerAutomationRoutes(app: FastifyInstance): Promise<vo
       reply.code(400);
       return { detail: "action must be pause, resume, run or delete" };
     }
-    if (!listSchedules(projectId).some((s) => s.id === id)) {
+    const schedule = listSchedules(projectId).find((s) => s.id === id);
+    if (!schedule) {
       reply.code(404);
       return { detail: `No schedule "${id}" in this project` };
     }
+    // These calls skip the subagent bridge's tool_call gate, so apply the same
+    // cap here. A fire over the cap would only fail at its first model request,
+    // after logging a failed run and re-anchoring the timer; a resumed held
+    // schedule would just be paused again by the next tick.
+    if (action === "run" || (action === "resume" && schedule.heldByBudget)) {
+      const budget = isBudgetExceeded(projectId);
+      if (budget.exceeded) {
+        reply.code(402);
+        return {
+          detail: `The project has reached its spend limit ($${budget.totalUsd.toFixed(2)} / $${(budget.limitUsd ?? 0).toFixed(2)}). ` +
+            "Raise the limit in project settings; held schedules resume on their own.",
+        };
+      }
+    }
     try {
-      const result = await invokeSubagentAction(projectId, { action: verb, id });
+      // A manual fire is noisy by default: its completion wakes the hidden
+      // resident session for a billed model turn nobody sees. The panel shows
+      // the outcome itself.
+      const result = await invokeSubagentAction(projectId, action === "run" ? { action: verb, id, quiet: true } : { action: verb, id });
       return { ok: true, message: result.text, schedules: listSchedules(projectId) };
     } catch (err) {
       reply.code(502);
@@ -78,7 +97,8 @@ export async function registerAutomationRoutes(app: FastifyInstance): Promise<vo
     const status = req.body?.status === "completed" || req.body?.status === "failed" ? req.body.status : "cancelled";
     const summary = typeof req.body?.summary === "string" ? req.body.summary.slice(0, 2_000) : "Closed from the Automation panel.";
     try {
-      const result = await invokeSubagentAction(projectId, { action: "mission.close", missionId: req.params.id, status, summary });
+      // pi-subagents reads `missionStatus` and defaults to "completed".
+      const result = await invokeSubagentAction(projectId, { action: "mission.close", missionId: req.params.id, missionStatus: status, summary });
       return { ok: true, message: result.text, missions: listMissions(projectId) };
     } catch (err) {
       reply.code(502);
