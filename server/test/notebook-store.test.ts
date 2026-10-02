@@ -63,6 +63,20 @@ describe("notebook-store", () => {
     expect("relatesTo" in got[1]).toBe(false);
     expect("runId" in got[1]).toBe(false);
   });
+  it("treats a link naming its own session as a same-chat link", () => {
+    // Specialists copy session ids from notebook_search, so harvested rows can
+    // spell out the parent chat; keyed by bare id, those links resolved to nothing.
+    const s = "sess-store-own";
+    appendNotebookEntry(s, entry({ id: "obs", evidence: [
+      { entryId: "tc_1", sessionId: s, relation: "supports" },
+      { entryId: "tc_9", sessionId: "sess-other", relation: "context" },
+    ] }));
+    expect(readNotebookEntries(s)[0].evidence).toEqual([
+      { entryId: "tc_1", relation: "supports" },
+      { entryId: "tc_9", sessionId: "sess-other", relation: "context" },
+    ]);
+    expect(readProjectNotebooks("default").find((n) => n.sessionId === s)!.entries[0].evidence![0]).toEqual({ entryId: "tc_1", relation: "supports" });
+  });
 });
 
 describe("appendNewNotebookEntries", () => {

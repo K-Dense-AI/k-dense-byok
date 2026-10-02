@@ -11,6 +11,7 @@ import {
   notebookEntryKey,
   type NotebookEntry,
 } from "@/lib/notebook";
+import { localizeEvidenceLinks } from "@/lib/notebook-evidence-core";
 import { deriveThreads } from "@/lib/notebook-threads";
 import {
   countByType,
@@ -133,6 +134,14 @@ export function LabNotebookView({
     addNote,
   } = useNotebookAnnotations(sessionId, canAnnotate, scopedProjectId);
 
+  // Re-read labels when a chat appears that the last lookup could not have
+  // named (the view usually mounts before the project's first chat exists).
+  const labelledSessionsKey = useMemo(() => {
+    const ids = new Set(projectData.entries.map((e) => e.sessionId).filter((id): id is string => Boolean(id)));
+    if (sessionId) ids.add(sessionId);
+    return [...ids].sort().join("\n");
+  }, [projectData.entries, sessionId]);
+
   // Labels are cosmetic; a failed label lookup must not hide notebook data.
   useEffect(() => {
     if (scope !== "project") return;
@@ -155,7 +164,7 @@ export function LabNotebookView({
       }
     })();
     return () => { cancelled = true; };
-  }, [scope, scopedProjectId]);
+  }, [scope, scopedProjectId, labelledSessionsKey]);
 
   // User notes render as synthetic entries so they flow through the timeline.
   const noteEntries = useMemo<NotebookEntry[]>(
@@ -172,9 +181,11 @@ export function LabNotebookView({
   );
 
   // Authoritative (fetched) entries win over provisional (live) ones by id.
+  // The server localizes fetched rows; provisional tool frames still carry
+  // the raw links until the refetch lands.
   const sessionEntries = useMemo(
-    () => mergeNotebookEntries(mergeNotebookEntries(liveEntries, fetched), noteEntries),
-    [liveEntries, fetched, noteEntries],
+    () => mergeNotebookEntries(mergeNotebookEntries(sessionId ? localizeEvidenceLinks(liveEntries, sessionId) : liveEntries, fetched), noteEntries),
+    [liveEntries, fetched, noteEntries, sessionId],
   );
   // The project stream has no separate SSE channel. Overlay this chat's live
   // entries immediately, then let authoritative project rows win by scoped id.
@@ -250,7 +261,10 @@ export function LabNotebookView({
 
   // --- Deep-link focus (chat → notebook, and thread-reference jumps) ---
   const pendingFocusRef = useRef<string | null>(null);
-  const memorySuppressedFocusToken = useRef<number | undefined>(undefined);
+  // A chat-side jump is one request: once handled, switching scope or chat
+  // must not replay it (that scrolled to a stale entry, or toasted "isn't in
+  // this chat's notebook" for an entry in the previous chat).
+  const handledFocusToken = useRef<number | undefined>(undefined);
   const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const tryFocus = useCallback(() => {
@@ -299,10 +313,11 @@ export function LabNotebookView({
 
   const focusToken = focusEntry?.token;
   useEffect(() => {
-    if (focusEntry && focusToken !== undefined && focusToken !== memorySuppressedFocusToken.current) focusById(scope === "project" && sessionId
-      ? notebookEntryKey({ id: focusEntry.id, sessionId }) : focusEntry.id);
+    if (!focusEntry || focusToken === undefined || focusToken === handledFocusToken.current) return;
+    handledFocusToken.current = focusToken;
+    focusById(scope === "project" && sessionId ? notebookEntryKey({ id: focusEntry.id, sessionId }) : focusEntry.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focusToken, scope, sessionId]);
+  }, [focusToken]);
 
   // Retry pending focus whenever the rendered set changes (refetch landing).
   useEffect(() => {
@@ -430,7 +445,6 @@ export function LabNotebookView({
       <LabNotebookHeader
         packageControl={<EvidencePackageDialog projectId={scopedProjectId} candidates={displayEntries.filter((e) => !e.provisional && ["hypothesis", "method", "observation", "decision"].includes(e.type) && (e.sessionId ?? sessionId)).map((e) => ({ sessionId: e.sessionId ?? sessionId!, entryId: e.id, title: e.title, type: e.type }))} />}
         memory={<NotebookMemoryDialog projectId={scopedProjectId} activeSessionId={sessionId} onOpenFile={onOpenFile} onJump={(source) => {
-          memorySuppressedFocusToken.current = focusToken;
           if (source.kind === "user-note") {
             if (source.sessionId !== sessionId) return;
             setScope("session");

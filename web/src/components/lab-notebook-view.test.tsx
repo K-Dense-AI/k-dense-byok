@@ -504,6 +504,53 @@ describe("LabNotebookView", () => {
     ).toBe(true);
   });
 
+  it("relabels the project view when a chat appears after the first label lookup", async () => {
+    // The view usually mounts before the project's first chat exists; the
+    // divider then showed the raw session id for the rest of the visit.
+    let chats: unknown[] = [];
+    let entries: NotebookEntry[] = [];
+    routeFetch((url) => {
+      if (url === "/projects/default/notebook") return okJson({ entries });
+      if (url === "/sessions") return okJson(chats);
+    });
+    const { rerender } = rtlRender(<LabNotebookView {...baseProps} sessionId={null} />);
+    await waitFor(() => expect(spy.mock.calls.some(([u]) => u === "/sessions")).toBe(true));
+    chats = [{ id: "sNew", firstMessage: "fit the dose curve" }];
+    entries = [e({ id: "p1", title: "Fresh entry", sessionId: "sNew" })];
+    rerender(<LabNotebookView {...baseProps} sessionId="sNew" streaming />);
+    await waitFor(() => expect(screen.getByText("Fresh entry")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("fit the dose curve")).toBeInTheDocument());
+  });
+
+  it("counts a live link that names its own chat as same-chat evidence", () => {
+    render(<LabNotebookView {...baseProps} liveEntries={[
+      e({ id: "h", title: "Claim" }),
+      e({ id: "o", type: "observation", title: "Finding", evidence: [{ entryId: "h", sessionId: "s1", relation: "supports" }] }),
+    ]} />);
+    expect(screen.queryByText(/not in this view/)).not.toBeInTheDocument();
+    expect(screen.getByText("Supporting evidence")).toBeInTheDocument();
+  });
+
+  it("does not replay a handled focus jump when the scope or chat changes", async () => {
+    const orig = Element.prototype.scrollIntoView;
+    const scrollSpy = vi.fn();
+    Element.prototype.scrollIntoView = scrollSpy;
+    try {
+      const focusEntry = { id: "tc_1", token: 7 };
+      const { rerender } = render(<LabNotebookView {...baseProps} liveEntries={[e({})]} focusEntry={focusEntry} />);
+      await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+      scrollSpy.mockClear();
+      fireEvent.click(screen.getByRole("button", { name: "All chats" }));
+      fireEvent.click(screen.getByRole("button", { name: "This chat" }));
+      rerender(<LabNotebookView {...baseProps} sessionId="s2" liveEntries={[]} focusEntry={focusEntry} />);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(scrollSpy).not.toHaveBeenCalled();
+      expect(toast.error).not.toHaveBeenCalled();
+    } finally {
+      Element.prototype.scrollIntoView = orig;
+    }
+  });
+
   it("saves the methods draft without interrupting notebook work and offers an explicit open action", async () => {
     const user = userEvent.setup();
     routeFetch((url) => {

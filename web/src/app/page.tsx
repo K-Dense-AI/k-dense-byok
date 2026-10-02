@@ -815,6 +815,9 @@ function WorkspacePage({
   // ------------------------------------------------------------------
 
   const activeSessionId = activeMeta?.sessionId ?? null;
+  // A jump targets the chat it came from; a notebook view remounting under
+  // another chat must not replay it ("That notebook entry isn't in this chat").
+  useEffect(() => { setNotebookFocus(null); }, [activeSessionId]);
   const {
     activeCount: activeModalJobCount,
     loading: modalJobsLoading,

@@ -99,6 +99,16 @@ describe("GET /sessions/:id/notebook/export", () => {
     expect(resPdf.json().detail).toMatch(/format must be md, json, or zip/);
   });
 
+  it("resolves a link that names its own session and counts it as evidence", async () => {
+    appendNotebookEntry("route-own", entry({ id: "h", type: "hypothesis", title: "Claim", timestamp: 1 }), "default");
+    appendNotebookEntry("route-own", entry({ id: "pipeline:o", type: "observation", title: "Finding", timestamp: 2, role: "pipeline",
+      evidence: [{ entryId: "h", sessionId: "route-own", relation: "supports" }] }), "default");
+    const md = await app.inject({ method: "GET", url: "/sessions/route-own/notebook/export?format=md", headers: { "x-project-id": "default" } });
+    expect(md.body).toContain("_↳ supports “Claim” (h)_");
+    expect(md.body).not.toContain("unavailable in this export");
+    expect(md.body).toContain("**Evidence status:** Supporting evidence");
+  });
+
   it("returns a JSON download with format=json", async () => {
     appendNotebookEntry("route-json", entry({ id: "tc_1" }), "default");
     appendNotebookEntry("route-json", entry({ id: "tc_2", type: "observation" }), "default");

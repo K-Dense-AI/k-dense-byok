@@ -49,6 +49,12 @@ describe("notebook artifact verification", () => {
     const checks = await captureNotebookArtifacts("default", ["../../outside.txt", ".pi/auth.json", "AGENTS.md"]);
     expect(checks.every((c) => c.reason === "unsafe-path" && !c.sha256)).toBe(true);
   });
+  it("explains an incomplete check in words, not the internal reason code", () => {
+    const health = compareNotebookArtifact(undefined, { path: "uv.lock", capturedAt: 1, reason: "unsafe-path" });
+    expect(health.status).toBe("unverified");
+    expect(health.reason).toMatch(/not a user-visible sandbox file/);
+    expect(health.reason).not.toMatch(/unsafe-path/);
+  });
   it.skipIf(process.platform === "win32")("does not follow symlinks outside the sandbox or into hidden files", async () => {
     write();
     const outside = path.join(PROJECTS_ROOT, "secret.txt"); fs.writeFileSync(outside, "secret");

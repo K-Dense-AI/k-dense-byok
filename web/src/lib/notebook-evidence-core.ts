@@ -70,6 +70,27 @@ export function notebookTargetKey(entry: { sessionId?: string }, id: string, ses
   return notebookEntryKey({ id, sessionId: sessionId ?? entry.sessionId });
 }
 
+/**
+ * Drop a link's `sessionId` when it names the chat the entries came from.
+ * Session views key entries by bare id, so a link spelling out its own chat
+ * (specialists copy it from notebook_search; proposal targets always carry
+ * it) would otherwise resolve to nothing and silently stop counting as
+ * evidence. An omitted sessionId already means "this chat", so this is lossless.
+ */
+export function localizeEvidenceLinks<T extends { evidence?: NotebookEvidenceLink[] }>(entries: T[], sessionId: string): T[] {
+  return entries.map((entry) => {
+    if (!Array.isArray(entry.evidence) || !entry.evidence.some((link) => link?.sessionId === sessionId)) return entry;
+    return {
+      ...entry,
+      evidence: entry.evidence.map((link) => {
+        if (link?.sessionId !== sessionId) return link;
+        const { sessionId: _own, ...local } = link;
+        return local;
+      }),
+    };
+  });
+}
+
 /** Defensive parsing for old files and provisional tool frames. */
 export function normalizeEvidenceLinks(value: unknown): NotebookEvidenceLink[] {
   if (!Array.isArray(value)) return [];

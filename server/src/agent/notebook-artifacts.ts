@@ -70,11 +70,23 @@ export async function captureNotebookArtifacts(projectId: string, artifacts: str
   return out;
 }
 
+/**
+ * Readers (and the Methods draft, which quotes these) see prose, not codes.
+ * "unsafe-path" mostly means an internal file such as uv.lock or a dot-path,
+ * which reads as a security problem when shown verbatim.
+ */
+const INCOMPLETE_CHECK: Record<Exclude<NonNullable<Check["reason"]>, "missing">, string> = {
+  "unsafe-path": "not a user-visible sandbox file (internal files such as uv.lock or dot-paths, and symlinks leaving the sandbox, are not checked)",
+  unreadable: "the file could not be read",
+  budget: "the check budget for this read was exhausted",
+  "changed-during-check": "the file changed while it was being hashed",
+};
+
 /** Pure comparison. Missing hashes and harvest-time identities never earn unchanged. */
 export function compareNotebookArtifact(recorded: NotebookArtifactSnapshot | undefined, current: Check): NotebookArtifactHealth {
   const base = { path: current.path, checkedAt: current.capturedAt };
   if (current.reason === "missing") return { ...base, status: "missing", reason: "Cited artifact is missing. Review this entry; this does not refute its claim." };
-  if (current.reason) return { ...base, status: "unverified", reason: `Artifact check incomplete: ${current.reason}.` };
+  if (current.reason) return { ...base, status: "unverified", reason: `Artifact check incomplete: ${INCOMPLETE_CHECK[current.reason] ?? current.reason}.` };
   if (recorded?.sha256 && current.sha256) {
     if (recorded.sha256 !== current.sha256) return { ...base, status: "changed", reason: recorded.timing === "harvest" ? "Bytes changed since a later identity check; original citation-time bytes are unknown." : recorded.timing === "output" ? "Bytes differ from the server-recorded compute output. Review against the retained result." : "Bytes differ from the recorded citation. Review the interpretation against the new artifact." };
     if (recorded.timing === "entry" || recorded.timing === "output") return { ...base, status: "unchanged", reason: recorded.timing === "output" ? "Bytes match the server-recorded compute output. This does not verify scientific validity or unchanged upstream inputs." : "Bytes match the citation-time hash. This does not verify scientific validity or unchanged upstream inputs." };
