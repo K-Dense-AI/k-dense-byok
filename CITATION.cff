@@ -1,0 +1,45 @@
+cff-version: 1.2.0
+message: "If you use K-Dense BYOK in your research, please cite the paper below."
+title: "K-Dense BYOK"
+type: software
+abstract: >-
+  A free, open-source AI research assistant for scientists in any field that
+  runs on the researcher's own computer with the model credentials they choose,
+  and keeps a hash-chained Living Lab Notebook and an observed provenance log.
+authors:
+  - given-names: Aubrey M.
+    family-names: Brueckner
+  - given-names: Darshil
+    family-names: Patel
+  - given-names: Yuhuan
+    family-names: He
+  - given-names: Timothy
+    family-names: Kassis
+repository-code: "https://github.com/K-Dense-AI/k-dense-byok"
+license: MIT
+keywords:
+  - AI research assistant
+  - scientific computing
+  - provenance
+  - lab notebook
+  - open source
+preferred-citation:
+  type: article
+  title: "K-Dense BYOK: An Open-Source AI Research Assistant That Runs Locally and Keeps a Hash-Chained Lab Notebook"
+  authors:
+    - given-names: Aubrey M.
+      family-names: Brueckner
+    - given-names: Darshil
+      family-names: Patel
+    - given-names: Yuhuan
+      family-names: He
+    - given-names: Timothy
+      family-names: Kassis
+  year: 2026
+  journal: "arXiv preprint"
+  doi: "10.48550/arXiv.2610.00074"
+  url: "https://arxiv.org/abs/2610.00074"
+  identifiers:
+    - type: other
+      value: "arXiv:2610.00074"
+      description: arXiv identifier

@@ -1,8 +1,9 @@
 # K-Dense BYOK
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.13.0-blue.svg)](server/package.json)
-[![Skills](https://img.shields.io/badge/Skills-149-brightgreen.svg)](#what-can-it-do)
+[![arXiv](https://img.shields.io/badge/arXiv-2610.00074-b31b1b.svg)](https://arxiv.org/abs/2610.00074)
+[![Version](https://img.shields.io/github/package-json/v/K-Dense-AI/k-dense-byok?filename=server%2Fpackage.json&label=Version&color=blue)](server/package.json)
+[![Skills](https://img.shields.io/badge/Skills-181-brightgreen.svg)](#what-can-it-do)
 [![Workflows](https://img.shields.io/badge/Workflows-326-blueviolet.svg)](#what-can-it-do)
 [![Databases](https://img.shields.io/badge/Databases-229-orange.svg)](#what-can-it-do)
 [![Tests](https://github.com/K-Dense-AI/k-dense-byok/actions/workflows/tests.yml/badge.svg)](https://github.com/K-Dense-AI/k-dense-byok/actions/workflows/tests.yml)
@@ -32,6 +33,8 @@ Three things to know up front:
 > **Beta:** K-Dense BYOK is currently in beta. Many features and improvements are on the way. [Star us on GitHub](https://github.com/K-Dense-AI/k-dense-byok) to stay in the loop, and follow K-Dense on [X](https://x.com/k_dense_ai), [LinkedIn](https://www.linkedin.com/company/k-dense-inc), [YouTube](https://www.youtube.com/@K-Dense-Inc), and [Reddit](https://www.reddit.com/user/-k-dense-/) for release notes and tutorials.
 
 > 🎬 **Prefer to watch first?** [The Future of Research is Open: Introducing K-Dense BYOK](https://youtu.be/wsG3yVV4P5Q) walks through what the app does and how to get set up. More walkthroughs in [Tutorial videos](#tutorial-videos).
+
+> 📄 **Read the paper:** [K-Dense BYOK: An Open-Source AI Research Assistant That Runs Locally and Keeps a Hash-Chained Lab Notebook](https://arxiv.org/abs/2610.00074) (arXiv:2610.00074). If you use K-Dense BYOK in your research, please [cite it](#citation).
 
 ## CompBioBench
 
@@ -72,7 +75,7 @@ Kady is designed to carry out research work, not only answer questions. You rema
 
 ### A scientific toolkit built in
 
-- **149 scientific skills** cover genomics, proteomics, bioinformatics, drug discovery, chemistry, materials science, clinical research, and more. Kady activates the relevant procedures automatically, and you can browse or disable them in Settings.
+- **177 scientific skills** cover genomics, proteomics, bioinformatics, drug discovery, chemistry, materials science, clinical research, and more, alongside four skills for Word, PDF, PowerPoint, and Excel documents. Kady activates the relevant procedures automatically, and you can browse or disable them in Settings.
 - **326 guided workflow templates across 22 disciplines** turn common analyses into fill-in-the-blank starting points. Choose a workflow, supply the study details, and launch it into the active chat.
 - **229 scientific and financial data resources across 18 categories** give Kady guidance for finding information in biomedical, chemical, scholarly, market, earth-science, climate, and space databases. Some resources require their own free key.
 - **21 scientific specialists** can take focused assignments such as statistical review, citation checking, peer review, data analysis, or literature synthesis. Kady can delegate independent work in parallel and combine the findings, or you can call a specialist by name. [Learn more](./docs/sub-agents.md).
@@ -199,12 +202,18 @@ If you run into a problem or have an idea for something new, please [open a GitH
 
 K-Dense BYOK is open source because [K-Dense](https://github.com/K-Dense-AI) believes in giving back to the community that makes this kind of work possible.
 
-## Star History
+## Citation
 
-<a href="https://star-history.dera.page/#K-Dense-AI/k-dense-byok">
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://star-history.dera.page/svg?repos=K-Dense-AI/k-dense-byok&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://star-history.dera.page/svg?repos=K-Dense-AI/k-dense-byok" />
-   <img alt="Star History Chart" src="https://star-history.dera.page/svg?repos=K-Dense-AI/k-dense-byok" />
- </picture>
-</a>
+If you use K-Dense BYOK in your research, please cite the [paper](https://arxiv.org/abs/2610.00074):
+
+```bibtex
+@misc{brueckner2026kdensebyokopensourceai,
+      title={K-Dense BYOK: An Open-Source AI Research Assistant That Runs Locally and Keeps a Hash-Chained Lab Notebook},
+      author={Aubrey M. Brueckner and Darshil Patel and Yuhuan He and Timothy Kassis},
+      year={2026},
+      eprint={2610.00074},
+      archivePrefix={arXiv},
+      primaryClass={cs.AI},
+      url={https://arxiv.org/abs/2610.00074},
+}
+```
