@@ -44,6 +44,7 @@ import { readNotebookEntries } from "../agent/notebook-store.ts";
 import { withNotebookArtifactHealth } from "../agent/notebook-artifacts.ts";
 import { withNotebookPlanHistory } from "../agent/notebook-research.ts";
 import { notebookToMarkdown } from "../agent/notebook-export.ts";
+import { snapshotChat } from "../agent/chat-snapshot.ts";
 import { buildNotebookZip } from "../agent/notebook-zip.ts";
 import {
   normalizeNotebookAnnotations,
@@ -347,6 +348,26 @@ export async function registerSessionRoutes(app: FastifyInstance): Promise<void>
             : { detail: "methods-draft-failed", message: err.message };
         }
         throw err;
+      }
+    },
+  );
+
+  // Compact snapshot of a chat for another chat to reference (composer + →
+  // Research → Chats). POST because it writes into the project sandbox.
+  app.post<{ Params: { id: string }; Body: { title?: unknown } }>(
+    "/sessions/:id/snapshot",
+    async (req, reply) => {
+      try {
+        const title = typeof req.body?.title === "string" ? req.body.title.slice(0, 500) : undefined;
+        const snapshot = snapshotChat(activePaths(), req.params.id, { title });
+        if (!snapshot) {
+          reply.code(404);
+          return { detail: "No such session" };
+        }
+        return snapshot;
+      } catch (err) {
+        reply.code(400);
+        return { detail: (err as Error).message };
       }
     },
   );

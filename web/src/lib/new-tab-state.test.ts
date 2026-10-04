@@ -14,6 +14,8 @@ const source: ChatWorkspaceState = {
   attachedFiles: ["user_data/a.csv"],
   selectedDatabases: [{ name: "arxiv" }] as ChatWorkspaceState["selectedDatabases"],
   selectedSkills: [{ name: "phylogenetics" }] as ChatWorkspaceState["selectedSkills"],
+  researchRefs: [{ kind: "chat", sessionId: "s-old", title: "Earlier QC" }],
+  delegation: { specialists: ["reviewer"], auto: false, verify: true, verifiers: ["reviewer"] },
   queuedMessages: [{ id: "q1" }] as unknown as ChatWorkspaceState["queuedMessages"],
   composer: { text: "half-typed prompt", attachments: [] },
 };
@@ -35,6 +37,8 @@ describe("seedChatStateFromTab", () => {
     expect(seeded.attachedFiles).toEqual([]);
     expect(seeded.selectedDatabases).toEqual([]);
     expect(seeded.selectedSkills).toEqual([]);
+    expect(seeded.researchRefs).toEqual([]);
+    expect(seeded.delegation).toEqual({ specialists: [], auto: false, verify: false, verifiers: [] });
     expect(seeded.queuedMessages).toEqual([]);
     expect(seeded.composer).toEqual({ text: "", attachments: [] });
   });

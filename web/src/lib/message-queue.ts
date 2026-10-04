@@ -2,6 +2,7 @@
  * Pure helpers for the per-tab "run after" queue. Kept out of chat-tab.tsx so
  * ordering and edit semantics are unit-testable without rendering the composer.
  */
+import { splitComposerContext } from "./composer-context";
 
 export type QueueDirection = "up" | "down";
 
@@ -39,4 +40,25 @@ export function updateQueuedMessageText<T extends { id: string; text: string; ra
   const next = [...queue];
   next[index] = { ...current, text: trimmed, rawText: trimmed.split("\n")[0] };
   return next;
+}
+
+/**
+ * Split a queued message into what the user typed and what the composer
+ * appended when it was queued: file paths, data sources and skills
+ * (`appended`, rebuilt by the caller from the item's own lists) followed by
+ * the + menu block. The queue editor edits only the typed part and saving
+ * re-attaches the rest unchanged. When `appended` no longer matches the text
+ * it stays in the editable part rather than being guessed at.
+ */
+export function splitQueuedText(text: string, appended: string): { editable: string; suffix: string } {
+  const { text: beforeBlock } = splitComposerContext(text);
+  const block = text.slice(beforeBlock.length);
+  if (appended && beforeBlock.endsWith(appended)) {
+    return { editable: beforeBlock.slice(0, -appended.length).trim(), suffix: appended + block };
+  }
+  // A files-only message: sending trimmed the leading newline off the paths.
+  if (appended && beforeBlock === appended.trimStart()) {
+    return { editable: "", suffix: beforeBlock + block };
+  }
+  return { editable: beforeBlock.trim(), suffix: block };
 }

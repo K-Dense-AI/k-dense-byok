@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { moveQueuedMessage, updateQueuedMessageText } from "./message-queue";
+import { moveQueuedMessage, splitQueuedText, updateQueuedMessageText } from "./message-queue";
+import { buildComposerContext, EMPTY_DELEGATION } from "./composer-context";
 
 const queue = [
   { id: "1", text: "first", rawText: "first" },
@@ -41,5 +42,32 @@ describe("updateQueuedMessageText", () => {
     expect(updateQueuedMessageText(queue, "2", "   ")).toBe(queue);
     expect(updateQueuedMessageText(queue, "nope", "x")).toBe(queue);
     expect(updateQueuedMessageText(queue, "2", "second")).toBe(queue);
+  });
+});
+
+describe("splitQueuedText", () => {
+  const appended = "\nuser_data/a.csv\n\nMake sure to use the skills: 'scanpy'";
+  const block = buildComposerContext({ delegation: { ...EMPTY_DELEGATION, verify: true }, research: [] });
+
+  it("edits only what the user typed and keeps the appended context verbatim", () => {
+    const text = "Run QC\nthen plot" + appended + block;
+    const { editable, suffix } = splitQueuedText(text, appended);
+    expect(editable).toBe("Run QC\nthen plot");
+    expect(suffix).toBe(appended + block);
+    expect("Run QC again" + suffix).toBe(text.replace("Run QC\nthen plot", "Run QC again"));
+  });
+
+  it("handles messages without the + block or with nothing appended", () => {
+    expect(splitQueuedText("Just text", "")).toEqual({ editable: "Just text", suffix: "" });
+    expect(splitQueuedText("Hi" + block, "")).toEqual({ editable: "Hi", suffix: block });
+  });
+
+  it("leaves unmatched appended text editable instead of guessing", () => {
+    expect(splitQueuedText("Hi\nother.csv", "\nuser_data/a.csv")).toEqual({ editable: "Hi\nother.csv", suffix: "" });
+  });
+
+  it("keeps a files-only message's attachments when the typed part is empty", () => {
+    const sent = appended.trimStart() + block;
+    expect(splitQueuedText(sent, appended)).toEqual({ editable: "", suffix: sent });
   });
 });

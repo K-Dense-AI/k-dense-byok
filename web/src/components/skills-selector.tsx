@@ -132,7 +132,7 @@ export function SkillsPickerBody({
 
       <div className="flex items-center justify-between border-t px-3 py-1.5">
         <span className="text-[10px] text-muted-foreground">
-          Expert agent skills
+          Pinned skills stay on until removed
         </span>
         <span className="text-[10px] text-muted-foreground">
           {filtered.length} of {skills.length} skills

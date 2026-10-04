@@ -7,6 +7,12 @@ import type { ThinkingLevel } from "@/components/thinking-selector";
 import type { PromptImage } from "@/lib/image-attachments";
 import type { ModalComputeScope } from "@/lib/modal-jobs";
 import type { Skill } from "@/lib/use-skills";
+import {
+  normalizeDelegation,
+  normalizeResearchRefs,
+  type DelegationChoice,
+  type ResearchRef,
+} from "@/lib/composer-context";
 
 export const WORKSPACE_SCHEMA_VERSION = 1;
 export const WORKSPACE_STORAGE_KEY = "kady:workspace:v1";
@@ -62,6 +68,10 @@ export interface ChatWorkspaceState {
   attachedFiles: string[];
   selectedDatabases: Database[];
   selectedSkills: Skill[];
+  /** + → Research picks for the unsent message. */
+  researchRefs: ResearchRef[];
+  /** + → Delegate choices for the unsent message. */
+  delegation: DelegationChoice;
   queuedMessages: WorkspaceQueuedMessage[];
   composer: PromptDraftState;
 }
@@ -304,6 +314,8 @@ function sanitizeStoredChat(value: unknown): StoredChatState | undefined {
     attachedFiles: stringArray(value.attachedFiles),
     selectedDatabases: sanitizeDatabases(value.selectedDatabases),
     selectedSkills: sanitizeSkills(value.selectedSkills),
+    researchRefs: normalizeResearchRefs(value.researchRefs),
+    delegation: normalizeDelegation(value.delegation),
     queuedMessages,
     composer: {
       text: typeof composer.text === "string" ? composer.text : "",

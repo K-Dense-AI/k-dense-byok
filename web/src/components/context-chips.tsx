@@ -5,12 +5,28 @@ import {
   XIcon,
   DatabaseIcon,
   WandSparklesIcon,
+  BookOpenIcon,
+  MessagesSquareIcon,
+  UsersIcon,
+  SparklesIcon,
+  ShieldCheckIcon,
 } from "lucide-react";
 import { KadyFileIcon } from "@/components/file-icon";
 import { cn } from "@/lib/utils";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import type { Database } from "@/components/database-selector";
 import type { Skill } from "@/lib/use-skills";
+import {
+  RECORD_KIND_LABELS,
+  researchRefKey,
+  type ComposerContext,
+  type DelegationChoice,
+  type ResearchRef,
+} from "@/lib/composer-context";
+
+const RESEARCH_CHIP = "border-sky-500/20 bg-sky-500/10 text-sky-700 dark:text-sky-400";
+const DELEGATE_CHIP = "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+const VERIFY_CHIP = "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
 
 const DOMAIN_COLORS: Record<
   string,
@@ -38,8 +54,9 @@ function Chip({
   tooltip,
 }: {
   children: ReactNode;
-  onRemove: () => void;
-  ariaLabel: string;
+  /** Omitted for read-only chips (sent messages). */
+  onRemove?: () => void;
+  ariaLabel?: string;
   className?: string;
   tooltip?: ReactNode;
 }) {
@@ -51,14 +68,16 @@ function Chip({
       )}
     >
       <div className="flex min-w-0 items-center gap-1.5">{children}</div>
-      <button
-        type="button"
-        onClick={onRemove}
-        className="shrink-0 rounded p-0.5 text-current/60 opacity-60 transition-all hover:bg-destructive/10 hover:!text-destructive group-hover:opacity-100"
-        aria-label={ariaLabel}
-      >
-        <XIcon className="size-2.5" />
-      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="shrink-0 rounded p-0.5 text-current/60 opacity-60 transition-all hover:bg-destructive/10 hover:!text-destructive group-hover:opacity-100"
+          aria-label={ariaLabel}
+        >
+          <XIcon className="size-2.5" />
+        </button>
+      )}
     </div>
   );
   if (!tooltip) return body;
@@ -72,12 +91,140 @@ export interface ContextChipsBarProps {
   onDbsChange: (dbs: Database[]) => void;
   selectedSkills: Skill[];
   onSkillsChange: (skills: Skill[]) => void;
+  researchRefs: ResearchRef[];
+  onResearchChange: (refs: ResearchRef[]) => void;
+  delegation: DelegationChoice;
+  onDelegationChange: (next: DelegationChoice) => void;
+}
+
+/** Chips for research references and delegation, editable or read-only. */
+function ComposerContextChips({
+  context,
+  onResearchChange,
+  onDelegationChange,
+}: {
+  context: ComposerContext;
+  onResearchChange?: (refs: ResearchRef[]) => void;
+  onDelegationChange?: (next: DelegationChoice) => void;
+}) {
+  const { delegation, research } = context;
+  const scope = onResearchChange ? "Applies to the next message only." : null;
+  return (
+    <>
+      {delegation.auto && (
+        <Chip
+          className={DELEGATE_CHIP}
+          onRemove={onDelegationChange && (() => onDelegationChange({ ...delegation, auto: false }))}
+          ariaLabel="Stop letting Kady choose specialists"
+          tooltip={
+            <>
+              <b>Delegate · Kady chooses</b>
+              <br />
+              Kady splits the work and hands parts to specialists picked by
+              their descriptions. {scope}
+            </>
+          }
+        >
+          <SparklesIcon className="size-3 shrink-0 opacity-70" />
+          <span>Specialists: Kady picks</span>
+        </Chip>
+      )}
+      {delegation.specialists.map((name) => (
+        <Chip
+          key={`agent:${name}`}
+          className={DELEGATE_CHIP}
+          onRemove={
+            onDelegationChange &&
+            (() =>
+              onDelegationChange({
+                ...delegation,
+                specialists: delegation.specialists.filter((n) => n !== name),
+              }))
+          }
+          ariaLabel={`Don't delegate to ${name}`}
+          tooltip={
+            <>
+              <b>Delegate · {name}</b>
+              <br />
+              Kady briefs this specialist and checks its handoff before
+              replying. {scope}
+            </>
+          }
+        >
+          <UsersIcon className="size-3 shrink-0 opacity-70" />
+          <span className="max-w-[140px] truncate">{name}</span>
+        </Chip>
+      ))}
+      {delegation.verify && (
+        <Chip
+          className={VERIFY_CHIP}
+          onRemove={onDelegationChange && (() => onDelegationChange({ ...delegation, verify: false, verifiers: [] }))}
+          ariaLabel="Remove verification gate"
+          tooltip={
+            <>
+              <b>Verification gate</b>
+              <br />
+              The best-suited verifier specialist reviews the result
+              adversarially; Kady accepts it only if the review passes.{" "}
+              {scope}
+            </>
+          }
+        >
+          <ShieldCheckIcon className="size-3 shrink-0 opacity-70" />
+          <span>Verify before accepting</span>
+        </Chip>
+      )}
+      {research.map((ref) => {
+        const key = researchRefKey(ref);
+        const label = ref.kind === "chat" ? "Earlier chat" : RECORD_KIND_LABELS[ref.type];
+        return (
+          <Chip
+            key={key}
+            className={RESEARCH_CHIP}
+            onRemove={
+              onResearchChange &&
+              (() => onResearchChange(research.filter((r) => researchRefKey(r) !== key)))
+            }
+            ariaLabel={`Remove ${ref.title}`}
+            tooltip={
+              <>
+                <b>{label}</b>
+                <br />
+                {ref.title}
+                <br />
+                {ref.kind === "chat"
+                  ? "Kady reads a compact snapshot of this chat, taken when the message is sent."
+                  : "Kady reads this record with notebook_search before relying on it."}{" "}
+                {scope}
+              </>
+            }
+          >
+            {ref.kind === "chat" ? (
+              <MessagesSquareIcon className="size-3 shrink-0 opacity-70" />
+            ) : (
+              <BookOpenIcon className="size-3 shrink-0 opacity-70" />
+            )}
+            <span className="max-w-[180px] truncate">{ref.title}</span>
+          </Chip>
+        );
+      })}
+    </>
+  );
+}
+
+/** Read-only chips under a sent user message. */
+export function SentContextChips({ context }: { context: ComposerContext }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      <ComposerContextChips context={context} />
+    </div>
+  );
 }
 
 /**
  * Renders a single row of dismissible chips representing every piece of
- * active context for the next message (files, data sources, skills). Hidden
- * entirely when there's nothing to show.
+ * active context for the next message (files, research, delegation, data
+ * sources, skills). Hidden entirely when there's nothing to show.
  */
 export function ContextChipsBar({
   attachedFiles,
@@ -86,11 +233,19 @@ export function ContextChipsBar({
   onDbsChange,
   selectedSkills,
   onSkillsChange,
+  researchRefs,
+  onResearchChange,
+  delegation,
+  onDelegationChange,
 }: ContextChipsBarProps) {
   const hasAny =
     attachedFiles.length > 0 ||
     selectedDbs.length > 0 ||
-    selectedSkills.length > 0;
+    selectedSkills.length > 0 ||
+    researchRefs.length > 0 ||
+    delegation.auto ||
+    delegation.verify ||
+    delegation.specialists.length > 0;
 
   if (!hasAny) return null;
 
@@ -100,7 +255,7 @@ export function ContextChipsBar({
     onDbsChange(selectedDbs.filter((d) => d.id !== id));
 
   return (
-    <div className="flex flex-wrap gap-1.5 px-3 pt-2.5">
+    <div className="flex w-full flex-wrap gap-1.5 px-3 pt-2.5">
       {/* File attachments */}
       {attachedFiles.map((path) => {
         const name = path.split("/").pop() ?? path;
@@ -126,6 +281,12 @@ export function ContextChipsBar({
           </Chip>
         );
       })}
+
+      <ComposerContextChips
+        context={{ delegation, research: researchRefs }}
+        onResearchChange={onResearchChange}
+        onDelegationChange={onDelegationChange}
+      />
 
       {/* Data sources */}
       {selectedDbs.map((db) => {
@@ -170,8 +331,8 @@ export function ContextChipsBar({
               <br />
               {skill.description}
               <br />
-              The expert will follow this skill&apos;s instructions for the
-              next message.
+              Kady follows this skill&apos;s instructions on every message
+              until you remove it.
             </>
           }
         >

@@ -141,7 +141,7 @@ export function textOf(content: ContentPart[]): string {
     .trim();
 }
 
-function resultText(parts: ToolResultPart["content"]): string {
+export function resultText(parts: ToolResultPart["content"]): string {
   if (!parts) return "";
   const text = parts
     .map((p) => (typeof p.text === "string" ? p.text : ""))
