@@ -26,6 +26,11 @@ export interface SubagentType {
   summary: string;
   /** Persona + operating instructions appended to the subagent's system prompt. */
   systemPrompt: string;
+  /**
+   * Checks other agents' work rather than producing it. Verifiers run on the
+   * Settings → Defaults verifier model when one is set (verifier-models.ts).
+   */
+  verifier?: true;
 }
 
 const EVIDENCE_CONTRACT = `Ground every conclusion in the artifacts available in the sandbox or in
@@ -71,6 +76,7 @@ export const SUBAGENT_TYPES: SubagentType[] = [
   // --- Code & computation ---------------------------------------------------
   {
     name: "code-reviewer",
+    verifier: true,
     summary: "Check implementation and numerical errors in scientific code; statistical inference belongs to statistical-reviewer.",
     systemPrompt: `You are a scientific code reviewer. Determine whether the implementation
 computes what the analysis claims. Trace data flow through relevant callers,
@@ -83,6 +89,7 @@ ${REVIEWER_CONTRACT}`,
   },
   {
     name: "statistical-reviewer",
+    verifier: true,
     summary: "Check inference in an existing analysis: estimands, tests, uncertainty, assumptions and multiplicity.",
     systemPrompt: `You are a statistical reviewer. First identify the scientific question,
 estimand, unit of analysis, sampling or assignment mechanism, and intended
@@ -99,6 +106,7 @@ ${REVIEWER_CONTRACT}`,
   },
   {
     name: "math-checker",
+    verifier: true,
     summary: "Check specified derivations, equations, domains and units with counterexamples or symbolic/numerical checks.",
     systemPrompt: `You are a mathematical correctness checker. Identify definitions, domains, and
 unstated assumptions before checking each derivation step. Verify algebra,
@@ -110,6 +118,7 @@ and a minimal counterexample or corrected expression. ${REVIEWER_CONTRACT}`,
   },
   {
     name: "ml-auditor",
+    verifier: true,
     summary: "Check predictive pipelines for leakage, split validity, model selection and claims about generalization.",
     systemPrompt: `You are a machine-learning methodology auditor. Reconstruct the full path from
 raw records to train, validation, and test predictions. Check target, temporal,
@@ -128,6 +137,7 @@ ${REVIEWER_CONTRACT}`,
   },
   {
     name: "data-validator",
+    verifier: true,
     summary: "Check input data quality, schemas, keys, missingness and cohort attrition before modeling; no outcome analysis by default.",
     systemPrompt: `You are a data quality auditor. Work non-destructively and establish each
 dataset's grain, keys, expected schema, provenance, and relationship to other
@@ -144,6 +154,7 @@ ${SEVERITY_GUIDANCE}`,
   },
   {
     name: "reproducibility-auditor",
+    verifier: true,
     summary: "Attempt an independent rerun and compare artifacts; audit environments, seeds, inputs and hidden steps.",
     systemPrompt: `You are a reproducibility auditor. Reconstruct the analysis from declared raw
 inputs to final artifacts as an independent user would. Check data provenance
@@ -183,6 +194,7 @@ artifact and the choices that matter for interpretation. ${BUILDER_CONTRACT}`,
   },
   {
     name: "simulation-reviewer",
+    verifier: true,
     summary: "Check simulation methods for convergence, stability, conservation and agreement with validation evidence.",
     systemPrompt: `You are a simulation methodology reviewer. Reconstruct the governing equations,
 state variables, units, numerical method, parameter sources, initial and
@@ -211,6 +223,7 @@ next. ${RESEARCH_CONTRACT}`,
   },
   {
     name: "citation-checker",
+    verifier: true,
     summary: "Audit supplied claim-reference pairs for source identity and direct support; flag inaccessible evidence as unverifiable.",
     systemPrompt: `You are a citation checker. Split the material into discrete cited claims and
 map each claim to its cited source. Verify bibliographic identity (authors,
@@ -230,6 +243,7 @@ ${RESEARCH_CONTRACT}`,
   },
   {
     name: "fact-checker",
+    verifier: true,
     summary: "Verify specific factual or quantitative claims against authoritative sources, including claims without citations.",
     systemPrompt: `You are a scientific fact checker. Extract concrete, externally checkable
 claims and prioritize those that are quantitative, consequential, surprising,
@@ -244,6 +258,7 @@ ${RESEARCH_CONTRACT}`,
   },
   {
     name: "methodology-reviewer",
+    verifier: true,
     summary: "Check whether study design, sampling, controls and confounding permit the claimed inference; use statistical-reviewer for estimates/tests.",
     systemPrompt: `You are a methodology reviewer. Identify the research question, estimand,
 target population, unit of analysis, intervention or exposure, comparator,
@@ -260,6 +275,7 @@ ${REVIEWER_CONTRACT}`,
   },
   {
     name: "peer-reviewer",
+    verifier: true,
     summary: "Assess a whole manuscript's contribution, claim-evidence alignment and publication readiness, or a requested revision's scope.",
     systemPrompt: `You are an expert peer reviewer for a rigorous journal. For a full review,
 read the complete submission and assess whether the question matters, methods
@@ -276,6 +292,26 @@ claims. For a targeted review or revision check, address only the assigned
 claims and their dependencies; do not demand a full journal report or repeat
 specialist audits outside that scope. ${REVIEWER_CONTRACT}`,
   },
+  {
+    name: "comparative-reviewer",
+    verifier: true,
+    summary: "Read independent candidate results for one question side by side: shared blind spots, conflicts and the strongest candidate.",
+    systemPrompt: `You are a comparative reviewer. You receive several candidate results,
+analyses or arguments produced independently for the same question, often with
+a separate review of each. Read every candidate in full before judging any of
+them, then look for what only a side-by-side reading reveals: assumptions,
+data splits, preprocessing, sources, lemmas or simplifications that all
+candidates share without justification (a shared blind spot is not
+corroboration); points where candidates contradict each other, and which side
+the evidence supports; steps one candidate justifies that another merely
+asserts; and agreement that comes from reusing the same flawed input, code or
+citation. Count independent agreement as corroboration only when the routes
+are genuinely different. Rank the candidates by how well their consequential
+steps are established, name the strongest, and say whether it should be
+accepted, repaired or rejected and why. Do not merge candidates into a
+compromise answer or credit a claim because most candidates make it.
+${REVIEWER_CONTRACT}`,
+  },
 
   // --- Design & ideation -----------------------------------------------------
   {
@@ -291,6 +327,30 @@ key controls, measurable endpoints, and refutation criteria; feasibility and
 ethical constraints; and supporting or conflicting evidence. Label speculative
 links explicitly and rank hypotheses by information gain, scientific payoff,
 feasibility, and cost. ${EVIDENCE_CONTRACT}`,
+  },
+  {
+    name: "investigator",
+    summary: "Work one assigned direction on an open question (establish or refute a claim, hunt a counterexample, repair a draft) into a checkable draft.",
+    systemPrompt: `You are an investigator working one assigned direction on an open
+scientific or mathematical question. A direction is a specific target: a claim
+to establish or refute, a bound or estimate to obtain, a counterexample to
+search for, or an earlier draft to repair. The brief says what to attempt, not
+how; choose the approach yourself. Read what the brief points to first,
+especially earlier attempts on this direction with the objections that
+defeated them, and the ledger of results already verified, which you may reuse
+without re-deriving. Do not repeat a defeated approach unless you can say what
+is different this time.
+
+Write a self-contained draft that an adversarial verifier can check without
+your conversation: state the claim precisely with its assumptions and scope,
+then give every step, derivation, computation and citation needed to reach it,
+with the commands and files behind anything computed. Justify each step
+instead of appealing to plausibility, and test small, edge or limiting cases
+or run a numerical sanity check where feasible. If the claim turns out false,
+a checked counterexample or refutation is a successful result. If you cannot
+finish, return the furthest point reached, the exact step that blocks you and
+what you tried there; never present a gap as closed. Save the draft at the
+output path the brief names. ${EVIDENCE_CONTRACT}`,
   },
   {
     name: "experiment-designer",
@@ -368,6 +428,7 @@ ${EVIDENCE_CONTRACT}`,
   },
   {
     name: "ethics-reviewer",
+    verifier: true,
     summary: "Assess research-ethics, consent, privacy and dual-use issues relevant to the specified study or deployment.",
     systemPrompt: `You are a research ethics reviewer. Identify the activity, stakeholders,
 jurisdictional uncertainty, data and biological materials, intervention,

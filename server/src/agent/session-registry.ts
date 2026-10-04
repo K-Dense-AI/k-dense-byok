@@ -72,6 +72,7 @@ import {
 } from "./pdf-annotation-bridge.ts";
 import { LEAD_DEFAULT_TOOLS, LEAD_EXCLUDED_TOOLS } from "./tools.ts";
 import { seedSubagentRuntimeSettings } from "./subagent-runtime-settings.ts";
+import { applyVerifierDefault } from "./verifier-models.ts";
 
 // Entry points normally establish this in env.ts. Keep the registry safe when
 // imported directly (tests/scripts) so child Pi processes still share the same
@@ -103,6 +104,15 @@ export function getModelRuntime(): ModelRuntime {
 }
 export function getModelRegistry(): ModelRegistry {
   return modelRegistry;
+}
+
+/** A model ref resolves and its provider has working credentials now. */
+export function modelRefAvailable(ref: string): boolean {
+  try {
+    return modelRuntime.hasConfiguredAuth(resolveModel(ref, modelRegistry).provider);
+  } catch {
+    return false;
+  }
 }
 
 /** Max live (in-memory) sessions kept per project; oldest idle ones are evicted. */
@@ -365,6 +375,9 @@ async function build(
   // launches; and keep the external-CLI builtins (Claude Code/Codex/Cursor)
   // off until a user turns one on in Settings → Specialists.
   seedSubagentRuntimeSettings(paths);
+  // Route verifier specialists to the Settings → Defaults verifier model
+  // (re-checked before every delegation by the ledger extension below).
+  applyVerifierDefault(paths, modelRefAvailable);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -382,6 +395,7 @@ async function build(
         () => holder.session?.sessionId ?? "",
         () => holder.session?.model,
         (providerId) => modelRuntime.isUsingOAuth(providerId),
+        modelRefAvailable,
       ),
       // Over the spend cap, refuse codemode scripts that run models
       // themselves (image generation, classifiers): their cost is unknown

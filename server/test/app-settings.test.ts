@@ -19,6 +19,7 @@ import { registerAppSettingsRoutes } from "../src/api/app-settings.ts";
 import { KADY_PI_AGENT_DIR } from "../src/config.ts";
 import { configuredDefaultRef, modelReference, resolveModel } from "../src/agent/models.ts";
 import { getModelRegistry } from "../src/agent/session-registry.ts";
+import { verifierAgentNames } from "../src/agent/verifier-models.ts";
 import { buildApp } from "../src/index.ts";
 
 const app = await buildApp();
@@ -123,6 +124,8 @@ describe("validateAppDefaultsPatch", () => {
       { compute: { target: "local" } },
       { compute: { target: "gpu-h100", gpuCount: 8, gpuFallback: [], cache: "none" } },
       { compute: { target: "gpu-h100", gpuCount: null, gpuFallback: null, cache: null } },
+      { verifierModel: "openrouter/anthropic/claude-opus-5.5" },
+      { verifierModel: null },
     ]) {
       expect(validateAppDefaultsPatch(patch), JSON.stringify(patch)).toBeNull();
     }
@@ -154,6 +157,9 @@ describe("validateAppDefaultsPatch", () => {
     [{ compute: { target: "gpu", gpuFallback: Array(9).fill("gpu-a10g") } }, /at most 8/],
     [{ compute: { target: "gpu", gpuFallback: [""] } }, /gpuFallback entries/],
     [{ compute: { target: "gpu", cache: "disk" } }, /compute\.cache/],
+    [{ verifierModel: "" }, /verifierModel must be a non-empty/],
+    [{ verifierModel: "claude" }, /verifierModel must look like/],
+    [{ verifierModel: "fusion/lab-panel" }, /verifierModel cannot be a Fusion/],
   ])("rejects %j", (patch, message) => {
     expect(validateAppDefaultsPatch(patch)).toMatch(message);
   });
@@ -176,7 +182,7 @@ describe("GET/PUT /settings/defaults", () => {
 
   it("round-trips a patch", async () => {
     const app = await routes();
-    expect((await app.inject({ url: "/settings/defaults" })).json()).toEqual({ defaults: {} });
+    expect((await app.inject({ url: "/settings/defaults" })).json()).toEqual({ defaults: {}, verifierAgents: verifierAgentNames() });
 
     const saved = await put(app, {
       model: "openrouter/openai/gpt-5.5",
@@ -186,11 +192,13 @@ describe("GET/PUT /settings/defaults", () => {
     expect(saved.statusCode).toBe(200);
     expect(saved.json()).toEqual({
       defaults: { model: "openrouter/openai/gpt-5.5", thinkingLevel: "low", compute: { target: "local" } },
+      verifierAgents: verifierAgentNames(),
     });
 
     const cleared = await put(app, { thinkingLevel: null });
     expect(cleared.json()).toEqual({
       defaults: { model: "openrouter/openai/gpt-5.5", compute: { target: "local" } },
+      verifierAgents: verifierAgentNames(),
     });
     expect((await app.inject({ url: "/settings/defaults" })).json()).toEqual(cleared.json());
   });
@@ -252,10 +260,22 @@ describe("GET/PUT /settings/defaults", () => {
     if (firstUnavailable >= 0) expect(body.models.slice(firstUnavailable).every((m) => !m.available)).toBe(true);
   });
 
+  it("saves a verifier model only when it resolves, and clears it", async () => {
+    const app = await routes();
+    const saved = await put(app, { verifierModel: " openrouter/anthropic/claude-opus-5.5 " });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json().defaults).toEqual({ verifierModel: "openrouter/anthropic/claude-opus-5.5" });
+    expect(readAppDefaults(dir).verifierModel).toBe("openrouter/anthropic/claude-opus-5.5");
+    const unknown = await put(app, { verifierModel: "anthropic/not-a-real-model" });
+    expect(unknown.statusCode).toBe(400);
+    expect(unknown.json().detail).toMatch(/Unknown verifier model/);
+    expect((await put(app, { verifierModel: null })).json().defaults).toEqual({});
+  });
+
   it("answers 409 when the file is malformed and leaves it alone", async () => {
     fs.writeFileSync(appSettingsPath(dir), "{broken");
     const app = await routes();
-    expect((await app.inject({ url: "/settings/defaults" })).json()).toEqual({ defaults: {} });
+    expect((await app.inject({ url: "/settings/defaults" })).json().defaults).toEqual({});
     const res = await put(app, { thinkingLevel: "high" });
     expect(res.statusCode).toBe(409);
     expect(res.json().detail).toMatch(/not valid JSON/);

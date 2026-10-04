@@ -270,10 +270,77 @@ Capture a read-only comparison baseline before execution: copy the expected orig
 Log the outcome in the lab notebook and link the comparison table.
 `,
   },
+  {
+    name: "prove-verify",
+    content: `---
+description: Rounds of parallel investigation and adversarial verification until a result passes review or the budget runs out
+argument-hint: <question or claim> [rounds N] [investigators N] [budget $N]
+---
+
+Run prove–verify rounds on this question or claim:
+
+$ARGUMENTS
+
+You are the orchestrator. Decide what gets worked on, brief specialists, keep the records and stop the loop. Do not do the derivations or analyses yourself, and do not form an opinion on the answer: never accept a result, call a direction promising or dead, or overrule a verifier on your own judgment. Results are accepted only by verification; a direction is dropped only for a recorded objection or a verified counterexample.
+
+Limits: use any round, investigator or dollar limit given above. Otherwise run at most 3 rounds with at most 3 investigators per round. For a dollar limit, record \`date +%s\` before round 1 and, before each later round, total the project spend since then with \`node -e "const fs=require('fs'),t=+process.argv[1];let s=0;for(const d of fs.readdirSync('.kady/runs')){const f='.kady/runs/'+d+'/costs.jsonl';if(fs.existsSync(f))for(const l of fs.readFileSync(f,'utf8').split('\\\\n'))if(l.trim()){const r=JSON.parse(l);if(r.ts>=t)s+=r.costUsd||0}}console.log(s.toFixed(2))" <start>\`; it counts every chat in the project, so it errs high. Check it again before any retry or repair workflow, and stop before work that would likely exceed the limit. The project spend limit remains the hard stop.
+
+Setup:
+1. State the target precisely: the claim, its assumptions and scope, and what would count as established or refuted. If the question is too ambiguous to state, ask the user before spending anything.
+2. Create \`derived/prove-verify/<short-slug>-<YYYYMMDD-HHMM>/\` and a \`ledger.md\` in it with three sections: Verified (results that passed verification, reusable without re-proof), Excluded (directions or claims ruled out, each with its counterexample or objection) and Attempts (per direction: round, approach, verdict, the objection it failed on).
+3. When the answer depends on prior work, have literature-researcher collect the relevant definitions, known results and methods into \`literature.md\` first.
+
+Each round is one workflow (a \`\`\`js workflow block plus \`subagent({ workflow: true })\`), awaited before the next round starts:
+1. Directions: give each investigator a different direction: a specific claim, bound or estimate, a counterexample search, or (later) repairing a draft that verifiers marked "repair". Assign what to attempt, never how. Spread effort across genuinely different approaches; do not send two investigators down the same path.
+2. Briefs: each investigator's brief names its direction, its draft path (\`round-<n>/draft-<k>.md\`), the ledger and literature paths, and the earlier attempts on its direction with the objections that defeated them. Pass long material by path. Write each brief separately so the investigators see different readings of the history. Have every specialist save its own draft or verdict at the path you name; do not forbid file writes to a specialist whose result must land in a file.
+3. Launch the investigators in parallel (agent "investigator"; write each child's \`agent\` as a literal string).
+4. Verify each draft separately with the reviewer that fits its claim (math-checker for derivations, statistical-reviewer for inference, code-reviewer or ml-auditor for computation, citation-checker or fact-checker for sourced claims, simulation-reviewer for simulations). Open each verifier's brief with "Verification gate:" and give it only the draft path and the claim, not the investigator's reasoning about why it should pass.
+5. Run one comparative-reviewer over all of the round's drafts and their verdicts together, also as a verification gate.
+
+After each round:
+- A draft is accepted only when its own verifier and the comparative review both accept it.
+- Update the ledger: append every attempt with its verdict and objection. Move a result to Verified only when a gate accepted it. When a verifier confirmed specific steps inside a draft it otherwise rejected, record them as candidate fragments and have one re-verified on its own, as a self-contained statement, before promoting it. Record refuted claims and verified counterexamples under Excluded.
+- Look across all verdicts so far for recurring mistakes, gaps or verifier disagreements, and add a short warning about each to the next round's briefs.
+- When attempts keep failing at the same step, send literature-researcher to search for that specific obstacle before the next round.
+- Tell the user in two or three lines what the round tried, what passed and what the next round will do.
+
+Stop when a result passes both gates and no remaining direction could plausibly improve it, when every direction is excluded or exhausted, or at the limits. Then:
+1. If more than one result passed, pick the one whose consequential steps the verifiers checked most thoroughly, and say why.
+2. Write \`report.md\` in the run folder: the precise statement, the full argument or analysis with every lemma, input and command it depends on, the verification record, and the remaining limitations, readable by someone who never saw this conversation.
+3. Have a fresh verifier check \`report.md\` against the accepted draft as a verification gate, so the write-up introduces no new errors, and fix what it finds.
+4. Log the outcome in the lab notebook: the verified result, the excluded directions with their counterexamples, and what remains open. If nothing passed, report the furthest verified progress and the strongest objection still standing; that is a valid outcome, not a failure to hide.
+`,
+  },
 ];
 
 function seedMarker(paths: ProjectPaths): string {
   return path.join(paths.kadyDir, "prompts-seeded");
+}
+
+/** Template names already offered to this project, so later additions seed once. */
+function seededNamesFile(paths: ProjectPaths): string {
+  return path.join(paths.kadyDir, "prompts-seeded-names.json");
+}
+
+/**
+ * What a `prompts-seeded` marker without a names file stands for: the
+ * templates shipped before per-name tracking. Never extend this list.
+ */
+const LEGACY_SEEDED_TEMPLATES: readonly string[] = ["qc", "stats-check", "figure-audit", "methods-review", "replicate"];
+
+function readSeededNames(paths: ProjectPaths): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(seededNamesFile(paths), "utf-8"));
+    if (Array.isArray(parsed)) return new Set(parsed.filter((name): name is string => typeof name === "string"));
+  } catch {
+    /* missing or malformed: the legacy set */
+  }
+  return new Set(LEGACY_SEEDED_TEMPLATES);
+}
+
+function writeSeededNames(paths: ProjectPaths, names: Iterable<string>): void {
+  fs.mkdirSync(paths.kadyDir, { recursive: true });
+  fs.writeFileSync(seededNamesFile(paths), JSON.stringify([...new Set(names)].sort()) + "\n", "utf-8");
 }
 
 // Canonical SHA-256 of the previously shipped bodies, including frontmatter.
@@ -286,9 +353,13 @@ const PREVIOUS_TEMPLATE_DIGESTS: Record<string, string[]> = {
   replicate: ["7ae7cf27e62c7841fd606522fe8c1333af1df3ee0dd4ef7c07a8079d1a945291"],
 };
 
-/** Seed once, then upgrade only unchanged shipped versions; deletions stick. */
+/**
+ * Seed once (a template added to the shipped set later is offered once, by
+ * name), then upgrade only unchanged shipped versions; deletions stick.
+ */
 export function seedPromptTemplates(paths: ProjectPaths): number {
   const seeded = fs.existsSync(seedMarker(paths));
+  const offered = seeded ? readSeededNames(paths) : new Set<string>();
   const dir = promptsDir(paths, "project");
   fs.mkdirSync(dir, { recursive: true });
   let written = 0;
@@ -298,13 +369,16 @@ export function seedPromptTemplates(paths: ProjectPaths): number {
       if (upgradeSeededText(file, template.content, PREVIOUS_TEMPLATE_DIGESTS[template.name] ?? [])) written++;
       continue;
     }
-    if (seeded) continue;
+    if (offered.has(template.name)) continue;
     fs.writeFileSync(file, template.content, "utf-8");
     written++;
   }
-  if (seeded) return written;
-  fs.mkdirSync(paths.kadyDir, { recursive: true });
-  fs.writeFileSync(seedMarker(paths), new Date().toISOString() + "\n", "utf-8");
+  const names = SEEDED_TEMPLATES.map((template) => template.name);
+  if (!seeded) {
+    fs.mkdirSync(paths.kadyDir, { recursive: true });
+    fs.writeFileSync(seedMarker(paths), new Date().toISOString() + "\n", "utf-8");
+  }
+  if (!seeded || names.some((name) => !offered.has(name))) writeSeededNames(paths, [...offered, ...names]);
   return written;
 }
 
@@ -317,5 +391,6 @@ export function restoreDefaultPromptTemplates(paths: ProjectPaths): number {
   }
   fs.mkdirSync(paths.kadyDir, { recursive: true });
   fs.writeFileSync(seedMarker(paths), new Date().toISOString() + "\n", "utf-8");
+  writeSeededNames(paths, [...readSeededNames(paths), ...SEEDED_TEMPLATES.map((template) => template.name)]);
   return SEEDED_TEMPLATES.length;
 }

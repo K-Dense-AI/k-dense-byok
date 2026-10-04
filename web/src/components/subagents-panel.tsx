@@ -752,10 +752,12 @@ export function SubagentsPanel() {
                     {agent.description || "(no description)"}
                   </div>
                 </div>
-                {agent.model && (
+                {agent.model ? (
                   <Badge variant="outline" className="hidden sm:inline-flex text-[10px] font-mono">
                     {agent.model}
                   </Badge>
+                ) : (
+                  <VerifierBadge agent={agent} />
                 )}
                 {agent.memory && (
                   <Button
@@ -886,7 +888,10 @@ export function SubagentsPanel() {
                 >
                   <LockIcon className="size-3.5 shrink-0 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium font-mono">{agent.name}</div>
+                    <div className="flex items-center gap-1.5 text-xs font-medium font-mono">
+                      {agent.name}
+                      <VerifierBadge agent={agent} />
+                    </div>
                     <div
                       className={cn(
                         "text-[11px] text-muted-foreground",
@@ -931,5 +936,23 @@ export function SubagentsPanel() {
         </>
       )}
     </div>
+  );
+}
+
+/** Marks a specialist the Settings → Defaults verifier model covers. */
+function VerifierBadge({ agent }: { agent: AgentFile }) {
+  if (!agent.verifier) return null;
+  return (
+    <Badge
+      variant="outline"
+      className="hidden sm:inline-flex text-[10px] font-mono"
+      title={
+        agent.verifierModel
+          ? `Verifier: runs on ${agent.verifierModel} (Settings → Defaults → Verifier model)`
+          : "Verifier: set a verifier model in Settings → Defaults to check work with a different model"
+      }
+    >
+      {agent.verifierModel ? `verifier · ${agent.verifierModel}` : "verifier"}
+    </Badge>
   );
 }

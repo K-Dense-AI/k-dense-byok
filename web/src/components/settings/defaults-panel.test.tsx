@@ -52,6 +52,7 @@ describe("DefaultsPanel", () => {
         thinkingLevel: null,
         compute: null,
         imageModel: null,
+        verifierModel: null,
       }),
     );
     expect(await screen.findByText(/Saved\./)).toBeInTheDocument();
@@ -87,6 +88,25 @@ describe("DefaultsPanel", () => {
     vi.spyOn(appSettings, "getAppDefaults").mockResolvedValue({ imageModel: "vertex/imagen" });
     render(<DefaultsPanel />);
     expect(await screen.findByText(/provider is not connected/)).toBeInTheDocument();
+  });
+
+  it("saves a verifier model and lists the specialists it applies to", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(appSettings, "getAppDefaults").mockResolvedValue({});
+    vi.spyOn(appSettings, "getVerifierAgents").mockReturnValue(["statistical-reviewer", "comparative-reviewer"]);
+    const put = vi.spyOn(appSettings, "putAppDefaults").mockImplementation(async (patch) => ({
+      ...(patch.verifierModel ? { verifierModel: patch.verifierModel } : {}),
+    }));
+    render(<DefaultsPanel />);
+
+    expect(await screen.findByText("statistical-reviewer, comparative-reviewer")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Type a model id for Verifier model" }));
+    await user.type(screen.getByLabelText("Verifier model"), "openrouter/anthropic/claude-opus-5.5{Enter}");
+    await user.click(screen.getByRole("button", { name: "Save defaults" }));
+    await waitFor(() =>
+      expect(put).toHaveBeenLastCalledWith(expect.objectContaining({ verifierModel: "openrouter/anthropic/claude-opus-5.5", model: null })),
+    );
+    expect(await screen.findByText(/image and verifier models apply right away/)).toBeInTheDocument();
   });
 
   it("shows the load error instead of an empty form", async () => {

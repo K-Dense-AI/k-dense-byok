@@ -149,8 +149,9 @@ export function builtinDisabledNames(paths: ProjectPaths): Set<string> {
 /**
  * Models pinned in `.pi/settings.json` under `subagents`, which frontmatter
  * alone does not reveal. pi-subagents resolves a child model strongest-first:
- * per-run override → agent frontmatter → `agentOverrides.<name>.model` →
- * `subagents.defaultModel` → the parent session model. Anything we send as a
+ * per-run override → `agentOverrides.<name>.model` (applied over the
+ * definition) → agent frontmatter → `subagents.defaultModel` → the parent
+ * session model. Anything we send as a
  * per-run override therefore outranks all of these, so the caller needs to see
  * them before deciding to pin one.
  */
@@ -223,6 +224,38 @@ export function setBuiltinDisabled(paths: ProjectPaths, name: string, disabled: 
 /** Marker that initial seeding ran; its presence makes user deletions stick. */
 function seedMarkerPath(paths: ProjectPaths): string {
   return path.join(agentsDir(paths), ".seeded");
+}
+
+/** Roster names already offered to this project, so later additions seed once. */
+function seededNamesPath(paths: ProjectPaths): string {
+  return path.join(agentsDir(paths), ".seeded-names.json");
+}
+
+/**
+ * The roster a `.seeded` marker without a names file stands for: everything
+ * shipped before per-name tracking. Never extend this list; new specialists
+ * are seeded into existing projects because they are missing from it.
+ */
+const LEGACY_SEEDED_ROSTER: readonly string[] = [
+  "code-reviewer", "statistical-reviewer", "math-checker", "ml-auditor", "data-validator",
+  "reproducibility-auditor", "pipeline-engineer", "data-visualizer", "simulation-reviewer",
+  "literature-researcher", "citation-checker", "fact-checker", "methodology-reviewer",
+  "peer-reviewer", "hypothesis-generator", "experiment-designer", "protocol-writer",
+  "results-interpreter", "manuscript-editor", "abstract-writer", "ethics-reviewer",
+];
+
+function readSeededNames(paths: ProjectPaths): Set<string> {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(seededNamesPath(paths), "utf-8"));
+    if (Array.isArray(parsed)) return new Set(parsed.filter((name): name is string => typeof name === "string"));
+  } catch {
+    /* missing or malformed: the legacy roster */
+  }
+  return new Set(LEGACY_SEEDED_ROSTER);
+}
+
+function writeSeededNames(paths: ProjectPaths, names: Iterable<string>): void {
+  fs.writeFileSync(seededNamesPath(paths), JSON.stringify([...new Set(names)].sort()) + "\n", "utf-8");
 }
 
 // --- frontmatter (YAML subset) --------------------------------------------
@@ -454,23 +487,28 @@ function rosterMarkdown(type: (typeof SUBAGENT_TYPES)[number]): string {
 }
 
 /**
- * One-time seeding of the scientific roster into a project. Gated by a marker
- * file so agents the user deleted in the UI stay deleted. Returns the number
- * of files written.
+ * Seed the scientific roster into a project: everything on first use, and a
+ * specialist added to the roster later exactly once (tracked by name). Agents
+ * the user deleted in the UI stay deleted, and an existing or disabled file of
+ * the same name is never overwritten. Returns the number of files written.
  */
 export function seedAgentFiles(paths: ProjectPaths): number {
   seedSubagentResources(paths);
   const dir = agentsDir(paths);
-  if (fs.existsSync(seedMarkerPath(paths))) return 0;
+  const initial = !fs.existsSync(seedMarkerPath(paths));
+  const offered = initial ? new Set<string>() : readSeededNames(paths);
+  const pending = SUBAGENT_TYPES.filter((type) => !offered.has(type.name));
+  if (!initial && pending.length === 0) return 0;
   fs.mkdirSync(dir, { recursive: true });
   let written = 0;
-  for (const type of SUBAGENT_TYPES) {
+  for (const type of pending) {
     const file = path.join(dir, `${type.name}.md`);
-    if (fs.existsSync(file)) continue;
+    if (fs.existsSync(file) || (!initial && fs.existsSync(path.join(agentsDisabledDir(paths), `${type.name}.md`)))) continue;
     fs.writeFileSync(file, rosterMarkdown(type), "utf-8");
     written++;
   }
-  fs.writeFileSync(seedMarkerPath(paths), new Date().toISOString() + "\n", "utf-8");
+  if (initial) fs.writeFileSync(seedMarkerPath(paths), new Date().toISOString() + "\n", "utf-8");
+  writeSeededNames(paths, [...offered, ...SUBAGENT_TYPES.map((type) => type.name)]);
   return written;
 }
 
@@ -497,5 +535,6 @@ export function restoreDefaultAgents(paths: ProjectPaths): string[] {
     fs.writeFileSync(enabledCopy, markdown, "utf-8");
   }
   fs.writeFileSync(seedMarkerPath(paths), new Date().toISOString() + "\n", "utf-8");
+  writeSeededNames(paths, [...readSeededNames(paths), ...SUBAGENT_TYPES.map((t) => t.name)]);
   return SUBAGENT_TYPES.map((t) => t.name);
 }

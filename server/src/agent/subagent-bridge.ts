@@ -42,6 +42,7 @@ import { listAgents, settingsPinnedModels, subagentsPackageDir } from "./agent-f
 import { isProviderRefusal, providerRefusalGuidance } from "./model-refusal.ts";
 import { isOAuthOnlyProvider, modelReference } from "./models.ts";
 import { isSubscriptionProvider } from "./provider-auth.ts";
+import { applyVerifierDefault } from "./verifier-models.ts";
 
 const require_ = createRequire(import.meta.url);
 
@@ -490,7 +491,8 @@ function requestedBillings(
       listAgents(resolvePaths(projectId)).map((agent) => [agent.name, agent] as const),
     );
     for (const name of agents) {
-      const model = definitions.get(name)?.model ?? pinned.byAgent.get(name) ?? pinned.defaultModel;
+      // pi-subagents applies `agentOverrides.<name>.model` over frontmatter.
+      const model = pinned.byAgent.get(name) ?? definitions.get(name)?.model ?? pinned.defaultModel;
       billings.push(
         billingFromModelRef(model, parentModel, isProviderUsingOAuth),
       );
@@ -519,7 +521,7 @@ function unsupportedDirectProviders(
   const agents = collectStringFields(input, "agent");
   for (const agent of script.agents) agents.add(agent);
   for (const name of agents) {
-    const model = definitions.get(name)?.model ?? pinned.byAgent.get(name);
+    const model = pinned.byAgent.get(name) ?? definitions.get(name)?.model;
     if (model) refs.add(model);
   }
   if (pinned.defaultModel && agents.size > 0) refs.add(pinned.defaultModel);
@@ -700,12 +702,21 @@ export function makeSubagentLedgerExtension(
   getSessionId: () => string,
   getParentModel: () => Model<Api> | undefined = () => undefined,
   isProviderUsingOAuth: (providerId: string) => boolean = () => false,
+  /** Whether a model ref can run now; gates the verifier-model routing. */
+  isModelAvailable?: (ref: string) => boolean,
 ): ExtensionFactory {
   return (pi) => {
     pi.on("tool_call", async (event, ctx) => {
       if (event.toolName !== "subagent") return;
       const action =
         typeof event.input.action === "string" ? event.input.action : undefined;
+      // Anything that resolves child models from settings from here on: bring
+      // the verifier-model overrides up to date first (a provider may have
+      // been disconnected, or a verifier given its own model), so both the
+      // launch and the billing checks below see the routing that will apply.
+      if (isModelAvailable && (!action || action === "schedule.create" || action === "schedule.run" || action === "schedule.run-due")) {
+        applyVerifierDefault(resolvePaths(projectId), isModelAvailable);
+      }
       const script = () => workflowCallTargets(event.input, {
         toolCallId: event.toolCallId,
         sessionManager: ctx?.sessionManager,

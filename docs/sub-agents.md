@@ -9,7 +9,9 @@ project sandbox. Ask for a named specialist, or let Kady select one:
 
 The scientific roster covers code/computation, literature/fact checking, study
 design and writing. Examples include `statistical-reviewer`, `citation-checker`,
-`peer-reviewer`, `data-validator` and `reproducibility-auditor`. **Settings →
+`peer-reviewer`, `data-validator`, `reproducibility-auditor`, `investigator` and
+`comparative-reviewer`. Specialists added in a later release appear once in
+existing projects; deleting one keeps it deleted. **Settings →
 Specialists** shows the installed roster and enabled state; the default personas
 live in [`subagents.ts`](../server/src/agent/subagents.ts).
 
@@ -43,6 +45,76 @@ The child waits up to ten minutes; timeout/dismissal is not approval.
 
 Open **Automation → Specialist fleet**, select a chat and inspect live transcripts,
 models, tokens and activity. Controls let you steer, stop or resume work.
+
+## Verification
+
+Reviewers check work in two modes. An ordinary review reports evidence-backed
+findings. A **verification gate** decides whether a result is accepted: Kady
+opens the brief with "Verification gate:", and the reviewer treats every step as
+unestablished and every citation as wrong until it has checked them itself, then
+ends with `Verdict: accept`, `repair` or `reject`, naming the first failing step
+and listing the steps it did confirm. Kady accepts a gated result only when its
+reviews pass and does not overrule an objection on plausibility.
+
+`comparative-reviewer` reads several independent attempts at the same question
+side by side. It catches what a per-attempt review misses: assumptions or inputs
+every attempt shares without justification, contradictions between attempts, and
+agreement that only reflects a shared flawed input.
+
+`/prove-verify <question>` runs rounds of this (after Cogentic, a multi-agent
+harness for proof discovery, [arXiv:2609.40324](https://arxiv.org/abs/2609.40324)):
+
+1. Kady states the target precisely and creates
+   `derived/prove-verify/<slug>-<time>/ledger.md`, with **Verified** results,
+   **Excluded** directions (each with its counterexample or objection) and
+   **Attempts**.
+2. Each round, `investigator` specialists work different directions in parallel:
+   a claim to establish or refute, a counterexample search, or a repair of a
+   promising draft. Kady assigns what to attempt, never how, and writes each
+   brief separately, passing earlier attempts and their objections by path.
+3. Each draft goes through a gate with the reviewer that fits the claim
+   (`math-checker`, `statistical-reviewer`, `code-reviewer`, …), and one
+   `comparative-reviewer` gates the round as a whole. A draft is accepted only
+   when both pass.
+4. Kady updates the ledger, re-verifies steps that were confirmed inside a
+   rejected draft before reusing them, adds warnings about recurring mistakes to
+   the next briefs, and sends `literature-researcher` after an obstacle that
+   keeps blocking progress.
+5. When a result passes, or the limits are reached, Kady writes `report.md`, has
+   a fresh gate check it against the accepted draft, and logs the result, the
+   excluded directions and what remains open in the lab notebook.
+
+Kady orchestrates but does not judge: it does not do the derivations or decide
+which direction is promising. Defaults are 3 rounds of at most 3 investigators;
+add `rounds 5`, `investigators 2` or `budget $10` to the command to change them.
+The dollar limit is checked between rounds against all project spend since the
+loop started, so it errs high; the project spend limit remains the hard stop. A
+round with three investigators and four gates is seven specialist runs, so this
+costs several times an ordinary answer.
+
+### Verifier model
+
+**Settings → Defaults → Verifier model** runs every verifier on a model of your
+choice, so work is checked by a different model than the one that produced it.
+Verifiers are the reviewer roles (`code-reviewer`, `statistical-reviewer`,
+`math-checker`, `ml-auditor`, `data-validator`, `reproducibility-auditor`,
+`simulation-reviewer`, `citation-checker`, `fact-checker`,
+`methodology-reviewer`, `peer-reviewer`, `comparative-reviewer`,
+`ethics-reviewer`) and the built-in `reviewer` and `evidence-auditor`;
+**Settings → Specialists** marks them. Kady writes the choice into each project
+as `subagents.agentOverrides.<name>.model` in `sandbox/.pi/settings.json`, which
+reaches structured delegations, workflow scripts, schedules and background runs
+alike, and records the entries it owns in `.kady/verifier-models.json`.
+
+- A verifier with its own **Model** keeps it; an override you edit by hand in
+  `settings.json` becomes yours and is left alone.
+- It outranks **Default model for specialists**, which still applies to the
+  other roles. A model Kady passes for a whole workflow would outrank it, so
+  Kady is told not to pass one for verifiers.
+- If the model's provider is disconnected, verifiers keep their usual model
+  until it is reconnected; the check runs before every delegation.
+- Changes apply to the next delegation, including in open chats. Verifier usage
+  is billed and capped like any other specialist run.
 
 ## Customize
 

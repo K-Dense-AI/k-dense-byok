@@ -27,6 +27,10 @@ export interface AgentFile {
   /** Frontmatter keys the UI doesn't model; preserved on save. */
   extra?: Record<string, unknown>;
   systemPrompt: string;
+  /** Checks other agents' work; covered by Settings → Defaults → Verifier model (read-only). */
+  verifier?: boolean;
+  /** The verifier model Kady currently routes this specialist to (read-only). */
+  verifierModel?: string;
 }
 
 export interface AgentMemory {

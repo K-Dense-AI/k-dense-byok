@@ -39,8 +39,9 @@ import {
   type WatchdogPatch,
 } from "../agent/watchdog-settings.ts";
 import { resolveModel } from "../agent/models.ts";
-import { getModelRegistry } from "../agent/session-registry.ts";
+import { getModelRegistry, modelRefAvailable } from "../agent/session-registry.ts";
 import { invalidModelRef } from "../app-settings.ts";
+import { applyVerifierDefault, isVerifierAgent, routedVerifiers } from "../agent/verifier-models.ts";
 
 function patchFromBody(body: Record<string, unknown>): AgentFilePatch | string {
   const description = String(body.description ?? "").trim();
@@ -92,7 +93,18 @@ export async function registerAgentRoutes(app: FastifyInstance): Promise<void> {
     // Older projects may predate seeding; make sure the roster exists before
     // the first listing (no-op once the marker file is present).
     seedAgentFiles(paths);
-    return { agents: listAgents(paths) };
+    // Mark the specialists the verifier model covers, and the model Kady
+    // currently routes them to (Settings → Defaults → Verifier model). Seeding
+    // may just have added verifiers, so bring the routing up to date first.
+    applyVerifierDefault(paths, modelRefAvailable, { createSettings: true });
+    const routed = routedVerifiers(paths);
+    return {
+      agents: listAgents(paths).map((agent) => !isVerifierAgent(agent.name) ? agent : {
+        ...agent,
+        verifier: true,
+        ...(routed?.agents.includes(agent.name) ? { verifierModel: routed.model } : {}),
+      }),
+    };
   });
 
   // Project-wide specialist model (`subagents.defaultModel` in

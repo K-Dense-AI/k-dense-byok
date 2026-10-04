@@ -22,9 +22,11 @@ Templates are read fresh from disk when sent.
 | `/figure-audit <figure>` | Check against source data/code. |
 | `/methods-review` | Review methods for the current deliverable or requested project scope. |
 | `/replicate <script>` | Re-run using copied inputs and compare outputs. |
+| `/prove-verify <question> [rounds N] [investigators N] [budget $N]` | Prove–verify rounds on an open question; see [Specialists → Verification](sub-agents.md#verification). |
 
-Customized files and deletions survive seeding. **Settings → Prompt templates →
-Restore defaults** replaces these five templates, including local edits; other
+Customized files and deletions survive seeding; a template added in a later
+release appears once in existing projects. **Settings → Prompt templates →
+Restore defaults** replaces these six templates, including local edits; other
 templates remain. A same-data rerun is not independent scientific replication.
 
 ## Write a template
