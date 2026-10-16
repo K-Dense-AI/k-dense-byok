@@ -28,6 +28,30 @@ Names are letters, digits, `-` and `_`. Tool names replace `-` with `_`
 (`lab-tools` becomes `mcp__lab_tools__…`), so two servers whose names differ
 only in `-` and `_` are refused.
 
+### Example: You.com web search
+
+A hosted web-search connector; the free profile needs no account or key:
+
+- **Name**: `you-search`
+- **Server URL**: `https://api.you.com/mcp?profile=free`
+- **Authentication**: none needed — the free profile is keyless
+
+After you test and save it, its `you-search` and `you-discover` tools are
+available in new chat tabs. For the full authenticated profile, use
+`https://api.you.com/mcp` with a You.com API key as the bearer token. Direct
+edits are equivalent:
+
+```json
+{
+  "mcpServers": {
+    "you-search": {
+      "url": "https://api.you.com/mcp?profile=free",
+      "description": "Hosted web search from You.com"
+    }
+  }
+}
+```
+
 ### Authentication
 
 | Option | Use it for |
