@@ -82,10 +82,18 @@ function subagentNames(
   }
   // Children are declared in a workflow script as `runs.run(key, { agent:
   // "name", task })`; read the literals. Since pi-subagents 0.74 the script is
-  // the ```js workflow block of the reply that called `workflow: true`;
-  // earlier sessions passed it as the `workflowScript` argument.
+  // the block of the reply that called `workflow: true`; earlier sessions
+  // passed it as the `workflowScript` argument.
   if (typeof args.workflowScript === "string") workflowScriptAgents(args.workflowScript).forEach(add);
-  if (args.workflow === true && replyScript) workflowScriptAgents(replyScript).forEach(add);
+  if ((args.workflow === true || args.workflow === "true") && replyScript) workflowScriptAgents(replyScript).forEach(add);
+  // pi-subagents' own named workflows take their children as data (0.77+).
+  if (args.workflow === "review") add("reviewer");
+  const workflowArgs = args.args as { tasks?: unknown } | undefined;
+  if (args.workflow === "parallel" && Array.isArray(workflowArgs?.tasks)) {
+    for (const task of workflowArgs.tasks) {
+      if (task && typeof task === "object") add((task as Record<string, unknown>).agent);
+    }
+  }
 
   if (result) {
     const asyncNames = /^Async (?:parallel|single): \[([^\]]+)\]/m.exec(result)?.[1];

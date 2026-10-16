@@ -48,6 +48,14 @@ const SEARCH_KEY_DEFS: KeyDef[] = [
     hint: "Search fallback plus YouTube and video understanding for fetched links. It is the same GEMINI_API_KEY that unlocks Google Gemini models under Providers.",
     notifyProviders: true,
   },
+  {
+    id: "ceramic",
+    bodyField: "ceramicApiKey",
+    label: "Ceramic API key",
+    placeholder: "Ceramic key",
+    keysUrl: "https://platform.ceramic.ai/keys",
+    hint: "Paid keyword search with free starter credits. Never picked automatically: it runs only when a search names it, so ask Kady to search with Ceramic.",
+  },
 ];
 
 const PAPERCLIP_KEY_DEF: KeyDef = {

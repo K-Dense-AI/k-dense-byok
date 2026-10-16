@@ -337,10 +337,10 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
 
   // ---- Cloud platforms -----------------------------------------------------
   {
-    ...simple("azure-openai-responses", "Azure OpenAI", "AZURE_OPENAI_API_KEY", {
+    ...simple("azure", "Azure", "AZURE_OPENAI_API_KEY", {
       keysUrl: "https://portal.azure.com/",
       keyLabel: "Azure OpenAI API key",
-      hint: "OpenAI models hosted in your Azure subscription. Set the key plus either the resource endpoint URL or the resource name; root endpoints are normalized to /openai/v1 by Pi.",
+      hint: "OpenAI and Foundry models hosted in your Azure subscription. Set the key plus either the resource endpoint URL or the resource name; root endpoints are normalized to /openai/v1 by Pi.",
     }),
     extraEnv: [
       {
@@ -486,6 +486,18 @@ export const DIRECT_PROVIDERS: readonly DirectProviderDefinition[] = [
 ];
 
 const DIRECT_BY_ID = new Map(DIRECT_PROVIDERS.map((p) => [p.id, p] as const));
+
+/**
+ * Provider ids Pi renamed. Saved defaults, project settings and session files
+ * keep the old id, so refs are canonicalized before they reach Pi's registry.
+ */
+const RENAMED_PROVIDERS: Readonly<Record<string, string>> = {
+  "azure-openai-responses": "azure", // Pi 1.0.3
+};
+
+export function canonicalProviderId(providerId: string): string {
+  return Object.hasOwn(RENAMED_PROVIDERS, providerId) ? RENAMED_PROVIDERS[providerId] : providerId;
+}
 
 export function directProvider(providerId: string): DirectProviderDefinition | undefined {
   return DIRECT_BY_ID.get(providerId);

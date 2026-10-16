@@ -24,7 +24,7 @@
 import { addTurnUsage, emptySnapshot, type CostSnapshot } from "./ledger.ts";
 
 /** Tools whose result usage is child-agent work ledgered elsewhere. */
-const DELEGATION_TOOLS = new Set(["subagent", "bg_wait", "subagent_wait"]);
+const DELEGATION_TOOLS = new Set(["subagent", "bg_wait"]);
 
 /** Usage shape shared by pi-ai `Usage` and the ledger's tally helper. */
 type UsageLike = Parameters<typeof addTurnUsage>[1];

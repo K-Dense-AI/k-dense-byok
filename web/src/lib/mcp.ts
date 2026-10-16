@@ -204,7 +204,8 @@ export interface McpServerStatus {
   /** connected, needs-auth, failed, disconnected, disabled, … */
   state: string;
   tools: string[];
-  resources?: number;
+  /** The server offers resources (Pi lists them on demand, not at connect). */
+  resources?: boolean;
   error?: string;
   /** Pi holds OAuth tokens for this server, so Sign out has something to remove. */
   signedIn?: boolean;

@@ -19,6 +19,8 @@ describe("systemCardKind", () => {
     expect(systemCardKind("subagent_supervisor_request").label).toBe("Subagent needs a decision");
     expect(systemCardKind("subagent_watchdog_warning")).toMatchObject({ label: "Watchdog warning", tone: "warning" });
     expect(systemCardKind("subagent-notify").label).toBe("Background subagent finished");
+    expect(systemCardKind("subagent-supervisor-blocked")).toMatchObject({ label: "Subagent blocked on a decision", tone: "warning" });
+    expect(systemCardKind("subagent-completion-unhandled").tone).toBe("warning");
     expect(systemCardKind("compaction").label).toBe("Context compacted");
     expect(systemCardKind("something-else").label).toBe("Notice");
     expect(systemCardKind("subagent-slash-text-result").label).toBe("Command output");

@@ -38,6 +38,15 @@ export function systemCardKind(customType: string | undefined, content?: string)
       return { label: "Background subagent finished", Icon: CheckCircle2Icon, tone: "success" };
     case "subagent-wait-subscription":
       return { label: "Background work update", Icon: BellIcon, tone: "info" };
+    // pi-subagents 0.77+ reminders when a woken lead ends its turn silently.
+    case "subagent-completion-unanswered":
+      return { label: "Background results waiting", Icon: BellIcon, tone: "info" };
+    case "subagent-completion-unhandled":
+      return { label: "Background results unhandled", Icon: ShieldAlertIcon, tone: "warning" };
+    case "subagent-supervisor-unanswered":
+      return { label: "Subagent still needs a decision", Icon: MessageCircleQuestionIcon, tone: "info" };
+    case "subagent-supervisor-blocked":
+      return { label: "Subagent blocked on a decision", Icon: ShieldAlertIcon, tone: "warning" };
     case "subagent_control_notice":
       // pi-subagents' activity monitor: "Subagent needs attention: <agent>" …
       if (content && /^subagent needs attention/i.test(content)) {

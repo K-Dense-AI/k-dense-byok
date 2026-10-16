@@ -5,7 +5,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { pathToFileURL } from "node:url";
 
 const registry = {
   markSystemSession: vi.fn(),
@@ -47,6 +47,14 @@ import {
 } from "../src/agent/scheduler.ts";
 import { readSchedulerState, writeSchedulerState } from "../src/agent/scheduler-state.ts";
 import { makeSubagentLedgerExtension, setScheduleActivityListener } from "../src/agent/subagent-bridge.ts";
+import { subagentsPackageDir } from "../src/agent/agent-files.ts";
+
+// The plugin's own resolver: Kady must read the directory pi-subagents writes.
+const { resolveMissionStoreLocation } = await import(
+  pathToFileURL(path.join(subagentsPackageDir(), "src/missions/store.js")).href
+);
+const pluginMissionDir = (projectRoot: string): string =>
+  resolveMissionStoreLocation({ projectRoot, agentDir: KADY_PI_AGENT_DIR }).missionDir;
 
 const app = await buildApp();
 let projectId: string;
@@ -113,9 +121,19 @@ describe("schedule and mission readers", () => {
     expect(projectsWithActiveSchedules()).toEqual([projectId]);
   });
 
+  it("passes calendar triggers and mission-bound targets through", () => {
+    const trigger = { kind: "calendar", every: "week", at: "09:00", timezone: "Europe/Berlin", on: ["mon", "thu"], nextRunAt: "2026-10-19T07:00:00.000Z", nextLocalDate: "2026-10-19" };
+    writeSchedule(projectId, "weekly", {
+      schemaVersion: 2,
+      trigger,
+      target: { workflowScript: 'return runs.run("main", { agent: "worker", task: "x" })', missionId: "m1" },
+    });
+    expect(listSchedules(projectId)[0]).toMatchObject({ id: "weekly", trigger, missionId: "m1" });
+  });
+
   it("reads missions from the hashed project directory", () => {
     const sandbox = resolvePaths(projectId).sandbox;
-    const dir = path.join(KADY_PI_AGENT_DIR, "missions", "projects", createHash("sha256").update(path.resolve(sandbox)).digest("hex"));
+    const dir = pluginMissionDir(sandbox);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "m1.json"), JSON.stringify({ schemaVersion: 1, id: "m1", title: "Ship QC", objective: "Validate uploads", status: "needs_decision", createdAt: "2026-09-08T00:00:00.000Z", updatedAt: "2026-09-08T01:00:00.000Z", runs: [{ runId: "r", mode: "workflow", agent: "worker", status: "complete" }], workflowChildren: [], decisions: [{ id: "d1", status: "open", title: "Which threshold?" }], artifacts: [], receipts: [] }));
     fs.writeFileSync(path.join(dir, "m0.json"), JSON.stringify({ schemaVersion: 1, id: "m0", title: "Old", objective: "", status: "completed", createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", runs: [], workflowChildren: [], decisions: [], artifacts: [], receipts: [] }));
@@ -222,7 +240,7 @@ describe("automation routes", () => {
     expect(calls).toEqual([{ action: "schedule.resume", id: "mine" }]);
 
     const sandbox = resolvePaths(projectId).sandbox;
-    const dir = path.join(KADY_PI_AGENT_DIR, "missions", "projects", createHash("sha256").update(path.resolve(sandbox)).digest("hex"));
+    const dir = pluginMissionDir(sandbox);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "m1.json"), JSON.stringify({ schemaVersion: 1, id: "m1", title: "QC", objective: "", status: "planned", createdAt: "", updatedAt: "", runs: [], decisions: [], receipts: [] }));
     calls.length = 0;

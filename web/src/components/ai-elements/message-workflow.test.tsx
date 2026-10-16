@@ -41,5 +41,9 @@ describe("workflow script fences", () => {
     expect(parseWorkflowFence("~~~js workflow\nreturn 1\n~~~")).toBeNull();
     // A workflow fence quoted inside another fence is documentation.
     expect(workflowScriptsIn("````md\n```js workflow\nreturn 0\n```\n````\n" + reply)).toEqual([script]);
+    // Since 0.76 the only plain js block runs when no block is tagged.
+    expect(workflowScriptsIn("```js\nreturn 2\n```")).toEqual(["return 2"]);
+    expect(workflowScriptsIn("```js\nreturn 2\n```\n```js\nreturn 3\n```")).toEqual([]);
+    expect(workflowScriptsIn("```js\nreturn 2\n```\n" + reply)).toEqual([script]);
   });
 });

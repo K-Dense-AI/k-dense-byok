@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 export function patchSubagents() {
   const root = path.dirname(require.resolve('pi-subagents'));
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-  if (version !== '0.74.0') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
+  if (version !== '0.78.0') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
   const patches = [
     ['src/runs/background/scheduled-runs.js', 'function scheduleBelongsToSession(schedule, ctx) {', `// KADY_HOST_SCHEDULE_OWNER_V1: project timers belong to the durable resident.
 // Explicit session-only schedules retain Pi's original ownership semantics.
@@ -34,12 +34,12 @@ function scheduleBelongsToSession(schedule, ctx) {`, 'KADY_HOST_SCHEDULE_OWNER_V
         if (!kadyScheduleTimerOwner(schedule, this.requireContext(store))) return;`, 'KADY_HOST_SCHEDULE_RESTORE_V1'],
     ['src/runs/background/scheduled-runs.js', '        if (planned === undefined || schedule.paused)', `        // KADY_HOST_SCHEDULE_FIRE_V1: ownership may have changed since arming.
         if (planned === undefined || schedule.paused || !kadyScheduleTimerOwner(schedule, this.requireContext(store)))`, 'KADY_HOST_SCHEDULE_FIRE_V1'],
-    ['src/extension/index.js', `        if (!ctx.hasUI)
-            await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests });`, `        // KADY_HOST_NO_DRAIN_V1: Kady chat sessions are headless only to Pi. The
-        // backend outlives the turn and adopts completion notices as system runs,
-        // so draining here would keep the user's run open until all work ends.
-        if (!ctx.hasUI && !(process.env.KADY_SUBAGENT_HOST_MODULE && globalThis.__kadyInteractiveSessions?.has(state.currentSessionId)))
-            await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests });`, 'KADY_HOST_NO_DRAIN_V1'],
+    ['src/extension/index.js', `            if (!ctx.hasUI)
+                await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests }).then(resultWatcher.deliverPendingResults);`, `            // KADY_HOST_NO_DRAIN_V1: Kady chat sessions are headless only to Pi. The
+            // backend outlives the turn and adopts completion notices as system runs,
+            // so draining here would keep the user's run open until all work ends.
+            if (!ctx.hasUI && !(process.env.KADY_SUBAGENT_HOST_MODULE && globalThis.__kadyInteractiveSessions?.has(state.currentSessionId)))
+                await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests }).then(resultWatcher.deliverPendingResults);`, 'KADY_HOST_NO_DRAIN_V1'],
     ['src/extension/index.js', '    let refreshResultDelivery = () => { };', `    // KADY_HOST_SCHEDULE_EVENT_V1: scoped to this extension/session event bus.
     if (process.env.KADY_SUBAGENT_HOST_MODULE) {
         const off = pi.events.on("kady:schedules:refresh", () => scheduledRunManager.kadyRefresh());
@@ -60,13 +60,7 @@ function kadyScopedBaseline(cwd, baseline) {
     try { return path.relative(fs.realpathSync.native(baseline.root), fs.realpathSync.native(cwd)) === "" ? baseline : undefined; }
     catch { return undefined; }
 }
-/** HEAD at reviewer launch, for tools that must be registered synchronously. */`, 'KADY_HOST_WATCHDOG_DIFF_SCOPE_V2', `// KADY_HOST_WATCHDOG_DIFF_SCOPE_V2: do not expose an ancestor checkout's diff.
-function kadyScopedBaseline(cwd, baseline) {
-    if (!baseline || !process.env.KADY_SUBAGENT_HOST_MODULE) return baseline;
-    try { return fs.realpathSync(baseline.root) === fs.realpathSync(cwd) ? baseline : undefined; }
-    catch { return undefined; }
-}
-/** HEAD at reviewer launch, for tools that must be registered synchronously. */`],
+/** HEAD at reviewer launch, for tools that must be registered synchronously. */`, 'KADY_HOST_WATCHDOG_DIFF_SCOPE_V2'],
     ['src/watchdog/diff-tool.js', '    return result.ok ? parseBaseline(result.stdout) : undefined;', '    return result.ok ? kadyScopedBaseline(cwd, parseBaseline(result.stdout)) : undefined; // KADY_HOST_WATCHDOG_DIFF_SYNC_V1', 'KADY_HOST_WATCHDOG_DIFF_SYNC_V1'],
     ['src/watchdog/diff-tool.js', '            resolve(error ? undefined : parseBaseline(stdout));', '            resolve(error ? undefined : kadyScopedBaseline(cwd, parseBaseline(stdout))); // KADY_HOST_WATCHDOG_DIFF_ASYNC_V1', 'KADY_HOST_WATCHDOG_DIFF_ASYNC_V1'],
     ['src/runs/background/scheduled-runs.js', 'function sanitizeTarget(params) {', `// KADY_HOST_SCHEDULE_MODEL_V1: schedule targets must retain the host-pinned model.
@@ -77,8 +71,8 @@ function kadyScheduleModel(value) {
     return { model: value.trim() };
 }
 function sanitizeTarget(params) {`, 'KADY_HOST_SCHEDULE_MODEL_V1'],
-    ['src/runs/background/scheduled-runs.js', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }) } };', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...kadyScheduleModel(params.model) } }; // KADY_HOST_SCHEDULE_MODEL_SAVE_V1', 'KADY_HOST_SCHEDULE_MODEL_SAVE_V1'],
-    ['src/runs/background/scheduled-runs.js', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }) };', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...kadyScheduleModel(target.model) }; // KADY_HOST_SCHEDULE_MODEL_READ_V1', 'KADY_HOST_SCHEDULE_MODEL_READ_V1'],
+    ['src/runs/background/scheduled-runs.js', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }) } };', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }), ...kadyScheduleModel(params.model) } }; // KADY_HOST_SCHEDULE_MODEL_SAVE_V1', 'KADY_HOST_SCHEDULE_MODEL_SAVE_V1'],
+    ['src/runs/background/scheduled-runs.js', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }) };', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }), ...kadyScheduleModel(target.model) }; // KADY_HOST_SCHEDULE_MODEL_READ_V1', 'KADY_HOST_SCHEDULE_MODEL_READ_V1'],
     ['src/runs/background/scheduled-runs.js', 'export const SCHEDULED_RUN_ACTIONS = [', `// KADY_HOST_SCHEDULE_IMPORT_V1
 import { parseSubagentCapabilityCeiling, registerSubagentCapabilityCeiling } from "../shared/capability-ceiling.js";
 export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
@@ -135,19 +129,6 @@ export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
                     const host = await import(process.env.KADY_SUBAGENT_HOST_MODULE);
                     baseStreamFn = host.watchdogStream(request.ctx, baseStreamFn);
                 }`, 'KADY_HOST_ARBITER_V1'],
-    ['src/runs/background/runner-aliases.js', `        if (target && fs.existsSync(target))
-            aliases[specifier] = fs.realpathSync(target);
-        else
-            missing.push(specifier);`, `        if (target && fs.existsSync(target))
-            aliases[specifier] = fs.realpathSync(target);
-        // KADY_HOST_CORE_NODE_ALIAS_V1: Pi 1.0 removed pi-agent-core's "./node"
-        // export and nothing in the runner graph imports it, so requiring the
-        // alias refused every background launch. Skip it only when the package
-        // no longer declares it; a declared but missing target is still broken.
-        else if (process.env.KADY_SUBAGENT_HOST_MODULE && specifier === "@earendil-works/pi-agent-core/node" && packageDir && !Object.hasOwn(readManifest(packageDir)?.exports ?? {}, subpath))
-            continue;
-        else
-            missing.push(specifier);`, 'KADY_HOST_CORE_NODE_ALIAS_V1'],
   ];
   // Check all anchors before mutating any file.
   const writes = patches.map(([file, before, after, marker, previous]) => {

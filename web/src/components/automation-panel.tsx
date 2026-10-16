@@ -251,6 +251,7 @@ export function AutomationPanel({ projectId }: { projectId: string }) {
                       {" · "}catch-up: {s.catchUp}
                       {s.timeoutMs ? ` · timeout ${Math.round(s.timeoutMs / 60000)} min` : ""}
                       {s.baseRef ? ` · base ${s.baseRef}` : ""}
+                      {s.missionId ? ` · mission ${s.missionId}` : ""}
                     </div>
                     {s.runs.length > 0 && (
                       <ul className="mt-2 flex flex-col gap-0.5">

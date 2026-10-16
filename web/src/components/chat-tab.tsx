@@ -1489,7 +1489,7 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
     }
   };
   const activityById = new Map(activities.map((activity) => [activity.id, activity]));
-  // pi-subagents ≥0.74 runs the ```js workflow block written in the same reply
+  // pi-subagents ≥0.74 runs the script block written in the same reply
   // as `subagent({ workflow: true })`; hand the nearest preceding one to the
   // tool card so it can name the specialists the script launches.
   let replyWorkflowScript: string | undefined;

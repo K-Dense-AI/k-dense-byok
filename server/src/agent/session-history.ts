@@ -20,6 +20,7 @@ import {
   type ThinkingPart,
   type ToolCallPart,
 } from "./session-export.ts";
+import { isParentWake } from "./subagent-wake.ts";
 
 export interface HistoryMessage {
   /** `system` = an extension-injected custom message or a compaction marker. */
@@ -102,7 +103,7 @@ export function toHistory(file: string, sandboxRoot = ""): HistoryMessage[] {
     if (m.role === "user") {
       const text = textOf(m.content);
       const images = imagesOf(m.content);
-      if (!text && images.length === 0) continue;
+      if ((!text && images.length === 0) || (images.length === 0 && isParentWake(text))) continue;
       out.push({
         role: "user",
         content: text,

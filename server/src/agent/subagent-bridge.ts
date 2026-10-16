@@ -305,9 +305,10 @@ function billingFromModelRef(
  * `runs.run(key, { agent, ... })`, so a structural walk of the tool input
  * does not see them — every check that guards delegation (spend cap, provider
  * support, model inheritance) would silently pass everything through. Since
- * 0.74 the script is not even in the tool input: `workflow: true` runs the one
- * ```js workflow block written in the same assistant reply, and a `workflow`
- * string containing `/` names a script file (see `workflowCallTargets`).
+ * 0.74 the script is not even in the tool input: `workflow: true` runs the
+ * script block written in the same assistant reply, a `workflow` string
+ * containing `/` names a script file, and any other string names a workflow
+ * resource (see `workflowCallTargets`).
  *
  * The script is source text, not data, so this reads the literals rather than
  * pretending to evaluate it. `dynamic` records that at least one `agent:` or
@@ -371,16 +372,42 @@ export interface WorkflowCallSource {
 const UNKNOWN_SCRIPT = (): WorkflowScriptTargets => ({ agents: new Set(), models: new Set(), dynamic: true });
 
 /**
+ * Children of pi-subagents' package-owned named workflows
+ * (src/workflows/workflow-resources.js, not a public export). Each expands
+ * its `args` into a fixed script, so its children are data we can read:
+ * `review` runs one `reviewer`, `run-ci` runs a host command and no model,
+ * and `parallel` (0.77+) runs `args.tasks: [{ agent, task }]` — items take no
+ * `model`, so the workflow-wide `model` is the only per-run override. A shape
+ * the plugin would reject reads as unknown; it refuses the launch itself.
+ */
+const PACKAGE_WORKFLOWS: Record<string, (args: unknown) => WorkflowScriptTargets> = {
+  review: () => ({ agents: new Set(["reviewer"]), models: new Set(), dynamic: false }),
+  "run-ci": () => NO_SCRIPT(),
+  parallel: (args) => {
+    const tasks = (args as { tasks?: unknown } | undefined)?.tasks;
+    if (!Array.isArray(tasks) || tasks.length === 0) return UNKNOWN_SCRIPT();
+    const agents = new Set<string>();
+    for (const task of tasks) {
+      const agent = (task as { agent?: unknown } | null)?.agent;
+      if (typeof agent !== "string" || !agent.trim()) return UNKNOWN_SCRIPT();
+      agents.add(agent.trim());
+    }
+    return { agents, models: new Set(), dynamic: false };
+  },
+};
+
+/**
  * Script targets for a `subagent` tool call, or undefined when it runs no script.
  *
- * Mirrors how pi-subagents 0.74 resolves the script it will execute: the one
- * ```js workflow block of the assistant message that issued `workflow: true`,
- * or a `workflow` file path resolved against the request cwd. A script that
- * cannot be read here — a named workflow resource, a missing file, a reply
- * without exactly one block — reports `dynamic`, which widens billing to
- * "unknown" and disables the model pin; the upstream executor rejects the
- * malformed cases itself. `workflowScript` is now only the plugin's internal
- * carrier (model calls that pass it are refused), kept for internal callers.
+ * Mirrors how pi-subagents 0.78 resolves the script it will execute: the
+ * script block of the assistant message that issued `workflow: true`, a
+ * `workflow` file path resolved against the request cwd, or one of the
+ * package's own named workflows. A script that cannot be read here — a
+ * workflow another extension registered, a missing file, a reply without
+ * exactly one block — reports `dynamic`, which widens billing to "unknown"
+ * and disables the model pin; the upstream executor rejects the malformed
+ * cases itself. `workflowScript` is now only the plugin's internal carrier
+ * (model calls that pass it are refused), kept for internal callers.
  */
 export function workflowCallTargets(
   input: Record<string, unknown>,
@@ -389,14 +416,19 @@ export function workflowCallTargets(
   if (typeof input.workflowScript === "string") return workflowScriptTargets(input.workflowScript);
   const workflow = input.workflow;
   if (workflow === undefined) return undefined;
-  if (workflow === true) {
+  // Some MCP clients send the flag as a string; pi-subagents accepts both.
+  if (workflow === true || workflow === "true") {
     const script = source.sessionManager && source.toolCallId
       ? replyWorkflowScript(source.sessionManager.getBranch(), source.toolCallId)
       : undefined;
     return script === undefined ? UNKNOWN_SCRIPT() : workflowScriptTargets(script);
   }
-  // Named workflow resources (no path separator) are extension-owned code.
-  if (typeof workflow !== "string" || !/[\\/]/.test(workflow) || !source.cwd) return UNKNOWN_SCRIPT();
+  if (typeof workflow !== "string") return UNKNOWN_SCRIPT();
+  if (!/[\\/]/.test(workflow)) {
+    const named = Object.hasOwn(PACKAGE_WORKFLOWS, workflow.trim()) ? PACKAGE_WORKFLOWS[workflow.trim()] : undefined;
+    return named ? named(input.args) : UNKNOWN_SCRIPT();
+  }
+  if (!source.cwd) return UNKNOWN_SCRIPT();
   const base = typeof input.cwd === "string" && input.cwd ? path.resolve(source.cwd, input.cwd) : source.cwd;
   try {
     const file = path.resolve(base, workflow);
@@ -408,15 +440,18 @@ export function workflowCallTargets(
 }
 
 const WORKFLOW_FENCE = /^```(?:js|javascript) workflow[ \t]*$/;
+const PLAIN_JS_FENCE = /^```(?:js|javascript)[ \t]*$/;
 const OPEN_FENCE = /^(`{3,}|~{3,})/;
 const CLOSE_FENCE = /^(`{3,}|~{3,})[ \t]*$/;
 
 /**
- * The ```js workflow block of the assistant message that issued `toolCallId`,
- * or undefined when pi-subagents would refuse to run it. A port of the
- * plugin's `readReplyWorkflowScript` (src/extension/reply-workflow-script.js,
- * not a public export): Pi persists the whole assistant message before its
- * tool calls run, so the message is on the branch when `tool_call` fires.
+ * The script block of the assistant message that issued `toolCallId`, or
+ * undefined when pi-subagents would refuse to run it. A port of the plugin's
+ * `readReplyWorkflowScript` (src/extension/reply-workflow-script.js, not a
+ * public export): Pi persists the whole assistant message before its tool
+ * calls run, so the message is on the branch when `tool_call` fires. The one
+ * ```js workflow block wins; since 0.76 a reply with none falls back to its
+ * only plain ```js block, because models often drop the tag.
  */
 export function replyWorkflowScript(branch: ReadonlyArray<unknown>, toolCallId: string): string | undefined {
   type Block = { type?: string; id?: string; name?: string; text?: unknown; arguments?: Record<string, unknown> };
@@ -426,25 +461,32 @@ export function replyWorkflowScript(branch: ReadonlyArray<unknown>, toolCallId: 
     const content = entry.message.content as Block[];
     if (!content.some((block) => block.type === "toolCall" && block.id === toolCallId)) continue;
     const replyCalls = content.filter((block) =>
-      block.type === "toolCall" && block.name === "subagent" && block.arguments?.workflow === true).length;
+      block.type === "toolCall" && block.name === "subagent" &&
+      (block.arguments?.workflow === true || block.arguments?.workflow === "true")).length;
     if (replyCalls > 1) return undefined;
     const text = content.flatMap((block) => block.type === "text" && typeof block.text === "string" ? [block.text] : []).join("\n");
-    const blocks: string[] = [];
-    let fence: { marker: string; tagged: boolean; start: number } | undefined;
+    const tagged: string[] = [];
+    const plain: string[] = [];
+    let fence: { marker: string; kind?: "tagged" | "plain"; start: number } | undefined;
     const lines = text.split("\n");
     for (let line = 0; line < lines.length; line++) {
       const value = lines[line].replace(/\r$/, "");
       if (!fence) {
         const open = OPEN_FENCE.exec(value);
-        if (open) fence = { marker: open[1], tagged: WORKFLOW_FENCE.test(value), start: line + 1 };
+        if (open) {
+          const kind = WORKFLOW_FENCE.test(value) ? "tagged" : PLAIN_JS_FENCE.test(value) ? "plain" : undefined;
+          fence = { marker: open[1], kind, start: line + 1 };
+        }
         continue;
       }
       const close = CLOSE_FENCE.exec(value);
       if (!close || close[1][0] !== fence.marker[0] || close[1].length < fence.marker.length) continue;
-      if (fence.tagged) blocks.push(lines.slice(fence.start, line).join("\n"));
+      if (fence.kind) (fence.kind === "tagged" ? tagged : plain).push(lines.slice(fence.start, line).join("\n"));
       fence = undefined;
     }
-    if (fence?.tagged || blocks.length !== 1 || !blocks[0].trim()) return undefined;
+    if (fence?.kind === "tagged" || (fence?.kind === "plain" && tagged.length === 0)) return undefined;
+    const blocks = tagged.length > 0 ? tagged : plain.length === 1 ? plain : [];
+    if (blocks.length !== 1 || !blocks[0].trim()) return undefined;
     return blocks[0];
   }
   return undefined;
@@ -965,9 +1007,8 @@ export function makeSubagentLedgerExtension(
   };
 }
 
-/** Tools whose text output can carry a child's provider error. The wait tool
- *  was `subagent_wait` until pi-subagents 0.61 and is `bg_wait` since. */
-const CHILD_RESULT_TOOLS = new Set(["subagent", "bg_wait", "subagent_wait"]);
+/** Tools whose text output can carry a child's provider error. */
+const CHILD_RESULT_TOOLS = new Set(["subagent", "bg_wait"]);
 
 /**
  * Explain a provider refusal that killed a child agent.

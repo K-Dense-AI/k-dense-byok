@@ -506,8 +506,8 @@ export interface McpServerStatus {
   state: string;
   tools: string[];
   toolExposure?: Record<string, McpExposure>;
-  resources?: number;
-  resourceTemplates?: number;
+  /** The server offers resources (Pi 1.2+ no longer lists or counts them). */
+  resources?: boolean;
   error?: string;
   /**
    * Pi holds OAuth tokens for this HTTP server, i.e. there is a sign-in to

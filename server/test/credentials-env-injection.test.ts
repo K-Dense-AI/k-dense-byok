@@ -64,3 +64,18 @@ describe("credential persistence", () => {
     }
   });
 });
+
+describe("search provider keys", () => {
+  it("manages CERAMIC_API_KEY live and in .env", async () => {
+    try {
+      const res = await put({ ceramicApiKey: "ceramic-test-key-123" });
+      expect(res.statusCode).toBe(200);
+      expect(process.env.CERAMIC_API_KEY).toBe("ceramic-test-key-123");
+      expect(fs.readFileSync(envFile, "utf8")).toContain("CERAMIC_API_KEY=");
+      const status = await app.inject({ method: "GET", url: "/credentials" });
+      expect(status.json().ceramic).toMatchObject({ set: true });
+    } finally {
+      delete process.env.CERAMIC_API_KEY;
+    }
+  });
+});

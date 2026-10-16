@@ -170,20 +170,7 @@ describe("makeSubagentRefusalExtension", () => {
     expect(result.content[1].text).toContain("openrouter/anthropic/claude-fable-5");
   });
 
-  it("covers subagent_wait, where async children report their failure", async () => {
-    ensureProjectExists("p6");
-    const pi = fakePi();
-    makeSubagentRefusalExtension("p6")(pi.api as never);
-
-    const result = await pi.onHandlers.tool_result({
-      toolName: "subagent_wait",
-      content: [{ type: "text", text: "run failed: Provider finish_reason: content_filter" }],
-      isError: true,
-    });
-    expect(result).toBeTruthy();
-  });
-
-  it("covers bg_wait, the wait tool's name since pi-subagents 0.61", async () => {
+  it("covers bg_wait, where async children report their failure", async () => {
     ensureProjectExists("p6b");
     const pi = fakePi();
     makeSubagentRefusalExtension("p6b")(pi.api as never);

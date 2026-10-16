@@ -145,6 +145,8 @@ const BASE_MANAGED_KEYS: ManagedKey[] = [
   { id: "exa", bodyField: "exaApiKey", envVar: "EXA_API_KEY" },
   { id: "perplexity", bodyField: "perplexityApiKey", envVar: "PERPLEXITY_API_KEY" },
   { id: "gemini", bodyField: "geminiApiKey", envVar: "GEMINI_API_KEY" },
+  // pi-web-access 0.38+; explicit-only, so a key alone never routes searches to it.
+  { id: "ceramic", bodyField: "ceramicApiKey", envVar: "CERAMIC_API_KEY" },
   // Modal remote compute is two env vars for one logical credential; both must
   // be set for modalConfigured() to flip true and the modal_run tool to register.
   { id: "modalTokenId", bodyField: "modalTokenId", envVar: "MODAL_TOKEN_ID" },

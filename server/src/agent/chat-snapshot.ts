@@ -28,6 +28,7 @@ import {
 } from "./session-export.ts";
 import { splitComposerContext, contextTitle, RECORD_KIND_LABELS } from "../../../web/src/lib/composer-context.ts";
 import { parseCommandBlock } from "../../../web/src/lib/command-blocks.ts";
+import { isParentWake } from "./subagent-wake.ts";
 
 export const SNAPSHOT_DIR = ".kady/chat-snapshots";
 /** Rendered transcript budget; the oldest turns after the first are dropped past it. */
@@ -174,7 +175,7 @@ export function renderTurns(entries: SessionEntryRow[], sandboxRoot: string): Tu
     if (role === "user") {
       const text = textOf(content);
       const images = (content ?? []).filter((c) => c.type === "image").length;
-      if (!text && !images) continue;
+      if ((!text && !images) || (!images && isParentWake(text))) continue;
       prompts++;
       const note = images ? `\n\n_(${images} image${images === 1 ? "" : "s"} attached)_` : "";
       turns.push({ lines: [`## ${prompts}. User`, "", rel(userText(text)) + note, ""], isPrompt: true });

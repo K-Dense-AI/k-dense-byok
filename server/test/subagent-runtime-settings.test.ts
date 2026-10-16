@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
-import { isExternalCliAgent, listBuiltinAgents } from "../src/agent/agent-files.ts";
+import { isExternalCliAgent, listBuiltinAgents, subagentsPackageDir } from "../src/agent/agent-files.ts";
 import { seedSubagentRuntimeSettings } from "../src/agent/subagent-runtime-settings.ts";
 import { PROJECTS_ROOT, KADY_PI_AGENT_DIR } from "../src/config.ts";
 import { ensureProjectExists } from "../src/projects.ts";
@@ -24,6 +25,9 @@ function readSettings(sandbox: string): Settings {
   return JSON.parse(fs.readFileSync(path.join(sandbox, ".pi", "settings.json"), "utf-8")) as Settings;
 }
 
+const { loadConfig: pluginConfig } = await import(
+  pathToFileURL(path.join(subagentsPackageDir(), "src/extension/config.js")).href
+);
 const externalCli = listBuiltinAgents().filter(isExternalCliAgent).map((a) => a.name);
 const piSessionBuiltins = listBuiltinAgents().filter((a) => !isExternalCliAgent(a)).map((a) => a.name);
 
@@ -52,7 +56,10 @@ describe("seedSubagentRuntimeSettings", () => {
     expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({
       forceTopLevelAsync: true,
       disabledFeatures: ["panes", "external-machines"],
+      activeRunsPrompt: true,
     });
+    // The plugin's own loader accepts what Kady wrote (it fails closed on a bad disabledFeatures).
+    expect(pluginConfig()).toMatchObject({ forceTopLevelAsync: true, activeRunsPrompt: true });
     expect(settings.subagents?.forceTopLevelAsync).toBeUndefined();
     for (const name of externalCli) {
       expect(settings.subagents?.agentOverrides?.[name]?.disabled).toBe(true);
@@ -70,7 +77,7 @@ describe("seedSubagentRuntimeSettings", () => {
     const [enabled, ...rest] = externalCli;
     const configFile = path.join(KADY_PI_AGENT_DIR, "extensions", "subagent", "config.json");
     fs.mkdirSync(path.dirname(configFile), { recursive: true });
-    fs.writeFileSync(configFile, JSON.stringify({ forceTopLevelAsync: false, concurrency: 3, disabledFeatures: [] }));
+    fs.writeFileSync(configFile, JSON.stringify({ forceTopLevelAsync: false, concurrency: 3, disabledFeatures: [], activeRunsPrompt: false }));
     fs.writeFileSync(
       path.join(dir, "settings.json"),
       JSON.stringify({
@@ -88,7 +95,7 @@ describe("seedSubagentRuntimeSettings", () => {
     const settings = readSettings(paths.sandbox);
     expect(settings.packages).toEqual(["keep-me"]);
     expect(settings.subagents?.forceTopLevelAsync).toBeUndefined();
-    expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({ forceTopLevelAsync: false, concurrency: 3, disabledFeatures: [] });
+    expect(JSON.parse(fs.readFileSync(configFile, "utf8"))).toEqual({ forceTopLevelAsync: false, concurrency: 3, disabledFeatures: [], activeRunsPrompt: false });
     expect(settings.subagents?.agentOverrides?.[enabled]).toEqual({ disabled: false, tools: ["read"] });
     expect(settings.subagents?.agentOverrides?.researcher).toEqual({ tools: ["read", "notebook"] });
     for (const name of rest) {

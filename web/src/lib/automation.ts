@@ -25,9 +25,12 @@ export interface ScheduleView {
   name: string;
   trigger:
     | { kind: "once"; at: string; nextRunAt?: string }
-    | { kind: "interval"; every: string; everyMs: number; anchorAt: string; nextRunAt: string };
+    | { kind: "interval"; every: string; everyMs: number; anchorAt: string; nextRunAt: string }
+    | { kind: "calendar"; every: "day" | "week"; at: string; timezone: string; on?: string[]; nextRunAt: string };
   workflowScript: string;
   baseRef?: string;
+  /** Existing mission every fire runs under. */
+  missionId?: string;
   /** Pinned model; absent means fires inherit the resident session's model. */
   model?: string;
   quiet: boolean;
@@ -109,13 +112,16 @@ export async function closeMission(id: string, projectId?: string): Promise<Miss
 }
 
 /**
- * Human form of a trigger: "every 6h · next 14:00" / "once at …". A paused
- * schedule keeps a stored nextRunAt that will not fire, so it is not shown.
+ * Human form of a trigger: "every 6h · next 14:00", "every week (mon, thu) at
+ * 09:00 Europe/Berlin · next …" or "once at …". A paused schedule keeps a
+ * stored nextRunAt that will not fire, so it is not shown.
  */
 export function describeTrigger(trigger: ScheduleView["trigger"], paused = false): string {
-  if (trigger.kind === "interval") {
-    const next = trigger.nextRunAt && !paused ? ` · next ${new Date(trigger.nextRunAt).toLocaleString()}` : "";
-    return `every ${trigger.every}${next}`;
+  const next = trigger.nextRunAt && !paused ? ` · next ${new Date(trigger.nextRunAt).toLocaleString()}` : "";
+  if (trigger.kind === "interval") return `every ${trigger.every}${next}`;
+  if (trigger.kind === "calendar") {
+    const days = trigger.on?.length ? ` (${trigger.on.join(", ")})` : "";
+    return `every ${trigger.every}${days} at ${trigger.at} ${trigger.timezone}${next}`;
   }
   const at = trigger.nextRunAt ?? trigger.at;
   return `once at ${new Date(at).toLocaleString()}`;

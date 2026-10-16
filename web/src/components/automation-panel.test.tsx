@@ -87,6 +87,12 @@ describe("AutomationPanel", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Started schedule nightly-qc run r3.");
   });
 
+  it("describes calendar triggers", () => {
+    const trigger = { kind: "calendar" as const, every: "week" as const, at: "09:00", timezone: "Europe/Berlin", on: ["mon", "thu"], nextRunAt: "2026-10-19T07:00:00.000Z" };
+    expect(lib.describeTrigger(trigger, true)).toBe("every week (mon, thu) at 09:00 Europe/Berlin");
+    expect(lib.describeTrigger(trigger)).toMatch(/^every week \(mon, thu\) at 09:00 Europe\/Berlin · next /);
+  });
+
   it("shows the empty states", async () => {
     vi.spyOn(lib, "getSchedules").mockResolvedValue({ schedules: [], heldByBudget: [], schedulerSessionId: null });
     vi.spyOn(lib, "getMissions").mockResolvedValue([]);

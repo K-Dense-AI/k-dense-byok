@@ -73,7 +73,7 @@ const PROVIDER_COLORS: Record<string, string> = {
   OpenAI:    "text-emerald-600 dark:text-emerald-400",
   "OpenAI Codex": "text-emerald-600 dark:text-emerald-400",
   "OpenAI Codex (legacy)": "text-emerald-600 dark:text-emerald-400",
-  "Azure OpenAI": "text-sky-600 dark:text-sky-400",
+  Azure: "text-sky-600 dark:text-sky-400",
   "GitHub Copilot": "text-violet-600 dark:text-violet-400",
   DeepSeek:  "text-cyan-600 dark:text-cyan-400",
   xAI:       "text-rose-600 dark:text-rose-400",

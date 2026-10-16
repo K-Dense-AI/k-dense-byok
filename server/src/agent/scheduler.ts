@@ -39,9 +39,13 @@ export interface ScheduleView {
   name: string;
   trigger:
     | { kind: "once"; at: string; nextRunAt?: string }
-    | { kind: "interval"; every: string; everyMs: number; anchorAt: string; nextRunAt: string };
+    | { kind: "interval"; every: string; everyMs: number; anchorAt: string; nextRunAt: string }
+    // pi-subagents 0.76+: a local time in an IANA timezone, weekly on chosen days.
+    | { kind: "calendar"; every: "day" | "week"; at: string; timezone: string; on?: string[]; nextRunAt: string };
   workflowScript: string;
   baseRef?: string;
+  /** Existing mission every fire runs under (pi-subagents 0.75+). */
+  missionId?: string;
   /** Pinned model for every fire; absent means children inherit the resident session's. */
   model?: string;
   /** Successful timer fires complete without waking the host session. */
@@ -144,6 +148,7 @@ export function listSchedules(projectId: string): ScheduleView[] {
       trigger: asRecord(record.trigger) as ScheduleView["trigger"],
       workflowScript: typeof target.workflowScript === "string" ? target.workflowScript : "",
       ...(typeof target.baseRef === "string" ? { baseRef: target.baseRef } : {}),
+      ...(typeof target.missionId === "string" ? { missionId: target.missionId } : {}),
       ...(typeof target.model === "string" ? { model: target.model } : {}),
       quiet: record.quiet === true,
       paused: record.paused === true,
@@ -161,9 +166,19 @@ export function listSchedules(projectId: string): ScheduleView[] {
   return out.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** pi-subagents stores missions under `<agentDir>/missions/projects/<sha256(cwd)>/<id>.json`. */
+/**
+ * pi-subagents stores missions under `<agentDir>/missions/projects/<sha256(root)>/<id>.json`,
+ * keyed by the project's real path since 0.77 (so a symlinked projects root
+ * or macOS `/var` → `/private/var` hashes like the plugin does).
+ */
 export function missionsDir(paths: ProjectPaths, agentDir = KADY_PI_AGENT_DIR): string {
-  const hash = createHash("sha256").update(path.resolve(paths.sandbox)).digest("hex");
+  let root = path.resolve(paths.sandbox);
+  try {
+    root = fs.realpathSync.native(root);
+  } catch {
+    // Not created yet: the plugin also keeps the given path for a missing root.
+  }
+  const hash = createHash("sha256").update(root).digest("hex");
   return path.join(agentDir, "missions", "projects", hash);
 }
 

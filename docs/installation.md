@@ -61,7 +61,8 @@ separate from the newer OpenAI sign-in.
 
 ## Optional services
 
-**Settings → Services** accepts Exa, Perplexity and Gemini search keys, a
+**Settings → Services** accepts Exa, Perplexity, Gemini and Ceramic search keys
+(Ceramic runs only when a search asks for it by name), a
 Paperclip API key and a Modal token ID/secret pair. Web search has a shared
 fallback without a key; video understanding requires Gemini. The Paperclip key
 adds a [literature-search connector](mcp-servers.md#authentication).

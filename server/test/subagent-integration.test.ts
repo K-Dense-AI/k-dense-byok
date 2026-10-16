@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -137,6 +138,39 @@ describe("workflow and definition compatibility", () => {
     expect(fs.readFileSync(first, "utf8")).toBe("local prompt");
     for (const skill of fs.readdirSync(path.join(pkg, "skills"))) expect(fs.existsSync(path.join(paths.skillsDir, skill, "SKILL.md"))).toBe(true);
     const deleted = path.join(paths.sandbox, ".pi", "prompts", prompts[1]); fs.rmSync(deleted); seedSubagentResources(paths); expect(fs.existsSync(deleted)).toBe(false);
+  });
+  it("upgrades unchanged seeded resources to a new plugin version, keeping edits and deletions", () => {
+    const paths = ensureProjectExists("resource-upgrade"), pkg = subagentsPackageDir();
+    seedSubagentResources(paths);
+    const markerFile = path.join(paths.kadyDir, "subagent-resources.json");
+    const sha = (text: string) => createHash("sha256").update(text).digest("hex");
+    const dest = (key: string) => path.join(paths.sandbox, ".pi", key);
+    const shipped = (key: string) => fs.readFileSync(path.join(pkg, key), "utf8");
+    const [pristine, edited, removed, added] = ["skills/pi-subagents/SKILL.md", "prompts/council.md", "prompts/review-loop.md", "prompts/parallel-review.md"];
+    // As if seeded by an older plugin: an untouched old copy, a user edit, a deletion and an entry it lacked.
+    const marker = JSON.parse(fs.readFileSync(markerFile, "utf8"));
+    fs.writeFileSync(dest(pristine), "old guide");
+    fs.writeFileSync(dest(edited), "my council");
+    fs.rmSync(dest(removed));
+    fs.rmSync(dest(added));
+    fs.writeFileSync(markerFile, JSON.stringify({ ...marker, plugin: "0.0.1", files: { ...marker.files, [pristine]: sha("old guide"), [added]: undefined } }));
+    seedSubagentResources(paths);
+    expect(fs.readFileSync(dest(pristine), "utf8")).toBe(shipped(pristine));
+    expect(fs.readFileSync(dest(edited), "utf8")).toBe("my council");
+    expect(fs.existsSync(dest(removed))).toBe(false);
+    expect(fs.readFileSync(dest(added), "utf8")).toBe(shipped(added));
+    const next = JSON.parse(fs.readFileSync(markerFile, "utf8"));
+    expect(next.plugin).toBe(JSON.parse(fs.readFileSync(path.join(pkg, "package.json"), "utf8")).version);
+    // Recorded so the next upgrade still leaves the edit and the deletion alone.
+    expect(next.files[edited]).not.toBe(sha("my council"));
+    expect(next.files[removed]).toBeTruthy();
+
+    // A marker from before hashes were recorded: deletions stick, edits stay.
+    fs.writeFileSync(markerFile, JSON.stringify({ version: 1 }));
+    seedSubagentResources(paths);
+    expect(fs.existsSync(dest(removed))).toBe(false);
+    expect(fs.readFileSync(dest(edited), "utf8")).toBe("my council");
+    expect(JSON.parse(fs.readFileSync(markerFile, "utf8")).files[pristine]).toBe(sha(shipped(pristine)));
   });
   it("preserves stable child targets when snapshot rows are omitted or reordered", async () => {
     patchSubagents();

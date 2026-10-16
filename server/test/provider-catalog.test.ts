@@ -235,6 +235,13 @@ describe("direct provider model resolution", () => {
   it("rejects a bare provider prefix", () => {
     expect(() => resolveModel("groq/", registry)).toThrowError(ModelResolutionError);
   });
+
+  it("resolves refs saved under a provider id Pi renamed", () => {
+    // Pi 1.0.3 renamed azure-openai-responses to azure.
+    const model = resolveModel("azure-openai-responses/gpt-5", registry);
+    expect(model.provider).toBe("azure");
+    expect(model.id).toBe("gpt-5");
+  });
 });
 
 // ---------------------------------------------------------------------------

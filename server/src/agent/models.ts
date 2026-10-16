@@ -22,6 +22,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { Api, Model } from "@earendil-works/pi-ai";
+import { getBuiltinModelDataGeneratedAt } from "@earendil-works/pi-ai/providers/all";
 import {
   DEFAULT_MODEL_ID,
   DEFAULT_MODEL_PROVIDER,
@@ -32,7 +33,7 @@ import {
 import { readAppDefaults } from "../app-settings.ts";
 import { isSubscriptionProvider, subscriptionProvider } from "./provider-auth.ts";
 import { customProviderName, isCustomProvider } from "./custom-models.ts";
-import { directProvider, isDirectProvider } from "./provider-catalog.ts";
+import { canonicalProviderId, directProvider, isDirectProvider } from "./provider-catalog.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
 // OpenAI-compatible provider can point at any compatible gateway — e.g.
@@ -324,6 +325,45 @@ export function registerLocalProviders(modelRuntime: ModelRuntime): void {
   });
 }
 
+/**
+ * Drop a saved OpenRouter model list older than the installed Pi catalog.
+ *
+ * Since Pi 1.2, OpenRouter's entry in `<agentDir>/models-store.json` (written
+ * by a network refresh, per-key since 1.2) replaces the built-in catalog
+ * whatever its age; Pi 1.0 used a saved catalog only when it was newer. Kady
+ * never refreshes catalogs at boot, so a list saved before a Pi upgrade would
+ * keep pricing the lead and every subagent child (they share the file) from
+ * stale data — e.g. without GPT-6 Astra's long-context tier, under-counting
+ * spend against the cap. The file is a cache: removing the entry only defers
+ * per-key filtering to the next network refresh. Returns true when pruned.
+ */
+export function pruneStaleOpenRouterCatalog(
+  agentDir: string,
+  builtinGeneratedAt: number | undefined = getBuiltinModelDataGeneratedAt(),
+): boolean {
+  if (builtinGeneratedAt === undefined) return false;
+  const file = path.join(agentDir, "models-store.json");
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(fs.readFileSync(file, "utf8").replace(/^\uFEFF/, ""));
+  } catch {
+    return false; // missing, or not ours to repair
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data) || !Object.hasOwn(data, "openrouter")) return false;
+  const checkedAt = (data.openrouter as { checkedAt?: unknown } | null)?.checkedAt;
+  if (typeof checkedAt === "number" && Number.isFinite(checkedAt) && checkedAt >= builtinGeneratedAt) return false;
+  delete data.openrouter;
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
+    fs.renameSync(tmp, file);
+  } catch {
+    fs.rmSync(tmp, { force: true });
+    return false;
+  }
+  return true;
+}
+
 /** Configure app-specific providers and normalize the legacy OpenRouter alias. */
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   registerLocalProviders(modelRuntime);
@@ -404,7 +444,7 @@ function directProviderRef(
 ): { providerId: string; modelId: string } | null {
   const slash = ref.indexOf("/");
   if (slash <= 0) return null;
-  const providerId = ref.slice(0, slash);
+  const providerId = canonicalProviderId(ref.slice(0, slash));
   if (providerId === "openrouter") return null;
   // Custom servers from models.json are first-class Pi providers too.
   if (!isDirectProvider(providerId) && !isSubscriptionProvider(providerId) && !isCustomProvider(providerId)) {
