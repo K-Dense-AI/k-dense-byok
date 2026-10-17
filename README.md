@@ -173,6 +173,7 @@ That's it. Create a project, drop in your data, and ask Kady for what you want �
 
 ➡️ **Step-by-step details, optional API keys, and troubleshooting:** [Installation guide](./docs/installation.md)
 ➡️ **Your first session and everyday features:** [Basic usage](./docs/basic-usage.md)
+➡️ **Prefer a container? Run Kady with Docker** — one command, isolated agent sandbox, local models reached by base URL (Ollama/llama.cpp/LM Studio), LaTeX optional: [Docker guide](./docs/docker.md)
 ➡️ **Prefer to watch first?** [Tutorial videos](#tutorial-videos)
 
 ## Tutorial videos
@@ -193,8 +194,9 @@ Recorded walkthroughs of Kady working through real research tasks, from the [K-D
 ## Documentation
 
 Start with the [documentation index](./docs/README.md), or go directly to
-[Installation](./docs/installation.md), [Basic usage](./docs/basic-usage.md),
-[Model selection](./docs/model-selection.md) or [Security](./docs/security.md).
+[Installation](./docs/installation.md), [Docker](./docs/docker.md),
+[Basic usage](./docs/basic-usage.md), [Model selection](./docs/model-selection.md)
+or [Security](./docs/security.md).
 
 ## From the K-Dense blog
 

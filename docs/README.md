@@ -7,6 +7,7 @@ These guides describe the current implementation; release history lives in
 ## Setup and model access
 
 - [Installation](installation.md): requirements, launch, updates and troubleshooting.
+- [Docker](docker.md): container setup, isolated sandbox, local models by base URL.
 - [Model selection](model-selection.md): providers, defaults, thinking and billing.
 - [Local models](local-models-ollama.md): Ollama and OpenAI-compatible servers.
 - [Custom model servers](custom-model-servers.md): endpoints with declared pricing.
