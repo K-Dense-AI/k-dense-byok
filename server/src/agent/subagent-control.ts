@@ -11,9 +11,7 @@ import { modalJobManager } from "../modal/manager.ts";
 import { isTerminalModalState } from "../modal/types.ts";
 import { workflowCallTargets } from "./subagent-bridge.ts";
 import { webAccessPackageDir } from "./web-access-bridge.ts";
-import { LEAD_DELEGATION_GUIDANCE, setSubagentPromptSection, verifierModelGuidance } from "./subagent-prompts.ts";
-import { routedVerifiers } from "./verifier-models.ts";
-import { resolvePaths } from "../projects.ts";
+import { LEAD_DELEGATION_GUIDANCE, setSubagentPromptSection } from "./subagent-prompts.ts";
 
 type Rec = Record<string, any>;
 interface Host { rpc(method: string, params?: Rec): Promise<Rec>; preflight(input: Rec): Promise<unknown>; refreshSchedules(): void; }
@@ -109,10 +107,7 @@ export function makeSubagentControlExtension(projectId: string): ExtensionFactor
     });
     pi.on("before_agent_start", (event) => {
       ceiling?.update(policy());
-      const verifiers = routedVerifiers(resolvePaths(projectId));
-      setSubagentPromptSection(event, "kady_delegation", verifiers
-        ? `${LEAD_DELEGATION_GUIDANCE}\n\n${verifierModelGuidance(verifiers.model, verifiers.agents)}`
-        : LEAD_DELEGATION_GUIDANCE);
+      setSubagentPromptSection(event, "kady_delegation", LEAD_DELEGATION_GUIDANCE);
     });
     pi.on("tool_call", async (event) => {
       if (event.toolName !== "subagent" || event.input.action || !ctx) return;

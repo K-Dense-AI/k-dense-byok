@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import fastifyCors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify, { type FastifyRequest } from "fastify";
-import { DEFAULT_PROJECT_ID, HOST, PORT, modalConfigured } from "./config.ts";
+import { BASE_PATH, DEFAULT_PROJECT_ID, HOST, PORT, modalConfigured } from "./config.ts";
 import { isCorsOriginAllowed, isExposedBind } from "./cors.ts";
 import { registerRequestGuard } from "./request-guard.ts";
 import { ensureAuthToken, redactAuthFromUrl, registerAuth } from "./auth.ts";
@@ -98,6 +98,16 @@ export async function buildApp() {
     // 5MB, see agent/prompt-images.ts); Fastify's default 1MB limit would
     // reject them.
     bodyLimit: 96 * 1024 * 1024,
+    // Strip the reverse-proxy prefix (see BASE_PATH) before routing.
+    rewriteUrl(req) {
+      const url = req.url ?? "/";
+      if (!BASE_PATH) return url;
+      if (url === BASE_PATH) return "/";
+      if (url.startsWith(`${BASE_PATH}/`) || url.startsWith(`${BASE_PATH}?`)) {
+        return url.slice(BASE_PATH.length).replace(/^\/+/, "/");
+      }
+      return url;
+    },
   });
 
   // Before CORS: a refused Host/Origin must not reach any handler, and a

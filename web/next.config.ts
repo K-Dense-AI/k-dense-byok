@@ -17,8 +17,18 @@ function readAppVersion(): string {
   return "0.0.0";
 }
 
+function normalizeBasePath(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === "/") return undefined;
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
 const nextConfig: NextConfig = {
   devIndicators: false,
+  basePath: normalizeBasePath(process.env.NEXT_PUBLIC_BASE_PATH),
+  allowedDevOrigins: ["k8plex-veo.vo.elte.hu"],
   async headers() {
     return [{ source: "/office/:path*", headers: [
       { key: "Cross-Origin-Opener-Policy", value: "same-origin" },

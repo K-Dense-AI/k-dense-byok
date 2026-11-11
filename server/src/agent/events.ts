@@ -14,7 +14,6 @@ import {
   scientificResultFromDetails,
   type ScientificResultCard,
 } from "./scientific-result.ts";
-import { isParentWake } from "./subagent-wake.ts";
 
 export interface ClientFrame {
   type: string;
@@ -410,10 +409,7 @@ export function toClientFrame(
       // User content marks the exact point a steered message was delivered
       // into the run, so the client can split the transcript there.
       if (role === "user") {
-        // pi-subagents' wake prompt still marks the run's start (the client
-        // takes the first user frame as the prompt echo) but shows no bubble.
-        const content = userMessageText(ev.message);
-        return { type: "message_start", role, content: isParentWake(content) ? "" : content };
+        return { type: "message_start", role, content: userMessageText(ev.message) };
       }
       // Extension-injected messages (supervisor requests, watchdog findings,
       // completion notices) carry their type and a bounded detail set.

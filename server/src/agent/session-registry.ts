@@ -32,8 +32,7 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { KADY_PI_AGENT_DIR } from "../config.ts";
 import type { ProjectPaths } from "../projects.ts";
 import { migrateDisabledMcpServers } from "./mcp.ts";
-import { defaultModel, pruneStaleOpenRouterCatalog, resolveModel, setupModelRuntime } from "./models.ts";
-import { canonicalProviderId } from "./provider-catalog.ts";
+import { defaultModel, resolveModel, setupModelRuntime } from "./models.ts";
 import { seedAgentFiles } from "./agent-files.ts";
 import { makeInterviewTool } from "./interview.ts";
 import { makeNotebookTool } from "./notebook.ts";
@@ -73,7 +72,6 @@ import {
 } from "./pdf-annotation-bridge.ts";
 import { LEAD_DEFAULT_TOOLS, LEAD_EXCLUDED_TOOLS } from "./tools.ts";
 import { seedSubagentRuntimeSettings } from "./subagent-runtime-settings.ts";
-import { applyVerifierDefault } from "./verifier-models.ts";
 
 // Entry points normally establish this in env.ts. Keep the registry safe when
 // imported directly (tests/scripts) so child Pi processes still share the same
@@ -93,8 +91,6 @@ if (!(process.env.PATH ?? "").split(path.delimiter).includes(localBin)) {
 patchSubagents();
 process.env.KADY_SUBAGENT_HOST_MODULE = pathToFileURL(path.join(import.meta.dirname, "subagent-host.mjs")).href;
 setHostMeter(handleSubagentMeter);
-// Before the runtime (and any child) restores the saved catalogs.
-pruneStaleOpenRouterCatalog(KADY_PI_AGENT_DIR);
 const modelRuntime = await ModelRuntime.create({
   allowModelNetwork: false,
   authPath: path.join(KADY_PI_AGENT_DIR, "auth.json"),
@@ -107,15 +103,6 @@ export function getModelRuntime(): ModelRuntime {
 }
 export function getModelRegistry(): ModelRegistry {
   return modelRegistry;
-}
-
-/** A model ref resolves and its provider has working credentials now. */
-export function modelRefAvailable(ref: string): boolean {
-  try {
-    return modelRuntime.hasConfiguredAuth(resolveModel(ref, modelRegistry).provider);
-  } catch {
-    return false;
-  }
 }
 
 /** Max live (in-memory) sessions kept per project; oldest idle ones are evicted. */
@@ -185,13 +172,13 @@ function evictOverCap(projectId: string): void {
     if (remaining <= MAX_LIVE_PER_PROJECT) break;
     const s = live.get(k);
     if (!s || s.isStreaming || pinned.has(k)) continue; // in-flight or claimed
-    void release(projectId, k, s);
+    release(projectId, k, s);
     remaining--;
   }
 }
 
 /** Dispose one live session and drop everything keyed off it. */
-function release(projectId: string, key: string, session: AgentSession): Promise<void> {
+function release(projectId: string, key: string, session: AgentSession): void {
   // Detach before dispose so an in-flight system run can finalize its handle
   // while the session is still queryable.
   const detach = observers.get(key);
@@ -206,30 +193,15 @@ function release(projectId: string, key: string, session: AgentSession): Promise
   // Pi's dispose() does not tell extensions the session is going away;
   // pi-subagents releases its supervisor-channel watchers and pollers on
   // `session_shutdown`, so emit it the way Pi's own quit path does.
-  const shutdown = session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {
+  void session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" }).catch(() => {
     /* best effort: a failing shutdown handler must not block disposal */
   });
+  session.dispose();
   live.delete(key);
   pinned.delete(key);
   systemSessions.delete(key);
   clearSessionCompute(projectId, key.slice(projectId.length + 1));
-  // Keep extension contexts valid until asynchronous MCP/worker cleanup has
-  // completed (Windows cannot remove a live child's cwd), but never longer
-  // than SHUTDOWN_GRACE_MS: Pi awaits each handler with no timeout, and one
-  // that never settles must not hang project deletion or leak the session.
-  let timer: NodeJS.Timeout | undefined;
-  const grace = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, SHUTDOWN_GRACE_MS);
-    timer.unref();
-  });
-  return Promise.race([shutdown, grace]).finally(() => {
-    clearTimeout(timer);
-    session.dispose();
-  });
 }
-
-/** Upper bound on waiting for `session_shutdown` handlers before disposal. */
-export const SHUTDOWN_GRACE_MS = 5_000;
 
 export interface OpenSessionOptions {
   /**
@@ -323,7 +295,7 @@ function resolveStoredModel(ref: { provider: string; modelId: string }, runtime:
     const model = resolveModel(`${ref.provider}/${ref.modelId}`, new ModelRegistry(runtime));
     // A removed custom provider must not hit the legacy OpenRouter-vendor
     // fallback and silently change providers when restoring a canonical ref.
-    return model.provider === canonicalProviderId(ref.provider) && runtime.hasConfiguredAuth(model.provider) ? model : undefined;
+    return model.provider === ref.provider && runtime.hasConfiguredAuth(model.provider) ? model : undefined;
   } catch {
     return undefined;
   }
@@ -378,9 +350,6 @@ async function build(
   // launches; and keep the external-CLI builtins (Claude Code/Codex/Cursor)
   // off until a user turns one on in Settings → Specialists.
   seedSubagentRuntimeSettings(paths);
-  // Route verifier specialists to the Settings → Defaults verifier model
-  // (re-checked before every delegation by the ledger extension below).
-  applyVerifierDefault(paths, modelRefAvailable);
   // The ledger extension is created before the session exists, so it reads
   // the live sessionId through this holder (set right after creation).
   const holder: { session?: AgentSession } = {};
@@ -398,7 +367,6 @@ async function build(
         () => holder.session?.sessionId ?? "",
         () => holder.session?.model,
         (providerId) => modelRuntime.isUsingOAuth(providerId),
-        modelRefAvailable,
       ),
       // Over the spend cap, refuse codemode scripts that run models
       // themselves (image generation, classifiers): their cost is unknown
@@ -479,10 +447,7 @@ async function build(
     // extension registers after connecting (their names are unknown here).
     // Every other tool — built-ins, custom tools below, and the extension
     // tools (`subagent`, `bg_wait`, `subagent_supervisor`, web access,
-    // codemode/tool_search when MCP needs them) — is active by default. Since
-    // pi-subagents 0.78 that includes `contact_supervisor`: forks then declare
-    // their parent's exact tool list and reuse its prompt cache; a lead call
-    // just returns an error.
+    // codemode/tool_search when MCP needs them) — is active by default.
     excludeTools: LEAD_EXCLUDED_TOOLS,
     customTools: [
       interviewTool,
@@ -496,8 +461,8 @@ async function build(
   });
   // Pi emits `session_start` only from bindExtensions(); without it the
   // extensions never see a live session: pi-subagents never starts its
-  // supervisor channel (so the `subagent_supervisor` tool is never
-  // registered), never resets per-session state, and skips
+  // supervisor channel (so the `subagent_supervisor` tool in the allowlist
+  // above is never registered), never resets per-session state, and skips
   // `resources_discover`. Headless mode mirrors `pi -p`.
   await session.bindExtensions({
     mode: "print",
@@ -575,10 +540,10 @@ export async function listSessions(paths: ProjectPaths): Promise<SessionInfo[]> 
   return SessionManager.list(paths.sandbox, paths.sessionsDir);
 }
 
-export async function disposeSession(projectId: string, sessionId: string): Promise<void> {
+export function disposeSession(projectId: string, sessionId: string): void {
   const k = keyFor(projectId, sessionId);
   const s = live.get(k);
-  if (s) await release(projectId, k, s);
+  if (s) release(projectId, k, s);
 }
 
 /** Stop every live session before its project directory is removed. */
@@ -594,8 +559,10 @@ export async function abortProjectSessions(projectId: string): Promise<void> {
 }
 
 /** Release every live session after its project runs have finalized. */
-export async function disposeProjectSessions(projectId: string): Promise<void> {
+export function disposeProjectSessions(projectId: string): void {
   const prefix = `${projectId}:`;
   const sessions = [...live.entries()].filter(([key]) => key.startsWith(prefix));
-  await Promise.all(sessions.map(([key, session]) => release(projectId, key, session)));
+  for (const [key, session] of sessions) {
+    release(projectId, key, session);
+  }
 }

@@ -6,7 +6,6 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { PROJECTS_ROOT } from "../src/config.ts";
@@ -37,16 +36,14 @@ const echoServer = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
-async function reset(): Promise<void> {
-  // Windows may briefly retain directory handles after child processes exit.
-  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+function reset(): void {
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
   fs.mkdirSync(PROJECTS_ROOT, { recursive: true });
   fs.rmSync(path.join(getAgentDir(), "mcp.json"), { force: true });
 }
 beforeEach(reset);
-afterAll(async () => {
-  // Windows may briefly retain directory handles after child processes exit.
-  await fs.promises.rm(PROJECTS_ROOT, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+afterAll(() => {
+  fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
   fs.rmSync(path.join(getAgentDir(), "mcp.json"), { force: true });
 });
 
@@ -224,44 +221,6 @@ describe("pi mcp CLI bridge", () => {
     expect(report.servers.filter((s) => s.name === "echo")).toHaveLength(1);
   }, 60_000);
 
-  it("reports which HTTP servers Pi holds OAuth tokens for", async () => {
-    const paths = ensureProjectExists("p7");
-    // Disabled, so nothing is dialled: the sign-in state comes from the files.
-    writeMcpServers("global", paths, {
-      "signed-in": { url: "https://docs.example/mcp", enabled: false },
-      legacy: { url: "https://legacy.example/mcp", enabled: false },
-      keyed: { url: "https://keyed.example/mcp", headers: { "X-API-Key": "${KEY}" }, enabled: false },
-      local: { ...echoServer(), enabled: false },
-    });
-    // Write tokens with Pi's own (unexported) store, so a change to its key
-    // format fails here instead of hiding Sign out for signed-in connectors.
-    const oauthModule = path.join(
-      path.dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))),
-      "extensions",
-      "mcp",
-      "oauth.js",
-    );
-    const { McpOAuthCredentialStore } = await import(pathToFileURL(oauthModule).href);
-    const authFile = path.join(getAgentDir(), "mcp-auth.json");
-    try {
-      await new McpOAuthCredentialStore().forServer("signed-in", "https://docs.example/mcp").save({
-        tokens: { access_token: "a", token_type: "Bearer" },
-      });
-      // Older Pi versions keyed state by URL alone.
-      const states = readJson(authFile);
-      states["https://legacy.example/mcp"] = { tokens: { access_token: "b", token_type: "Bearer" } };
-      fs.writeFileSync(authFile, JSON.stringify(states));
-
-      const byName = Object.fromEntries((await getMcpStatus(paths)).servers.map((s) => [s.name, s]));
-      expect(byName["signed-in"].signedIn).toBe(true);
-      expect(byName.legacy.signedIn).toBe(true);
-      expect(byName.keyed.signedIn).toBe(false);
-      expect(byName.local.signedIn).toBeUndefined();
-    } finally {
-      fs.rmSync(authFile, { force: true });
-    }
-  }, 60_000);
-
   it("test-dials an unsaved entry and reports failures as states", async () => {
     const paths = ensureProjectExists("p6");
     expect(await testMcpServer("x", echoServer(), paths)).toMatchObject({
@@ -270,7 +229,7 @@ describe("pi mcp CLI bridge", () => {
     });
     const failed = await testMcpServer("y", { command: "definitely-not-a-binary" }, paths);
     expect(failed.state).toBe("failed");
-    expect(failed.error).toMatch(process.platform === "win32" ? /not recognized/ : /ENOENT/);
+    expect(failed.error).toMatch(/ENOENT/);
   }, 60_000);
 });
 

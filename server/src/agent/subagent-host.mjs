@@ -3,9 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-// Keep fetch and its explicit dispatcher on the same undici implementation.
-// Node 22/24's built-in fetch uses an older handler contract than undici 8.
-import { Agent, fetch } from 'undici';
+import { Agent } from 'undici';
 const direct = new Agent();
 let localMeter;
 const childOwners = new Map();

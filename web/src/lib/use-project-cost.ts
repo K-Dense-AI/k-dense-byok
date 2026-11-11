@@ -1,18 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { apiFetch, useProjectScopeId } from "@/lib/projects";
 
 export type BudgetState = "ok" | "warn" | "exceeded";
 
 const BUDGET_CHANGED_EVENT = "kady:project-budget-changed";
-/**
- * Spend can land with no turn in any open tab: schedule fires on the hidden
- * resident session, a child finishing in a closed chat, Modal reconciliation.
- * A slow background refetch keeps the pill and the cap state honest.
- */
-const BACKGROUND_REFRESH_MS = 30_000;
 
 /** A spend limit changed: every mounted cost hook refetches its totals. */
 export function notifyProjectBudgetChanged(): void {
@@ -95,27 +89,11 @@ export function useProjectCost(
   );
   const [loading, setLoading] = useState(false);
   const [budgetRevision, setBudgetRevision] = useState(0);
-  const [backgroundTick, setBackgroundTick] = useState(0);
-  const silentRef = useRef(false);
 
   useEffect(() => {
     const bump = () => setBudgetRevision((value) => value + 1);
     window.addEventListener(BUDGET_CHANGED_EVENT, bump);
     return () => window.removeEventListener(BUDGET_CHANGED_EVENT, bump);
-  }, []);
-
-  useEffect(() => {
-    const tickSilently = () => {
-      if (document.hidden) return;
-      silentRef.current = true;
-      setBackgroundTick((value) => value + 1);
-    };
-    const timer = setInterval(tickSilently, BACKGROUND_REFRESH_MS);
-    document.addEventListener("visibilitychange", tickSilently);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", tickSilently);
-    };
   }, []);
 
   // Clearing on every refreshKey bump made the header pill blink back to $0.00
@@ -127,12 +105,9 @@ export function useProjectCost(
   useEffect(() => {
     if (!scopedProjectId) return;
     let cancelled = false;
-    // Background refetches must not dim the pill every 30s.
-    const silent = silentRef.current;
-    silentRef.current = false;
 
     const fetchOnce = async () => {
-      if (!silent) setLoading(true);
+      setLoading(true);
       try {
         const r = await apiFetch(
           `/projects/${encodeURIComponent(scopedProjectId)}/costs`,
@@ -146,7 +121,7 @@ export function useProjectCost(
       } catch {
         // swallow -- next refreshKey bump or project change will retry
       } finally {
-        if (!cancelled && !silent) setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
@@ -155,7 +130,7 @@ export function useProjectCost(
     return () => {
       cancelled = true;
     };
-  }, [scopedProjectId, refreshKey, budgetRevision, backgroundTick]);
+  }, [scopedProjectId, refreshKey, budgetRevision]);
 
   return { summary, loading };
 }

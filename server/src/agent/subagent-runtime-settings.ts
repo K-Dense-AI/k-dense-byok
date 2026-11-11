@@ -39,15 +39,7 @@ export function seedSubagentRuntimeSettings(paths: ProjectPaths): boolean {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  // activeRunsPrompt (0.78+): launches default to async and Kady chats are
-  // long-lived, so list the lead's queued/running background runs in its
-  // system prompt until they finish; otherwise it can forget one is running
-  // and launch the same work again or report that nothing is running.
-  const configDefaults: Rec = {
-    forceTopLevelAsync: true,
-    disabledFeatures: [...KADY_DISABLED_SUBAGENT_FEATURES],
-    activeRunsPrompt: true,
-  };
+  const configDefaults: Rec = { forceTopLevelAsync: true, disabledFeatures: [...KADY_DISABLED_SUBAGENT_FEATURES] };
   const missing = Object.entries(configDefaults).filter(([key]) => !(key in config));
   if (missing.length > 0) atomicJson(configFile, { ...config, ...Object.fromEntries(missing) });
   // Parsed here rather than via readPiSettings(): that helper maps a malformed

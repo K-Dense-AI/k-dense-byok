@@ -1,0 +1,10 @@
+export KADY_PROJECTS_ROOT=$HOME/kdense-projects
+export KADY_ALLOWED_ORIGINS=https://${SERVERNAME}
+export KADY_BASE_PATH=/${REPORT_URL}
+export KADY_ALLOWED_HOSTS=${SERVERNAME}
+export NEXT_PUBLIC_ADK_API_URL=https://${SERVERNAME}/${REPORT_URL}
+export NEXT_PUBLIC_BASE_PATH=/${NB_URL}/app
+mkdir -p "$KADY_PROJECTS_ROOT"
+chmod 700 "$KADY_PROJECTS_ROOT"
+
+./start.sh --no-browser

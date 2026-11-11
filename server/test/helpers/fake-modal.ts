@@ -208,7 +208,6 @@ export class FakeSandbox implements ModalRemoteSandbox {
 
 export class FakeModal {
   pythonMissing = false;
-  tamperUploads = false;
   behaviors: Behavior[] = [];
   createErrors: Error[] = [];
   sandboxes = new Map<string, FakeSandbox>();
@@ -250,7 +249,6 @@ export class FakeModal {
         );
         sandbox.tags = { ...params.tags };
         sandbox.pythonMissing = parent.pythonMissing;
-        sandbox.filesystem.tamperUploads = parent.tamperUploads;
         sandbox.terminateFailures = parent.terminateFailures.shift() ?? 0;
         parent.sandboxes.set(sandbox.id, sandbox);
         return sandbox;

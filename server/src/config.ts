@@ -81,6 +81,20 @@ export const DEFAULT_PROJECT_ID = "default";
 export const PORT = Number(process.env.KADY_PORT ?? process.env.PORT ?? 8000);
 export const HOST = process.env.KADY_HOST ?? "127.0.0.1";
 
+/**
+ * Path prefix this backend is reverse-proxied under (e.g. by
+ * configurable-http-proxy, which does not strip the prefix). Stripped before
+ * routing in index.ts. Leave unset for direct access.
+ */
+export const BASE_PATH = normalizeBasePath(process.env.KADY_BASE_PATH);
+
+function normalizeBasePath(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed === "/") return undefined;
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
 /** Default orchestrator model, routed through Pi's OpenRouter provider. */
 export const DEFAULT_MODEL_PROVIDER =
   process.env.DEFAULT_MODEL_PROVIDER ?? "openrouter";

@@ -24,14 +24,12 @@ import {
   computeInstanceFromDefault,
   getAppDefaults,
   getImageModels,
-  getVerifierAgents,
   putAppDefaults,
   type AppDefaults,
   type ImageModelListing,
 } from "@/lib/app-settings";
 import type { ModalInstance } from "@/lib/modal-jobs";
 import { useModalCatalog } from "@/lib/use-modal-jobs";
-import { useModels } from "@/lib/use-models";
 import { ModelField } from "./model-field";
 import { SettingsCard, SettingsError, SettingsHeader, SettingsNotice } from "./primitives";
 
@@ -41,8 +39,6 @@ interface Draft {
   compute: ModalInstance | null;
   /** "" = not set (built-in order). */
   imageModel: string;
-  /** "" = not set (verifiers use their usual model). */
-  verifierModel: string;
 }
 
 /** Select value for "not set"; Radix forbids an empty-string item value. */
@@ -54,7 +50,6 @@ function draftFrom(defaults: AppDefaults, instances: readonly ModalInstance[] | 
     thinkingLevel: defaults.thinkingLevel ?? DEFAULT_THINKING_LEVEL,
     compute: computeInstanceFromDefault(defaults.compute, instances),
     imageModel: defaults.imageModel ?? "",
-    verifierModel: defaults.verifierModel ?? "",
   };
 }
 
@@ -63,7 +58,6 @@ function sameDraft(a: Draft, b: Draft): boolean {
     a.model === b.model &&
     a.thinkingLevel === b.thinkingLevel &&
     a.imageModel === b.imageModel &&
-    a.verifierModel === b.verifierModel &&
     JSON.stringify(computeDefaultFromInstance(a.compute)) ===
       JSON.stringify(computeDefaultFromInstance(b.compute))
   );
@@ -128,11 +122,10 @@ export function DefaultsPanel() {
         thinkingLevel: draft.thinkingLevel === DEFAULT_THINKING_LEVEL ? null : draft.thinkingLevel,
         compute: computeDefaultFromInstance(draft.compute),
         imageModel: draft.imageModel || null,
-        verifierModel: draft.verifierModel || null,
       });
       setSaved(next);
       setDraft(draftFrom(next, instances));
-      setNotice("Saved. A project's next first chat starts with these; the image and verifier models apply right away.");
+      setNotice("Saved. A project's next first chat starts with these; the image model applies right away.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Save failed");
     } finally {
@@ -226,15 +219,6 @@ export function DefaultsPanel() {
       )}
 
       {draft && (
-        <SettingsCard title="Verification">
-          <VerifierModelField
-            value={draft.verifierModel}
-            onChange={(verifierModel) => setDraft({ ...draft, verifierModel })}
-          />
-        </SettingsCard>
-      )}
-
-      {draft && (
         <div className="flex justify-end gap-2">
           <Button
             type="button"
@@ -251,44 +235,6 @@ export function DefaultsPanel() {
           </Button>
         </div>
       )}
-    </div>
-  );
-}
-
-/** The model verifier specialists run on, so checks come from a different model. */
-function VerifierModelField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const { modelAvailability } = useModels();
-  const agents = getVerifierAgents();
-  const disconnected = Boolean(value) && modelAvailability({ id: value }) === "unavailable";
-  return (
-    <div className="grid gap-1.5">
-      <label htmlFor="default-verifier-model" className="text-xs font-medium">
-        Verifier model
-      </label>
-      <ModelField
-        id="default-verifier-model"
-        label="Verifier model"
-        value={value}
-        emptyLabel="Not set — verifiers run on the same model as other specialists"
-        onChange={onChange}
-      />
-      {disconnected ? (
-        <p className="text-[11px] text-amber-600 dark:text-amber-400">
-          This model&apos;s provider is not connected, so verifiers keep their usual model until you connect it under{" "}
-          <SettingsLink tab="providers">Providers</SettingsLink>.
-        </p>
-      ) : (
-        <p className="text-[11px] text-muted-foreground">
-          Specialists that check work run on this model, so a result is reviewed by a different model than the one
-          that produced it. A specialist that pins its own model keeps it. Applies to the next delegation, including in
-          open chats; verifier runs count toward the project spend cap like any other.
-        </p>
-      )}
-      {agents.length > 0 ? (
-        <p className="text-[11px] text-muted-foreground">
-          Applies to: <span className="font-mono">{agents.join(", ")}</span>
-        </p>
-      ) : null}
     </div>
   );
 }

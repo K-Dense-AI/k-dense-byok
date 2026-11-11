@@ -585,8 +585,15 @@ if (flags.check) {
   process.exit(0);
 }
 
-installBackendPackages();
-installPackages("web", "frontend");
+for (const [dir, binary] of [["server", "tsx"], ["web", "next"]]) {
+  const executable = path.join(repoRoot, dir, "node_modules", ".bin", binary);
+  try {
+    fs.accessSync(executable, fs.constants.X_OK);
+  } catch {
+    fail(`Shared ${dir} dependencies are missing or not executable: ${executable}`);
+  }
+}
+log("Using preinstalled shared dependencies; skipping npm install.");
 log("");
 
 const BACKEND_PORT = Number(process.env.KADY_PORT || 8000);
@@ -635,7 +642,7 @@ log("Starting services...");
 log("");
 startService(`Backend on port ${BACKEND_PORT} (Pi agent, TypeScript)`, "server", ["run", "start"]);
 startService(`Frontend on port ${FRONTEND_PORT} (Next.js UI)`, "web", [
-  "run", "dev", "--", "-p", String(FRONTEND_PORT), "-H", FRONTEND_HOST,
+  "run", "dev", "--", "--webpack", "-p", String(FRONTEND_PORT), "-H", FRONTEND_HOST,
 ]);
 
 process.on("SIGINT", () => stopAll(0));

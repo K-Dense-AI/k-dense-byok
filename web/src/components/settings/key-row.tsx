@@ -215,8 +215,6 @@ export function KeyRow({
           onChange={(e) => {
             setKeyInput(e.target.value);
             setSaved(false);
-            // The error was about the value that was submitted, not this one.
-            setError(null);
           }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && keyInput.trim()) void submit(keyInput.trim());

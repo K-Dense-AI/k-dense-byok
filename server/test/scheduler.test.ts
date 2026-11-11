@@ -5,7 +5,7 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { createHash } from "node:crypto";
 
 const registry = {
   markSystemSession: vi.fn(),
@@ -47,14 +47,6 @@ import {
 } from "../src/agent/scheduler.ts";
 import { readSchedulerState, writeSchedulerState } from "../src/agent/scheduler-state.ts";
 import { makeSubagentLedgerExtension, setScheduleActivityListener } from "../src/agent/subagent-bridge.ts";
-import { subagentsPackageDir } from "../src/agent/agent-files.ts";
-
-// The plugin's own resolver: Kady must read the directory pi-subagents writes.
-const { resolveMissionStoreLocation } = await import(
-  pathToFileURL(path.join(subagentsPackageDir(), "src/missions/store.js")).href
-);
-const pluginMissionDir = (projectRoot: string): string =>
-  resolveMissionStoreLocation({ projectRoot, agentDir: KADY_PI_AGENT_DIR }).missionDir;
 
 const app = await buildApp();
 let projectId: string;
@@ -121,19 +113,9 @@ describe("schedule and mission readers", () => {
     expect(projectsWithActiveSchedules()).toEqual([projectId]);
   });
 
-  it("passes calendar triggers and mission-bound targets through", () => {
-    const trigger = { kind: "calendar", every: "week", at: "09:00", timezone: "Europe/Berlin", on: ["mon", "thu"], nextRunAt: "2026-10-19T07:00:00.000Z", nextLocalDate: "2026-10-19" };
-    writeSchedule(projectId, "weekly", {
-      schemaVersion: 2,
-      trigger,
-      target: { workflowScript: 'return runs.run("main", { agent: "worker", task: "x" })', missionId: "m1" },
-    });
-    expect(listSchedules(projectId)[0]).toMatchObject({ id: "weekly", trigger, missionId: "m1" });
-  });
-
   it("reads missions from the hashed project directory", () => {
     const sandbox = resolvePaths(projectId).sandbox;
-    const dir = pluginMissionDir(sandbox);
+    const dir = path.join(KADY_PI_AGENT_DIR, "missions", "projects", createHash("sha256").update(path.resolve(sandbox)).digest("hex"));
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, "m1.json"), JSON.stringify({ schemaVersion: 1, id: "m1", title: "Ship QC", objective: "Validate uploads", status: "needs_decision", createdAt: "2026-09-08T00:00:00.000Z", updatedAt: "2026-09-08T01:00:00.000Z", runs: [{ runId: "r", mode: "workflow", agent: "worker", status: "complete" }], workflowChildren: [], decisions: [{ id: "d1", status: "open", title: "Which threshold?" }], artifacts: [], receipts: [] }));
     fs.writeFileSync(path.join(dir, "m0.json"), JSON.stringify({ schemaVersion: 1, id: "m0", title: "Old", objective: "", status: "completed", createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", runs: [], workflowChildren: [], decisions: [], artifacts: [], receipts: [] }));
@@ -212,43 +194,6 @@ describe("automation routes", () => {
     res = await app.inject({ method: "GET", url: "/missions", headers: hg(projectId) });
     expect(res.json()).toEqual({ missions: [] });
   });
-
-  it("fires Run now quietly, refuses it (and a held resume) over the cap, and closes missions with the chosen status", async () => {
-    writeSchedule(projectId, "nightly-qc");
-    const calls: Record<string, unknown>[] = [];
-    configureScheduler({ invoke: async (_p, params) => { calls.push(params); return { text: "Started.", details: {} }; } });
-    let res = await app.inject({ method: "POST", url: "/schedules/nightly-qc/run", headers: hg(projectId) });
-    expect(res.statusCode).toBe(200);
-    // A noisy manual fire would wake the hidden resident session for a billed turn.
-    expect(calls).toEqual([{ action: "schedule.run", id: "nightly-qc", quiet: true }]);
-
-    const capped = createProject({ name: "Capped routes", spendLimitUsd: 0.01 }).id;
-    const zero = { costUsd: 0, input: 0, output: 0, cacheRead: 0, total: 0 };
-    recordRun({ sessionId: "s", projectId: capped, model: "m", before: zero, after: { ...zero, costUsd: 0.02 } });
-    writeSchedule(capped, "held", { paused: true });
-    writeSchedule(capped, "mine", { paused: true });
-    writeSchedulerState(resolvePaths(capped), { heldByBudget: ["held"] });
-    calls.length = 0;
-    res = await app.inject({ method: "POST", url: "/schedules/held/run", headers: hg(capped) });
-    expect(res.statusCode).toBe(402);
-    expect(res.json().detail).toMatch(/spend limit/);
-    res = await app.inject({ method: "POST", url: "/schedules/held/resume", headers: hg(capped) });
-    expect(res.statusCode).toBe(402);
-    // A schedule the user paused is theirs to resume; the tick holds it again if needed.
-    res = await app.inject({ method: "POST", url: "/schedules/mine/resume", headers: hg(capped) });
-    expect(res.statusCode).toBe(200);
-    expect(calls).toEqual([{ action: "schedule.resume", id: "mine" }]);
-
-    const sandbox = resolvePaths(projectId).sandbox;
-    const dir = pluginMissionDir(sandbox);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, "m1.json"), JSON.stringify({ schemaVersion: 1, id: "m1", title: "QC", objective: "", status: "planned", createdAt: "", updatedAt: "", runs: [], decisions: [], receipts: [] }));
-    calls.length = 0;
-    res = await app.inject({ method: "POST", url: "/missions/m1/close", headers: hg(projectId), payload: {} });
-    expect(res.statusCode).toBe(200);
-    // pi-subagents reads missionStatus; a `status` key fell through to "completed".
-    expect(calls).toEqual([{ action: "mission.close", missionId: "m1", missionStatus: "cancelled", summary: "Closed from the Automation panel." }]);
-  });
 });
 
 describe("subagent bridge schedule handling", () => {
@@ -308,36 +253,5 @@ describe("subagent bridge schedule handling", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ role: "subagent", costUsd: 0.03, origin: { schedule: "nightly-qc", name: "Nightly QC" } });
     expect(scheduleSpend(projectId)).toEqual({ "nightly-qc": 0.03 });
-  });
-
-  it("keeps a fire's result text for the schedule history, matched by async run id", async () => {
-    writeSchedule(projectId, "nightly-qc", { quiet: true, target: { workflowScript: "return 1", model: "openrouter/openai/gpt-6-astra" } }, [
-      { schemaVersion: 1, id: "r2", scheduleId: "nightly-qc", plannedAt: "2026-09-08T06:00:00.000Z", dueReason: "timer", state: "completed", asyncId: "async-2" },
-      { schemaVersion: 1, id: "r1", scheduleId: "nightly-qc", plannedAt: "2026-09-08T00:00:00.000Z", dueReason: "timer", state: "completed", asyncId: "async-1" },
-    ]);
-    const { asyncComplete } = install(projectId);
-    asyncComplete({ runId: "async-2", id: "other", success: true, summary: "delegate:\n30 data rows (header excluded).", scheduleOrigin: { id: "nightly-qc" }, results: [] });
-    // Not from a schedule: nothing to keep.
-    asyncComplete({ runId: "async-9", success: true, summary: "chat work", results: [] });
-    const [view] = listSchedules(projectId);
-    expect(view).toMatchObject({ quiet: true, model: "openrouter/openai/gpt-6-astra" });
-    expect(view.runs[0].summary).toBe("delegate:\n30 data rows (header excluded).");
-    expect(view.runs[1].summary).toBeUndefined();
-  });
-
-  it("prefers a workflow child's own output over the serialized workflow return", async () => {
-    writeSchedule(projectId, "nightly-qc", {}, [
-      { schemaVersion: 1, id: "r1", scheduleId: "nightly-qc", plannedAt: "2026-09-08T00:00:00.000Z", dueReason: "manual", state: "completed", asyncId: "async-1" },
-    ]);
-    const sandbox = resolvePaths(projectId).sandbox;
-    const output = path.join(sandbox, ".pi", "sessions", "subagent-artifacts", "child_output.md");
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    fs.writeFileSync(output, "user_data/dose_response.csv: 30 data rows.\n");
-    const outside = path.join(PROJECTS_ROOT, "outside.md");
-    fs.writeFileSync(outside, "not ours");
-    const { asyncComplete } = install(projectId);
-    asyncComplete({ runId: "async-1", success: true, summary: 'Workflow completed with 1 child run(s). Return: {"asyncDir": "/tmp/x", "output": "user_dat… (truncated', scheduleOrigin: { id: "nightly-qc" },
-      results: [{ agent: "data-validator", artifactPaths: { outputPath: output } }, { agent: "other", artifactPaths: { outputPath: outside } }] });
-    expect(listSchedules(projectId)[0].runs[0].summary).toBe("data-validator: user_data/dose_response.csv: 30 data rows.");
   });
 });

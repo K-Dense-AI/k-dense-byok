@@ -17,7 +17,7 @@ import { setHostMeter } from "../src/agent/subagent-host.mjs";
 import { sessionCostSummary } from "../src/cost/ledger.ts";
 
 beforeEach(() => { fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true }); patchSubagents(); });
-afterEach(async () => { await disposeProjectSessions("runtime"); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
+afterEach(() => { disposeProjectSessions("runtime"); vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 const internal = (file: string) => import(pathToFileURL(path.join(subagentsPackageDir(), file)).href);
 
 it("binds the public RPC/preflight APIs with parent tool ceilings and required child packages", async () => {
@@ -32,7 +32,7 @@ it("binds the public RPC/preflight APIs with parent tool ceilings and required c
   expect(contract.tools.requiredExtensionIds).toEqual(expect.arrayContaining(["kady-guard", "kady-modal", "kady-child-runtime", "pi-web-access"]));
   expect(contract.tools.capabilityCeiling.allowedTools).toContain("modal_submit");
   expect(contract.tools.capabilityCeiling.allowedTools).not.toContain("interview");
-  const prompt = await session.extensionRunner!.emitBeforeAgentStart({ messageType: "user", prompt: "Review the analysis" }, {
+  const prompt = await session.extensionRunner!.emitBeforeAgentStart("Review the analysis", undefined, {
     cwd: paths.sandbox, selectedTools: session.getActiveToolNames(),
     customPrompt: "Preserve the lab's reporting convention.",
     sections: { lab: "Use SI units." },
@@ -83,7 +83,7 @@ it("loads child MCP and mandatory tools with ambient extensions disabled, and me
     await expect.poll(() => captured!.getActiveToolNames(), { timeout: 15000 }).toContain("mcp__echo__echo");
     for (const name of ["notebook", "modal_submit", "add_pdf_annotation"]) expect(captured!.getAllTools().map((t) => t.name)).toContain(name);
     expect(errors).toEqual([]);
-    const prompt = await captured!.extensionRunner!.emitBeforeAgentStart({ messageType: "user", prompt: "Inspect the data" }, {
+    const prompt = await captured!.extensionRunner!.emitBeforeAgentStart("Inspect the data", undefined, {
       cwd: paths.sandbox, customPrompt: "Keep my custom persona.",
     });
     expect(prompt.systemPromptOptions.customPrompt).toBe("Keep my custom persona.");
@@ -141,7 +141,7 @@ it.each([true, false])("keeps child guidance after Pi prompt filtering (inheritP
     // Start with the actual loader's prompt, respecting noContextFiles rather
     // than manually injecting project context into a context-disabled launch.
     const base = { cwd: paths.sandbox, customPrompt: captured!.systemPrompt };
-    const first = await captured!.extensionRunner!.emitBeforeAgentStart({ messageType: "user", prompt: "Check the analysis" }, base);
+    const first = await captured!.extensionRunner!.emitBeforeAgentStart("Check the analysis", undefined, base);
     // Exercise the real upstream rewrite, which overrides the full prompt;
     // setting a structured section alone would silently lose our guidance.
     const rendered = first.systemPromptOptions.forceSystemPrompt!;
@@ -152,7 +152,7 @@ it.each([true, false])("keeps child guidance after Pi prompt filtering (inheritP
     expect(rendered).toContain("contact_supervisor");
     expect(rendered).toContain("Status is not a scientific");
     expect(rendered).not.toContain("<kady_delegation>");
-    const next = await captured!.extensionRunner!.emitBeforeAgentStart({ messageType: "user", prompt: "Follow up" }, first.systemPromptOptions);
+    const next = await captured!.extensionRunner!.emitBeforeAgentStart("Follow up", undefined, first.systemPromptOptions);
     expect(next.systemPromptOptions.forceSystemPrompt!.match(/<kady_specialist>/g)).toHaveLength(1);
     // A new turn starts from the original options, which were not mutated.
     expect(base).not.toHaveProperty("forceSystemPrompt");

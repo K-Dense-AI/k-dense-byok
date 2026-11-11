@@ -39,17 +39,6 @@ const projectState: ProjectWorkspaceState = {
         selectedSkills: [
           { id: "literature", name: "Literature", description: "Search papers" },
         ],
-        researchRefs: [
-          {
-            kind: "record",
-            type: "decision",
-            title: "Keep Emax",
-            source: { kind: "notebook", sessionId: "session-0", entryId: "e1" },
-            digest: "b".repeat(64),
-          },
-          { kind: "chat", sessionId: "session-0", title: "Earlier QC" },
-        ],
-        delegation: { specialists: [], auto: true, verify: true, verifiers: ["reviewer"] },
         queuedMessages: [],
         composer: { text: "unfinished question", attachments: [] },
       },
@@ -104,8 +93,6 @@ describe("workspace persistence schema", () => {
           chat: {
             thinkingLevel: "high",
             attachedFiles: ["notes.md"],
-            researchRefs: projectState.tabs[0].chat!.researchRefs,
-            delegation: { specialists: [], auto: true, verify: true, verifiers: ["reviewer"] },
             composer: { text: "unfinished question", attachments: [] },
           },
         },

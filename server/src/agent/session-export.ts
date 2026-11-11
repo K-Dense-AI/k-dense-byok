@@ -13,7 +13,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type { ProjectPaths } from "../projects.ts";
 import { relativizeSandboxPaths } from "./events.ts";
-import { isParentWake } from "./subagent-wake.ts";
 
 export interface ToolCallPart {
   type: "toolCall";
@@ -142,7 +141,7 @@ export function textOf(content: ContentPart[]): string {
     .trim();
 }
 
-export function resultText(parts: ToolResultPart["content"]): string {
+function resultText(parts: ToolResultPart["content"]): string {
   if (!parts) return "";
   const text = parts
     .map((p) => (typeof p.text === "string" ? p.text : ""))
@@ -214,7 +213,7 @@ export function toShellScript(file: string, sessionId: string, sandboxRoot = "")
     const { role, content } = row.message;
     if (role === "user") {
       const t = textOf(content);
-      if (t && !isParentWake(t)) out.push("", asComment(`PROMPT: ${t}`), "");
+      if (t) out.push("", asComment(`PROMPT: ${t}`), "");
       continue;
     }
     if (role !== "assistant") continue;
@@ -260,7 +259,7 @@ export function toNotebook(file: string, sessionId: string, sandboxRoot = ""): s
     const { role, content } = row.message;
     if (role === "user") {
       const t = textOf(content);
-      if (!t || isParentWake(t)) continue;
+      if (!t) continue;
       turn++;
       out.push(`## ${turn}. Prompt`, "", t, "");
       continue;

@@ -42,15 +42,7 @@ import { apiFetch } from "@/lib/projects";
 import { onChatPrefill } from "@/lib/chat-prefill";
 import { buildSkillsContext, type Skill } from "@/components/skills-selector";
 import { AddContextMenu } from "@/components/add-context-menu";
-import { ContextChipsBar, SentContextChips } from "@/components/context-chips";
-import {
-  buildComposerContext,
-  EMPTY_DELEGATION,
-  splitComposerContext,
-  type DelegationChoice,
-  type ResearchRef,
-} from "@/lib/composer-context";
-import { withChatSnapshots } from "@/lib/chat-snapshot";
+import { ContextChipsBar } from "@/components/context-chips";
 import { ContextUsageIndicator } from "@/components/context-usage-indicator";
 import { CitationBadge } from "@/components/citation-badge";
 import {
@@ -87,7 +79,6 @@ import type { NotebookEntry } from "@/lib/notebook";
 import { routeSubmit, type SendIntent } from "@/lib/chat-routing";
 import {
   moveQueuedMessage,
-  splitQueuedText,
   updateQueuedMessageText,
   type QueueDirection,
 } from "@/lib/message-queue";
@@ -107,7 +98,6 @@ import {
   type SpeechInputMode,
 } from "@/components/ai-elements/speech-input";
 import {
-  BookOpenIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
@@ -117,9 +107,7 @@ import {
   ListOrderedIcon,
   PaperclipIcon,
   PencilIcon,
-  ShieldCheckIcon,
   SparklesIcon,
-  UsersIcon,
   XIcon,
   ZapIcon,
 } from "lucide-react";
@@ -396,13 +384,10 @@ function HighlightMatch({ text, query }: { text: string; query: string }) {
 /** Inline editor for one queued message. Keyed by item id so state resets per item. */
 function QueuedMessageEditor({
   initialText,
-  allowEmpty = false,
   onSave,
   onCancel,
 }: {
   initialText: string;
-  /** The message keeps content outside the editor (attached files, + picks). */
-  allowEmpty?: boolean;
   onSave: (text: string) => void;
   onCancel: () => void;
 }) {
@@ -415,7 +400,7 @@ function QueuedMessageEditor({
     el.setSelectionRange(el.value.length, el.value.length);
   }, []);
   const trimmed = draft.trim();
-  const canSave = trimmed.length > 0 || allowEmpty;
+  const canSave = trimmed.length > 0;
   return (
     <div className="flex flex-col gap-1.5">
       <textarea
@@ -559,16 +544,6 @@ function MessageQueueDisplay({
             <div className="max-h-52 overflow-y-auto py-1">
               {queue.map((item, i) => {
                 const editing = editingId === item.id;
-                const { editable, suffix } = splitQueuedText(
-                  item.text,
-                  (item.files.length > 0 ? "\n" + item.files.join("\n") : "") +
-                    buildDatabaseContext(item.databases) +
-                    buildSkillsContext(item.skills),
-                );
-                const context = splitComposerContext(item.text).context;
-                const delegated = context
-                  ? context.delegation.specialists.length + (context.delegation.auto ? 1 : 0)
-                  : 0;
                 return (
                 <div
                   key={item.id}
@@ -581,10 +556,9 @@ function MessageQueueDisplay({
                     {editing ? (
                       <QueuedMessageEditor
                         key={item.id}
-                        initialText={editable}
-                        allowEmpty={suffix.length > 0}
+                        initialText={item.text}
                         onSave={(text) => {
-                          onEdit(item.id, text + suffix);
+                          onEdit(item.id, text);
                           onEditingChange(null);
                         }}
                         onCancel={() => onEditingChange(null)}
@@ -620,33 +594,6 @@ function MessageQueueDisplay({
                         <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           <SparklesIcon className="size-2.5" />
                           {item.skills.length}
-                        </span>
-                      )}
-                      {context && context.research.length > 0 && (
-                        <span
-                          className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                          title={`${context.research.length} research reference${context.research.length === 1 ? "" : "s"}`}
-                        >
-                          <BookOpenIcon className="size-2.5" />
-                          {context.research.length}
-                        </span>
-                      )}
-                      {delegated > 0 && (
-                        <span
-                          className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                          title={context!.delegation.auto ? "Delegate: Kady picks" : `Delegate: ${context!.delegation.specialists.join(", ")}`}
-                        >
-                          <UsersIcon className="size-2.5" />
-                          {context!.delegation.auto ? "auto" : delegated}
-                        </span>
-                      )}
-                      {context?.delegation.verify && (
-                        <span
-                          className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                          title="Verification gate"
-                        >
-                          <ShieldCheckIcon className="size-2.5" />
-                          verify
                         </span>
                       )}
                     </div>
@@ -750,12 +697,6 @@ function ChatInput({
   budgetTotalUsd = 0,
   budgetLimitUsd = null,
   modelAvailability = "available",
-  projectId,
-  currentSessionId,
-  researchRefs,
-  onResearchChange,
-  delegation,
-  onDelegationChange,
 }: {
   isActiveTab: boolean;
   allFiles: string[];
@@ -805,14 +746,6 @@ function ChatInput({
   budgetTotalUsd?: number;
   budgetLimitUsd?: number | null;
   modelAvailability?: ModelAvailability;
-  projectId: string;
-  currentSessionId: string | null;
-  /** Per-message research references (+ → Research); cleared once sent. */
-  researchRefs: ResearchRef[];
-  onResearchChange: (refs: ResearchRef[]) => void;
-  /** Per-message delegation (+ → Delegate); cleared once sent. */
-  delegation: DelegationChoice;
-  onDelegationChange: (next: DelegationChoice) => void;
 }) {
   const modelAvailable = modelAvailability === "available";
   const budgetBlocked =
@@ -899,33 +832,17 @@ function ChatInput({
         }
         return false;
       }
-      // Referenced chats are snapshotted now, so the message cites what they
-      // said when it was sent rather than whatever they say later.
-      const snapshots = researchRefs.some((r) => r.kind === "chat")
-        ? await withChatSnapshots(researchRefs, projectId)
-        : { refs: researchRefs, failed: [] };
-      if (snapshots.failed.length > 0) {
-        toast.warning(
-          `Couldn't snapshot ${snapshots.failed.length === 1 ? `"${snapshots.failed[0]}"` : `${snapshots.failed.length} chats`}`,
-          { description: "Kady will search the full chat log instead." },
-        );
-      }
-      const composerCtx = buildComposerContext({ delegation, research: snapshots.refs });
       const images = await promptImagesFromParts(msg.files);
       // Only clear once the message is actually accepted: a full queue or a
       // failed steer used to wipe the composer text and attachment chips.
-      const accepted = await onSend(baseText + refs + dbCtx + skillsCtx + composerCtx, intent, images);
+      const accepted = await onSend(baseText + refs + dbCtx + skillsCtx, intent, images);
       if (!accepted) {
         event?.preventDefault();
         return false;
       }
       onClearFiles();
-      // Research references and delegation are instructions for this one
-      // message; pinned skills and data sources stay.
-      onResearchChange([]);
-      onDelegationChange(EMPTY_DELEGATION);
     },
-    [budgetBlocked, modelAvailability, modelAvailable, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills, delegation, researchRefs, onResearchChange, onDelegationChange, projectId]
+    [budgetBlocked, modelAvailability, modelAvailable, onSend, attachedFiles, onClearFiles, selectedDbs, selectedSkills]
   );
 
   // @ mention state
@@ -1255,10 +1172,6 @@ function ChatInput({
             onDbsChange={onDbsChange}
             selectedSkills={selectedSkills}
             onSkillsChange={onSkillsChange}
-            researchRefs={researchRefs}
-            onResearchChange={onResearchChange}
-            delegation={delegation}
-            onDelegationChange={onDelegationChange}
           />
           <PromptInputTextarea
             placeholder={
@@ -1268,7 +1181,7 @@ function ChatInput({
                   : "Steer the run… (⌥↵ to run after this turn)"
                 : queuedMessages.length >= MAX_QUEUE
                   ? `Queue full (${MAX_QUEUE}/${MAX_QUEUE})`
-                  : "Ask Kady anything… (@ for files, / for commands, + to add context)"
+                  : "Ask Kady anything… (@ for files, + for data / compute / skills)"
             }
             onChange={handleChange}
             onKeyDown={handleKeyDown}
@@ -1286,12 +1199,6 @@ function ChatInput({
                 selectedSkills={selectedSkills}
                 onSkillsChange={onSkillsChange}
                 onUploadFiles={handleFilesUpload}
-                projectId={projectId}
-                currentSessionId={currentSessionId}
-                researchRefs={researchRefs}
-                onResearchChange={onResearchChange}
-                delegation={delegation}
-                onDelegationChange={onDelegationChange}
               />
               <ModelSelector
                 selected={selectedModel}
@@ -1489,7 +1396,7 @@ export const AssistantMessageBody = memo(function AssistantMessageBody({
     }
   };
   const activityById = new Map(activities.map((activity) => [activity.id, activity]));
-  // pi-subagents ≥0.74 runs the script block written in the same reply
+  // pi-subagents ≥0.74 runs the ```js workflow block written in the same reply
   // as `subagent({ workflow: true })`; hand the nearest preceding one to the
   // tool card so it can name the specialists the script launches.
   let replyWorkflowScript: string | undefined;
@@ -1597,14 +1504,8 @@ export const ChatMessageRow = memo(function ChatMessageRow({
               </div>
             )}
             {(() => {
-              const { text, context } = splitComposerContext(message.content);
-              const block = parseCommandBlock(text);
-              return (
-                <>
-                  {block ? <CommandBlockChip block={block} /> : <MessageResponse>{text}</MessageResponse>}
-                  {context && <SentContextChips context={context} />}
-                </>
-              );
+              const block = parseCommandBlock(message.content);
+              return block ? <CommandBlockChip block={block} /> : <MessageResponse>{message.content}</MessageResponse>;
             })()}
           </>
         )}
@@ -1898,12 +1799,6 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
   const [selectedSkills, setSelectedSkills] = useState<Skill[]>(
     () => initialWorkspaceState?.selectedSkills ?? [],
   );
-  const [researchRefs, setResearchRefs] = useState<ResearchRef[]>(
-    () => initialWorkspaceState?.researchRefs ?? [],
-  );
-  const [delegation, setDelegation] = useState<DelegationChoice>(
-    () => initialWorkspaceState?.delegation ?? EMPTY_DELEGATION,
-  );
   const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>(
     () => initialWorkspaceState?.queuedMessages ?? [],
   );
@@ -2081,16 +1976,12 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
       attachedFiles,
       selectedDatabases: selectedDbs,
       selectedSkills,
-      researchRefs,
-      delegation,
       queuedMessages: messageQueue,
       composer: composerDraft,
     });
   }, [
     attachedFiles,
     composerDraft,
-    delegation,
-    researchRefs,
     messageQueue,
     onWorkspaceStateChange,
     selectedComputeTarget,
@@ -2514,12 +2405,6 @@ export const ChatTab = forwardRef<ChatTabHandle, ChatTabProps>(function ChatTab(
             budgetTotalUsd={budgetTotalUsd}
             budgetLimitUsd={budgetLimitUsd}
             modelAvailability={selectedModelAvailability}
-            projectId={projectId}
-            currentSessionId={sessionId}
-            researchRefs={researchRefs}
-            onResearchChange={setResearchRefs}
-            delegation={delegation}
-            onDelegationChange={setDelegation}
           />
         </PromptInputProvider>
       </div>

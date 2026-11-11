@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 export function patchSubagents() {
   const root = path.dirname(require.resolve('pi-subagents'));
   const version = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version;
-  if (version !== '0.78.0') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
+  if (version !== '0.74.0') throw new Error(`Review Kady subagent host seams before using pi-subagents ${version}`);
   const patches = [
     ['src/runs/background/scheduled-runs.js', 'function scheduleBelongsToSession(schedule, ctx) {', `// KADY_HOST_SCHEDULE_OWNER_V1: project timers belong to the durable resident.
 // Explicit session-only schedules retain Pi's original ownership semantics.
@@ -34,12 +34,12 @@ function scheduleBelongsToSession(schedule, ctx) {`, 'KADY_HOST_SCHEDULE_OWNER_V
         if (!kadyScheduleTimerOwner(schedule, this.requireContext(store))) return;`, 'KADY_HOST_SCHEDULE_RESTORE_V1'],
     ['src/runs/background/scheduled-runs.js', '        if (planned === undefined || schedule.paused)', `        // KADY_HOST_SCHEDULE_FIRE_V1: ownership may have changed since arming.
         if (planned === undefined || schedule.paused || !kadyScheduleTimerOwner(schedule, this.requireContext(store)))`, 'KADY_HOST_SCHEDULE_FIRE_V1'],
-    ['src/extension/index.js', `            if (!ctx.hasUI)
-                await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests }).then(resultWatcher.deliverPendingResults);`, `            // KADY_HOST_NO_DRAIN_V1: Kady chat sessions are headless only to Pi. The
-            // backend outlives the turn and adopts completion notices as system runs,
-            // so draining here would keep the user's run open until all work ends.
-            if (!ctx.hasUI && !(process.env.KADY_SUBAGENT_HOST_MODULE && globalThis.__kadyInteractiveSessions?.has(state.currentSessionId)))
-                await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests }).then(resultWatcher.deliverPendingResults);`, 'KADY_HOST_NO_DRAIN_V1'],
+    ['src/extension/index.js', `        if (!ctx.hasUI)
+            await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests });`, `        // KADY_HOST_NO_DRAIN_V1: Kady chat sessions are headless only to Pi. The
+        // backend outlives the turn and adopts completion notices as system runs,
+        // so draining here would keep the user's run open until all work ends.
+        if (!ctx.hasUI && !(process.env.KADY_SUBAGENT_HOST_MODULE && globalThis.__kadyInteractiveSessions?.has(state.currentSessionId)))
+            await drainOutstandingWork({ state, events: pi.events, hasPendingSupervisorRequest: supervisorChannel.hasPendingRequests });`, 'KADY_HOST_NO_DRAIN_V1'],
     ['src/extension/index.js', '    let refreshResultDelivery = () => { };', `    // KADY_HOST_SCHEDULE_EVENT_V1: scoped to this extension/session event bus.
     if (process.env.KADY_SUBAGENT_HOST_MODULE) {
         const off = pi.events.on("kady:schedules:refresh", () => scheduledRunManager.kadyRefresh());
@@ -56,8 +56,7 @@ import * as fs from "node:fs"; // KADY_HOST_WATCHDOG_DIFF_IMPORT_V1`, 'KADY_HOST
     ['src/watchdog/diff-tool.js', '/** HEAD at reviewer launch, for tools that must be registered synchronously. */', `// KADY_HOST_WATCHDOG_DIFF_SCOPE_V2: do not expose an ancestor checkout's diff.
 function kadyScopedBaseline(cwd, baseline) {
     if (!baseline || !process.env.KADY_SUBAGENT_HOST_MODULE) return baseline;
-    // Native realpath expands Windows 8.3 short names (RUNNER~1) that Git never reports.
-    try { return path.relative(fs.realpathSync.native(baseline.root), fs.realpathSync.native(cwd)) === "" ? baseline : undefined; }
+    try { return fs.realpathSync(baseline.root) === fs.realpathSync(cwd) ? baseline : undefined; }
     catch { return undefined; }
 }
 /** HEAD at reviewer launch, for tools that must be registered synchronously. */`, 'KADY_HOST_WATCHDOG_DIFF_SCOPE_V2'],
@@ -71,8 +70,8 @@ function kadyScheduleModel(value) {
     return { model: value.trim() };
 }
 function sanitizeTarget(params) {`, 'KADY_HOST_SCHEDULE_MODEL_V1'],
-    ['src/runs/background/scheduled-runs.js', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }) } };', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }), ...kadyScheduleModel(params.model) } }; // KADY_HOST_SCHEDULE_MODEL_SAVE_V1', 'KADY_HOST_SCHEDULE_MODEL_SAVE_V1'],
-    ['src/runs/background/scheduled-runs.js', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }) };', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...(missionId === undefined ? {} : { missionId }), ...kadyScheduleModel(target.model) }; // KADY_HOST_SCHEDULE_MODEL_READ_V1', 'KADY_HOST_SCHEDULE_MODEL_READ_V1'],
+    ['src/runs/background/scheduled-runs.js', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }) } };', 'return { target: { workflowScript: params.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...kadyScheduleModel(params.model) } }; // KADY_HOST_SCHEDULE_MODEL_SAVE_V1', 'KADY_HOST_SCHEDULE_MODEL_SAVE_V1'],
+    ['src/runs/background/scheduled-runs.js', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }) };', 'return { workflowScript: target.workflowScript.trim(), args: deepFreezeWorkflowArgs(normalizedArgs.args), ...(baseRef === undefined ? {} : { baseRef }), ...kadyScheduleModel(target.model) }; // KADY_HOST_SCHEDULE_MODEL_READ_V1', 'KADY_HOST_SCHEDULE_MODEL_READ_V1'],
     ['src/runs/background/scheduled-runs.js', 'export const SCHEDULED_RUN_ACTIONS = [', `// KADY_HOST_SCHEDULE_IMPORT_V1
 import { parseSubagentCapabilityCeiling, registerSubagentCapabilityCeiling } from "../shared/capability-ceiling.js";
 export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
@@ -131,17 +130,15 @@ export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
                 }`, 'KADY_HOST_ARBITER_V1'],
   ];
   // Check all anchors before mutating any file.
-  const writes = patches.map(([file, before, after, marker, previous]) => {
+  const writes = patches.map(([file, before, after, marker]) => {
     const target = path.join(root, file);
     const text = fs.readFileSync(target, 'utf8');
     if (text.includes(marker)) {
-      if (text.includes(after)) return null;
-      // Upgrade an exact older host seam without accepting local modifications.
-      if (!previous || text.split(previous).length !== 2) throw new Error(`Modified Kady adapter in ${file}`);
-      return { target, before: previous, after };
+      if (!text.includes(after)) throw new Error(`Modified Kady adapter in ${file}`);
+      return null;
     }
     if (text.split(before).length !== 2) throw new Error(`Subagent compatibility anchor changed: ${file}`);
-    return { target, before, after };
+    return { target, text: text.replace(before, after) };
   });
   // Several independent seams can share a file. Compose their replacements
   // instead of letting the last write discard earlier changes.
@@ -149,8 +146,9 @@ export const SCHEDULED_RUN_ACTIONS = [`, 'KADY_HOST_SCHEDULE_IMPORT_V1'],
   for (let i = 0; i < patches.length; i++) {
     const write = writes[i];
     if (!write) continue;
+    const [, before, after] = patches[i];
     const current = composed.get(write.target) ?? fs.readFileSync(write.target, 'utf8');
-    composed.set(write.target, current.replace(write.before, write.after));
+    composed.set(write.target, current.replace(before, after));
   }
   for (const [target, text] of composed) fs.writeFileSync(target, text);
 }

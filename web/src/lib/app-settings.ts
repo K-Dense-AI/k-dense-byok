@@ -25,8 +25,6 @@ export interface AppDefaults {
   compute?: ComputeDefault;
   /** The model `generate_image` uses unless the user asks for another. */
   imageModel?: string;
-  /** The model verifier specialists run on (reviewers check with a different model). */
-  verifierModel?: string;
 }
 
 /** An image model Kady can meter (GET /settings/image-models). */
@@ -56,7 +54,6 @@ const CHANGED_EVENT = "kady:app-defaults-changed";
 
 let cache: AppDefaults | null = null;
 let inFlight: Promise<AppDefaults> | null = null;
-let verifierAgentsCache: string[] = [];
 
 async function detailOf(response: Response, fallback: string): Promise<Error> {
   const body = (await response.json().catch(() => null)) as { detail?: unknown } | null;
@@ -69,9 +66,8 @@ export function getAppDefaults(force = false): Promise<AppDefaults> {
   const request = apiFetch("/settings/defaults")
     .then(async (response) => {
       if (!response.ok) throw await detailOf(response, "Failed to load defaults");
-      const body = (await response.json()) as { defaults?: AppDefaults; verifierAgents?: string[] };
+      const body = (await response.json()) as { defaults?: AppDefaults };
       cache = body.defaults ?? {};
-      if (Array.isArray(body.verifierAgents)) verifierAgentsCache = body.verifierAgents;
       return cache;
     })
     .finally(() => {
@@ -88,19 +84,10 @@ export async function putAppDefaults(patch: AppDefaultsPatch): Promise<AppDefaul
     body: JSON.stringify(patch),
   });
   if (!response.ok) throw await detailOf(response, "Failed to save defaults");
-  const body = (await response.json()) as { defaults?: AppDefaults; verifierAgents?: string[] };
+  const body = (await response.json()) as { defaults?: AppDefaults };
   cache = body.defaults ?? {};
-  if (Array.isArray(body.verifierAgents)) verifierAgentsCache = body.verifierAgents;
   window.dispatchEvent(new Event(CHANGED_EVENT));
   return cache;
-}
-
-/**
- * The specialists the verifier model applies to, as the backend last reported
- * them with the defaults (empty until `getAppDefaults` has loaded).
- */
-export function getVerifierAgents(): string[] {
-  return verifierAgentsCache;
 }
 
 export async function getImageModels(): Promise<ImageModelListing> {
@@ -179,5 +166,4 @@ export function computeInstanceFromDefault(
 export function resetAppDefaultsCache(): void {
   cache = null;
   inFlight = null;
-  verifierAgentsCache = [];
 }

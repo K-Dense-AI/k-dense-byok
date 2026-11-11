@@ -7,9 +7,6 @@ import {
   WandSparklesIcon,
   PlusIcon,
   UploadIcon,
-  FolderUpIcon,
-  BookOpenIcon,
-  UsersIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -26,12 +23,9 @@ import {
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { DatabasePickerBody, type Database } from "@/components/database-selector";
 import { SkillsPickerBody } from "@/components/skills-selector";
-import { ResearchPickerBody } from "@/components/research-picker";
-import { DelegatePickerBody } from "@/components/delegate-picker";
 import type { Skill } from "@/lib/use-skills";
-import type { DelegationChoice, ResearchRef } from "@/lib/composer-context";
 
-type TabId = "files" | "research" | "delegate" | "skills" | "data";
+type TabId = "files" | "data" | "skills";
 
 interface TabDescriptor {
   id: TabId;
@@ -55,30 +49,15 @@ const TABS: TabDescriptor[] = [
     ),
   },
   {
-    id: "research",
-    label: "Research",
-    icon: BookOpenIcon,
+    id: "data",
+    label: "Data",
+    icon: DatabaseIcon,
     hint: (
       <>
-        <b>Research context</b>
+        <b>Data sources</b>
         <br />
-        Point Kady at notebook entries, frozen plans, notes, or an earlier
-        chat. It reads them with its own tools before answering. Applies to
-        the next message only.
-      </>
-    ),
-  },
-  {
-    id: "delegate",
-    label: "Delegate",
-    icon: UsersIcon,
-    hint: (
-      <>
-        <b>Delegate</b>
-        <br />
-        Hand this message to specific specialists, let Kady choose, or ask
-        for a verification gate before a result is accepted. Applies to the
-        next message only.
+        Pin curated scientific APIs (PubMed, UniProt, Ensembl, etc.). The
+        orchestrator will cite them and the expert can query them directly.
       </>
     ),
   },
@@ -90,23 +69,9 @@ const TABS: TabDescriptor[] = [
       <>
         <b>Skills</b>
         <br />
-        Opt-in playbooks for specific tasks (e.g. <i>scanpy</i>,{" "}
-        <i>literature-review</i>, <i>modal</i>). Kady follows pinned skills on
-        every message until you remove them.
-      </>
-    ),
-  },
-  {
-    id: "data",
-    label: "Data",
-    icon: DatabaseIcon,
-    hint: (
-      <>
-        <b>Data sources</b>
-        <br />
-        Point Kady at public scientific APIs (PubMed, UniProt, Ensembl,
-        etc.). Their names and URLs are added to your message so Kady can
-        query and cite them.
+        Opt-in playbooks for specific tasks (e.g. <i>modal</i>,{" "}
+        <i>graphify</i>, <i>best-of-n</i>). The agent loads and follows them
+        for the next message.
       </>
     ),
   },
@@ -119,17 +84,11 @@ export interface AddContextMenuProps {
   selectedSkills: Skill[];
   onSkillsChange: (skills: Skill[]) => void;
   onUploadFiles: (files: FileList | File[]) => void;
-  projectId: string;
-  currentSessionId: string | null;
-  researchRefs: ResearchRef[];
-  onResearchChange: (refs: ResearchRef[]) => void;
-  delegation: DelegationChoice;
-  onDelegationChange: (next: DelegationChoice) => void;
 }
 
 /**
  * Unified "+" menu for all chat context:
- *   Files | Research | Delegate | Skills | Data
+ *   Files | Data | Skills
  *
  * One trigger, one popover, tabbed content. Shows per-tab counts so users can
  * tell at a glance what's active without opening each picker individually.
@@ -141,28 +100,18 @@ export function AddContextMenu({
   selectedSkills,
   onSkillsChange,
   onUploadFiles,
-  projectId,
-  currentSessionId,
-  researchRefs,
-  onResearchChange,
-  delegation,
-  onDelegationChange,
 }: AddContextMenuProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<TabId>("files");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const counts: Record<TabId, number> = {
     files: 0,
-    research: researchRefs.length,
-    delegate:
-      delegation.specialists.length + (delegation.auto ? 1 : 0) + (delegation.verify ? 1 : 0),
-    skills: selectedSkills.length,
     data: selectedDbs.length,
+    skills: selectedSkills.length,
   };
 
-  const totalActive = counts.research + counts.delegate + counts.skills + counts.data;
+  const totalActive = counts.data + counts.skills;
 
   const handleFilePick = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -200,9 +149,8 @@ export function AddContextMenu({
           <TooltipContent side="top" className="max-w-xs whitespace-normal text-xs leading-relaxed">
             <b className="font-semibold">Add context</b>
             <br />
-            Attach files, reference earlier research, delegate to
-            specialists, or enable skills and data sources for the next
-            message.
+            Attach files, pin scientific databases, or enable skills for the
+            next message.
           </TooltipContent>
         </Tooltip>
 
@@ -210,7 +158,7 @@ export function AddContextMenu({
           side="top"
           align="start"
           sideOffset={8}
-          className="w-[540px] max-w-[calc(100vw-2rem)] p-0 overflow-hidden rounded-xl shadow-xl"
+          className="w-[480px] max-w-[calc(100vw-2rem)] p-0 overflow-hidden rounded-xl shadow-xl"
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           {/* Tab strip */}
@@ -237,7 +185,7 @@ export function AddContextMenu({
                     )}
                   >
                     <Icon className="size-3.5 shrink-0" />
-                    <span className="truncate">{tab.label}</span>
+                    <span>{tab.label}</span>
                     {count > 0 && (
                       <span
                         className={cn(
@@ -264,24 +212,7 @@ export function AddContextMenu({
             {active === "files" && (
               <FilesPanel
                 fileInputRef={fileInputRef}
-                folderInputRef={folderInputRef}
                 onFilePick={handleFilePick}
-              />
-            )}
-            {active === "research" && (
-              <ResearchPickerBody
-                projectId={projectId}
-                currentSessionId={currentSessionId}
-                selected={researchRefs}
-                onChange={onResearchChange}
-                autoFocus
-              />
-            )}
-            {active === "delegate" && (
-              <DelegatePickerBody
-                value={delegation}
-                onChange={onDelegationChange}
-                autoFocus
               />
             )}
             {active === "data" && (
@@ -308,15 +239,13 @@ export function AddContextMenu({
 
 function FilesPanel({
   fileInputRef,
-  folderInputRef,
   onFilePick,
 }: {
   fileInputRef: React.RefObject<HTMLInputElement | null>;
-  folderInputRef: React.RefObject<HTMLInputElement | null>;
   onFilePick: (e: ChangeEvent<HTMLInputElement>) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 p-4">
+    <div className="flex flex-col gap-3 p-4">
       <button
         type="button"
         onClick={() => fileInputRef.current?.click()}
@@ -327,7 +256,7 @@ function FilesPanel({
         </div>
         <div>
           <div className="text-sm font-medium text-foreground">
-            Upload files
+            Upload files or folders
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             Or drag & drop onto the input. Type{" "}
@@ -338,24 +267,13 @@ function FilesPanel({
           </p>
         </div>
       </button>
-      <button
-        type="button"
-        onClick={() => folderInputRef.current?.click()}
-        className="flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
-      >
-        <FolderUpIcon className="size-3.5" />
-        Upload a folder
-      </button>
       <input
         ref={fileInputRef}
         type="file"
         multiple
         className="hidden"
         onChange={onFilePick}
-        aria-label="Upload files"
       />
-      {/* @ts-expect-error -- webkitdirectory is non-standard but supported in all major browsers */}
-      <input ref={folderInputRef} type="file" webkitdirectory="" className="hidden" onChange={onFilePick} aria-label="Upload a folder" />
     </div>
   );
 }

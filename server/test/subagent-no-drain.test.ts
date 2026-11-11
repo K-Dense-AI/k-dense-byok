@@ -11,9 +11,9 @@ import { createSession, disposeProjectSessions } from "../src/agent/session-regi
 
 const projectId = "no-drain";
 const disposers: Array<() => void> = [];
-afterEach(async () => {
+afterEach(() => {
   disposers.splice(0).forEach((dispose) => dispose());
-  await disposeProjectSessions(projectId);
+  disposeProjectSessions(projectId);
 });
 
 const settledWithin = (promise: Promise<unknown>, ms: number) =>

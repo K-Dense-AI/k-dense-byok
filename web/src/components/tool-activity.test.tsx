@@ -96,19 +96,11 @@ describe("ToolActivityList", () => {
   it.each([
     [{ workflow: true }, "workflow script"],
     [{ workflow: "./ci/sweep.js" }, "workflow ./ci/sweep.js"],
-    [{ workflow: "lab-sweep" }, "workflow “lab-sweep”"],
+    [{ workflow: "review" }, "workflow “review”"],
   ])("summarizes an unnamed %j launch by its workflow source", (args, text) => {
     render(<ToolActivityList activities={[item({ toolName: "subagent", args })]} />);
     expect(screen.getByText(text)).toBeInTheDocument();
     expect(screen.queryByText("subtask")).not.toBeInTheDocument();
-  });
-
-  it.each([
-    [{ workflow: "review", args: { task: "check" } }, ["reviewer"]],
-    [{ workflow: "parallel", args: { tasks: [{ agent: "scout", task: "a" }, { agent: "worker", task: "b" }] } }, ["scout", "worker"]],
-  ])("names the children of pi-subagents' own %j workflow", (args, names) => {
-    render(<ToolActivityList activities={[item({ toolName: "subagent", args })]} />);
-    for (const name of names) expect(screen.getByText(name, { exact: false })).toBeInTheDocument();
   });
 
   it("summarizes generate_image by its prompt and shows the image without expanding", () => {
