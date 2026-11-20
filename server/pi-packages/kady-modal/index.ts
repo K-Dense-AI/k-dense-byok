@@ -15,7 +15,7 @@ const INSTANCE_IDS = [
 const ModalImageParams = Type.Object({
   base: Type.Optional(
     Type.String({
-      description: "Base registry image (default python:3.13-slim).",
+      description: "Base registry image (default python:3.13-slim). It must include Python 3.8+ and its standard library (or install python3 via apt).",
     }),
   ),
   pip: Type.Optional(Type.Array(Type.String(), { maxItems: 128 })),
