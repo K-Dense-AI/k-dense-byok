@@ -196,7 +196,7 @@ function BudgetBanner({
           <>
             <b>Project spend limit reached</b> ({formatUsd(totalUsd)}
             {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). New runs
-            are blocked.{" "}
+            are paused.{" "}
             <SettingsLink tab="project" section="budget">
               Raise the limit in project settings
             </SettingsLink>{" "}
@@ -206,7 +206,7 @@ function BudgetBanner({
           <>
             <b>Approaching spend limit</b> ({formatUsd(totalUsd)}
             {limitUsd !== null ? ` / ${formatUsd(limitUsd)}` : ""}). You&apos;re
-            over 80% of the project&apos;s cap.
+            at 80% of your project cap.
           </>
         )}
       </span>
