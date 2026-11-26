@@ -49,10 +49,8 @@ export function ApiTokenGate() {
           </DialogTitle>
           <DialogDescription>
             {hadToken
-              ? "The Kady server rejected the saved access token (it changes each time Kady restarts unless KADY_AUTH_TOKEN is set). "
-              : "This Kady server is protected with an access token. "}
-            Open the link printed in the terminal that started Kady, or paste the
-            link or token here.
+              ? "That token wasn't accepted — it may have changed when Kady restarted. Open your terminal link, or set KADY_AUTH_TOKEN to keep it stable."
+              : "This Kady server requires a token. Open the link your terminal printed, or paste it here."}
           </DialogDescription>
         </DialogHeader>
         <form
@@ -66,7 +64,7 @@ export function ApiTokenGate() {
             type="password"
             autoComplete="off"
             spellCheck={false}
-            placeholder="http://localhost:3000/#kady-token=… or the token"
+            placeholder="Paste the terminal link or token"
             value={value}
             onChange={(e) => setValue(e.target.value)}
             aria-label="Access token"
@@ -74,7 +72,7 @@ export function ApiTokenGate() {
         </form>
         <DialogFooter>
           <Button onClick={submit} disabled={!value.trim()}>
-            Continue
+            Connect
           </Button>
         </DialogFooter>
       </DialogContent>

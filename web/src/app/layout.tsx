@@ -18,8 +18,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "K-Dense BYOK",
-  description: "Multi-agent research assistant",
+  title: "Kady",
+  description: "Your private AI research assistant",
 };
 
 export default function RootLayout({
