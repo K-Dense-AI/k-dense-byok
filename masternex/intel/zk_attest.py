@@ -13,6 +13,9 @@ Two attestation paths:
 Both produce a JSON attestation bundle that can be stored in ACPLedger
 and verified offline by any party with the verifier contract / quote chain.
 
+Phase 5 addition: FiduciaryAnalysisProver — analysis-level attestation
+for tax computations, Monte Carlo runs, and annuity pricing calculations.
+
 References:
   Lundberg & Lee (2017) "A unified approach to interpreting model predictions"
   Boneh et al. (2019) "Bulletproofs: Short proofs for confidential transactions"
@@ -41,6 +44,9 @@ __all__ = [
     "ZKAttestationBundle",
     "TEEAttestationBundle",
     "verify_shapley_attestation",
+    "FiduciaryAnalysisProver",
+    "FiduciaryAttestationBundle",
+    "verify_fiduciary_attestation",
 ]
 
 
@@ -81,7 +87,7 @@ class TEEAttestationBundle:
 # ---------------------------------------------------------------------------
 
 class ShapleyProver:
-    """Compute exact (n≤12) or Horvitz-Thompson Shapley values and attest them.
+    """Compute exact (n<=12) or Horvitz-Thompson Shapley values and attest them.
 
     For DTA (Data Trust Attribution) the "players" are data contributors,
     "value" is improvement in the model's loss when a contributor's data
@@ -97,20 +103,14 @@ class ShapleyProver:
         self,
         n_contributors: int = 8,
         attest_mode: str = "hash_only",
-        circuit_dir: str | Path | None = None,
+        circuit_dir=None,
     ) -> None:
         self.n = n_contributors
         self.attest_mode = attest_mode
         self.circuit_dir = Path(circuit_dir) if circuit_dir else None
 
-    def _exact_shapley(
-        self, model_fn, dataset_partitions: List
-    ) -> List[float]:
-        """Exact Shapley via all 2^n coalitions (n ≤ 12 only).
-
-        model_fn(subset) → scalar utility (e.g. negative val loss)
-        dataset_partitions: list of n data shards, one per contributor
-        """
+    def _exact_shapley(self, model_fn, dataset_partitions: List) -> List[float]:
+        """Exact Shapley via all 2^n coalitions (n <= 12 only)."""
         from itertools import combinations
         import math
 
@@ -140,14 +140,8 @@ class ShapleyProver:
                     shapley[i] += weight * (with_i - without)
         return shapley
 
-    def _ht_shapley(
-        self, model_fn, dataset_partitions: List, m: int = 1000
-    ) -> List[float]:
-        """Horvitz-Thompson Importance-Guided Shapley (n > 12).
-
-        Uses stratified sampling with importance weights drawn from
-        a beta distribution shaped by per-contributor data size.
-        """
+    def _ht_shapley(self, model_fn, dataset_partitions: List, m: int = 1000) -> List[float]:
+        """Horvitz-Thompson Importance-Guided Shapley (n > 12)."""
         n = self.n
         shapley = np.zeros(n)
         weights_sum = np.zeros(n)
@@ -157,34 +151,25 @@ class ShapleyProver:
 
         rng = np.random.default_rng(seed=42)
         for _ in range(m):
-            # Sample coalition size from binomial; include contributor i with
-            # probability proportional to data size (HT correction factor)
             perm = rng.permutation(n)
             coal = []
             for j in perm:
                 if rng.random() < 0.5 + 0.5 * sizes[j]:
                     coal.append(j)
 
-            u_with = {}
             for i in range(n):
                 coal_with = sorted(set(coal) | {i})
                 coal_without = sorted(set(coal) - {i})
-                key_w = tuple(coal_with)
-                key_wo = tuple(coal_without)
-                u_with[i] = model_fn([dataset_partitions[k] for k in coal_with])
+                u_with = model_fn([dataset_partitions[k] for k in coal_with])
                 u_wo = model_fn([dataset_partitions[k] for k in coal_without])
-                # HT correction: weight = 1 / p_i(S)
                 p = 0.5 + 0.5 * sizes[i]
                 w = 1.0 / max(p, 1e-6)
-                shapley[i] += w * (float(u_with[i]) - float(u_wo))
+                shapley[i] += w * (float(u_with) - float(u_wo))
                 weights_sum[i] += w
 
         return (shapley / weights_sum.clip(min=1e-9)).tolist()
 
-    def compute_shapley(
-        self, model_fn, dataset_partitions: List
-    ) -> List[float]:
-        """Dispatch to exact or HT Shapley based on n."""
+    def compute_shapley(self, model_fn, dataset_partitions: List) -> List[float]:
         if self.n <= 12:
             return self._exact_shapley(model_fn, dataset_partitions)
         return self._ht_shapley(model_fn, dataset_partitions)
@@ -200,24 +185,13 @@ class ShapleyProver:
         dataset_hash: str,
         model_hash: str,
     ) -> ZKAttestationBundle:
-        """Produce a Groth16 proof via snarkjs (requires Node.js + snarkjs).
-
-        In production this calls:
-          node snarkjs groth16 prove circuit_final.zkey witness.wtns proof.json public.json
-        Here we emit a mock proof skeleton with real hash commitments so the
-        bundle structure is correct and can be tested end-to-end without
-        a full circom setup.
-        """
         shapley_hash = self._hash_shapley(shapley_values)
         circuit_digest = "mock_circuit_" + shapley_hash[:8]
-
-        # Attempt real snarkjs call if available
         proof: Dict = {}
         verification_key: Dict = {}
         try:
             import subprocess
             if self.circuit_dir and (self.circuit_dir / "circuit_final.zkey").exists():
-                # Write witness input
                 witness_input = {
                     "dataset_hash": dataset_hash,
                     "model_hash": model_hash,
@@ -225,7 +199,6 @@ class ShapleyProver:
                 }
                 input_file = self.circuit_dir / "input.json"
                 input_file.write_text(json.dumps(witness_input))
-
                 subprocess.run(
                     ["node", "generate_witness.js", "circuit.wasm", "input.json", "witness.wtns"],
                     cwd=str(self.circuit_dir), check=True, capture_output=True,
@@ -269,31 +242,21 @@ class ShapleyProver:
         dataset_hash: str,
         model_hash: str,
     ) -> TEEAttestationBundle:
-        """Produce an Intel SGX/TDX DCAP attestation quote.
-
-        Requires running inside an SGX enclave with the sgx_urts library.
-        Falls back to a mock quote (hash-only) when SGX is unavailable.
-        """
         shapley_hash = self._hash_shapley(shapley_values)
-        # report_data = SHA3-256(shapley_hash || dataset_hash || model_hash), truncated to 64 bytes
         combined = hashlib.sha3_256(
             (shapley_hash + dataset_hash + model_hash).encode()
         ).digest()
-        report_data_hex = combined[:32].hex() + "00" * 32  # 64 bytes total
-
+        report_data_hex = combined[:32].hex() + "00" * 32
         quote_hex = "mock_sgx_quote_unavailable"
         mrenclave = "0" * 64
         mrsigner = "0" * 64
         collateral_url = "https://api.trustedservices.intel.com/sgx/certification/v4/"
-
         try:
             import ctypes
             sgx = ctypes.CDLL("libsgx_urts.so")
-            # Production: call sgx_create_enclave / sgx_get_quote here
             logger.info("SGX library found; production would generate real DCAP quote here.")
         except (OSError, ImportError):
             logger.warning("SGX unavailable; attestation bundle uses mock quote.")
-
         return TEEAttestationBundle(
             quote_hex=quote_hex,
             report_data=report_data_hex,
@@ -310,10 +273,6 @@ class ShapleyProver:
         dataset_hash: str,
         model_hash: str,
     ) -> Dict:
-        """Produce an attestation bundle in the requested mode.
-
-        Returns a JSON-serialisable dict with a `mode` key.
-        """
         if self.attest_mode == "zk":
             bundle = self._zk_prove(shapley_values, dataset_hash, model_hash)
             return {"mode": "zk", **bundle.__dict__}
@@ -321,7 +280,6 @@ class ShapleyProver:
             bundle = self._tee_attest(shapley_values, dataset_hash, model_hash)
             return {"mode": "tee", **bundle.__dict__}
         else:
-            # hash_only: minimal verifiable commitment
             shapley_hash = self._hash_shapley(shapley_values)
             return {
                 "mode": "hash_only",
@@ -334,19 +292,11 @@ class ShapleyProver:
 
 
 # ---------------------------------------------------------------------------
-# Offline verifier
+# Offline verifier (Shapley)
 # ---------------------------------------------------------------------------
 
 def verify_shapley_attestation(bundle: Dict) -> bool:
-    """Verify an attestation bundle produced by ShapleyProver.attest().
-
-    Checks:
-      - Shapley values hash matches the committed shapley_hash
-      - For ZK: calls snarkjs verify (or falls back to hash-only check)
-      - For TEE: checks report_data == SHA3(shapley_hash || ...)
-
-    Returns True if the bundle is internally consistent.
-    """
+    """Verify an attestation bundle produced by ShapleyProver.attest()."""
     mode = bundle.get("mode", "hash_only")
     values = bundle.get("shapley_values", [])
     claimed_hash = bundle.get("shapley_hash", "")
@@ -359,7 +309,6 @@ def verify_shapley_attestation(bundle: Dict) -> bool:
         return False
 
     if mode == "zk":
-        # Try snarkjs groth16 verify
         try:
             import subprocess, tempfile
             with tempfile.TemporaryDirectory() as td:
@@ -380,7 +329,6 @@ def verify_shapley_attestation(bundle: Dict) -> bool:
                 logger.warning("snarkjs verify failed: %s", result.stdout)
         except Exception as e:
             logger.warning("snarkjs verify unavailable: %s", e)
-        # Fall back to hash-only check (already passed above)
         return not bundle["proof"].get("mock", False)
 
     elif mode == "tee":
@@ -391,4 +339,155 @@ def verify_shapley_attestation(bundle: Dict) -> bool:
         ).digest()[:32].hex() + "00" * 32
         return bundle.get("report_data", "") == expected_report_data
 
-    return True  # hash_only: hash check already passed
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Fiduciary analysis attestation
+# ---------------------------------------------------------------------------
+
+@dataclass
+class FiduciaryAttestationBundle:
+    """Merkle-committed proof bundle for a single fiduciary analysis run.
+
+    Binds the input parameters and output results of a tax, retirement,
+    or annuity calculation to a tamper-evident SHA3-256 hash chain.
+    Can be stored in ACPLedger alongside a planning session's ACP receipt.
+    """
+    analysis_type: str      # "tax_computation" | "monte_carlo_run" | "annuity_pricing"
+    input_root: str         # SHA3-256 Merkle root of canonicalized input parameters
+    output_hash: str        # SHA3-256 of canonicalized analysis results
+    analysis_id: str        # unique run identifier (SHA3-256 prefix of input_root)
+    params_summary: Dict    # human-readable subset of input params (non-PII)
+    results_summary: Dict   # human-readable subset of output results
+    attestation_hash: str   # SHA3-256(input_root || output_hash || analysis_id || str(timestamp))
+    timestamp: float = field(default_factory=time.time)
+    provider: str = "fiduciary-os"
+
+
+class FiduciaryAnalysisProver:
+    """Produce tamper-evident attestation bundles for fiduciary analysis runs.
+
+    Each call to attest_fiduciary_analysis() commits the full input parameter
+    set and output results to a SHA3-256 Merkle root, producing a
+    FiduciaryAttestationBundle that can be stored in ACPLedger and verified
+    offline by any party with access to the bundle.
+
+    Supported analysis types:
+        "tax_computation"  — federal income tax estimation
+        "monte_carlo_run"  — retirement portfolio Monte Carlo simulation
+        "annuity_pricing"  — SSA-table annuity illustration
+    """
+
+    def _merkle_root(self, data: Dict) -> str:
+        """SHA3-256 Merkle root of a canonicalized dict.
+
+        Each key-value pair becomes a leaf: SHA3-256(key || ":" || json(value)).
+        Leaves are sorted by key and iteratively hashed pairwise until one root
+        remains (single-pass for simplicity; full binary tree for production).
+        """
+        leaves = [
+            hashlib.sha3_256(
+                (str(k) + ":" + json.dumps(v, sort_keys=True, default=str)).encode()
+            ).digest()
+            for k, v in sorted(data.items())
+        ]
+        if not leaves:
+            return hashlib.sha3_256(b"").hexdigest()
+        while len(leaves) > 1:
+            if len(leaves) % 2 == 1:
+                leaves.append(leaves[-1])  # duplicate last leaf (standard Merkle padding)
+            leaves = [
+                hashlib.sha3_256(leaves[i] + leaves[i + 1]).digest()
+                for i in range(0, len(leaves), 2)
+            ]
+        return leaves[0].hex()
+
+    def attest_fiduciary_analysis(
+        self,
+        params: Dict,
+        results: Dict,
+        analysis_type: str,
+    ) -> FiduciaryAttestationBundle:
+        """Commit params + results to a tamper-evident attestation bundle.
+
+        Args:
+            params:        Input parameters dict (e.g. {"gross_income": 120000, ...})
+            results:       Output results dict (e.g. {"total_tax": 22500, ...})
+            analysis_type: One of "tax_computation", "monte_carlo_run", "annuity_pricing"
+
+        Returns:
+            FiduciaryAttestationBundle ready to store in ACPLedger.
+        """
+        if analysis_type not in ("tax_computation", "monte_carlo_run", "annuity_pricing"):
+            raise ValueError(
+                f"Unknown analysis_type '{analysis_type}'. "
+                "Must be 'tax_computation', 'monte_carlo_run', or 'annuity_pricing'."
+            )
+
+        input_root = self._merkle_root(params)
+        output_hash = hashlib.sha3_256(
+            json.dumps(results, sort_keys=True, default=str).encode()
+        ).hexdigest()
+        analysis_id = input_root[:16]
+        ts = time.time()
+
+        attestation_hash = hashlib.sha3_256(
+            (input_root + output_hash + analysis_id + str(ts)).encode()
+        ).hexdigest()
+
+        # Build non-PII summaries (omit names, SSNs, DOBs)
+        _PII_KEYS = {"name", "ssn", "dob", "email", "phone", "address", "client_id"}
+        params_summary = {k: v for k, v in params.items() if k.lower() not in _PII_KEYS}
+        results_summary = dict(results)
+
+        return FiduciaryAttestationBundle(
+            analysis_type=analysis_type,
+            input_root=input_root,
+            output_hash=output_hash,
+            analysis_id=analysis_id,
+            params_summary=params_summary,
+            results_summary=results_summary,
+            attestation_hash=attestation_hash,
+            timestamp=ts,
+        )
+
+
+def verify_fiduciary_attestation(bundle: FiduciaryAttestationBundle) -> bool:
+    """Verify a FiduciaryAttestationBundle for internal consistency.
+
+    Checks that attestation_hash == SHA3-256(input_root || output_hash ||
+    analysis_id || str(timestamp)) and that output_hash matches
+    results_summary (when results_summary is the full results dict).
+
+    Returns True if the bundle is internally consistent.
+    """
+    b = bundle if isinstance(bundle, dict) else bundle.__dict__
+
+    expected_attestation = hashlib.sha3_256(
+        (
+            b["input_root"]
+            + b["output_hash"]
+            + b["analysis_id"]
+            + str(b["timestamp"])
+        ).encode()
+    ).hexdigest()
+
+    if expected_attestation != b["attestation_hash"]:
+        logger.error(
+            "Fiduciary attestation hash mismatch: computed %s, claimed %s",
+            expected_attestation, b["attestation_hash"],
+        )
+        return False
+
+    expected_output_hash = hashlib.sha3_256(
+        json.dumps(b["results_summary"], sort_keys=True, default=str).encode()
+    ).hexdigest()
+    if expected_output_hash != b["output_hash"]:
+        logger.error(
+            "Fiduciary output hash mismatch: computed %s, claimed %s",
+            expected_output_hash, b["output_hash"],
+        )
+        return False
+
+    return True
