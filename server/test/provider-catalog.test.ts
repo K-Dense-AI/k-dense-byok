@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Model } from "@earendil-works/pi-ai";
 import {
   DIRECT_PROVIDERS,
@@ -29,7 +29,10 @@ import {
   billingCountsTowardBudget,
   billingForProvider,
 } from "../src/cost/billing.ts";
-import { registerModelProviderRoutes } from "../src/api/model-providers.ts";
+import {
+  registerModelProviderRoutes,
+  setLlmtrCatalogListerForTests,
+} from "../src/api/model-providers.ts";
 import {
   credentialFieldFor,
   registerCredentialRoutes,
@@ -48,7 +51,7 @@ describe("provider catalogue covers Pi's built-in providers", () => {
   const piProviderIds = runtime.getProviders().map((p) => p.id).sort();
 
   it("every Pi provider is a direct provider, an OAuth provider, or both", () => {
-    // ollama / openai-compatible are Kady's own local registrations (models.ts).
+    // ollama / openai-compatible / llmtr are Kady's own registrations (models.ts, llmtr.ts).
     // A provider with no chat models (TypeSafe ships only the Jev classifier)
     // has nothing the picker or the agent could run, so it needs no row.
     const uncovered = piProviderIds.filter(
@@ -57,6 +60,7 @@ describe("provider catalogue covers Pi's built-in providers", () => {
         !isSubscriptionProvider(id) &&
         id !== "ollama" &&
         id !== "openai-compatible" &&
+        id !== "llmtr" &&
         !(runtime.getModels(id).length === 0 && runtime.getAllModels(id).length > 0),
     );
     expect(uncovered).toEqual([]);
@@ -415,12 +419,38 @@ afterEach(async () => {
 });
 
 describe("GET /providers", () => {
+  const savedLlmtrKey = process.env.LLMTR_API_KEY;
+  beforeEach(() => {
+    delete process.env.LLMTR_API_KEY;
+    setLlmtrCatalogListerForTests(async () => []);
+  });
+  afterEach(() => {
+    setLlmtrCatalogListerForTests(undefined);
+    if (savedLlmtrKey === undefined) delete process.env.LLMTR_API_KEY;
+    else process.env.LLMTR_API_KEY = savedLlmtrKey;
+  });
+
   it("lists every direct provider with fields and configured status, no secrets", async () => {
     const app = await appWithRuntime(runtimeWith({ groq: "api_key" }));
     const response = await app.inject({ method: "GET", url: "/providers" });
     expect(response.statusCode).toBe(200);
     const { providers } = response.json();
-    expect(providers).toHaveLength(DIRECT_PROVIDERS.length);
+    expect(providers.filter((p: { id: string }) => p.id !== "llmtr")).toHaveLength(DIRECT_PROVIDERS.length);
+    const llmtr = providers.find((p: { id: string }) => p.id === "llmtr");
+    expect(llmtr).toMatchObject({
+      name: "LLMTR",
+      billingMode: "subscription",
+      oauth: false,
+    });
+    expect(llmtr.fields).toEqual([
+      expect.objectContaining({
+        envVar: "LLMTR_API_KEY",
+        isKey: true,
+        secret: true,
+        credentialId: "llmtr",
+        bodyField: "llmtrApiKey",
+      }),
+    ]);
     const groq = providers.find((p: { id: string }) => p.id === "groq");
     expect(groq).toMatchObject({
       configured: true,
@@ -453,15 +483,29 @@ describe("GET /providers", () => {
 });
 
 describe("GET /providers/models", () => {
+  const savedLlmtrKey = process.env.LLMTR_API_KEY;
+  beforeEach(() => {
+    delete process.env.LLMTR_API_KEY;
+    setLlmtrCatalogListerForTests(async () => []);
+  });
+  afterEach(() => {
+    setLlmtrCatalogListerForTests(undefined);
+    if (savedLlmtrKey === undefined) delete process.env.LLMTR_API_KEY;
+    else process.env.LLMTR_API_KEY = savedLlmtrKey;
+  });
+
   it("returns picker rows for key-configured providers and the full id list", async () => {
     const app = await appWithRuntime(runtimeWith({ groq: "api_key", nvidia: "api_key" }));
     const response = await app.inject({ method: "GET", url: "/providers/models" });
     expect(response.statusCode).toBe(200);
     const { providers, models } = response.json();
-    expect(providers).toHaveLength(DIRECT_PROVIDERS.length);
-    expect(providers.filter((p: { configured: boolean }) => p.configured).map((p: { id: string }) => p.id)).toEqual(
-      ["groq", "nvidia"],
-    );
+    expect(providers.filter((p: { id: string }) => p.id !== "llmtr")).toHaveLength(DIRECT_PROVIDERS.length);
+    expect(providers.find((p: { id: string }) => p.id === "llmtr")).toEqual({ id: "llmtr", configured: false });
+    expect(
+      providers
+        .filter((p: { configured: boolean; id: string }) => p.configured && p.id !== "llmtr")
+        .map((p: { id: string }) => p.id),
+    ).toEqual(["groq", "nvidia"]);
     expect(models).toEqual([
       expect.objectContaining({
         id: "groq/groq-model",

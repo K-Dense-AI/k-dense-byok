@@ -13,7 +13,8 @@
  *                          by removing any previous stored Pi credential.
  *
  * Managed keys: OpenRouter (model calls and cross-browser speech
- * transcription); every direct Pi model provider from
+ * transcription); LLMTR (prepaid OpenAI-compatible gateway); every direct Pi
+ * model provider from
  * `agent/provider-catalog.ts` (its API key plus any supporting configuration
  * such as a Cloudflare account id or an Azure endpoint — generated below, one
  * entry per distinct env var, since several providers share one); the
@@ -40,6 +41,7 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { REPO_ROOT } from "../config.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 import { registerLocalProviders } from "../agent/models.ts";
+import { LLMTR_KEY_ENV, registerLlmtrProvider } from "../agent/llmtr.ts";
 import {
   DIRECT_PROVIDERS,
   providerKeyBodyField,
@@ -141,6 +143,15 @@ const BASE_MANAGED_KEYS: ManagedKey[] = [
     envVar: "OPENROUTER_API_KEY",
     envAliases: ["OR_API_KEY"],
     onChange: runtimeKeyHook(["openrouter"]),
+  },
+  {
+    id: "llmtr",
+    bodyField: "llmtrApiKey",
+    envVar: LLMTR_KEY_ENV,
+    onChange: async (key, runtime) => {
+      await runtimeKeyHook(["llmtr"])!(key, runtime);
+      registerLlmtrProvider(runtime);
+    },
   },
   { id: "exa", bodyField: "exaApiKey", envVar: "EXA_API_KEY" },
   { id: "perplexity", bodyField: "perplexityApiKey", envVar: "PERPLEXITY_API_KEY" },

@@ -24,6 +24,20 @@ import {
 } from "../agent/custom-models.ts";
 import { getModelRuntime } from "../agent/session-registry.ts";
 import { credentialFieldFor } from "./credentials.ts";
+import {
+  LLMTR_PROVIDER,
+  fetchLlmtrCatalog,
+  llmtrConfigured,
+} from "../agent/llmtr.ts";
+
+let listLlmtrModels = fetchLlmtrCatalog;
+
+/** Injectable only so provider-route tests never contact the LLMTR catalogue. */
+export function setLlmtrCatalogListerForTests(
+  lister: typeof fetchLlmtrCatalog | undefined,
+): void {
+  listLlmtrModels = lister ?? fetchLlmtrCatalog;
+}
 
 export interface RegisterModelProviderRoutesOptions {
   manager?: ProviderAuthManager;
@@ -229,8 +243,10 @@ export async function registerModelProviderRoutes(
   app.get("/providers", async (_req, reply) => {
     try {
       const providers: DirectProviderStatus[] = await Promise.all(
-        DIRECT_PROVIDERS.map(async (definition) => {
+        [...DIRECT_PROVIDERS, LLMTR_PROVIDER].map(async (definition) => {
           const auth = await safeCheckAuth(runtime, definition.id);
+          const configured =
+            auth !== undefined || (definition.id === "llmtr" && llmtrConfigured());
           let modelCount = 0;
           if (auth) {
             try {
@@ -250,9 +266,9 @@ export async function registerModelProviderRoutes(
             billingNote: definition.billingNote,
             oauth: definition.oauth,
             fields: providerFields(definition),
-            configured: auth !== undefined,
-            authType: auth?.type ?? null,
-            source: auth?.source ?? null,
+            configured,
+            authType: auth?.type ?? (configured && definition.id === "llmtr" ? "api_key" : null),
+            source: auth?.source ?? (configured && definition.id === "llmtr" ? LLMTR_PROVIDER.keyEnvVar : null),
             modelCount,
           };
         }),
@@ -280,6 +296,27 @@ export async function registerModelProviderRoutes(
           models.push(...(await directProviderModels(runtime, definition)));
         } catch {
           // One provider's listing failure must not hide every other section.
+        }
+      }
+      // LLMTR is app-registered, so it is not in DIRECT_PROVIDERS. A key in
+      // the environment is enough to mark it configured even before Pi's auth
+      // check has seen the registration.
+      {
+        const auth = await safeCheckAuth(runtime, "llmtr");
+        const configured = auth !== undefined || llmtrConfigured();
+        providers.push({ id: "llmtr", configured });
+        if (configured) {
+          try {
+            const catalog = await listLlmtrModels();
+            const listed = catalog.length
+              ? catalog
+              : auth
+                ? await runtime.getAvailable("llmtr")
+                : [];
+            models.push(...listed.map((model) => directModelForClient(model, LLMTR_PROVIDER)));
+          } catch {
+            // One provider's listing failure must not hide every other section.
+          }
         }
       }
       // Custom servers from models.json: Pi lists them like any provider once

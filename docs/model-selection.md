@@ -39,6 +39,7 @@ NVIDIA synthesis described below.
 | Source | Reference |
 |---|---|
 | OpenRouter | `openrouter/<vendor>/<model>` |
+| LLMTR | `llmtr/<vendor>/<model>` |
 | Direct or sign-in provider | `<provider>/<model-id>` |
 | Ollama | `ollama/<name>` |
 | Local OpenAI-compatible | `openai-compatible/<model-id>` |
@@ -54,6 +55,12 @@ OpenRouter's checked-in catalogue and pricing live in
 [`update-models.py`](../scripts/update-models.py). Pi's built-in entry is used
 when available; otherwise Kady synthesizes it from that catalogue. Missing
 catalogue pricing can produce a $0 fallback, so usage totals are estimates.
+
+For **LLMTR**, set `LLMTR_API_KEY` in Providers or `.env`. LLMTR is a prepaid
+OpenAI-compatible gateway at `https://llmtr.com/v1`; create a key at
+https://llmtr.com/dashboard/keys. Model IDs use the `vendor/model` form, for
+example `qwen/qwen3.8-27b-free`. The picker lists the public catalogue once a
+key is set. Usage is recorded but not counted against the project spend cap.
 
 For **NVIDIA NIM**, set `NVIDIA_API_KEY` in Providers or `.env`. Missing IDs can
 be synthesized at $0. `NVIDIA_EXTRA_MODELS` adds comma/whitespace-separated raw

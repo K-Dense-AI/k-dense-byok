@@ -93,8 +93,9 @@ describe("mergeProviderRows", () => {
   });
 
   it("puts popular providers first", () => {
-    const rows = mergeProviderRows([], [direct("zai"), direct("anthropic"), direct("groq")], {});
-    expect(rows.map((row) => row.id)).toEqual(["openrouter", "anthropic", "groq", "zai"]);
+    const rows = mergeProviderRows([], [direct("zai"), direct("anthropic"), direct("groq"), direct("llmtr")], {});
+    expect(rows.map((row) => row.id)).toEqual(["openrouter", "llmtr", "anthropic", "groq", "zai"]);
+    expect(rows.find((row) => row.id === "llmtr")!.popular).toBe(true);
     expect(rows.find((row) => row.id === "zai")!.popular).toBe(false);
   });
 

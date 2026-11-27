@@ -60,6 +60,7 @@ export interface ProviderRow {
 /** Shown first in "Add a provider"; everything else sits behind "Show all". */
 const POPULAR = [
   "openrouter",
+  "llmtr",
   "anthropic",
   "openai",
   "google",

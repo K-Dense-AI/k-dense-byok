@@ -46,6 +46,16 @@ export function billingForProvider(
   if (provider === "modal") {
     return { provider, authType: "none", billingMode: "compute" };
   }
+  // App-registered prepaid gateway (not in Pi's catalogue). Priced at $0 and
+  // billed like the token-plan providers below: tokens are recorded, spend is
+  // external, and the project cap neither counts nor blocks the run.
+  if (provider === "llmtr") {
+    return {
+      provider,
+      authType: authType === "none" ? "api_key" : authType,
+      billingMode: "subscription",
+    };
+  }
   if (provider === "anthropic" && authType === "oauth") {
     return { provider, authType, billingMode: "metered_oauth" };
   }

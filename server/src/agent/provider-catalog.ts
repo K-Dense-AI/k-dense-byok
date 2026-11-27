@@ -21,9 +21,9 @@
  *     credit-billed NIM; a payg provider synthesized at $0 would bypass the cap).
  *
  * Deliberately NOT here: `openrouter` (own catalogue + Fusion path in
- * `models.ts`), `ollama` / `openai-compatible` (local, `config.ts`), and the
- * OAuth-only providers `openai-codex`, `github-copilot`, `radius`
- * (`provider-auth.ts`). Providers with both an API key and an OAuth login
+ * `models.ts`), `llmtr` (app-registered prepaid gateway, `llmtr.ts`),
+ * `ollama` / `openai-compatible` (local, `config.ts`), and the OAuth-only
+ * providers `openai-codex`, `github-copilot`, `radius` (`provider-auth.ts`). Providers with both an API key and an OAuth login
  * (`anthropic`, `openai`, `xai`, `kimi-coding`, `meta`) appear in both lists;
  * the ref is the same, and billing follows whichever credential Pi resolves
  * at run time.
