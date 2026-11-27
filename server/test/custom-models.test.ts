@@ -48,6 +48,7 @@ describe("validateCustomProviders", () => {
   it("rejects collisions, bad ids, bad URLs, empty model lists and odd numbers", () => {
     expect(validateCustomProviders([{ ...vllm, id: "anthropic" }])).toMatch(/built-in/);
     expect(validateCustomProviders([{ ...vllm, id: "openrouter" }])).toMatch(/built-in/);
+    expect(validateCustomProviders([{ ...vllm, id: "llmtr" }])).toMatch(/built-in/);
     expect(validateCustomProviders([{ ...vllm, id: "Bad Id" }])).toMatch(/invalid provider id/);
     expect(validateCustomProviders([{ ...vllm, baseUrl: "gpu-node:8000" }])).toMatch(/baseUrl/);
     expect(validateCustomProviders([{ ...vllm, api: "grpc" }])).toMatch(/api must be/);

@@ -26,7 +26,7 @@ import { isSubscriptionProvider, tierFor, type ClientDirectModel } from "./provi
 export const CUSTOM_PROVIDER_ID_RE = /^[a-z0-9][a-z0-9-]{1,40}$/;
 export const CUSTOM_MODEL_APIS = ["openai-completions", "openai-responses", "anthropic-messages"] as const;
 export type CustomModelApi = (typeof CUSTOM_MODEL_APIS)[number];
-const RESERVED_PROVIDER_IDS = new Set(["openrouter", "ollama", "openai-compatible", "fusion", "nvidia", "modal", "kady"]);
+const RESERVED_PROVIDER_IDS = new Set(["openrouter", "ollama", "openai-compatible", "llmtr", "fusion", "nvidia", "modal", "kady"]);
 const MAX_PROVIDERS = 20;
 const MAX_MODELS_PER_PROVIDER = 100;
 

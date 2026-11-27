@@ -8,6 +8,8 @@
  *   - Every other built-in Pi API-key / cloud provider (Anthropic, OpenAI,
  *     Google, Vertex, Azure, Bedrock, Cloudflare, NVIDIA NIM, Groq, Mistral,
  *     DeepSeek, Hugging Face, Fireworks, Together, … — `provider-catalog.ts`)
+ *   - LLMTR, an app-registered prepaid OpenAI-compatible gateway
+ *     (LLMTR_API_KEY, https://llmtr.com/v1 — `llmtr.ts`)
  *   - Ollama and any local OpenAI-compatible server (OLLAMA_BASE_URL /
  *     OPENAI_COMPATIBLE_BASE_URL)
  *
@@ -34,6 +36,7 @@ import { readAppDefaults } from "../app-settings.ts";
 import { isSubscriptionProvider, subscriptionProvider } from "./provider-auth.ts";
 import { customProviderName, isCustomProvider } from "./custom-models.ts";
 import { canonicalProviderId, directProvider, isDirectProvider } from "./provider-catalog.ts";
+import { buildLlmtrModel, registerLlmtrProvider } from "./llmtr.ts";
 
 // OpenRouter's base URL. Overridable via OPENROUTER_BASE_URL so the
 // OpenAI-compatible provider can point at any compatible gateway — e.g.
@@ -367,6 +370,7 @@ export function pruneStaleOpenRouterCatalog(
 /** Configure app-specific providers and normalize the legacy OpenRouter alias. */
 export async function setupModelRuntime(modelRuntime: ModelRuntime): Promise<void> {
   registerLocalProviders(modelRuntime);
+  registerLlmtrProvider(modelRuntime);
 
   // Let Pi resolve stored credentials before ambient keys, consistently in
   // lead/child runtimes and after restart. A runtime override masks OAuth.
@@ -479,9 +483,11 @@ function providerDisplayName(providerId: string): string {
     subscriptionProvider(providerId)?.name ??
     (providerId === "openrouter"
       ? "OpenRouter"
-      : isCustomProvider(providerId)
-        ? customProviderName(providerId)
-        : providerId)
+      : providerId === "llmtr"
+        ? "LLMTR"
+        : isCustomProvider(providerId)
+          ? customProviderName(providerId)
+          : providerId)
   );
 }
 
@@ -501,7 +507,10 @@ export async function assertModelAuthentication(
   const auth = await modelRuntime.checkAuth(model.provider);
   const name = providerDisplayName(model.provider);
   if (!auth) {
-    const hasKeyRow = model.provider === "openrouter" || isDirectProvider(model.provider);
+    const hasKeyRow =
+      model.provider === "openrouter" ||
+      model.provider === "llmtr" ||
+      isDirectProvider(model.provider);
     const hasLogin = isSubscriptionProvider(model.provider);
     const how =
       hasKeyRow && hasLogin
@@ -573,6 +582,16 @@ function resolveRef(
       throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
     }
     return buildOpenAICompatibleModel(id);
+  }
+  // Prepaid OpenAI-compatible gateway. Everything after the prefix is the
+  // model id verbatim (`vendor/model` ids contain a slash). Pi has no LLMTR
+  // catalogue, so a miss is synthesized at $0 (subscription billing).
+  if (r.startsWith("llmtr/")) {
+    const id = r.slice("llmtr/".length);
+    if (!id) {
+      throw new ModelResolutionError(`Model ref "${r}" is missing a model id`);
+    }
+    return registry.find("llmtr", id) ?? buildLlmtrModel(id);
   }
   // Every other direct Pi provider: the id after the prefix is verbatim (NIM,
   // Hugging Face, Fireworks, Cloudflare… ids contain slashes). Pi's registry
